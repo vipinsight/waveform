@@ -1,6 +1,10 @@
 import { SpeechSegmenter } from "./audio/segmenter";
 import { encodeMonoPcm16Wav } from "./audio/wav";
-import type { ModelEvent, UiStage } from "../shared/contracts";
+import type {
+  MicrophonePermissionStatus,
+  ModelEvent,
+  UiStage,
+} from "../shared/contracts";
 
 const actionButton = requireElement<HTMLButtonElement>("action-button");
 const actionLabel = requireElement<HTMLSpanElement>("action-label");
@@ -53,6 +57,11 @@ async function startListening(): Promise<void> {
       modelReady = true;
     }
 
+    const microphonePermission = await window.parakeetFlow.requestMicrophoneAccess();
+    if (!microphonePermission.granted) {
+      throw new Error(microphonePermissionMessage(microphonePermission.status));
+    }
+
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         autoGainControl: true,
@@ -74,7 +83,7 @@ async function startListening(): Promise<void> {
     actionButton.setAttribute("aria-pressed", "true");
     setStatus("Listening — pause to transcribe", "ready");
   } catch (error) {
-    modelReady = false;
+    releaseAudio();
     setStatus(errorMessage(error), "error");
   } finally {
     actionInProgress = false;
@@ -86,6 +95,16 @@ function stopListening(): void {
   const finalSegment = segmenter?.flush();
   if (finalSegment && audioContext) queueTranscription(finalSegment, audioContext.sampleRate);
 
+  releaseAudio();
+  listening = false;
+  updateMeter(0);
+  actionButton.classList.remove("is-listening");
+  actionButton.setAttribute("aria-pressed", "false");
+  renderActionState();
+  setStatus(queuedTranscriptions > 0 ? "Finishing transcript…" : "Model ready", "ready");
+}
+
+function releaseAudio(): void {
   processorNode?.disconnect();
   sourceNode?.disconnect();
   mediaStream?.getTracks().forEach((track) => track.stop());
@@ -96,12 +115,6 @@ function stopListening(): void {
   sourceNode = null;
   processorNode = null;
   segmenter = null;
-  listening = false;
-  updateMeter(0);
-  actionButton.classList.remove("is-listening");
-  actionButton.setAttribute("aria-pressed", "false");
-  renderActionState();
-  setStatus(queuedTranscriptions > 0 ? "Finishing transcript…" : "Model ready", "ready");
 }
 
 function handleAudio(event: AudioProcessingEvent): void {
@@ -195,6 +208,16 @@ function calculatePeak(samples: Float32Array): number {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function microphonePermissionMessage(status: MicrophonePermissionStatus): string {
+  if (status === "denied") {
+    return "Microphone denied. Enable Electron in System Settings → Privacy & Security → Microphone, then restart app.";
+  }
+  if (status === "restricted") {
+    return "Microphone blocked by macOS restrictions.";
+  }
+  return `Microphone unavailable: macOS permission status is ${status}.`;
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {

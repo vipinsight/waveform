@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, session, systemPreferences } from "electron";
 import { join } from "node:path";
+import { requestMicrophonePermission } from "./microphone-permission";
 import { ModelServer } from "./model-server";
 
 let window: BrowserWindow | null = null;
@@ -44,14 +45,15 @@ function reportModelError(error: unknown): void {
 }
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return permission === "media";
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return webContents === window?.webContents && permission === "media";
   });
   session.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
+    (webContents, permission, callback, details) => {
       const mediaTypes = "mediaTypes" in details ? details.mediaTypes : [];
       callback(
-        permission === "media" &&
+        webContents === window?.webContents &&
+          permission === "media" &&
           mediaTypes?.includes("audio") === true &&
           mediaTypes.includes("video") === false,
       );
@@ -60,6 +62,13 @@ app.whenReady().then(() => {
 
   ipcMain.handle("model:start", async () => {
     await modelServer.start();
+  });
+  ipcMain.handle("microphone:request", () => {
+    return requestMicrophonePermission(
+      process.platform,
+      () => systemPreferences.getMediaAccessStatus("microphone"),
+      () => systemPreferences.askForMediaAccess("microphone"),
+    );
   });
   ipcMain.handle("audio:transcribe", (_event, bytes: Uint8Array) => {
     return modelServer.transcribe(new Uint8Array(bytes));

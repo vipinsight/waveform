@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
     "dev": "pnpm build && electron .",
-    "start": "electron .",
+    "start": "pnpm build && electron .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "setup:model": "./scripts/setup-model.sh"
