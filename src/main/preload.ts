@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppStats,
   DesktopApi,
   DictationCommand,
   DictationUpdate,
@@ -25,6 +26,7 @@ const api: DesktopApi = {
   requestMicrophoneAccess: () => ipcRenderer.invoke(IPC_CHANNELS.requestMicrophone),
   transcribe: (wavBytes) => ipcRenderer.invoke(IPC_CHANNELS.transcribeAudio, wavBytes),
   onModelEvent: (listener) => subscribe<ModelEvent>(IPC_CHANNELS.modelEvent, listener),
+  getModelState: () => ipcRenderer.invoke(IPC_CHANNELS.getModelState),
 
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.getSettings),
   updateSettings: (patch) => ipcRenderer.invoke(IPC_CHANNELS.updateSettings, patch),
@@ -46,6 +48,8 @@ const api: DesktopApi = {
   endOverlayDrag: () => ipcRenderer.send(IPC_CHANNELS.overlayDragEnd),
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>(IPC_CHANNELS.resourceUsage, listener),
+  getStats: () => ipcRenderer.invoke(IPC_CHANNELS.getStats),
+  onStatsChanged: (listener) => subscribe<AppStats>(IPC_CHANNELS.statsChanged, listener),
   onDictationCommand: (listener) =>
     subscribe<DictationCommand>(IPC_CHANNELS.dictationCommand, listener),
   onDictationUpdate: (listener) =>

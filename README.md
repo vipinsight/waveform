@@ -56,6 +56,10 @@ command rebuilds, repackages and relaunches:
 pnpm app
 ```
 
+It quits any running copy **before** repackaging. Packaging over a running
+bundle deletes the executable underneath it, which leaves a dead Dock tile and
+makes `open` re-activate the dying instance instead of the new build.
+
 Use `pnpm start` for quick UI work — it runs straight from `dist/` — but the
 global shortcut will not work there, because macOS grants Input Monitoring and
 Accessibility to `com.github.Electron` rather than to Waveform.
@@ -127,6 +131,10 @@ combined, since the engine is the larger consumer of both.
 2. Wait for it to become ready.
 3. Press **Start listening**, or just use the shortcut.
 4. Speak naturally and pause briefly to transcribe.
+
+Qwen3-ASR takes roughly 20-40 seconds to load on first start, and the button
+reads **Loading model** until it is ready. Parakeet is quicker once its runtime
+is warm.
 
 The selected model is remembered and loaded at launch. Audio is segmented at
 short pauses and transcribed locally while the model stays loaded.

@@ -16,6 +16,7 @@ import { requestMicrophonePermission } from "./microphone-permission";
 import { ModelServer } from "./model-server";
 import { ResourceMonitor } from "./resource-monitor";
 import { SettingsStore } from "./settings-store";
+import { StatsStore } from "./stats-store";
 import type { DictationPhrase, DictationStatus, PrivacyPane } from "../shared/contracts";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { isSpeechModelId } from "../shared/models";
@@ -26,6 +27,7 @@ let window: BrowserWindow | null = null;
 let settings: SettingsStore;
 let dictation: DictationController;
 let resources: ResourceMonitor;
+let stats: StatsStore;
 
 const modelServer = new ModelServer((event) => {
   window?.webContents.send(IPC_CHANNELS.modelEvent, event);
@@ -75,6 +77,7 @@ app.setName("Waveform");
 
 app.whenReady().then(async () => {
   settings = new SettingsStore(app.getPath("userData"));
+  stats = new StatsStore(app.getPath("userData"));
   nativeTheme.themeSource = settings.value.theme;
 
   const appIcon = nativeImage.createFromPath(APP_ICON_PATH);
@@ -98,10 +101,18 @@ app.whenReady().then(async () => {
   );
 
   registerIpcHandlers();
-  dictation = new DictationController(settings, mainWindowContents, () => {
-    // Kick the engine as the session opens so it is warm by the first pause.
-    void modelServer.start().catch(() => undefined);
-  });
+  dictation = new DictationController(
+    settings,
+    mainWindowContents,
+    () => {
+      // Kick the engine as the session opens so it is warm by the first pause.
+      void modelServer.start().catch(() => undefined);
+      mainWindowContents()?.send(IPC_CHANNELS.statsChanged, stats.recordSession());
+    },
+    (text) => {
+      mainWindowContents()?.send(IPC_CHANNELS.statsChanged, stats.recordPhrase(text));
+    },
+  );
 
   createWindow();
   await dictation.initialize();
@@ -130,6 +141,11 @@ function registerIpcHandlers(): void {
     settings.update({ modelId });
     broadcastSettings();
     await modelServer.selectModel(modelId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getModelState, (event) => {
+    assertTrustedSender(event);
+    return modelServer.state;
   });
 
   ipcMain.handle(IPC_CHANNELS.startModel, async (event) => {
@@ -178,6 +194,11 @@ function registerIpcHandlers(): void {
 
     broadcastSettings();
     return next;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getStats, (event) => {
+    assertTrustedSender(event);
+    return stats.value;
   });
 
   ipcMain.handle(IPC_CHANNELS.getHotkeyStatus, (event) => {
@@ -254,6 +275,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   resources?.stop();
   settings?.flush();
+  stats?.flush();
   dictation?.dispose();
   void modelServer.stop();
 });

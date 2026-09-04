@@ -2,6 +2,7 @@ export const IPC_CHANNELS = {
   selectModel: "model:select",
   startModel: "model:start",
   modelEvent: "model:event",
+  getModelState: "model:state",
   requestMicrophone: "microphone:request",
   transcribeAudio: "audio:transcribe",
 
@@ -31,6 +32,10 @@ export const IPC_CHANNELS = {
   overlayDragBegin: "overlay:drag-begin",
   overlayDragMove: "overlay:drag-move",
   overlayDragEnd: "overlay:drag-end",
+
+  /** Lifetime dictation counters for the Activity view. */
+  getStats: "stats:get",
+  statsChanged: "stats:changed",
 
   /** main → main window: periodic CPU and memory sample. */
   resourceUsage: "resources:usage",

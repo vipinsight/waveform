@@ -15,7 +15,7 @@
     "setup:model": "./scripts/setup-model.sh",
     "setup:qwen": "./scripts/setup-qwen.sh",
     "icon": "./.venv-qwen/bin/python scripts/generate-icon.py",
-    "app": "pnpm package:mac && ./scripts/relaunch-app.sh"
+    "app": "./scripts/run-app.sh"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

@@ -46,6 +46,7 @@ export class DictationController {
     private readonly settings: SettingsStore,
     private readonly getMainWindowContents: () => WebContents | null,
     private readonly onSessionStarting: () => void,
+    private readonly onPhraseRecorded: (text: string) => void = () => undefined,
   ) {
     this.helper = new HotkeyHelper((event) => this.handleHelperEvent(event));
     this.gestures = this.createGestureMachine();
@@ -263,6 +264,7 @@ export class DictationController {
     if (phrase.sink === "insert" && this.settings.value.insertIntoFocusedApp) {
       this.helper.paste(`${trimmed} `);
     }
+    this.onPhraseRecorded(trimmed);
 
     this.sendToMainWindow({
       status: {

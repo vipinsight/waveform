@@ -1,7 +1,9 @@
 import type {
+  AppStats,
   DictationUpdate,
   HotkeyStatus,
   ModelEvent,
+  ResourceUsage,
   UiStage,
 } from "../shared/contracts";
 import {
@@ -13,33 +15,44 @@ import { SPEECH_MODELS, getSpeechModel, isSpeechModelId } from "../shared/models
 import { DEFAULT_SETTINGS, type AppSettings } from "../shared/settings";
 
 const element = {
-  status: requireElement<HTMLElement>("status"),
   statusText: requireElement<HTMLElement>("status-text"),
+  modelDot: requireElement<HTMLElement>("model-dot"),
+  hotkeyDot: requireElement<HTMLElement>("hotkey-dot"),
+  hotkeySummary: requireElement<HTMLElement>("hotkey-summary"),
+  resourceSummary: requireElement<HTMLElement>("resource-summary"),
   transcript: requireElement<HTMLElement>("transcript"),
   emptyState: requireElement<HTMLElement>("empty-state"),
+  dictateNote: requireElement<HTMLElement>("dictate-note"),
   actionButton: requireElement<HTMLButtonElement>("action-button"),
   actionLabel: requireElement<HTMLElement>("action-label"),
   copyButton: requireElement<HTMLButtonElement>("copy-button"),
   clearButton: requireElement<HTMLButtonElement>("clear-button"),
   settingsButton: requireElement<HTMLButtonElement>("settings-button"),
-  settingsClose: requireElement<HTMLButtonElement>("settings-close"),
-  previewButton: requireElement<HTMLButtonElement>("preview-button"),
-  resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
-  footerResources: requireElement<HTMLElement>("footer-resources"),
   settingsPanel: requireElement<HTMLElement>("settings-panel"),
+  settingsClose: requireElement<HTMLButtonElement>("settings-close"),
   scrim: requireElement<HTMLElement>("scrim"),
+  versionLine: requireElement<HTMLElement>("version-line"),
   modelSelect: requireElement<HTMLSelectElement>("model-select"),
+  modelNote: requireElement<HTMLElement>("model-note"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
-  footerModel: requireElement<HTMLElement>("footer-model"),
-  footerHotkey: requireElement<HTMLElement>("footer-hotkey"),
+  previewButton: requireElement<HTMLButtonElement>("preview-button"),
+  resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   accessibilityRow: requireElement<HTMLElement>("permission-accessibility"),
   inputMonitoringRow: requireElement<HTMLElement>("permission-input-monitoring"),
+  statWords: requireElement<HTMLElement>("stat-words"),
+  statPhrases: requireElement<HTMLElement>("stat-phrases"),
+  statSessions: requireElement<HTMLElement>("stat-sessions"),
+  activityModel: requireElement<HTMLElement>("activity-model"),
+  activityModelState: requireElement<HTMLElement>("activity-model-state"),
+  activityCpu: requireElement<HTMLElement>("activity-cpu"),
+  activityMemory: requireElement<HTMLElement>("activity-memory"),
+  activityEngineMemory: requireElement<HTMLElement>("activity-engine-memory"),
   meterBars: Array.from(document.querySelectorAll<HTMLElement>(".meter-bar")),
 };
 
@@ -57,8 +70,11 @@ async function bootstrap(): Promise<void> {
   populateSelects();
   wireEvents();
 
-  settings = await window.waveform.getSettings();
-  applySettings(settings);
+  applySettings(await window.waveform.getSettings());
+  renderStats(await window.waveform.getStats());
+  // Pull the engine's current stage: any event it pushed while this window was
+  // still loading is already gone.
+  handleModelEvent(await window.waveform.getModelState());
 
   hotkeyStatus = await window.waveform.getHotkeyStatus();
   renderHotkeyStatus();
@@ -66,31 +82,32 @@ async function bootstrap(): Promise<void> {
 
 function wireEvents(): void {
   window.waveform.onModelEvent(handleModelEvent);
-  window.waveform.onSettingsChanged((next) => applySettings(next));
+  window.waveform.onSettingsChanged(applySettings);
   window.waveform.onHotkeyStatusChanged((next) => {
     hotkeyStatus = next;
     renderHotkeyStatus();
   });
   window.waveform.onDictationUpdate(handleDictationUpdate);
   window.waveform.onResourceUsage(renderResourceUsage);
+  window.waveform.onStatsChanged(renderStats);
+
+  bindGroup(".nav[aria-label='Sections'] [data-view]", (button) =>
+    showView(button.dataset.view ?? "dictate"),
+  );
+  bindGroup(".modal-nav [data-page]", (button) =>
+    showSettingsPage(button.dataset.page ?? "general"),
+  );
 
   element.actionButton.addEventListener("click", () => {
     if (element.actionButton.disabled) return;
     void window.waveform.toggleDictation();
   });
-
   element.clearButton.addEventListener("click", clearTranscript);
   element.copyButton.addEventListener("click", copyTranscript);
 
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
   element.scrim.addEventListener("click", () => toggleSettings(false));
   element.settingsClose.addEventListener("click", () => toggleSettings(false));
-  element.previewButton.addEventListener("click", () => {
-    void window.waveform.previewIndicator();
-  });
-  element.resetPositionButton.addEventListener("click", () => {
-    void patchSettings({ overlayX: null, overlayY: null });
-  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && settingsOpen) toggleSettings(false);
   });
@@ -99,22 +116,25 @@ function wireEvents(): void {
     if (!isSpeechModelId(element.modelSelect.value)) return;
     void window.waveform.selectModel(element.modelSelect.value);
   });
-
   element.hotkeySelect.addEventListener("change", () => {
     const value = element.hotkeySelect.value;
-    if (!isHotkeyBindingId(value)) return;
-    void patchSettings({ hotkeyId: value });
+    if (isHotkeyBindingId(value)) void patchSettings({ hotkeyId: value });
   });
-
   element.insertToggle.addEventListener("change", () => {
     void patchSettings({ insertIntoFocusedApp: element.insertToggle.checked });
   });
-
   element.themeToggle.addEventListener("click", (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]");
-    const theme = button?.dataset.themeValue;
-    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
-    void patchSettings({ theme });
+    const theme = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]")
+      ?.dataset.themeValue;
+    if (theme === "system" || theme === "light" || theme === "dark") {
+      void patchSettings({ theme });
+    }
+  });
+  element.previewButton.addEventListener("click", () => {
+    void window.waveform.previewIndicator();
+  });
+  element.resetPositionButton.addEventListener("click", () => {
+    void patchSettings({ overlayX: null, overlayY: null });
   });
 
   for (const button of Array.from(
@@ -125,55 +145,68 @@ function wireEvents(): void {
       if (scope !== "accessibility" && scope !== "input-monitoring") return;
       if (isScopeGranted(scope)) return;
       void window.waveform.requestHotkeyPermission(scope);
-      // The prompt only appears once per install; the pane is the reliable route.
+      // The system prompt only appears once per install; the pane always works.
       void window.waveform.openPrivacySettings(scope);
     });
   }
 }
 
+/** Wires a set of buttons that behave as one exclusive selection. */
+function bindGroup(selector: string, onSelect: (button: HTMLElement) => void): void {
+  for (const button of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+    button.addEventListener("click", () => onSelect(button));
+  }
+}
+
+function showView(view: string): void {
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLElement>(".nav[aria-label='Sections'] [data-view]"),
+  )) {
+    const active = button.dataset.view === view;
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+  for (const id of ["dictate", "activity"]) {
+    requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
+  }
+}
+
+function showSettingsPage(page: string): void {
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLElement>(".modal-nav [data-page]"),
+  )) {
+    const active = button.dataset.page === page;
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+  for (const section of Array.from(
+    document.querySelectorAll<HTMLElement>(".settings-page"),
+  )) {
+    section.hidden = section.dataset.page !== page;
+  }
+}
+
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
-  settings = await window.waveform.updateSettings(patch);
-  applySettings(settings);
+  applySettings(await window.waveform.updateSettings(patch));
 }
 
 function applySettings(next: AppSettings): void {
   settings = next;
-  document.documentElement.dataset.theme = next.theme === "system" ? "" : next.theme;
   if (next.theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = next.theme;
 
   element.modelSelect.value = next.modelId;
   element.hotkeySelect.value = next.hotkeyId;
   element.insertToggle.checked = next.insertIntoFocusedApp;
   renderThemeToggle(next.theme);
 
-  element.footerModel.textContent = getSpeechModel(next.modelId).label;
+  const model = getSpeechModel(next.modelId);
+  element.modelNote.textContent = `${model.modelId} · runs on this Mac`;
+  element.activityModel.textContent = model.label;
+  element.versionLine.textContent = `Waveform · ${model.shortLabel}`;
 
   renderHotkeyLabels();
   renderHotkeyStatus();
-}
-
-function renderResourceUsage(usage: {
-  cpuPercent: number;
-  memoryMb: number;
-  engineMemoryMb: number | null;
-}): void {
-  const memory =
-    usage.memoryMb >= 1024
-      ? `${(usage.memoryMb / 1024).toFixed(1)} GB`
-      : `${usage.memoryMb} MB`;
-  element.footerResources.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
-  element.footerResources.title =
-    usage.engineMemoryMb === null
-      ? "Waveform only; the speech engine is not running"
-      : `Speech engine using ${usage.engineMemoryMb} MB of that`;
-}
-
-function renderThemeToggle(theme: AppSettings["theme"]): void {
-  for (const button of Array.from(
-    element.themeToggle.querySelectorAll<HTMLElement>("[data-theme-value]"),
-  )) {
-    button.setAttribute("aria-checked", String(button.dataset.themeValue === theme));
-  }
 }
 
 function populateSelects(): void {
@@ -186,9 +219,16 @@ function populateSelects(): void {
   }
 }
 
+function renderThemeToggle(theme: AppSettings["theme"]): void {
+  for (const button of Array.from(
+    element.themeToggle.querySelectorAll<HTMLElement>("[data-theme-value]"),
+  )) {
+    button.setAttribute("aria-checked", String(button.dataset.themeValue === theme));
+  }
+}
+
 function renderHotkeyLabels(): void {
-  const binding = getHotkeyBinding(settings.hotkeyId);
-  const glyph = binding?.glyph ?? "—";
+  const glyph = getHotkeyBinding(settings.hotkeyId)?.glyph ?? "—";
   element.hintKey.textContent = glyph;
   element.gestureKeyHold.textContent = glyph;
   element.gestureKeyTap.textContent = `${glyph} ${glyph}`;
@@ -203,13 +243,12 @@ function renderHotkeyStatus(): void {
   setPermissionRow(element.inputMonitoringRow, status?.inputMonitoring === true);
 
   const armed =
-    status?.supported === true &&
-    status.running &&
-    status.inputMonitoring &&
-    binding !== null;
+    status?.supported === true && status.running && status.inputMonitoring && !!binding;
+  element.hotkeyDot.dataset.armed = String(armed);
 
-  element.footerHotkey.dataset.armed = String(armed);
-  element.footerHotkey.textContent = describeHotkey(status, binding?.label ?? null);
+  const summary = describeHotkey(status, binding?.label ?? null);
+  element.hotkeySummary.textContent = summary;
+  element.dictateNote.textContent = armed ? summary : "";
 }
 
 function describeHotkey(status: HotkeyStatus | null, label: string | null): string {
@@ -228,9 +267,32 @@ function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
 }
 
 function setPermissionRow(row: HTMLElement, granted: boolean): void {
-  row.dataset.granted = String(granted);
   const button = row.querySelector("button");
-  if (button) button.textContent = granted ? "Granted" : "Grant";
+  if (!button) return;
+  button.textContent = granted ? "Granted" : "Grant";
+  button.classList.toggle("is-done", granted);
+  button.classList.toggle("is-primary", !granted);
+}
+
+function renderStats(stats: AppStats): void {
+  element.statWords.textContent = stats.words.toLocaleString();
+  element.statPhrases.textContent = stats.phrases.toLocaleString();
+  element.statSessions.textContent = stats.sessions.toLocaleString();
+}
+
+function renderResourceUsage(usage: ResourceUsage): void {
+  const memory = formatMemory(usage.memoryMb);
+  element.resourceSummary.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
+  element.activityCpu.textContent = `${usage.cpuPercent}%`;
+  element.activityMemory.textContent = memory;
+  element.activityEngineMemory.textContent =
+    usage.engineMemoryMb === null
+      ? "Speech engine is not running"
+      : `Speech engine accounts for ${formatMemory(usage.engineMemoryMb)}`;
+}
+
+function formatMemory(megabytes: number): string {
+  return megabytes >= 1024 ? `${(megabytes / 1024).toFixed(1)} GB` : `${megabytes} MB`;
 }
 
 function handleModelEvent(event: ModelEvent): void {
@@ -256,15 +318,10 @@ function handleDictationUpdate(update: DictationUpdate): void {
 
   if (phrase) appendPhrase(phrase.text);
 
-  if (status.state === "error" && status.message) {
-    setStatus(status.message, "error");
-  } else if (status.state === "listening") {
-    setStatus("Listening — pause to transcribe", "ready");
-  } else if (status.state === "transcribing") {
-    setStatus("Transcribing locally…", "transcribing");
-  } else if (modelReady) {
-    setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
-  }
+  if (status.state === "error" && status.message) setStatus(status.message, "error");
+  else if (status.state === "listening") setStatus("Listening", "ready");
+  else if (status.state === "transcribing") setStatus("Transcribing…", "transcribing");
+  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
 
   renderActionState();
 }
@@ -285,7 +342,7 @@ function renderActionState(): void {
 
   element.copyButton.disabled = phraseCount === 0;
   element.clearButton.disabled = phraseCount === 0;
-  if (!listening) resetMeter();
+  if (!listening) for (const bar of element.meterBars) bar.style.height = "";
 }
 
 function appendPhrase(text: string): void {
@@ -324,22 +381,17 @@ function toggleSettings(open: boolean): void {
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
   element.scrim.hidden = !open;
-  element.settingsButton.setAttribute("aria-expanded", String(open));
-  if (open) {
-    void window.waveform.getHotkeyStatus().then((status) => {
-      hotkeyStatus = status;
-      renderHotkeyStatus();
-    });
-  }
+  if (!open) return;
+  void window.waveform.getHotkeyStatus().then((status) => {
+    hotkeyStatus = status;
+    renderHotkeyStatus();
+  });
 }
 
 function setStatus(message: string, stage: UiStage): void {
   element.statusText.textContent = message;
-  element.status.dataset.stage = stage;
-}
-
-function resetMeter(): void {
-  for (const bar of element.meterBars) bar.style.height = "";
+  element.modelDot.dataset.stage = stage;
+  element.activityModelState.textContent = message;
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {
@@ -347,4 +399,3 @@ function requireElement<T extends HTMLElement>(id: string): T {
   if (!node) throw new Error(`Missing #${id}`);
   return node as T;
 }
-

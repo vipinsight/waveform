@@ -80,6 +80,12 @@ export interface ResourceUsage {
   engineMemoryMb: number | null;
 }
 
+export interface AppStats {
+  words: number;
+  phrases: number;
+  sessions: number;
+}
+
 export interface HotkeyStatus {
   /** False when the native helper is missing, e.g. a non-macOS build. */
   supported: boolean;
@@ -99,6 +105,7 @@ export interface DesktopApi {
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;
+  getModelState(): Promise<ModelEvent>;
 
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
@@ -115,6 +122,8 @@ export interface DesktopApi {
   moveOverlay(deltaX: number, deltaY: number): void;
   endOverlayDrag(): void;
   onResourceUsage(listener: (usage: ResourceUsage) => void): () => void;
+  getStats(): Promise<AppStats>;
+  onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;
   onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
   reportDictationState(status: DictationStatus): void;

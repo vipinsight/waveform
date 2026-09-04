@@ -35,8 +35,24 @@ export class ModelServer {
   private qwenReady = false;
   private qwenJobSequence = 0;
   private readonly qwenJobs = new Map<string, PendingQwenJob>();
+  private lastEvent: ModelEvent = {
+    stage: "idle",
+    message: "Preparing…",
+    modelId: DEFAULT_SPEECH_MODEL_ID,
+  };
 
   constructor(private readonly emit: EventListener) {}
+
+  /**
+   * The most recent stage change.
+   *
+   * Renderers pull this on boot: a window that is still loading misses any
+   * event pushed before its listeners exist, and with a warm engine "ready"
+   * fires within milliseconds of launch.
+   */
+  get state(): ModelEvent {
+    return this.lastEvent;
+  }
 
   /** Process id of the running speech engine, for resource reporting. */
   get pid(): number | null {
@@ -371,7 +387,8 @@ export class ModelServer {
   }
 
   private emitStage(stage: ModelStage, message: string): void {
-    this.emit({ stage, message, modelId: this.selectedModelId });
+    this.lastEvent = { stage, message, modelId: this.selectedModelId };
+    this.emit(this.lastEvent);
   }
 }
 
