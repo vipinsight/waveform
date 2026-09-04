@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <title>Parakeet Flow</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M7 24c5-1 6-10 13-10 5 0 6 5 10 5 2 0 3-1 4-2-1 8-6 14-14 14-6 0-10-2-13-7Z" />
+            <circle cx="25.5" cy="16.5" r="1.5" />
+          </svg>
+          <span>Parakeet Flow</span>
+        </div>
+        <div id="status" class="status" data-stage="idle" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="status-text">Ready to load</span>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Voice transcription">
+        <div id="transcript" class="transcript" aria-live="polite">
+          <p id="empty-state" class="empty-state">
+            Your words will land here.
+            <span>Speak naturally. Text appears after each short pause.</span>
+          </p>
+        </div>
+
+        <div class="controls">
+          <button
+            id="action-button"
+            class="action-button"
+            type="button"
+            aria-pressed="false"
+          >
+            <span class="record-glyph" aria-hidden="true">
+              <span class="meter">
+                <i class="meter-bar"></i>
+                <i class="meter-bar"></i>
+                <i class="meter-bar"></i>
+                <i class="meter-bar"></i>
+                <i class="meter-bar"></i>
+              </span>
+            </span>
+            <span id="action-label">Load model &amp; start</span>
+          </button>
+          <button id="clear-button" class="clear-button" type="button">Clear text</button>
+        </div>
+      </section>
+
+      <footer>
+        <span>Local audio</span>
+        <span aria-hidden="true">•</span>
+        <span>NVIDIA Parakeet TDT 0.6B v3</span>
+      </footer>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
+

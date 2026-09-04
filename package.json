@@ -1,0 +1,23 @@
+{
+  "name": "parakeet-flow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first voice transcription using NVIDIA Parakeet TDT 0.6B v3.",
+  "main": "dist/src/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "setup:model": "./scripts/setup-model.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "electron": "^44.2.0",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
+
