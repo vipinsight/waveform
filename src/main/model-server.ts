@@ -65,7 +65,7 @@ export class ModelServer {
 
     if (!binary) {
       throw new Error(
-        "nemo-speech is not installed. Run `npm run setup:model`, then try again.",
+        "nemo-speech is not installed. Run `pnpm setup:model`, then try again.",
       );
     }
 

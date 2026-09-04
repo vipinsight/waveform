@@ -16,9 +16,9 @@ Press one button, speak, pause, see text. Audio stays on this Mac.
 ## Setup
 
 ```bash
-npm install
-npm run setup:model
-npm run dev
+pnpm install
+pnpm setup:model
+pnpm dev
 ```
 
 First setup installs NVIDIA's official `nemo-speech` Metal runtime under
@@ -41,15 +41,15 @@ while keeping the model loaded.
 ## Commands
 
 ```bash
-npm run dev        # build and open app
-npm run typecheck  # check TypeScript
-npm test           # run unit tests
-npm run build      # build into dist/
+pnpm dev        # build and open app
+pnpm typecheck  # check TypeScript
+pnpm test       # run unit tests
+pnpm build      # build into dist/
 ```
 
 Override runtime path or local server port when needed:
 
 ```bash
-NEMO_SPEECH_BIN=/path/to/nemo-speech PARAKEET_FLOW_PORT=8178 npm run dev
+NEMO_SPEECH_BIN=/path/to/nemo-speech PARAKEET_FLOW_PORT=8178 pnpm dev
 ```
 

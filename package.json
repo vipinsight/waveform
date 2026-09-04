@@ -4,9 +4,10 @@
   "private": true,
   "description": "Local-first voice transcription using NVIDIA Parakeet TDT 0.6B v3.",
   "main": "dist/src/main/main.js",
+  "packageManager": "pnpm@9.4.0",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
-    "dev": "npm run build && electron .",
+    "dev": "pnpm build && electron .",
     "start": "electron .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
