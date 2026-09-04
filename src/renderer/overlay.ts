@@ -5,6 +5,8 @@ import type {
   DictationSink,
   DictationState,
 } from "../shared/contracts";
+import { host } from "./host";
+import { installTauriBridge } from "./tauri-bridge";
 
 const BAR_COUNT = 20;
 const BAR_WIDTH = 2;
@@ -55,21 +57,24 @@ let lingerTimer: ReturnType<typeof setTimeout> | null = null;
 let phase = 0;
 
 const capture = new AudioCapture({
-  onPhrase: (text) => window.waveform.reportDictationPhrase({ text, sink }),
+  onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
   onPendingChange: () => syncDerivedState(),
   onError: () => {
     setState("error");
     scheduleIdle();
   },
-  transcribe: (bytes) => window.waveform.transcribe(bytes),
-  requestMicrophoneAccess: () => window.waveform.requestMicrophoneAccess(),
+  transcribe: (bytes) => host().transcribe(bytes),
+  requestMicrophoneAccess: () => host().requestMicrophoneAccess(),
 });
+
+// Supplies window.waveform under Tauri; a no-op under Electron.
+installTauriBridge();
 
 resizeCanvasForDisplay();
 window.addEventListener("resize", resizeCanvasForDisplay);
 enableDragging();
 
-window.waveform.onDictationCommand((command) => void handleCommand(command));
+host().onDictationCommand((command) => void handleCommand(command));
 
 async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "preview") {
@@ -174,7 +179,7 @@ function finish(): void {
   hud.dataset.state = "idle";
   hud.dataset.visible = "false";
   srLabel.textContent = STATE_LABEL.idle;
-  window.waveform.reportDictationState({ state: "idle", sink, mode });
+  host().reportDictationState({ state: "idle", sink, mode });
 }
 
 function setState(next: DictationState): void {
@@ -186,7 +191,7 @@ function setState(next: DictationState): void {
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {
-    window.waveform.reportDictationState({ state: next, sink, mode });
+    host().reportDictationState({ state: next, sink, mode });
   }
 }
 
@@ -317,12 +322,12 @@ function enableDragging(): void {
     origin = { x: event.screenX, y: event.screenY };
     hud.dataset.dragging = "true";
     hud.setPointerCapture(event.pointerId);
-    window.waveform.beginOverlayDrag();
+    host().beginOverlayDrag();
   });
 
   hud.addEventListener("pointermove", (event) => {
     if (!origin) return;
-    window.waveform.moveOverlay(event.screenX - origin.x, event.screenY - origin.y);
+    host().moveOverlay(event.screenX - origin.x, event.screenY - origin.y);
   });
 
   const end = (event: PointerEvent): void => {
@@ -330,7 +335,7 @@ function enableDragging(): void {
     origin = null;
     hud.dataset.dragging = "false";
     hud.releasePointerCapture(event.pointerId);
-    window.waveform.endOverlayDrag();
+    host().endOverlayDrag();
   };
   hud.addEventListener("pointerup", end);
   hud.addEventListener("pointercancel", end);

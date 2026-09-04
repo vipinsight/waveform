@@ -19,6 +19,8 @@ import {
   DEFAULT_TRANSFORM_PROMPT,
   SUGGESTED_MODELS,
 } from "../shared/prompts";
+import { host } from "./host";
+import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
   statusText: requireElement<HTMLElement>("status-text"),
@@ -81,33 +83,36 @@ let listening = false;
 let settingsOpen = false;
 let phraseCount = 0;
 
+// Supplies window.waveform under Tauri; a no-op under Electron.
+installTauriBridge();
+
 void bootstrap();
 
 async function bootstrap(): Promise<void> {
   populateSelects();
   wireEvents();
 
-  applySettings(await window.waveform.getSettings());
-  renderStats(await window.waveform.getStats());
+  applySettings(await host().getSettings());
+  renderStats(await host().getStats());
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
-  handleModelEvent(await window.waveform.getModelState());
+  handleModelEvent(await host().getModelState());
 
-  hotkeyStatus = await window.waveform.getHotkeyStatus();
+  hotkeyStatus = await host().getHotkeyStatus();
   renderHotkeyStatus();
-  renderAiStatus(await window.waveform.getAiStatus());
+  renderAiStatus(await host().getAiStatus());
 }
 
 function wireEvents(): void {
-  window.waveform.onModelEvent(handleModelEvent);
-  window.waveform.onSettingsChanged(applySettings);
-  window.waveform.onHotkeyStatusChanged((next) => {
+  host().onModelEvent(handleModelEvent);
+  host().onSettingsChanged(applySettings);
+  host().onHotkeyStatusChanged((next) => {
     hotkeyStatus = next;
     renderHotkeyStatus();
   });
-  window.waveform.onDictationUpdate(handleDictationUpdate);
-  window.waveform.onResourceUsage(renderResourceUsage);
-  window.waveform.onStatsChanged(renderStats);
+  host().onDictationUpdate(handleDictationUpdate);
+  host().onResourceUsage(renderResourceUsage);
+  host().onStatsChanged(renderStats);
 
   bindGroup(".nav[aria-label='Sections'] [data-view]", (button) =>
     showView(button.dataset.view ?? "dictate"),
@@ -118,7 +123,7 @@ function wireEvents(): void {
 
   element.actionButton.addEventListener("click", () => {
     if (element.actionButton.disabled) return;
-    void window.waveform.toggleDictation();
+    void host().toggleDictation();
   });
   element.clearButton.addEventListener("click", clearTranscript);
   element.copyButton.addEventListener("click", copyTranscript);
@@ -132,7 +137,7 @@ function wireEvents(): void {
 
   element.modelSelect.addEventListener("change", () => {
     if (!isSpeechModelId(element.modelSelect.value)) return;
-    void window.waveform.selectModel(element.modelSelect.value);
+    void host().selectModel(element.modelSelect.value);
   });
   element.hotkeySelect.addEventListener("change", () => {
     const value = element.hotkeySelect.value;
@@ -152,13 +157,13 @@ function wireEvents(): void {
   element.keySave.addEventListener("click", () => {
     const key = element.keyInput.value;
     if (!key.trim()) return;
-    void window.waveform.setOpenRouterKey(key).then((status) => {
+    void host().setOpenRouterKey(key).then((status) => {
       element.keyInput.value = "";
       renderAiStatus(status);
     });
   });
   element.keyClear.addEventListener("click", () => {
-    void window.waveform.clearOpenRouterKey().then(renderAiStatus);
+    void host().clearOpenRouterKey().then(renderAiStatus);
   });
   element.aiModel.addEventListener("change", () => {
     void patchSettings({ openRouterModel: element.aiModel.value });
@@ -176,7 +181,7 @@ function wireEvents(): void {
     void patchSettings({ polishShortcut: element.polishShortcut.value });
   });
   element.polishNow.addEventListener("click", () => {
-    void window.waveform.polishSelection();
+    void host().polishSelection();
   });
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>("[data-reset]"),
@@ -191,7 +196,7 @@ function wireEvents(): void {
   }
 
   element.previewButton.addEventListener("click", () => {
-    void window.waveform.previewIndicator();
+    void host().previewIndicator();
   });
   element.resetPositionButton.addEventListener("click", () => {
     void patchSettings({ overlayX: null, overlayY: null });
@@ -204,9 +209,9 @@ function wireEvents(): void {
       const scope = button.dataset.scope;
       if (scope !== "accessibility" && scope !== "input-monitoring") return;
       if (isScopeGranted(scope)) return;
-      void window.waveform.requestHotkeyPermission(scope);
+      void host().requestHotkeyPermission(scope);
       // The system prompt only appears once per install; the pane always works.
-      void window.waveform.openPrivacySettings(scope);
+      void host().openPrivacySettings(scope);
     });
   }
 }
@@ -247,7 +252,7 @@ function showSettingsPage(page: string): void {
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
-  applySettings(await window.waveform.updateSettings(patch));
+  applySettings(await host().updateSettings(patch));
 }
 
 function applySettings(next: AppSettings): void {
@@ -486,11 +491,11 @@ function toggleSettings(open: boolean): void {
   element.settingsPanel.hidden = !open;
   element.scrim.hidden = !open;
   if (!open) return;
-  void window.waveform.getHotkeyStatus().then((status) => {
+  void host().getHotkeyStatus().then((status) => {
     hotkeyStatus = status;
     renderHotkeyStatus();
   });
-  void window.waveform.getAiStatus().then(renderAiStatus);
+  void host().getAiStatus().then(renderAiStatus);
 }
 
 function setStatus(message: string, stage: UiStage): void {

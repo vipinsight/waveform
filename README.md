@@ -163,6 +163,42 @@ is warm.
 The selected model is remembered and loaded at launch. Audio is segmented at
 short pauses and transcribed locally while the model stays loaded.
 
+## Tauri host (in progress)
+
+The app is being ported from Electron to Tauri 2. Both hosts build from this one
+repository and share the entire window layer — interface, audio capture,
+segmentation and the overlay meter — through the `window.waveform` surface in
+`src/renderer/host.ts`. Electron supplies it from a preload script; Tauri
+supplies the same shape from `src/renderer/tauri-bridge.ts`.
+
+```bash
+pnpm tauri        # build and launch the Tauri host
+pnpm tauri:test   # Rust unit tests
+```
+
+Measured idle, with the same engine attached:
+
+| Host | Resident memory |
+| --- | --- |
+| Electron | 553 MB |
+| Tauri | 135 MB |
+
+**Working:** the shared interface, settings (the same `settings.json` serves
+either host), Activity counters, engine startup for both models, and
+transcription end to end. `getUserMedia`, `AudioContext` and
+`ScriptProcessorNode` all work in WKWebView, which is why the audio pipeline
+needed no changes.
+
+**Not ported yet**, and reported as unavailable rather than faked:
+
+- the global dictation shortcut and its gesture handling
+- pasting into the focused app
+- OpenRouter rewriting and encrypted key storage
+- the CPU and memory readout
+
+Use the Electron build for real work until those land. The Swift helper is a
+standalone process speaking JSON over stdio, so it carries over unchanged.
+
 ## Commands
 
 ```bash
@@ -172,6 +208,7 @@ pnpm test       # run unit tests
 pnpm build      # build into dist/
 pnpm setup:qwen # install and download Qwen3-ASR 0.6B
 pnpm icon       # regenerate the app icon and .icns
+pnpm tauri      # build and launch the Tauri host
 ```
 
 The build also compiles `src/native/HotkeyHelper.swift` into

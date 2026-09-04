@@ -15,7 +15,9 @@
     "setup:model": "./scripts/setup-model.sh",
     "setup:qwen": "./scripts/setup-qwen.sh",
     "icon": "./.venv-qwen/bin/python scripts/generate-icon.py",
-    "app": "./scripts/run-app.sh"
+    "app": "./scripts/run-app.sh",
+    "tauri": "./scripts/run-tauri.sh",
+    "tauri:test": "cd src-tauri && cargo test"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
