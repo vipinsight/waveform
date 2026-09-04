@@ -288,7 +288,7 @@ function errorMessage(error: unknown): string {
 
 function microphonePermissionMessage(status: MicrophonePermissionStatus): string {
   if (status === "denied") {
-    return "Microphone denied. Enable Electron in System Settings → Privacy & Security → Microphone, then restart app.";
+    return "Microphone denied. Enable Waveform in System Settings → Privacy & Security → Microphone, then restart app.";
   }
   if (status === "restricted") return "Microphone blocked by macOS restrictions.";
   return `Microphone unavailable: macOS permission status is ${status}.`;
