@@ -10,8 +10,6 @@ import type {
   AppStats,
   DesktopApi,
   DictationCommand,
-  DictationPhrase,
-  DictationStatus,
   DictationUpdate,
   HotkeyStatus,
   MicrophonePermissionResult,
@@ -69,16 +67,6 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
   };
 }
 
-/** State the Rust side does not own yet; reported honestly rather than faked. */
-const UNSUPPORTED_HOTKEY_STATUS: HotkeyStatus = {
-  supported: false,
-  running: false,
-  tapActive: false,
-  accessibility: false,
-  inputMonitoring: false,
-  binding: "none",
-};
-
 const api: DesktopApi = {
   startModel: () => invoke<void>("start_model"),
   selectModel: (modelId) => invoke<void>("select_model", { modelId }),
@@ -103,94 +91,34 @@ const api: DesktopApi = {
   getStats: () => invoke<AppStats>("get_stats"),
   onStatsChanged: (listener) => subscribe<AppStats>("stats-changed", listener),
 
-  getHotkeyStatus: () => Promise.resolve(UNSUPPORTED_HOTKEY_STATUS),
-  onHotkeyStatusChanged: () => () => undefined,
-  requestHotkeyPermission: () => Promise.resolve(),
-  openPrivacySettings: () => Promise.resolve(),
+  getHotkeyStatus: () => invoke<HotkeyStatus>("get_hotkey_status"),
+  onHotkeyStatusChanged: (listener) =>
+    subscribe<HotkeyStatus>("hotkey-status-changed", listener),
+  requestHotkeyPermission: (scope) =>
+    invoke<void>("request_hotkey_permission", { scope }),
+  openPrivacySettings: (pane) => invoke<void>("open_privacy_settings", { pane }),
 
-  getAiStatus: () => Promise.resolve<AiStatus>({ hasApiKey: false, memoryOnly: false }),
-  setOpenRouterKey: () =>
-    Promise.reject(new Error("OpenRouter is not wired up in the Tauri build yet.")),
-  clearOpenRouterKey: () =>
-    Promise.resolve<AiStatus>({ hasApiKey: false, memoryOnly: false }),
-  polishSelection: () =>
-    Promise.reject(new Error("Polishing is not wired up in the Tauri build yet.")),
+  getAiStatus: () => invoke<AiStatus>("get_ai_status"),
+  setOpenRouterKey: (key) => invoke<AiStatus>("set_openrouter_key", { key }),
+  clearOpenRouterKey: () => invoke<AiStatus>("clear_openrouter_key"),
+  polishSelection: () => invoke<void>("polish_selection"),
 
-  toggleDictation: () => toggleDictation(),
-  previewIndicator: () => sendOverlayCommand({ action: "preview", sink: "transcript", mode: "hold" }),
-  onDictationCommand: (listener) => {
-    dictationCommandListeners.add(listener);
-    return () => dictationCommandListeners.delete(listener);
-  },
-  onDictationUpdate: (listener) => {
-    dictationUpdateListeners.add(listener);
-    return () => dictationUpdateListeners.delete(listener);
-  },
-  reportDictationState: (status) => handleDictationState(status),
-  reportDictationPhrase: (phrase) => handleDictationPhrase(phrase),
+  toggleDictation: () => invoke<void>("toggle_dictation"),
+  previewIndicator: () => invoke<void>("preview_indicator"),
+  onDictationCommand: (listener) =>
+    subscribe<DictationCommand>("dictation-command", listener),
+  onDictationUpdate: (listener) =>
+    subscribe<DictationUpdate>("dictation-update", listener),
+  reportDictationState: (status) => void invoke("report_dictation_state", { status }),
+  reportDictationPhrase: (phrase) => void invoke("report_dictation_phrase", { phrase }),
 
   beginOverlayDrag: () => void invoke("begin_overlay_drag"),
   moveOverlay: (deltaX, deltaY) => void invoke("drag_overlay", { deltaX, deltaY }),
   endOverlayDrag: () => void invoke("end_overlay_drag"),
 
-  onResourceUsage: () => () => undefined,
+  onResourceUsage: (listener) =>
+    subscribe<ResourceUsage>("resource-usage", listener),
 };
-
-/*
- * Dictation coordination.
- *
- * Under Electron the main process brokers between the two windows. Tauri has no
- * equivalent broker yet, so the windows coordinate over Tauri's own event bus:
- * the main window asks for a session, the overlay performs it and reports back.
- */
-const dictationCommandListeners = new Set<(command: DictationCommand) => void>();
-const dictationUpdateListeners = new Set<(update: DictationUpdate) => void>();
-let sessionActive = false;
-
-async function toggleDictation(): Promise<void> {
-  if (sessionActive) {
-    await sendOverlayCommand({ action: "stop", sink: "transcript", mode: "latched" });
-    return;
-  }
-  await invoke("record_session");
-  await sendOverlayCommand({ action: "start", sink: "transcript", mode: "latched" });
-}
-
-async function sendOverlayCommand(command: DictationCommand): Promise<void> {
-  if (command.action === "start" || command.action === "preview") {
-    await invoke("show_overlay");
-  }
-  sessionActive = command.action === "start";
-  for (const listener of dictationCommandListeners) listener(command);
-  emitLocal("dictation-command", command);
-}
-
-function handleDictationState(status: DictationStatus): void {
-  if (status.state === "idle") {
-    sessionActive = false;
-    void invoke("hide_overlay");
-  }
-  for (const listener of dictationUpdateListeners) listener({ status });
-  emitLocal("dictation-update", { status });
-}
-
-function handleDictationPhrase(phrase: DictationPhrase): void {
-  void invoke("record_phrase", { text: phrase.text });
-  const update: DictationUpdate = {
-    status: { state: "listening", sink: phrase.sink, mode: "hold" },
-    phrase,
-  };
-  for (const listener of dictationUpdateListeners) listener(update);
-  emitLocal("dictation-update", update);
-}
-
-/** Relays a message to the other window, which has its own copy of this bridge. */
-function emitLocal(event: string, payload: unknown): void {
-  const global = window as unknown as {
-    __TAURI__?: { event: { emit(name: string, payload: unknown): Promise<void> } };
-  };
-  void global.__TAURI__?.event.emit(event, payload).catch(() => undefined);
-}
 
 /**
  * Installs the bridge, or does nothing when the host is not Tauri.
@@ -201,19 +129,5 @@ function emitLocal(event: string, payload: unknown): void {
  */
 export function installTauriBridge(): void {
   if (!maybeTauri()) return;
-
-  // Cross-window relay: whichever window did not originate a message still
-  // needs to act on it.
-  void tauri()
-    .event.listen<DictationCommand>("dictation-command", (message) => {
-      for (const listener of dictationCommandListeners) listener(message.payload);
-    })
-    .catch(() => undefined);
-  void tauri()
-    .event.listen<DictationUpdate>("dictation-update", (message) => {
-      for (const listener of dictationUpdateListeners) listener(message.payload);
-    })
-    .catch(() => undefined);
-
   window.waveform = api;
 }

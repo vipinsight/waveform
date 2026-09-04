@@ -4,17 +4,25 @@
 //! shared with the Electron build and reached through the same `window.waveform`
 //! surface. This crate supplies that surface natively.
 
+mod gestures;
+mod hotkey;
+mod dictation;
 mod model_server;
+mod resources;
+mod rewrite;
 mod settings;
 mod stats;
 
+use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use model_server::{ModelEvent, ModelServer};
+use rewrite::{AiStatus, Rewriter};
 use serde::Serialize;
 use settings::{AppSettings, SettingsStore};
 use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 
 const OVERLAY_LABEL: &str = "overlay";
@@ -23,9 +31,11 @@ const OVERLAY_HEIGHT: f64 = 46.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
-    settings: Mutex<SettingsStore>,
-    stats: Mutex<StatsStore>,
+    settings: Arc<Mutex<SettingsStore>>,
+    stats: Arc<Mutex<StatsStore>>,
     models: Arc<ModelServer>,
+    dictation: Arc<Dictation>,
+    rewriter: Arc<Rewriter>,
     /// Bounds captured when an overlay drag begins, so moves are relative.
     drag_origin: Mutex<Option<(f64, f64)>>,
 }
@@ -60,6 +70,19 @@ async fn update_settings(
         tauri::async_runtime::spawn(async move {
             let _ = models.select(&id).await;
         });
+    }
+
+    if next.hotkey_id != previous.hotkey_id
+        || next.hold_ms != previous.hold_ms
+        || next.double_tap_ms != previous.double_tap_ms
+    {
+        state.dictation.apply_settings().await;
+    }
+    if next.polish_shortcut != previous.polish_shortcut {
+        state
+            .dictation
+            .apply_polish_shortcut(&next.polish_shortcut)
+            .await;
     }
 
     let _ = app.emit("settings-changed", &next);
@@ -103,52 +126,85 @@ fn request_microphone() -> MicrophoneResult {
 }
 
 #[tauri::command]
-async fn record_phrase(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    text: String,
-) -> Result<(), String> {
-    let updated = state.stats.lock().await.record_phrase(&text);
-    let _ = app.emit("stats-changed", updated);
+async fn toggle_dictation(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.toggle_from_app().await;
     Ok(())
 }
 
 #[tauri::command]
-async fn record_session(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let updated = state.stats.lock().await.record_session();
-    let _ = app.emit("stats-changed", updated);
+async fn preview_indicator(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.preview_indicator().await;
     Ok(())
 }
 
 #[tauri::command]
-async fn show_overlay(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let settings = state.settings.lock().await.value();
-    let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) else {
+async fn report_dictation_state(
+    state: State<'_, AppState>,
+    status: DictationStatus,
+) -> Result<(), String> {
+    state.dictation.on_overlay_state(status).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn report_dictation_phrase(
+    state: State<'_, AppState>,
+    phrase: DictationPhrase,
+) -> Result<(), String> {
+    state.dictation.on_overlay_phrase(phrase).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_hotkey_status(state: State<'_, AppState>) -> Result<HotkeyStatus, String> {
+    state.dictation.refresh_permissions().await;
+    Ok(state.dictation.status().await)
+}
+
+#[tauri::command]
+async fn request_hotkey_permission(
+    state: State<'_, AppState>,
+    scope: String,
+) -> Result<(), String> {
+    if scope != "accessibility" && scope != "input-monitoring" {
         return Ok(());
-    };
-
-    match (settings.overlay_x, settings.overlay_y) {
-        (Some(x), Some(y)) => {
-            let _ = overlay.set_position(tauri::PhysicalPosition::new(x, y));
-        }
-        _ => position_on_active_display(&overlay, &settings.overlay_placement),
     }
-
-    // Never `set_focus`: taking focus would move it away from the app being
-    // dictated into, and the paste would land in the wrong place.
-    let _ = overlay.show();
-    let _ = overlay.set_always_on_top(true);
+    state.dictation.request_permission(&scope).await;
     Ok(())
 }
 
 #[tauri::command]
-fn hide_overlay(app: tauri::AppHandle) {
-    if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = overlay.hide();
-    }
+async fn open_privacy_settings(app: tauri::AppHandle, pane: String) -> Result<(), String> {
+    let anchor = match pane.as_str() {
+        "accessibility" => "Privacy_Accessibility",
+        "input-monitoring" => "Privacy_ListenEvent",
+        "microphone" => "Privacy_Microphone",
+        _ => return Ok(()),
+    };
+    let url = format!("x-apple.systempreferences:com.apple.preference.security?{anchor}");
+    let _ = app.opener().open_url(url, None::<&str>);
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
+    Ok(state.rewriter.status().await)
+}
+
+#[tauri::command]
+async fn set_openrouter_key(state: State<'_, AppState>, key: String) -> Result<AiStatus, String> {
+    Ok(state.rewriter.set_key(&key).await)
+}
+
+#[tauri::command]
+async fn clear_openrouter_key(state: State<'_, AppState>) -> Result<AiStatus, String> {
+    Ok(state.rewriter.clear_key().await)
+}
+
+#[tauri::command]
+async fn polish_selection(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.polish_selection().await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -203,6 +259,15 @@ async fn end_overlay_drag(
     Ok(next)
 }
 
+/// Positions the overlay from saved coordinates, or centres it on a screen edge.
+pub fn place_overlay(overlay: &tauri::WebviewWindow, settings: &AppSettings) {
+    if let (Some(x), Some(y)) = (settings.overlay_x, settings.overlay_y) {
+        let _ = overlay.set_position(tauri::PhysicalPosition::new(x, y));
+        return;
+    }
+    position_on_active_display(overlay, &settings.overlay_placement);
+}
+
 /// Puts the overlay on whichever display the pointer is on.
 fn position_on_active_display(overlay: &tauri::WebviewWindow, placement: &str) {
     let Ok(Some(monitor)) = overlay.primary_monitor() else {
@@ -229,16 +294,15 @@ fn position_on_active_display(overlay: &tauri::WebviewWindow, placement: &str) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let user_data = app
-                .path()
-                .app_config_dir()
-                .unwrap_or_else(|_| PathBuf::from("."));
+            let user_data = user_data_dir(app.handle());
             std::fs::create_dir_all(&user_data).ok();
 
-            let settings = SettingsStore::load(user_data.clone());
-            let stats = StatsStore::load(user_data.clone());
-            let selected = settings.value().model_id.clone();
+            let settings = Arc::new(Mutex::new(SettingsStore::load(user_data.clone())));
+            let stats = Arc::new(Mutex::new(StatsStore::load(user_data.clone())));
+            let initial = tauri::async_runtime::block_on(settings.lock()).value();
+            let selected = initial.model_id.clone();
 
             let handle = app.handle().clone();
             let models = Arc::new(ModelServer::new(
@@ -250,14 +314,31 @@ pub fn run() {
                 }),
             ));
 
+            let rewriter = Rewriter::new(settings.clone());
+            let dictation = Dictation::new(
+                app.handle().clone(),
+                settings.clone(),
+                stats.clone(),
+                rewriter.clone(),
+            );
+
             app.manage(AppState {
-                settings: Mutex::new(settings),
-                stats: Mutex::new(stats),
+                settings,
+                stats,
                 models: models.clone(),
+                dictation: dictation.clone(),
+                rewriter,
                 drag_origin: Mutex::new(None),
             });
 
             build_overlay_window(app.handle())?;
+
+            let root = project_root();
+            tauri::async_runtime::spawn(async move {
+                dictation.initialize(root).await;
+            });
+
+            resources::spawn_monitor(app.handle().clone(), models.clone());
 
             // Load the engine at launch so the first dictation is not the thing
             // that waits for it.
@@ -276,10 +357,17 @@ pub fn run() {
             select_model,
             transcribe,
             request_microphone,
-            record_phrase,
-            record_session,
-            show_overlay,
-            hide_overlay,
+            toggle_dictation,
+            preview_indicator,
+            report_dictation_state,
+            report_dictation_phrase,
+            get_hotkey_status,
+            request_hotkey_permission,
+            open_privacy_settings,
+            get_ai_status,
+            set_openrouter_key,
+            clear_openrouter_key,
+            polish_selection,
             begin_overlay_drag,
             drag_overlay,
             end_overlay_drag,
@@ -310,6 +398,24 @@ fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .visible(false)
     .build()?;
     Ok(())
+}
+
+/// The directory both hosts keep their settings, stats and model runtime in.
+///
+/// Tauri's `app_config_dir` would resolve to the bundle identifier, but the
+/// Electron build uses the app *name*, and the Qwen runtime installer writes
+/// there too. Matching that path is what actually lets one configuration and
+/// one downloaded runtime serve either host.
+fn user_data_dir(app: &tauri::AppHandle) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return Path::new(&home)
+                .join("Library/Application Support/Waveform");
+        }
+    }
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// Locates the repo when running unbundled; scripts/ lives beside it.

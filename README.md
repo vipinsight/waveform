@@ -163,7 +163,7 @@ is warm.
 The selected model is remembered and loaded at launch. Audio is segmented at
 short pauses and transcribed locally while the model stays loaded.
 
-## Tauri host (in progress)
+## Tauri host
 
 The app is being ported from Electron to Tauri 2. Both hosts build from this one
 repository and share the entire window layer — interface, audio capture,
@@ -176,28 +176,37 @@ pnpm tauri        # build and launch the Tauri host
 pnpm tauri:test   # Rust unit tests
 ```
 
-Measured idle, with the same engine attached:
+Measured idle over each host's own process tree, same engine attached:
 
-| Host | Resident memory |
-| --- | --- |
-| Electron | 553 MB |
-| Tauri | 135 MB |
+| Host | Processes | Resident memory |
+| --- | --- | --- |
+| Electron | 6 | 562 MB |
+| Tauri | 2 | 153 MB |
 
-**Working:** the shared interface, settings (the same `settings.json` serves
-either host), Activity counters, engine startup for both models, and
-transcription end to end. `getUserMedia`, `AudioContext` and
-`ScriptProcessorNode` all work in WKWebView, which is why the audio pipeline
-needed no changes.
+Read that as indicative rather than exact. Tauri renders through WebKit XPC
+services owned by `launchd` and shared with other apps, so the page's rendering
+cost is not attributable to the app and is not in its figure; Electron ships its
+own renderer processes and carries that cost visibly. The saving is real but
+smaller than the numbers alone suggest.
 
-**Not ported yet**, and reported as unavailable rather than faked:
+`getUserMedia`, `AudioContext` and `ScriptProcessorNode` all work in WKWebView,
+which is why the audio pipeline needed no changes. It does require a real `.app`
+bundle carrying `NSMicrophoneUsageDescription`; a bare binary is refused.
 
-- the global dictation shortcut and its gesture handling
-- pasting into the focused app
-- OpenRouter rewriting and encrypted key storage
-- the CPU and memory readout
+Working under Tauri: the interface, settings, Activity counters, engine startup
+for both models, transcription, the dictation overlay, the global shortcut with
+its hold and double-tap gestures, pasting into the focused app, OpenRouter
+rewriting, and the CPU and memory readout.
 
-Use the Electron build for real work until those land. The Swift helper is a
-standalone process speaking JSON over stdio, so it carries over unchanged.
+Two differences from the Electron build remain:
+
+- **Settings are shared, secrets are not.** Both hosts read and write the same
+  `~/Library/Application Support/Waveform/settings.json`, so configuration
+  carries over. The OpenRouter key does not: Electron keeps it in an encrypted
+  `secrets.json`, Tauri in the login keychain. Paste it once per host.
+- **Permissions are per-host.** macOS ties Input Monitoring and Accessibility to
+  a code signature, and the two builds use different bundle identifiers while
+  the port is in progress, so each needs granting separately.
 
 ## Commands
 

@@ -30,6 +30,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "src-tauri/target/$PROFILE/waveform" "$APP/Contents/MacOS/Waveform"
 cp icons/waveform.icns "$APP/Contents/Resources/icon.icns"
 
+# The Swift hotkey helper is a sibling process, not a library. It must live
+# inside the bundle so macOS attributes its event tap and synthetic keystrokes
+# to Waveform rather than to whatever launched it.
+if [ -x dist/src/main/waveform-hotkey ]; then
+  cp dist/src/main/waveform-hotkey "$APP/Contents/Resources/waveform-hotkey"
+fi
+
 # A distinct bundle id while the port is in progress: macOS ties microphone and
 # accessibility grants to the identity, and sharing one with the Electron build
 # would make it unclear which app a permission belongs to.

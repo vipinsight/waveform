@@ -65,6 +65,8 @@ struct QwenState {
 
 pub struct ModelServer {
     selected: Mutex<String>,
+    /// Pid of the running engine, for resource reporting.
+    engine_pid: Mutex<Option<u32>>,
     /// Most recent stage change, so a window that loads late can pull it.
     /// With a warm engine "ready" fires before any window exists.
     last_event: Mutex<ModelEvent>,
@@ -90,6 +92,7 @@ impl ModelServer {
         };
         Self {
             selected: Mutex::new(selected),
+            engine_pid: Mutex::new(None),
             last_event: Mutex::new(initial),
             qwen: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
@@ -105,6 +108,10 @@ impl ModelServer {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(DEFAULT_PORT)
+    }
+
+    pub async fn engine_pid(&self) -> Option<u32> {
+        *self.engine_pid.lock().await
     }
 
     pub async fn state(&self) -> ModelEvent {
@@ -163,6 +170,7 @@ impl ModelServer {
         if let Some(mut state) = self.qwen.lock().await.take() {
             let _ = state.child.kill().await;
         }
+        *self.engine_pid.lock().await = None;
         for (_, sender) in self.pending.lock().await.drain(..) {
             let _ = sender.send(Err("Speech model changed.".into()));
         }
@@ -187,7 +195,7 @@ impl ModelServer {
 
         self.emit_stage("loading", "Loading Parakeet on Metal…", id).await;
         let device = if cfg!(target_arch = "aarch64") { "metal" } else { "cpu" };
-        Command::new(binary)
+        let child = Command::new(binary)
             .args([
                 "serve",
                 "--asr-model",
@@ -204,6 +212,7 @@ impl ModelServer {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|error| format!("Could not start nemo-speech: {error}"))?;
+        *self.engine_pid.lock().await = child.id();
 
         let deadline = Instant::now() + START_TIMEOUT;
         while Instant::now() < deadline {
@@ -234,6 +243,7 @@ impl ModelServer {
             .map_err(|error| format!("Could not start Qwen worker: {error}"))?;
 
         let stdout = child.stdout.take().ok_or("Qwen worker has no stdout.")?;
+        *self.engine_pid.lock().await = child.id();
         *self.qwen.lock().await = Some(QwenState {
             child,
             ready: false,
