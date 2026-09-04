@@ -1,6 +1,6 @@
 import { SpeechSegmenter } from "./audio/segmenter";
 import { encodeMonoPcm16Wav } from "./audio/wav";
-import type { UiStage } from "../shared/contracts";
+import type { ModelEvent, UiStage } from "../shared/contracts";
 
 const actionButton = requireElement<HTMLButtonElement>("action-button");
 const actionLabel = requireElement<HTMLSpanElement>("action-label");
@@ -12,8 +12,9 @@ const clearButton = requireElement<HTMLButtonElement>("clear-button");
 const meterBars = Array.from(document.querySelectorAll<HTMLElement>(".meter-bar"));
 
 let modelReady = false;
+let modelLoading = true;
+let actionInProgress = false;
 let listening = false;
-let busy = false;
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -22,11 +23,12 @@ let segmenter: SpeechSegmenter | null = null;
 let queuedTranscriptions = 0;
 
 window.parakeetFlow.onModelEvent((event) => {
-  setStatus(event.message, event.stage === "error" ? "error" : event.stage);
+  updateModelState(event);
+  setStatus(event.message, event.stage);
 });
 
 actionButton.addEventListener("click", () => {
-  if (busy) return;
+  if (actionInProgress || modelLoading) return;
   if (listening) {
     stopListening();
   } else {
@@ -41,7 +43,8 @@ clearButton.addEventListener("click", () => {
 });
 
 async function startListening(): Promise<void> {
-  setBusy(true);
+  actionInProgress = true;
+  renderActionState();
 
   try {
     if (!modelReady) {
@@ -74,7 +77,8 @@ async function startListening(): Promise<void> {
     modelReady = false;
     setStatus(errorMessage(error), "error");
   } finally {
-    setBusy(false);
+    actionInProgress = false;
+    renderActionState();
   }
 }
 
@@ -96,7 +100,7 @@ function stopListening(): void {
   updateMeter(0);
   actionButton.classList.remove("is-listening");
   actionButton.setAttribute("aria-pressed", "false");
-  actionLabel.textContent = "Start listening";
+  renderActionState();
   setStatus(queuedTranscriptions > 0 ? "Finishing transcript…" : "Model ready", "ready");
 }
 
@@ -132,6 +136,34 @@ function queueTranscription(samples: Float32Array, sampleRate: number): void {
     });
 }
 
+function updateModelState(event: ModelEvent): void {
+  if (event.stage === "ready") {
+    modelReady = true;
+    modelLoading = false;
+  } else if (event.stage === "error") {
+    modelReady = false;
+    modelLoading = false;
+  } else if (["starting", "downloading", "loading"].includes(event.stage)) {
+    modelLoading = true;
+  }
+  renderActionState();
+}
+
+function renderActionState(): void {
+  const disabled = modelLoading || actionInProgress;
+  actionButton.disabled = disabled;
+  actionButton.classList.toggle("is-busy", disabled);
+  actionLabel.textContent = listening
+    ? "Stop listening"
+    : modelLoading
+      ? "Loading model"
+      : actionInProgress
+        ? "Starting microphone"
+        : modelReady
+          ? "Start listening"
+          : "Load model & start";
+}
+
 function appendTranscript(text: string): void {
   emptyState.remove();
   const phrase = document.createElement("span");
@@ -139,19 +171,6 @@ function appendTranscript(text: string): void {
   phrase.textContent = `${text} `;
   transcript.append(phrase);
   transcript.scrollTop = transcript.scrollHeight;
-}
-
-function setBusy(value: boolean): void {
-  busy = value;
-  actionButton.disabled = value;
-  actionButton.classList.toggle("is-busy", value);
-  actionLabel.textContent = value
-    ? "Loading model"
-    : listening
-      ? "Stop listening"
-      : modelReady
-        ? "Start listening"
-        : "Load model & start";
 }
 
 function setStatus(message: string, stage: UiStage): void {

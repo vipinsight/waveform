@@ -29,10 +29,11 @@ Grant microphone permission when macOS asks.
 
 ## Use
 
-1. Press **Load model & start**.
-2. Speak naturally.
-3. Pause briefly. Finished phrases appear in the transcript.
-4. Press **Stop listening** when done.
+1. Open the app and wait for **Model ready**.
+2. Press **Start listening**.
+3. Speak naturally.
+4. Pause briefly. Finished phrases appear in the transcript.
+5. Press **Stop listening** when done.
 
 Parakeet TDT 0.6B v3 is an offline-only recognizer. This app approximates live
 dictation by detecting short pauses and transcribing each phrase independently

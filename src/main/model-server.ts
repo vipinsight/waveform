@@ -106,7 +106,7 @@ export class ModelServer {
 
     try {
       await this.waitUntilReady(child);
-      this.emit({ stage: "ready", message: "Listening locally" });
+      this.emit({ stage: "ready", message: "Model ready" });
       return;
     } catch (error) {
       if (!child.killed) child.kill("SIGTERM");

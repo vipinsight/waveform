@@ -28,8 +28,18 @@ function createWindow(): void {
   });
 
   window.loadFile(join(__dirname, "../renderer/index.html"));
+  window.webContents.once("did-finish-load", () => {
+    void modelServer.start().catch(reportModelError);
+  });
   window.on("closed", () => {
     window = null;
+  });
+}
+
+function reportModelError(error: unknown): void {
+  window?.webContents.send("model:event", {
+    stage: "error",
+    message: error instanceof Error ? error.message : String(error),
   });
 }
 
