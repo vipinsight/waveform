@@ -1,4 +1,4 @@
-export const MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3";
+import type { SpeechModelId } from "./models";
 
 export type ModelStage =
   | "idle"
@@ -13,6 +13,7 @@ export type UiStage = ModelStage | "transcribing";
 export interface ModelEvent {
   stage: ModelStage;
   message: string;
+  modelId: SpeechModelId;
 }
 
 export interface TranscriptionResult {
@@ -33,8 +34,8 @@ export interface MicrophonePermissionResult {
 
 export interface DesktopApi {
   startModel(): Promise<void>;
+  selectModel(modelId: SpeechModelId): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;
 }
-

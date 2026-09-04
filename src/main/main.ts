@@ -1,11 +1,20 @@
-import { app, BrowserWindow, ipcMain, session, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  systemPreferences,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { join } from "node:path";
 import { requestMicrophonePermission } from "./microphone-permission";
 import { ModelServer } from "./model-server";
+import { IPC_CHANNELS } from "../shared/ipc";
+import { isSpeechModelId } from "../shared/models";
 
 let window: BrowserWindow | null = null;
 const modelServer = new ModelServer((event) => {
-  window?.webContents.send("model:event", event);
+  window?.webContents.send(IPC_CHANNELS.modelEvent, event);
 });
 
 function createWindow(): void {
@@ -14,7 +23,7 @@ function createWindow(): void {
     height: 680,
     minWidth: 680,
     minHeight: 520,
-    title: "Parakeet Flow",
+    title: "Local Speech",
     backgroundColor: "#f2f4f8",
     vibrancy: "under-window",
     visualEffectState: "active",
@@ -29,19 +38,13 @@ function createWindow(): void {
   });
 
   window.loadFile(join(__dirname, "../renderer/index.html"));
-  window.webContents.once("did-finish-load", () => {
-    void modelServer.start().catch(reportModelError);
-  });
   window.on("closed", () => {
     window = null;
   });
 }
 
-function reportModelError(error: unknown): void {
-  window?.webContents.send("model:event", {
-    stage: "error",
-    message: error instanceof Error ? error.message : String(error),
-  });
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  if (event.sender !== window?.webContents) throw new Error("Untrusted IPC sender.");
 }
 
 app.whenReady().then(() => {
@@ -60,17 +63,25 @@ app.whenReady().then(() => {
     },
   );
 
-  ipcMain.handle("model:start", async () => {
+  ipcMain.handle(IPC_CHANNELS.selectModel, async (event, modelId: unknown) => {
+    assertTrustedSender(event);
+    if (!isSpeechModelId(modelId)) throw new Error("Unknown speech model.");
+    await modelServer.selectModel(modelId);
+  });
+  ipcMain.handle(IPC_CHANNELS.startModel, async (event) => {
+    assertTrustedSender(event);
     await modelServer.start();
   });
-  ipcMain.handle("microphone:request", () => {
+  ipcMain.handle(IPC_CHANNELS.requestMicrophone, (event) => {
+    assertTrustedSender(event);
     return requestMicrophonePermission(
       process.platform,
       () => systemPreferences.getMediaAccessStatus("microphone"),
       () => systemPreferences.askForMediaAccess("microphone"),
     );
   });
-  ipcMain.handle("audio:transcribe", (_event, bytes: Uint8Array) => {
+  ipcMain.handle(IPC_CHANNELS.transcribeAudio, (event, bytes: Uint8Array) => {
+    assertTrustedSender(event);
     return modelServer.transcribe(new Uint8Array(bytes));
   });
 
@@ -87,4 +98,3 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   void modelServer.stop();
 });
-

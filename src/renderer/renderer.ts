@@ -5,7 +5,15 @@ import type {
   ModelEvent,
   UiStage,
 } from "../shared/contracts";
+import {
+  DEFAULT_SPEECH_MODEL_ID,
+  SPEECH_MODELS,
+  getSpeechModel,
+  isSpeechModelId,
+  type SpeechModelId,
+} from "../shared/models";
 
+const MODEL_STORAGE_KEY = "local-speech:selected-model";
 const actionButton = requireElement<HTMLButtonElement>("action-button");
 const actionLabel = requireElement<HTMLSpanElement>("action-label");
 const status = requireElement<HTMLElement>("status");
@@ -13,8 +21,11 @@ const statusText = requireElement<HTMLSpanElement>("status-text");
 const transcript = requireElement<HTMLElement>("transcript");
 const emptyState = requireElement<HTMLElement>("empty-state");
 const clearButton = requireElement<HTMLButtonElement>("clear-button");
+const modelSelect = requireElement<HTMLSelectElement>("model-select");
+const footerModel = requireElement<HTMLSpanElement>("footer-model");
 const meterBars = Array.from(document.querySelectorAll<HTMLElement>(".meter-bar"));
 
+let selectedModelId = readSelectedModel();
 let modelReady = false;
 let modelLoading = true;
 let actionInProgress = false;
@@ -26,9 +37,18 @@ let processorNode: ScriptProcessorNode | null = null;
 let segmenter: SpeechSegmenter | null = null;
 let queuedTranscriptions = 0;
 
+populateModelSelect();
+renderSelectedModel();
+
 window.parakeetFlow.onModelEvent((event) => {
+  if (event.modelId !== selectedModelId) return;
   updateModelState(event);
   setStatus(event.message, event.stage);
+});
+
+modelSelect.addEventListener("change", () => {
+  if (!isSpeechModelId(modelSelect.value)) return;
+  void activateModel(modelSelect.value);
 });
 
 actionButton.addEventListener("click", () => {
@@ -46,13 +66,35 @@ clearButton.addEventListener("click", () => {
   transcript.append(emptyState);
 });
 
+void activateModel(selectedModelId);
+
+async function activateModel(modelId: SpeechModelId): Promise<void> {
+  selectedModelId = modelId;
+  localStorage.setItem(MODEL_STORAGE_KEY, modelId);
+  modelReady = false;
+  modelLoading = true;
+  renderSelectedModel();
+  renderActionState();
+  setStatus(`Loading ${getSpeechModel(modelId).shortLabel}…`, "loading");
+
+  try {
+    await window.parakeetFlow.selectModel(modelId);
+  } catch (error) {
+    if (modelId !== selectedModelId) return;
+    modelReady = false;
+    modelLoading = false;
+    setStatus(errorMessage(error), "error");
+    renderActionState();
+  }
+}
+
 async function startListening(): Promise<void> {
   actionInProgress = true;
   renderActionState();
 
   try {
     if (!modelReady) {
-      setStatus("Loading model… First run can take several minutes.", "loading");
+      setStatus(`Loading ${getSpeechModel(selectedModelId).shortLabel}…`, "loading");
       await window.parakeetFlow.startModel();
       modelReady = true;
     }
@@ -101,7 +143,12 @@ function stopListening(): void {
   actionButton.classList.remove("is-listening");
   actionButton.setAttribute("aria-pressed", "false");
   renderActionState();
-  setStatus(queuedTranscriptions > 0 ? "Finishing transcript…" : "Model ready", "ready");
+  setStatus(
+    queuedTranscriptions > 0
+      ? "Finishing transcript…"
+      : `${getSpeechModel(selectedModelId).shortLabel} ready`,
+    "ready",
+  );
 }
 
 function releaseAudio(): void {
@@ -144,7 +191,12 @@ function queueTranscription(samples: Float32Array, sampleRate: number): void {
     .finally(() => {
       queuedTranscriptions -= 1;
       if (queuedTranscriptions === 0 && !failed) {
-        setStatus(listening ? "Listening — pause to transcribe" : "Model ready", "ready");
+        setStatus(
+          listening
+            ? "Listening — pause to transcribe"
+            : `${getSpeechModel(selectedModelId).shortLabel} ready`,
+          "ready",
+        );
       }
     });
 }
@@ -166,6 +218,7 @@ function renderActionState(): void {
   const disabled = modelLoading || actionInProgress;
   actionButton.disabled = disabled;
   actionButton.classList.toggle("is-busy", disabled);
+  modelSelect.disabled = modelLoading || actionInProgress || listening;
   actionLabel.textContent = listening
     ? "Stop listening"
     : modelLoading
@@ -175,6 +228,26 @@ function renderActionState(): void {
         : modelReady
           ? "Start listening"
           : "Load model & start";
+}
+
+function populateModelSelect(): void {
+  for (const model of SPEECH_MODELS) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.shortLabel;
+    modelSelect.append(option);
+  }
+}
+
+function renderSelectedModel(): void {
+  const model = getSpeechModel(selectedModelId);
+  modelSelect.value = selectedModelId;
+  footerModel.textContent = model.label;
+}
+
+function readSelectedModel(): SpeechModelId {
+  const stored = localStorage.getItem(MODEL_STORAGE_KEY);
+  return isSpeechModelId(stored) ? stored : DEFAULT_SPEECH_MODEL_ID;
 }
 
 function appendTranscript(text: string): void {
@@ -214,9 +287,7 @@ function microphonePermissionMessage(status: MicrophonePermissionStatus): string
   if (status === "denied") {
     return "Microphone denied. Enable Electron in System Settings → Privacy & Security → Microphone, then restart app.";
   }
-  if (status === "restricted") {
-    return "Microphone blocked by macOS restrictions.";
-  }
+  if (status === "restricted") return "Microphone blocked by macOS restrictions.";
   return `Microphone unavailable: macOS permission status is ${status}.`;
 }
 
@@ -225,4 +296,3 @@ function requireElement<T extends HTMLElement>(id: string): T {
   if (!element) throw new Error(`Missing #${id}`);
   return element as T;
 }
-

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.venv-qwen/
+__pycache__/
 .DS_Store
 *.log
-

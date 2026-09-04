@@ -13,5 +13,14 @@ await Promise.all([
     format: "iife",
     sourcemap: true,
   }),
+  build({
+    entryPoints: ["src/main/preload.ts"],
+    outfile: "dist/src/main/preload.js",
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    external: ["electron"],
+    sourcemap: true,
+  }),
 ]);
 

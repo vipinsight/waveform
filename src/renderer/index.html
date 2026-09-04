@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <meta name="color-scheme" content="light" />
-    <title>Parakeet Flow</title>
+    <title>Local Speech</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -18,11 +18,17 @@
             <path d="M7 24c5-1 6-10 13-10 5 0 6 5 10 5 2 0 3-1 4-2-1 8-6 14-14 14-6 0-10-2-13-7Z" />
             <circle cx="25.5" cy="16.5" r="1.5" />
           </svg>
-          <span>Parakeet Flow</span>
+          <span>Local Speech</span>
         </div>
-        <div id="status" class="status" data-stage="loading" aria-live="polite">
-          <span class="status-dot"></span>
-          <span id="status-text">Starting local model…</span>
+        <div class="topbar-meta">
+          <label class="model-picker">
+            <span>Model</span>
+            <select id="model-select" aria-label="Speech model"></select>
+          </label>
+          <div id="status" class="status" data-stage="loading" aria-live="polite">
+            <span class="status-dot"></span>
+            <span id="status-text">Starting local model…</span>
+          </div>
         </div>
       </header>
 
@@ -60,10 +66,9 @@
       <footer>
         <span>Local audio</span>
         <span aria-hidden="true">•</span>
-        <span>NVIDIA Parakeet TDT 0.6B v3</span>
+        <span id="footer-model">NVIDIA Parakeet TDT 0.6B v3</span>
       </footer>
     </main>
     <script src="./renderer.js"></script>
   </body>
 </html>
-

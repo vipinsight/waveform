@@ -1,8 +1,8 @@
 {
-  "name": "parakeet-flow",
-  "version": "0.1.0",
+  "name": "local-speech",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local-first voice transcription using NVIDIA Parakeet TDT 0.6B v3.",
+  "description": "Local-first desktop voice transcription with selectable speech models.",
   "main": "dist/src/main/main.js",
   "packageManager": "pnpm@9.4.0",
   "scripts": {
@@ -11,7 +11,8 @@
     "start": "pnpm build && electron .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "setup:model": "./scripts/setup-model.sh"
+    "setup:model": "./scripts/setup-model.sh",
+    "setup:qwen": "./scripts/setup-qwen.sh"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
@@ -21,4 +22,3 @@
     "vitest": "^3.2.4"
   }
 }
-
