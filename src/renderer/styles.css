@@ -58,7 +58,7 @@ select {
 .mark {
   width: 27px;
   height: 27px;
-  fill: #5267e8;
+  object-fit: contain;
 }
 
 .topbar-meta {

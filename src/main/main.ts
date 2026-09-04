@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  nativeImage,
   session,
   systemPreferences,
   type IpcMainInvokeEvent,
@@ -12,6 +13,7 @@ import { ModelServer } from "./model-server";
 import { IPC_CHANNELS } from "../shared/ipc";
 import { isSpeechModelId } from "../shared/models";
 
+const APP_ICON_PATH = join(__dirname, "../renderer/waveform-icon.png");
 let window: BrowserWindow | null = null;
 const modelServer = new ModelServer((event) => {
   window?.webContents.send(IPC_CHANNELS.modelEvent, event);
@@ -24,6 +26,7 @@ function createWindow(): void {
     minWidth: 680,
     minHeight: 520,
     title: "Waveform",
+    icon: APP_ICON_PATH,
     backgroundColor: "#f2f4f8",
     vibrancy: "under-window",
     visualEffectState: "active",
@@ -50,6 +53,11 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
 app.setName("Waveform");
 
 app.whenReady().then(() => {
+  const appIcon = nativeImage.createFromPath(APP_ICON_PATH);
+  if (process.platform === "darwin" && !appIcon.isEmpty()) {
+    app.dock?.setIcon(appIcon);
+  }
+
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     return webContents === window?.webContents && permission === "media";
   });
