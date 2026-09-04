@@ -9,8 +9,8 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
     "dev": "pnpm build && electron .",
     "start": "pnpm build && electron .",
-    "package:mac": "pnpm build && electron-packager . Waveform --platform=darwin --arch=arm64 --out=release --overwrite --app-bundle-id=com.webtiara.waveform --app-category-type=public.app-category.productivity --usage-description.Microphone='Waveform uses your microphone to transcribe speech locally.' --ignore='^/(?:\\.git|\\.venv-qwen|node_modules|release)(?:/|$)' && codesign --force --deep --sign - release/Waveform-darwin-arm64/Waveform.app",
-    "test": "vitest run",
+    "package:mac": "pnpm build && electron-packager . Waveform --platform=darwin --arch=arm64 --no-asar --out=release --overwrite --app-bundle-id=com.webtiara.waveform --app-category-type=public.app-category.productivity --usage-description.Microphone='Waveform uses your microphone to transcribe speech locally.' --ignore='^/(?:\\.git|\\.venv-qwen|node_modules|release)(?:/|$)' && codesign --force --deep --sign - release/Waveform-darwin-arm64/Waveform.app",
+    "test": "vitest run --exclude 'release/**'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "setup:model": "./scripts/setup-model.sh",
     "setup:qwen": "./scripts/setup-qwen.sh"

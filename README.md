@@ -25,9 +25,9 @@ bun start
 ```
 
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
-`setup:qwen` creates an isolated `.venv-qwen`, installs Qwen's official
-`qwen-asr` runtime, and downloads Qwen3-ASR 0.6B. Model weights remain in local
-Hugging Face and NeMo caches.
+`setup:qwen` creates an isolated runtime in `~/Library/Application Support/Waveform/qwen`,
+installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B. Model
+weights remain in local Hugging Face and NeMo caches.
 
 Grant microphone permission when macOS asks.
 
@@ -42,6 +42,7 @@ open release/Waveform-darwin-arm64/Waveform.app
 
 Use this packaged app for microphone permission. `pnpm dev` runs Electron's
 development bundle, so macOS identifies it as `com.github.Electron` instead.
+After upgrading, run `pnpm setup:qwen` once to install Qwen runtime for Waveform.
 
 ## Use
 

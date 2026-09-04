@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { app } from "electron";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -11,6 +12,7 @@ import {
   type SpeechModelId,
 } from "../shared/models";
 import { parseQwenWorkerMessage } from "./qwen-protocol";
+import { qwenRuntimeCandidates } from "./qwen-runtime";
 
 const DEFAULT_PORT = 8178;
 const START_TIMEOUT_MS = 15 * 60 * 1000;
@@ -379,11 +381,9 @@ async function findNemoRuntime(): Promise<string | null> {
 }
 
 async function findQwenRuntime(): Promise<string | null> {
-  const candidates = [
-    process.env.QWEN_ASR_PYTHON,
-    join(PROJECT_ROOT, ".venv-qwen", "bin", "python3"),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  return findExecutable(candidates);
+  return findExecutable(
+    qwenRuntimeCandidates(app.getPath("userData"), PROJECT_ROOT, process.env.QWEN_ASR_PYTHON),
+  );
 }
 
 async function findExecutable(candidates: string[]): Promise<string | null> {
