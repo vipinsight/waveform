@@ -31,6 +31,18 @@ Hugging Face and NeMo caches.
 
 Grant microphone permission when macOS asks.
 
+## macOS app bundle
+
+Build a native macOS app with bundle ID `com.webtiara.waveform`:
+
+```bash
+pnpm package:mac
+open release/Waveform-darwin-arm64/Waveform.app
+```
+
+Use this packaged app for microphone permission. `pnpm dev` runs Electron's
+development bundle, so macOS identifies it as `com.github.Electron` instead.
+
 ## Use
 
 1. Choose a model from the **Model** dropdown.

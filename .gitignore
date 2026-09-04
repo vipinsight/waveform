@@ -1,5 +1,6 @@
 node_modules/
 dist/
+release/
 .venv-qwen/
 __pycache__/
 .DS_Store
