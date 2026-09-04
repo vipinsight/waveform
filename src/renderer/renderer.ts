@@ -13,7 +13,8 @@ import {
   type SpeechModelId,
 } from "../shared/models";
 
-const MODEL_STORAGE_KEY = "local-speech:selected-model";
+const MODEL_STORAGE_KEY = "waveform:selected-model";
+const LEGACY_MODEL_STORAGE_KEY = "local-speech:selected-model";
 const actionButton = requireElement<HTMLButtonElement>("action-button");
 const actionLabel = requireElement<HTMLSpanElement>("action-label");
 const status = requireElement<HTMLElement>("status");
@@ -40,7 +41,7 @@ let queuedTranscriptions = 0;
 populateModelSelect();
 renderSelectedModel();
 
-window.parakeetFlow.onModelEvent((event) => {
+window.waveform.onModelEvent((event) => {
   if (event.modelId !== selectedModelId) return;
   updateModelState(event);
   setStatus(event.message, event.stage);
@@ -78,7 +79,7 @@ async function activateModel(modelId: SpeechModelId): Promise<void> {
   setStatus(`Loading ${getSpeechModel(modelId).shortLabel}…`, "loading");
 
   try {
-    await window.parakeetFlow.selectModel(modelId);
+    await window.waveform.selectModel(modelId);
   } catch (error) {
     if (modelId !== selectedModelId) return;
     modelReady = false;
@@ -95,11 +96,11 @@ async function startListening(): Promise<void> {
   try {
     if (!modelReady) {
       setStatus(`Loading ${getSpeechModel(selectedModelId).shortLabel}…`, "loading");
-      await window.parakeetFlow.startModel();
+      await window.waveform.startModel();
       modelReady = true;
     }
 
-    const microphonePermission = await window.parakeetFlow.requestMicrophoneAccess();
+    const microphonePermission = await window.waveform.requestMicrophoneAccess();
     if (!microphonePermission.granted) {
       throw new Error(microphonePermissionMessage(microphonePermission.status));
     }
@@ -179,7 +180,7 @@ function queueTranscription(samples: Float32Array, sampleRate: number): void {
 
   let failed = false;
   const wavBytes = encodeMonoPcm16Wav(samples, sampleRate);
-  void window.parakeetFlow
+  void window.waveform
     .transcribe(wavBytes)
     .then(({ text }) => {
       if (text) appendTranscript(text);
@@ -246,7 +247,9 @@ function renderSelectedModel(): void {
 }
 
 function readSelectedModel(): SpeechModelId {
-  const stored = localStorage.getItem(MODEL_STORAGE_KEY);
+  const stored =
+    localStorage.getItem(MODEL_STORAGE_KEY) ??
+    localStorage.getItem(LEGACY_MODEL_STORAGE_KEY);
   return isSpeechModelId(stored) ? stored : DEFAULT_SPEECH_MODEL_ID;
 }
 

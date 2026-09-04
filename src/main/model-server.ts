@@ -37,7 +37,10 @@ export class ModelServer {
   constructor(private readonly emit: EventListener) {}
 
   get port(): number {
-    const configured = Number.parseInt(process.env.PARAKEET_FLOW_PORT ?? "", 10);
+    const configured = Number.parseInt(
+      process.env.WAVEFORM_PORT ?? process.env.PARAKEET_FLOW_PORT ?? "",
+      10,
+    );
     return Number.isInteger(configured) && configured > 0 && configured < 65536
       ? configured
       : DEFAULT_PORT;

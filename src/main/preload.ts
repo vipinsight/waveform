@@ -16,4 +16,4 @@ const api: DesktopApi = {
   },
 };
 
-contextBridge.exposeInMainWorld("parakeetFlow", api);
+contextBridge.exposeInMainWorld("waveform", api);

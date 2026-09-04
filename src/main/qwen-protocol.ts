@@ -1,4 +1,4 @@
-export const QWEN_PROTOCOL_PREFIX = "LOCAL_SPEECH:";
+export const QWEN_PROTOCOL_PREFIX = "WAVEFORM:";
 
 export type QwenWorkerMessage =
   | { type: "ready"; device: string }

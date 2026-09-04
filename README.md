@@ -1,6 +1,6 @@
-# Local Speech
+# Waveform
 
-Small macOS desktop app for private, local voice transcription. Choose between:
+Waveform is a small macOS app for private, local voice transcription. Choose between:
 
 - [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B)
@@ -57,6 +57,6 @@ Override runtime paths when needed:
 ```bash
 NEMO_SPEECH_BIN=/path/to/nemo-speech \
 QWEN_ASR_PYTHON=/path/to/python3 \
-PARAKEET_FLOW_PORT=8178 \
+WAVEFORM_PORT=8178 \
 bun start
 ```

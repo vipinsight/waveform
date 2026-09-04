@@ -23,7 +23,7 @@ function createWindow(): void {
     height: 680,
     minWidth: 680,
     minHeight: 520,
-    title: "Local Speech",
+    title: "Waveform",
     backgroundColor: "#f2f4f8",
     vibrancy: "under-window",
     visualEffectState: "active",
@@ -46,6 +46,8 @@ function createWindow(): void {
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
   if (event.sender !== window?.webContents) throw new Error("Untrusted IPC sender.");
 }
+
+app.setName("Waveform");
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {

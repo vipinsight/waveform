@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 
-PROTOCOL_PREFIX = "LOCAL_SPEECH:"
+PROTOCOL_PREFIX = "WAVEFORM:"
 
 
 def send(payload):
