@@ -15,6 +15,8 @@ import { DictationController } from "./dictation-controller";
 import { requestMicrophonePermission } from "./microphone-permission";
 import { ModelServer } from "./model-server";
 import { ResourceMonitor } from "./resource-monitor";
+import { Rewriter } from "./rewriter";
+import { SecretStore } from "./secret-store";
 import { SettingsStore } from "./settings-store";
 import { StatsStore } from "./stats-store";
 import type { DictationPhrase, DictationStatus, PrivacyPane } from "../shared/contracts";
@@ -28,6 +30,8 @@ let settings: SettingsStore;
 let dictation: DictationController;
 let resources: ResourceMonitor;
 let stats: StatsStore;
+let secrets: SecretStore;
+let rewriter: Rewriter;
 
 const modelServer = new ModelServer((event) => {
   window?.webContents.send(IPC_CHANNELS.modelEvent, event);
@@ -78,6 +82,8 @@ app.setName("Waveform");
 app.whenReady().then(async () => {
   settings = new SettingsStore(app.getPath("userData"));
   stats = new StatsStore(app.getPath("userData"));
+  secrets = new SecretStore(app.getPath("userData"));
+  rewriter = new Rewriter(settings, secrets);
   nativeTheme.themeSource = settings.value.theme;
 
   const appIcon = nativeImage.createFromPath(APP_ICON_PATH);
@@ -112,6 +118,7 @@ app.whenReady().then(async () => {
     (text) => {
       mainWindowContents()?.send(IPC_CHANNELS.statsChanged, stats.recordPhrase(text));
     },
+    rewriter,
   );
 
   createWindow();
@@ -184,7 +191,8 @@ function registerIpcHandlers(): void {
     if (
       next.hotkeyId !== previous.hotkeyId ||
       next.holdMs !== previous.holdMs ||
-      next.doubleTapMs !== previous.doubleTapMs
+      next.doubleTapMs !== previous.doubleTapMs ||
+      next.polishShortcut !== previous.polishShortcut
     ) {
       dictation.applySettings(next);
     }
@@ -194,6 +202,29 @@ function registerIpcHandlers(): void {
 
     broadcastSettings();
     return next;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getAiStatus, (event) => {
+    assertTrustedSender(event);
+    return aiStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.setOpenRouterKey, (event, key: unknown) => {
+    assertTrustedSender(event);
+    if (typeof key !== "string") throw new Error("Invalid API key.");
+    secrets.setApiKey(key);
+    return aiStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clearOpenRouterKey, (event) => {
+    assertTrustedSender(event);
+    secrets.clear();
+    return aiStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.polishSelection, async (event) => {
+    assertTrustedSender(event);
+    await dictation.polishSelection();
   });
 
   ipcMain.handle(IPC_CHANNELS.getStats, (event) => {
@@ -260,6 +291,11 @@ function registerIpcHandlers(): void {
     assertTrustedSender(event);
     dictation.handleOverlayPhrase(phrase);
   });
+}
+
+/** Only ever reports whether a key exists; the key itself stays in main. */
+function aiStatus(): { hasApiKey: boolean; memoryOnly: boolean } {
+  return { hasApiKey: secrets.hasApiKey, memoryOnly: secrets.isMemoryOnly };
 }
 
 function broadcastSettings(): void {

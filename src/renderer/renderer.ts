@@ -1,4 +1,5 @@
 import type {
+  AiStatus,
   AppStats,
   DictationUpdate,
   HotkeyStatus,
@@ -12,7 +13,12 @@ import {
   isHotkeyBindingId,
 } from "../shared/hotkeys";
 import { SPEECH_MODELS, getSpeechModel, isSpeechModelId } from "../shared/models";
-import { DEFAULT_SETTINGS, type AppSettings } from "../shared/settings";
+import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import {
+  DEFAULT_POLISH_PROMPT,
+  DEFAULT_TRANSFORM_PROMPT,
+  SUGGESTED_MODELS,
+} from "../shared/prompts";
 
 const element = {
   statusText: requireElement<HTMLElement>("status-text"),
@@ -53,6 +59,17 @@ const element = {
   activityCpu: requireElement<HTMLElement>("activity-cpu"),
   activityMemory: requireElement<HTMLElement>("activity-memory"),
   activityEngineMemory: requireElement<HTMLElement>("activity-engine-memory"),
+  keyInput: requireElement<HTMLInputElement>("key-input"),
+  keySave: requireElement<HTMLButtonElement>("key-save"),
+  keyClear: requireElement<HTMLButtonElement>("key-clear"),
+  keyState: requireElement<HTMLElement>("key-state"),
+  aiModel: requireElement<HTMLInputElement>("ai-model"),
+  modelSuggestions: requireElement<HTMLElement>("model-suggestions"),
+  transformToggle: requireElement<HTMLInputElement>("transform-toggle"),
+  transformPrompt: requireElement<HTMLTextAreaElement>("transform-prompt"),
+  polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
+  polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
+  polishNow: requireElement<HTMLButtonElement>("polish-now"),
   meterBars: Array.from(document.querySelectorAll<HTMLElement>(".meter-bar")),
 };
 
@@ -78,6 +95,7 @@ async function bootstrap(): Promise<void> {
 
   hotkeyStatus = await window.waveform.getHotkeyStatus();
   renderHotkeyStatus();
+  renderAiStatus(await window.waveform.getAiStatus());
 }
 
 function wireEvents(): void {
@@ -130,6 +148,48 @@ function wireEvents(): void {
       void patchSettings({ theme });
     }
   });
+  // The key is write-only from here: it is sent to main and never read back.
+  element.keySave.addEventListener("click", () => {
+    const key = element.keyInput.value;
+    if (!key.trim()) return;
+    void window.waveform.setOpenRouterKey(key).then((status) => {
+      element.keyInput.value = "";
+      renderAiStatus(status);
+    });
+  });
+  element.keyClear.addEventListener("click", () => {
+    void window.waveform.clearOpenRouterKey().then(renderAiStatus);
+  });
+  element.aiModel.addEventListener("change", () => {
+    void patchSettings({ openRouterModel: element.aiModel.value });
+  });
+  element.transformToggle.addEventListener("change", () => {
+    void patchSettings({ transformOnDictate: element.transformToggle.checked });
+  });
+  element.transformPrompt.addEventListener("change", () => {
+    void patchSettings({ transformPrompt: element.transformPrompt.value });
+  });
+  element.polishPrompt.addEventListener("change", () => {
+    void patchSettings({ polishPrompt: element.polishPrompt.value });
+  });
+  element.polishShortcut.addEventListener("change", () => {
+    void patchSettings({ polishShortcut: element.polishShortcut.value });
+  });
+  element.polishNow.addEventListener("click", () => {
+    void window.waveform.polishSelection();
+  });
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-reset]"),
+  )) {
+    button.addEventListener("click", () => {
+      if (button.dataset.reset === "transform") {
+        void patchSettings({ transformPrompt: DEFAULT_TRANSFORM_PROMPT });
+      } else {
+        void patchSettings({ polishPrompt: DEFAULT_POLISH_PROMPT });
+      }
+    });
+  }
+
   element.previewButton.addEventListener("click", () => {
     void window.waveform.previewIndicator();
   });
@@ -198,6 +258,11 @@ function applySettings(next: AppSettings): void {
   element.modelSelect.value = next.modelId;
   element.hotkeySelect.value = next.hotkeyId;
   element.insertToggle.checked = next.insertIntoFocusedApp;
+  element.aiModel.value = next.openRouterModel;
+  element.transformToggle.checked = next.transformOnDictate;
+  element.transformPrompt.value = next.transformPrompt;
+  element.polishPrompt.value = next.polishPrompt;
+  element.polishShortcut.value = next.polishShortcut;
   renderThemeToggle(next.theme);
 
   const model = getSpeechModel(next.modelId);
@@ -217,6 +282,41 @@ function populateSelects(): void {
   for (const binding of HOTKEY_BINDINGS) {
     element.hotkeySelect.append(new Option(binding.label, binding.id));
   }
+
+  for (const accelerator of POLISH_SHORTCUTS) {
+    element.polishShortcut.append(
+      new Option(describeAccelerator(accelerator), accelerator),
+    );
+  }
+  for (const model of SUGGESTED_MODELS) {
+    element.modelSuggestions.append(new Option(model, model));
+  }
+}
+
+/** Renders an Electron accelerator the way macOS writes it. */
+function describeAccelerator(accelerator: string): string {
+  if (accelerator === "none") return "Off";
+  return accelerator.replace("Alt+", "⌥");
+}
+
+function renderAiStatus(status: AiStatus): void {
+  element.keyClear.hidden = !status.hasApiKey;
+  element.keySave.textContent = status.hasApiKey ? "Replace" : "Save";
+  element.keyInput.placeholder = status.hasApiKey ? "Saved" : "sk-or-v1-…";
+  element.keyState.classList.toggle("key-saved", status.hasApiKey && !status.memoryOnly);
+
+  if (!status.hasApiKey) {
+    element.keyState.textContent =
+      "Stored in your login keychain, never in plain text.";
+  } else if (status.memoryOnly) {
+    element.keyState.textContent =
+      "Saved for this session only: the keychain was unavailable.";
+  } else {
+    element.keyState.textContent = "Saved to your login keychain.";
+  }
+
+  element.polishNow.disabled = !status.hasApiKey;
+  element.transformToggle.disabled = !status.hasApiKey;
 }
 
 function renderThemeToggle(theme: AppSettings["theme"]): void {
@@ -314,13 +414,17 @@ function handleModelEvent(event: ModelEvent): void {
 
 function handleDictationUpdate(update: DictationUpdate): void {
   const { status, phrase } = update;
-  listening = status.state === "listening" || status.state === "transcribing";
+  listening =
+    status.state === "listening" ||
+    status.state === "transcribing" ||
+    status.state === "rewriting";
 
   if (phrase) appendPhrase(phrase.text);
 
   if (status.state === "error" && status.message) setStatus(status.message, "error");
   else if (status.state === "listening") setStatus("Listening", "ready");
   else if (status.state === "transcribing") setStatus("Transcribing…", "transcribing");
+  else if (status.state === "rewriting") setStatus("Rewriting with AI…", "transcribing");
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
 
   renderActionState();
@@ -386,6 +490,7 @@ function toggleSettings(open: boolean): void {
     hotkeyStatus = status;
     renderHotkeyStatus();
   });
+  void window.waveform.getAiStatus().then(renderAiStatus);
 }
 
 function setStatus(message: string, stage: UiStage): void {

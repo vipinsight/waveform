@@ -122,6 +122,30 @@ If you use **Fn**, also set **System Settings → Keyboard → Press 🌐 to** t
 Because the app is ad-hoc signed, macOS treats each rebuild as a new binary and
 you will need to re-grant these permissions after `pnpm package:mac`.
 
+## AI rewrite (OpenRouter)
+
+Transcription always runs on this Mac. Optionally, text can be rewritten by a
+model through [OpenRouter](https://openrouter.ai) — that step, and only that
+step, sends text off the machine.
+
+Open **Settings → AI rewrite** and paste an OpenRouter API key. It is encrypted
+with `safeStorage` into your login keychain, written to `secrets.json` as
+ciphertext with `0600` permissions, and never handed back to the interface.
+
+Two independent features use it:
+
+| Feature | What it does |
+| --- | --- |
+| **Clean up dictation** | Every dictated phrase is rewritten before it is inserted. Removes filler and fixes grammar, at the cost of a round trip per phrase. |
+| **Polish shortcut** (`⌥1`) | Rewrites whatever text is selected in the focused app, in place. |
+
+Both are driven by system prompts you can edit, with **Reset** to restore the
+defaults. Pick any OpenRouter model id; the field suggests a few fast ones.
+
+Polishing has to copy the selection to read it, since no API exposes another
+app's selection — so it needs **Accessibility**, and it only ever runs when you
+press the shortcut. Your clipboard is restored afterwards.
+
 The status bar shows live CPU and memory for Waveform and the speech engine
 combined, since the engine is the larger consumer of both.
 

@@ -48,6 +48,10 @@ const api: DesktopApi = {
   endOverlayDrag: () => ipcRenderer.send(IPC_CHANNELS.overlayDragEnd),
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>(IPC_CHANNELS.resourceUsage, listener),
+  getAiStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getAiStatus),
+  setOpenRouterKey: (key) => ipcRenderer.invoke(IPC_CHANNELS.setOpenRouterKey, key),
+  clearOpenRouterKey: () => ipcRenderer.invoke(IPC_CHANNELS.clearOpenRouterKey),
+  polishSelection: () => ipcRenderer.invoke(IPC_CHANNELS.polishSelection),
   getStats: () => ipcRenderer.invoke(IPC_CHANNELS.getStats),
   onStatsChanged: (listener) => subscribe<AppStats>(IPC_CHANNELS.statsChanged, listener),
   onDictationCommand: (listener) =>

@@ -25,6 +25,7 @@ const STATE_BRIGHTNESS: Record<DictationState, number> = {
   idle: 0.35,
   listening: 1,
   transcribing: 0.62,
+  rewriting: 0.78,
   error: 0.42,
 };
 
@@ -32,6 +33,7 @@ const STATE_LABEL: Record<DictationState, string> = {
   idle: "Idle",
   listening: "Listening",
   transcribing: "Transcribing",
+  rewriting: "Rewriting",
   error: "Error",
 };
 
@@ -72,6 +74,15 @@ window.waveform.onDictationCommand((command) => void handleCommand(command));
 async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "preview") {
     startPreview();
+    return;
+  }
+
+  if (command.action === "busy") {
+    cancelLinger();
+    previewing = false;
+    hud.dataset.mode = "hold";
+    setState("rewriting");
+    startAnimation();
     return;
   }
 

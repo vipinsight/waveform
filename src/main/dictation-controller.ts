@@ -13,6 +13,7 @@ import type { AppSettings } from "../shared/settings";
 import { HotkeyGestureMachine } from "./hotkey-gestures";
 import { HotkeyHelper, isHelperAvailable, type HelperEvent } from "./hotkey-helper";
 import { OverlayWindow } from "./overlay-window";
+import type { Rewriter } from "./rewriter";
 import type { SettingsStore } from "./settings-store";
 
 const PRIVACY_PANES: Record<PrivacyPane, string> = {
@@ -40,6 +41,8 @@ export class DictationController {
   private gestures: HotkeyGestureMachine;
   private session: Session | null = null;
   private escapeRegistered = false;
+  private polishShortcut: string | null = null;
+  private polishing = false;
   private status: HotkeyStatus;
 
   constructor(
@@ -47,6 +50,7 @@ export class DictationController {
     private readonly getMainWindowContents: () => WebContents | null,
     private readonly onSessionStarting: () => void,
     private readonly onPhraseRecorded: (text: string) => void = () => undefined,
+    private readonly rewriter: Rewriter | null = null,
   ) {
     this.helper = new HotkeyHelper((event) => this.handleHelperEvent(event));
     this.gestures = this.createGestureMachine();
@@ -76,10 +80,12 @@ export class DictationController {
     await this.helper.start();
     this.patchStatus({ running: this.helper.isRunning });
     this.applyBinding();
+    this.applyPolishShortcut();
   }
 
   dispose(): void {
     this.releaseEscape();
+    this.releasePolishShortcut();
     this.helper.stop();
     this.overlay.destroy();
   }
@@ -97,7 +103,72 @@ export class DictationController {
     this.gestures.reset();
     this.gestures = this.createGestureMachine();
     this.applyBinding();
+    this.applyPolishShortcut();
     this.patchStatus({ binding: settings.hotkeyId });
+  }
+
+  /**
+   * Rewrites whatever is selected in the focused app, in place.
+   *
+   * The selection has to be copied to be readable, so this is only ever driven
+   * by an explicit user gesture, never automatically.
+   */
+  async polishSelection(): Promise<void> {
+    if (!this.rewriter) return;
+    if (this.polishing) return;
+    if (this.session) {
+      this.reportError("Finish dictating before polishing.");
+      return;
+    }
+    if (!this.rewriter.isConfigured) {
+      this.reportError("Add an OpenRouter API key in Settings first.");
+      return;
+    }
+
+    this.polishing = true;
+    this.overlay.show(this.settings.value.overlayPlacement, {
+      x: this.settings.value.overlayX,
+      y: this.settings.value.overlayY,
+    });
+    this.sendToOverlay({ action: "busy", sink: "insert", mode: "hold" });
+
+    try {
+      const selection = await this.helper.requestSelection();
+      const polished = await this.rewriter.polish(selection);
+      if (polished !== selection) this.helper.paste(polished);
+      this.sendToOverlay({ action: "stop", sink: "insert", mode: "hold" });
+    } catch (error) {
+      this.sendToOverlay({ action: "cancel", sink: "insert", mode: "hold" });
+      this.reportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      this.polishing = false;
+    }
+  }
+
+  private applyPolishShortcut(): void {
+    const wanted = this.settings.value.polishShortcut;
+    if (wanted === this.polishShortcut) return;
+
+    this.releasePolishShortcut();
+    if (wanted === "none") return;
+
+    // Another app may already own the combination; failing to register is not
+    // an error worth interrupting the user over, but it must not look bound.
+    if (globalShortcut.register(wanted, () => void this.polishSelection())) {
+      this.polishShortcut = wanted;
+    }
+  }
+
+  private releasePolishShortcut(): void {
+    if (!this.polishShortcut) return;
+    globalShortcut.unregister(this.polishShortcut);
+    this.polishShortcut = null;
+  }
+
+  private reportError(message: string): void {
+    this.sendToMainWindow({
+      status: { state: "error", sink: "insert", mode: "hold", message },
+    });
   }
 
   /** Shows the HUD briefly with synthetic levels, so the user can locate it. */
@@ -260,24 +331,44 @@ export class DictationController {
   handleOverlayPhrase(phrase: DictationPhrase): void {
     const trimmed = phrase.text.trim();
     if (!trimmed) return;
+    void this.deliverPhrase(phrase, trimmed);
+  }
+
+  /**
+   * Sends a finished phrase onward, optionally cleaned up by the model first.
+   *
+   * A failed rewrite falls back to the raw transcript rather than dropping what
+   * the user just said.
+   */
+  private async deliverPhrase(phrase: DictationPhrase, trimmed: string): Promise<void> {
+    let text = trimmed;
+
+    if (this.rewriter && phrase.sink === "insert") {
+      try {
+        const cleaned = await this.rewriter.cleanUpDictation(trimmed);
+        if (cleaned) text = cleaned;
+      } catch (error) {
+        this.reportError(error instanceof Error ? error.message : String(error));
+      }
+    }
 
     if (phrase.sink === "insert" && this.settings.value.insertIntoFocusedApp) {
-      this.helper.paste(`${trimmed} `);
+      this.helper.paste(`${text} `);
     }
-    this.onPhraseRecorded(trimmed);
+    this.onPhraseRecorded(text);
 
     this.sendToMainWindow({
       status: {
-        state: "listening",
+        state: this.session ? "listening" : "idle",
         sink: phrase.sink,
         mode: this.session?.mode ?? "hold",
       },
-      phrase: { text: trimmed, sink: phrase.sink },
+      phrase: { text, sink: phrase.sink },
     });
   }
 
   private sendToOverlay(command: {
-    action: "start" | "stop" | "cancel" | "preview";
+    action: "start" | "stop" | "cancel" | "preview" | "busy";
     sink: DictationSink;
     mode: DictationMode;
   }): void {

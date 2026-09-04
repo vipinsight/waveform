@@ -6,11 +6,12 @@
 // is frontmost.
 //
 // Commands (stdin)   {"type":"watch","keyCode":63} | {"type":"unwatch"}
-//                    {"type":"paste","text":"…"} | {"type":"permissions"}
+//                    {"type":"paste","text":"…"} | {"type":"read-selection"}
+//                    {"type":"permissions"}
 //                    {"type":"request","scope":"accessibility"|"input-monitoring"}
 // Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up","keyCode":63}
 //                    {"type":"tap","active":true} | {"type":"permissions",…}
-//                    {"type":"paste","ok":true}
+//                    {"type":"paste","ok":true} | {"type":"selection","ok":…}
 
 import AppKit
 import CoreGraphics
@@ -34,6 +35,8 @@ private let deviceFlagForKeyCode: [Int64: UInt64] = [
 ]
 
 private let virtualKeyV: CGKeyCode = 0x09
+private let virtualKeyC: CGKeyCode = 0x08
+private let selectionCopyDelay = 0.16
 private let pasteboardRestoreDelay = 0.25
 
 private let outputLock = NSLock()
@@ -78,22 +81,11 @@ private func pasteIntoFrontmostApp(_ text: String) {
   pasteboard.clearContents()
   pasteboard.setString(text, forType: .string)
 
-  let source = CGEventSource(stateID: .combinedSessionState)
-  // Keep local input flowing during the post. Suppressing it would swallow the
+  // Local input keeps flowing during the post. Suppressing it would swallow the
   // release of the very key the user is holding, stranding the gesture machine
-  // mid-press. Overriding `flags` below is what actually keeps the held modifier
-  // from leaking into the synthetic keystroke.
-  source?.setLocalEventsFilterDuringSuppressionState(
-    [.permitLocalMouseEvents, .permitLocalKeyboardEvents],
-    state: .eventSuppressionStateSuppressionInterval
-  )
-
-  let down = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: true)
-  let up = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: false)
-  down?.flags = .maskCommand
-  up?.flags = .maskCommand
-  down?.post(tap: .cgAnnotatedSessionEventTap)
-  up?.post(tap: .cgAnnotatedSessionEventTap)
+  // mid-press. Overriding `flags` in postCommandKey is what actually keeps a
+  // held modifier from leaking into the synthetic keystroke.
+  postCommandKey(virtualKeyV)
 
   emit(["type": "paste", "ok": true])
 
@@ -101,6 +93,58 @@ private func pasteIntoFrontmostApp(_ text: String) {
     pasteboard.clearContents()
     if let restored { pasteboard.setString(restored, forType: .string) }
   }
+}
+
+/// Posts a synthetic ⌘C and returns whatever the focused app put on the
+/// pasteboard, restoring the previous contents afterwards.
+///
+/// There is no supported way to read another app's selection directly, so the
+/// selection has to be copied. The pasteboard's change count tells us whether
+/// the app actually responded, which distinguishes "nothing was selected" from
+/// "the user's existing clipboard".
+private func readSelection() {
+  guard hasAccessibility(prompt: false) else {
+    emit(["type": "selection", "ok": false, "reason": "accessibility"])
+    return
+  }
+
+  let pasteboard = NSPasteboard.general
+  let restored = pasteboard.string(forType: .string)
+  let changeCountBefore = pasteboard.changeCount
+
+  postCommandKey(virtualKeyC)
+
+  DispatchQueue.main.asyncAfter(deadline: .now() + selectionCopyDelay) {
+    let changed = pasteboard.changeCount != changeCountBefore
+    let copied = changed ? pasteboard.string(forType: .string) : nil
+
+    if let copied, !copied.isEmpty {
+      emit(["type": "selection", "ok": true, "text": copied])
+    } else {
+      emit(["type": "selection", "ok": false, "reason": "empty"])
+    }
+
+    // Put the user's clipboard back; the copy was only a means of reading.
+    if changed {
+      pasteboard.clearContents()
+      if let restored { pasteboard.setString(restored, forType: .string) }
+    }
+  }
+}
+
+private func postCommandKey(_ key: CGKeyCode) {
+  let source = CGEventSource(stateID: .combinedSessionState)
+  source?.setLocalEventsFilterDuringSuppressionState(
+    [.permitLocalMouseEvents, .permitLocalKeyboardEvents],
+    state: .eventSuppressionStateSuppressionInterval
+  )
+
+  let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+  let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+  down?.flags = .maskCommand
+  up?.flags = .maskCommand
+  down?.post(tap: .cgAnnotatedSessionEventTap)
+  up?.post(tap: .cgAnnotatedSessionEventTap)
 }
 
 // MARK: - Modifier watch
@@ -212,6 +256,8 @@ private func handle(command line: String) {
     watcher.unwatch()
   case "paste":
     if let text = payload["text"] as? String, !text.isEmpty { pasteIntoFrontmostApp(text) }
+  case "read-selection":
+    readSelection()
   case "permissions":
     emitPermissions()
   case "request":

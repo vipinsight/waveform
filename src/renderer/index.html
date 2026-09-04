@@ -139,6 +139,7 @@
         <h2>Settings</h2>
         <button class="nav-item" type="button" data-page="general" aria-current="page"><span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut"><span>Shortcut</span></button>
+        <button class="nav-item" type="button" data-page="ai"><span>AI rewrite</span></button>
         <button class="nav-item" type="button" data-page="permissions"><span>Permissions</span></button>
         <div class="sidebar-spacer"></div>
         <div class="modal-foot" id="version-line">Waveform</div>
@@ -199,6 +200,78 @@
           <p class="note" id="fn-note" hidden>
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
+          </p>
+        </section>
+
+        <section class="settings-page" data-page="ai" hidden>
+          <h1 class="display">AI rewrite</h1>
+          <div class="card">
+            <div class="row">
+              <span class="row-label">
+                OpenRouter API key
+                <small id="key-state">Stored in your login keychain, never in plain text.</small>
+              </span>
+              <span class="row-actions">
+                <input
+                  id="key-input"
+                  type="password"
+                  class="text-input"
+                  placeholder="sk-or-v1-…"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button id="key-save" class="pill-button is-primary" type="button">Save</button>
+                <button id="key-clear" class="pill-button" type="button" hidden>Remove</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-label">Model<small>Any OpenRouter model id.</small></span>
+              <span class="row-actions">
+                <input
+                  id="ai-model"
+                  class="text-input is-wide"
+                  list="model-suggestions"
+                  spellcheck="false"
+                />
+                <datalist id="model-suggestions"></datalist>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-label">
+                Clean up dictation
+                <small>Rewrite every dictated phrase before inserting it. Adds a
+                  round trip, so insertion is slower.</small>
+              </span>
+              <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
+            </div>
+            <div class="row">
+              <span class="row-label">Polish shortcut<small>Rewrites the selected text in place.</small></span>
+              <span class="row-actions">
+                <select id="polish-shortcut" aria-label="Polish shortcut"></select>
+                <button id="polish-now" class="pill-button" type="button">Run</button>
+              </span>
+            </div>
+          </div>
+
+          <div class="prompt-block">
+            <div class="prompt-head">
+              <span class="row-label">Dictation prompt</span>
+              <button class="pill-button" type="button" data-reset="transform">Reset</button>
+            </div>
+            <textarea id="transform-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
+          </div>
+
+          <div class="prompt-block">
+            <div class="prompt-head">
+              <span class="row-label">Polish prompt</span>
+              <button class="pill-button" type="button" data-reset="polish">Reset</button>
+            </div>
+            <textarea id="polish-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
+          </div>
+
+          <p class="note">
+            Text you dictate or select is sent to OpenRouter when these features run.
+            Transcription itself always stays on this Mac.
           </p>
         </section>
 

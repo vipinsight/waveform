@@ -33,6 +33,13 @@ export const IPC_CHANNELS = {
   overlayDragMove: "overlay:drag-move",
   overlayDragEnd: "overlay:drag-end",
 
+  /** OpenRouter key state. The key is write-only from the renderer's side. */
+  getAiStatus: "ai:status",
+  setOpenRouterKey: "ai:set-key",
+  clearOpenRouterKey: "ai:clear-key",
+  /** Polish whatever is selected in the focused app. */
+  polishSelection: "ai:polish-selection",
+
   /** Lifetime dictation counters for the Activity view. */
   getStats: "stats:get",
   statsChanged: "stats:changed",

@@ -44,12 +44,14 @@ export type DictationState =
   | "idle"
   | "listening"
   | "transcribing"
+  /** Waiting on an OpenRouter rewrite. */
+  | "rewriting"
   | "error";
 
 export interface DictationCommand {
   /** "preview" shows the HUD with synthetic levels, so it can be checked
       without a microphone, a loaded model, or granted permissions. */
-  action: "start" | "stop" | "cancel" | "preview";
+  action: "start" | "stop" | "cancel" | "preview" | "busy";
   sink: DictationSink;
   mode: DictationMode;
 }
@@ -78,6 +80,13 @@ export interface ResourceUsage {
   memoryMb: number;
   /** Resident memory of the speech engine alone, or null when it is not running. */
   engineMemoryMb: number | null;
+}
+
+export interface AiStatus {
+  /** Whether an API key is saved. The key itself never reaches a renderer. */
+  hasApiKey: boolean;
+  /** True when the key could not be encrypted and lives only in memory. */
+  memoryOnly: boolean;
 }
 
 export interface AppStats {
@@ -122,6 +131,10 @@ export interface DesktopApi {
   moveOverlay(deltaX: number, deltaY: number): void;
   endOverlayDrag(): void;
   onResourceUsage(listener: (usage: ResourceUsage) => void): () => void;
+  getAiStatus(): Promise<AiStatus>;
+  setOpenRouterKey(key: string): Promise<AiStatus>;
+  clearOpenRouterKey(): Promise<AiStatus>;
+  polishSelection(): Promise<void>;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;

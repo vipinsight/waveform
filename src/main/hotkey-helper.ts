@@ -16,7 +16,8 @@ export type HelperEvent =
   | { type: "key"; phase: "down" | "up"; keyCode: number }
   | { type: "tap"; active: boolean; reason?: string }
   | ({ type: "permissions" } & HelperPermissions)
-  | { type: "paste"; ok: boolean; reason?: string };
+  | { type: "paste"; ok: boolean; reason?: string }
+  | { type: "selection"; ok: boolean; text?: string; reason?: string };
 
 export const HELPER_BINARY_PATH = join(__dirname, "waveform-hotkey");
 
@@ -74,6 +75,14 @@ export function parseHelperEvent(line: string): HelperEvent | null {
         ok: message.ok,
         ...(typeof message.reason === "string" ? { reason: message.reason } : {}),
       };
+    case "selection":
+      if (typeof message.ok !== "boolean") return null;
+      return {
+        type: "selection",
+        ok: message.ok,
+        ...(typeof message.text === "string" ? { text: message.text } : {}),
+        ...(typeof message.reason === "string" ? { reason: message.reason } : {}),
+      };
     default:
       return null;
   }
@@ -83,11 +92,18 @@ export function parseHelperEvent(line: string): HelperEvent | null {
  * Owns the native helper process: keeps it alive, restarts it if it dies, and
  * exposes a typed command surface.
  */
+const SELECTION_TIMEOUT_MS = 3_000;
+
 export class HotkeyHelper {
   private child: ChildProcessWithoutNullStreams | null = null;
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private watchedKeyCode: number | null = null;
+  private pendingSelection: {
+    resolve: (text: string) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null = null;
 
   constructor(
     private readonly onEvent: (event: HelperEvent) => void,
@@ -109,7 +125,9 @@ export class HotkeyHelper {
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
       const event = parseHelperEvent(line.trim());
-      if (event) this.onEvent(event);
+      if (!event) return;
+      if (event.type === "selection") this.settleSelection(event);
+      this.onEvent(event);
     });
 
     child.once("exit", () => {
@@ -133,6 +151,7 @@ export class HotkeyHelper {
     const child = this.child;
     this.child = null;
     if (child && !child.killed) child.kill("SIGTERM");
+    this.settleSelection({ type: "selection", ok: false, reason: "stopped" });
   }
 
   watch(keyCode: number): void {
@@ -147,6 +166,42 @@ export class HotkeyHelper {
 
   paste(text: string): void {
     this.send({ type: "paste", text });
+  }
+
+  /**
+   * Asks the helper to copy and return the focused app's selection.
+   *
+   * Only one request can be outstanding: the helper drives the system
+   * pasteboard, so overlapping reads would race over the same resource.
+   */
+  requestSelection(): Promise<string> {
+    if (!this.child) return Promise.reject(new Error("Hotkey helper is not running."));
+    if (this.pendingSelection) {
+      return Promise.reject(new Error("Already reading the selection."));
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingSelection = null;
+        reject(new Error("Timed out reading the selection."));
+      }, SELECTION_TIMEOUT_MS);
+      this.pendingSelection = { resolve, reject, timeout };
+      this.send({ type: "read-selection" });
+    });
+  }
+
+  /** Resolves or rejects an outstanding selection request. */
+  private settleSelection(event: Extract<HelperEvent, { type: "selection" }>): void {
+    const pending = this.pendingSelection;
+    if (!pending) return;
+    this.pendingSelection = null;
+    clearTimeout(pending.timeout);
+
+    if (event.ok && event.text) {
+      pending.resolve(event.text);
+      return;
+    }
+    pending.reject(new Error(describeSelectionFailure(event.reason)));
   }
 
   refreshPermissions(): void {
@@ -171,4 +226,13 @@ export class HotkeyHelper {
       void this.start();
     }, 1_500);
   }
+}
+
+function describeSelectionFailure(reason: string | undefined): string {
+  if (reason === "accessibility") {
+    return "Accessibility permission is needed to read the selection.";
+  }
+  if (reason === "empty") return "Select some text first.";
+  if (reason === "stopped") return "Hotkey helper stopped.";
+  return "Could not read the selection.";
 }
