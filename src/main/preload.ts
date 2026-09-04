@@ -1,19 +1,57 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { DesktopApi, ModelEvent } from "../shared/contracts";
+import type {
+  DesktopApi,
+  DictationCommand,
+  DictationUpdate,
+  HotkeyStatus,
+  ModelEvent,
+  ResourceUsage,
+} from "../shared/contracts";
+import type { AppSettings } from "../shared/settings";
 import { IPC_CHANNELS } from "../shared/ipc";
+
+/** Wraps ipcRenderer.on in a typed subscribe/unsubscribe pair. */
+function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
+  const handler = (_event: Electron.IpcRendererEvent, payload: T): void => {
+    listener(payload);
+  };
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
 
 const api: DesktopApi = {
   startModel: () => ipcRenderer.invoke(IPC_CHANNELS.startModel),
   selectModel: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.selectModel, modelId),
   requestMicrophoneAccess: () => ipcRenderer.invoke(IPC_CHANNELS.requestMicrophone),
   transcribe: (wavBytes) => ipcRenderer.invoke(IPC_CHANNELS.transcribeAudio, wavBytes),
-  onModelEvent: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, modelEvent: ModelEvent): void => {
-      listener(modelEvent);
-    };
-    ipcRenderer.on(IPC_CHANNELS.modelEvent, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.modelEvent, handler);
-  },
+  onModelEvent: (listener) => subscribe<ModelEvent>(IPC_CHANNELS.modelEvent, listener),
+
+  getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.getSettings),
+  updateSettings: (patch) => ipcRenderer.invoke(IPC_CHANNELS.updateSettings, patch),
+  onSettingsChanged: (listener) =>
+    subscribe<AppSettings>(IPC_CHANNELS.settingsChanged, listener),
+
+  getHotkeyStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getHotkeyStatus),
+  onHotkeyStatusChanged: (listener) =>
+    subscribe<HotkeyStatus>(IPC_CHANNELS.hotkeyStatusChanged, listener),
+  requestHotkeyPermission: (scope) =>
+    ipcRenderer.invoke(IPC_CHANNELS.requestHotkeyPermission, scope),
+  openPrivacySettings: (pane) => ipcRenderer.invoke(IPC_CHANNELS.openPrivacySettings, pane),
+
+  toggleDictation: () => ipcRenderer.invoke(IPC_CHANNELS.toggleDictation),
+  previewIndicator: () => ipcRenderer.invoke(IPC_CHANNELS.previewIndicator),
+  beginOverlayDrag: () => ipcRenderer.send(IPC_CHANNELS.overlayDragBegin),
+  moveOverlay: (deltaX, deltaY) =>
+    ipcRenderer.send(IPC_CHANNELS.overlayDragMove, { deltaX, deltaY }),
+  endOverlayDrag: () => ipcRenderer.send(IPC_CHANNELS.overlayDragEnd),
+  onResourceUsage: (listener) =>
+    subscribe<ResourceUsage>(IPC_CHANNELS.resourceUsage, listener),
+  onDictationCommand: (listener) =>
+    subscribe<DictationCommand>(IPC_CHANNELS.dictationCommand, listener),
+  onDictationUpdate: (listener) =>
+    subscribe<DictationUpdate>(IPC_CHANNELS.dictationUpdate, listener),
+  reportDictationState: (status) => ipcRenderer.send(IPC_CHANNELS.dictationState, status),
+  reportDictationPhrase: (phrase) => ipcRenderer.send(IPC_CHANNELS.dictationPhrase, phrase),
 };
 
 contextBridge.exposeInMainWorld("waveform", api);

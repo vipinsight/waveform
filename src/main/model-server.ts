@@ -38,6 +38,11 @@ export class ModelServer {
 
   constructor(private readonly emit: EventListener) {}
 
+  /** Process id of the running speech engine, for resource reporting. */
+  get pid(): number | null {
+    return this.child?.pid ?? null;
+  }
+
   get port(): number {
     const configured = Number.parseInt(
       process.env.WAVEFORM_PORT ?? process.env.PARAKEET_FLOW_PORT ?? "",

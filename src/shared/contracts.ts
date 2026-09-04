@@ -1,4 +1,6 @@
+import type { HotkeyBindingId } from "./hotkeys";
 import type { SpeechModelId } from "./models";
+import type { AppSettings } from "./settings";
 
 export type ModelStage =
   | "idle"
@@ -32,10 +34,89 @@ export interface MicrophonePermissionResult {
   status: MicrophonePermissionStatus;
 }
 
+/** Where a dictation session's text should end up. */
+export type DictationSink = "insert" | "transcript";
+
+/** How the session was started, which decides how it can end. */
+export type DictationMode = "hold" | "latched";
+
+export type DictationState =
+  | "idle"
+  | "listening"
+  | "transcribing"
+  | "error";
+
+export interface DictationCommand {
+  /** "preview" shows the HUD with synthetic levels, so it can be checked
+      without a microphone, a loaded model, or granted permissions. */
+  action: "start" | "stop" | "cancel" | "preview";
+  sink: DictationSink;
+  mode: DictationMode;
+}
+
+export interface DictationStatus {
+  state: DictationState;
+  sink: DictationSink;
+  mode: DictationMode;
+  message?: string;
+}
+
+export interface DictationPhrase {
+  text: string;
+  sink: DictationSink;
+}
+
+export interface DictationUpdate {
+  status: DictationStatus;
+  phrase?: DictationPhrase;
+}
+
+export interface ResourceUsage {
+  /** Percent of one CPU core, summed across Electron and the speech engine. */
+  cpuPercent: number;
+  /** Resident memory in megabytes, summed the same way. */
+  memoryMb: number;
+  /** Resident memory of the speech engine alone, or null when it is not running. */
+  engineMemoryMb: number | null;
+}
+
+export interface HotkeyStatus {
+  /** False when the native helper is missing, e.g. a non-macOS build. */
+  supported: boolean;
+  running: boolean;
+  /** The event tap was created. Not proof that events are actually flowing. */
+  tapActive: boolean;
+  accessibility: boolean;
+  inputMonitoring: boolean;
+  binding: HotkeyBindingId;
+}
+
+export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone";
+
 export interface DesktopApi {
   startModel(): Promise<void>;
   selectModel(modelId: SpeechModelId): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;
+
+  getSettings(): Promise<AppSettings>;
+  updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  onSettingsChanged(listener: (settings: AppSettings) => void): () => void;
+
+  getHotkeyStatus(): Promise<HotkeyStatus>;
+  onHotkeyStatusChanged(listener: (status: HotkeyStatus) => void): () => void;
+  requestHotkeyPermission(scope: "accessibility" | "input-monitoring"): Promise<void>;
+  openPrivacySettings(pane: PrivacyPane): Promise<void>;
+
+  toggleDictation(): Promise<void>;
+  previewIndicator(): Promise<void>;
+  beginOverlayDrag(): void;
+  moveOverlay(deltaX: number, deltaY: number): void;
+  endOverlayDrag(): void;
+  onResourceUsage(listener: (usage: ResourceUsage) => void): () => void;
+  onDictationCommand(listener: (command: DictationCommand) => void): () => void;
+  onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
+  reportDictationState(status: DictationStatus): void;
+  reportDictationPhrase(phrase: DictationPhrase): void;
 }

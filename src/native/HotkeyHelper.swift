@@ -1,0 +1,237 @@
+// Waveform hotkey helper.
+//
+// Speaks newline-delimited JSON over stdin/stdout so the Electron main process can
+// observe modifier keys that Electron's accelerators cannot express (Fn, and the
+// left/right halves of ⌘ ⌥ ⌃ ⇧), and can paste transcribed text into whichever app
+// is frontmost.
+//
+// Commands (stdin)   {"type":"watch","keyCode":63} | {"type":"unwatch"}
+//                    {"type":"paste","text":"…"} | {"type":"permissions"}
+//                    {"type":"request","scope":"accessibility"|"input-monitoring"}
+// Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up","keyCode":63}
+//                    {"type":"tap","active":true} | {"type":"permissions",…}
+//                    {"type":"paste","ok":true}
+
+import AppKit
+import CoreGraphics
+import Foundation
+import IOKit.hid
+
+// Device-dependent modifier bits from IOKit/hidsystem/IOLLEvent.h. The public
+// CGEventFlags only say "a shift is down", never which shift, so a left/right
+// binding has to read these.
+private let deviceFlagForKeyCode: [Int64: UInt64] = [
+  63: 0x0080_0000, // Fn / globe (kCGEventFlagMaskSecondaryFn)
+  57: 0x0001_0000, // Caps Lock (kCGEventFlagMaskAlphaShift)
+  54: 0x0000_0010, // Right Command
+  55: 0x0000_0008, // Left Command
+  58: 0x0000_0020, // Left Option
+  61: 0x0000_0040, // Right Option
+  59: 0x0000_0001, // Left Control
+  62: 0x0000_2000, // Right Control
+  56: 0x0000_0002, // Left Shift
+  60: 0x0000_0004, // Right Shift
+]
+
+private let virtualKeyV: CGKeyCode = 0x09
+private let pasteboardRestoreDelay = 0.25
+
+private let outputLock = NSLock()
+
+private func emit(_ payload: [String: Any]) {
+  guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+  outputLock.lock()
+  defer { outputLock.unlock() }
+  FileHandle.standardOutput.write(data)
+  FileHandle.standardOutput.write(Data([0x0A]))
+}
+
+// MARK: - Permissions
+
+private func hasAccessibility(prompt: Bool) -> Bool {
+  let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+  return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)
+}
+
+private func hasInputMonitoring() -> Bool {
+  IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+}
+
+private func emitPermissions() {
+  emit([
+    "type": "permissions",
+    "accessibility": hasAccessibility(prompt: false),
+    "inputMonitoring": hasInputMonitoring(),
+  ])
+}
+
+// MARK: - Pasting
+
+private func pasteIntoFrontmostApp(_ text: String) {
+  guard hasAccessibility(prompt: false) else {
+    emit(["type": "paste", "ok": false, "reason": "accessibility"])
+    return
+  }
+
+  let pasteboard = NSPasteboard.general
+  let restored = pasteboard.string(forType: .string)
+  pasteboard.clearContents()
+  pasteboard.setString(text, forType: .string)
+
+  let source = CGEventSource(stateID: .combinedSessionState)
+  // Keep local input flowing during the post. Suppressing it would swallow the
+  // release of the very key the user is holding, stranding the gesture machine
+  // mid-press. Overriding `flags` below is what actually keeps the held modifier
+  // from leaking into the synthetic keystroke.
+  source?.setLocalEventsFilterDuringSuppressionState(
+    [.permitLocalMouseEvents, .permitLocalKeyboardEvents],
+    state: .eventSuppressionStateSuppressionInterval
+  )
+
+  let down = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: true)
+  let up = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: false)
+  down?.flags = .maskCommand
+  up?.flags = .maskCommand
+  down?.post(tap: .cgAnnotatedSessionEventTap)
+  up?.post(tap: .cgAnnotatedSessionEventTap)
+
+  emit(["type": "paste", "ok": true])
+
+  DispatchQueue.main.asyncAfter(deadline: .now() + pasteboardRestoreDelay) {
+    pasteboard.clearContents()
+    if let restored { pasteboard.setString(restored, forType: .string) }
+  }
+}
+
+// MARK: - Modifier watch
+
+private final class ModifierWatcher {
+  private var tap: CFMachPort?
+  private var runLoopSource: CFRunLoopSource?
+  private var retryTimer: Timer?
+  private(set) var watchedKeyCode: Int64?
+  private var isDown = false
+
+  func watch(keyCode: Int64) {
+    watchedKeyCode = keyCode
+    isDown = false
+    if tap == nil { install() }
+  }
+
+  func unwatch() {
+    watchedKeyCode = nil
+    isDown = false
+  }
+
+  /// Re-broadcasts a flagsChanged event as an unambiguous down/up for the bound key.
+  func handle(event: CGEvent) {
+    guard let watched = watchedKeyCode,
+          let mask = deviceFlagForKeyCode[watched],
+          event.getIntegerValueField(.keyboardEventKeycode) == watched
+    else { return }
+
+    let down = (event.flags.rawValue & mask) != 0
+    guard down != isDown else { return }
+    isDown = down
+    emit(["type": "key", "phase": down ? "down" : "up", "keyCode": watched])
+  }
+
+  func reenable() {
+    guard let tap else { return }
+    CGEvent.tapEnable(tap: tap, enable: true)
+  }
+
+  private func install() {
+    let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+    let callback: CGEventTapCallBack = { _, type, event, _ in
+      switch type {
+      case .flagsChanged:
+        watcher.handle(event: event)
+      case .tapDisabledByTimeout, .tapDisabledByUserInput:
+        watcher.reenable()
+      default:
+        break
+      }
+      return Unmanaged.passUnretained(event)
+    }
+
+    // The HID tap sees Fn before the window server claims it for globe-key actions;
+    // the session tap is the fallback for locked-down configurations.
+    let created = [CGEventTapLocation.cghidEventTap, .cgSessionEventTap].lazy.compactMap {
+      CGEvent.tapCreate(
+        tap: $0,
+        place: .headInsertEventTap,
+        options: .listenOnly,
+        eventsOfInterest: mask,
+        callback: callback,
+        userInfo: nil
+      )
+    }.first
+
+    guard let created else {
+      emit(["type": "tap", "active": false, "reason": "permission"])
+      scheduleRetry()
+      return
+    }
+
+    let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0)
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    CGEvent.tapEnable(tap: created, enable: true)
+    tap = created
+    runLoopSource = source
+    retryTimer?.invalidate()
+    retryTimer = nil
+    emit(["type": "tap", "active": true])
+  }
+
+  private func scheduleRetry() {
+    guard retryTimer == nil else { return }
+    retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+      guard let self, self.watchedKeyCode != nil, self.tap == nil else { return }
+      self.install()
+    }
+  }
+}
+
+private let watcher = ModifierWatcher()
+
+// MARK: - Command loop
+
+private func handle(command line: String) {
+  guard let data = line.data(using: .utf8),
+        let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let type = payload["type"] as? String
+  else { return }
+
+  switch type {
+  case "watch":
+    if let keyCode = payload["keyCode"] as? Int64 ?? (payload["keyCode"] as? Int).map(Int64.init) {
+      watcher.watch(keyCode: keyCode)
+    }
+  case "unwatch":
+    watcher.unwatch()
+  case "paste":
+    if let text = payload["text"] as? String, !text.isEmpty { pasteIntoFrontmostApp(text) }
+  case "permissions":
+    emitPermissions()
+  case "request":
+    let scope = payload["scope"] as? String
+    if scope == "accessibility" { _ = hasAccessibility(prompt: true) }
+    if scope == "input-monitoring" { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
+    emitPermissions()
+  default:
+    break
+  }
+}
+
+DispatchQueue.global(qos: .userInitiated).async {
+  while let line = readLine(strippingNewline: true) {
+    DispatchQueue.main.async { handle(command: line) }
+  }
+  // Parent closed the pipe; nothing left to serve.
+  exit(0)
+}
+
+emit(["type": "ready"])
+emitPermissions()
+CFRunLoopRun()

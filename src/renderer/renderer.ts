@@ -1,301 +1,350 @@
-import { SpeechSegmenter } from "./audio/segmenter";
-import { encodeMonoPcm16Wav } from "./audio/wav";
 import type {
-  MicrophonePermissionStatus,
+  DictationUpdate,
+  HotkeyStatus,
   ModelEvent,
   UiStage,
 } from "../shared/contracts";
 import {
-  DEFAULT_SPEECH_MODEL_ID,
-  SPEECH_MODELS,
-  getSpeechModel,
-  isSpeechModelId,
-  type SpeechModelId,
-} from "../shared/models";
+  HOTKEY_BINDINGS,
+  getHotkeyBinding,
+  isHotkeyBindingId,
+} from "../shared/hotkeys";
+import { SPEECH_MODELS, getSpeechModel, isSpeechModelId } from "../shared/models";
+import { DEFAULT_SETTINGS, type AppSettings } from "../shared/settings";
 
-const MODEL_STORAGE_KEY = "waveform:selected-model";
-const LEGACY_MODEL_STORAGE_KEY = "local-speech:selected-model";
-const actionButton = requireElement<HTMLButtonElement>("action-button");
-const actionLabel = requireElement<HTMLSpanElement>("action-label");
-const status = requireElement<HTMLElement>("status");
-const statusText = requireElement<HTMLSpanElement>("status-text");
-const transcript = requireElement<HTMLElement>("transcript");
-const emptyState = requireElement<HTMLElement>("empty-state");
-const clearButton = requireElement<HTMLButtonElement>("clear-button");
-const modelSelect = requireElement<HTMLSelectElement>("model-select");
-const footerModel = requireElement<HTMLSpanElement>("footer-model");
-const meterBars = Array.from(document.querySelectorAll<HTMLElement>(".meter-bar"));
+const element = {
+  status: requireElement<HTMLElement>("status"),
+  statusText: requireElement<HTMLElement>("status-text"),
+  transcript: requireElement<HTMLElement>("transcript"),
+  emptyState: requireElement<HTMLElement>("empty-state"),
+  actionButton: requireElement<HTMLButtonElement>("action-button"),
+  actionLabel: requireElement<HTMLElement>("action-label"),
+  copyButton: requireElement<HTMLButtonElement>("copy-button"),
+  clearButton: requireElement<HTMLButtonElement>("clear-button"),
+  settingsButton: requireElement<HTMLButtonElement>("settings-button"),
+  settingsClose: requireElement<HTMLButtonElement>("settings-close"),
+  previewButton: requireElement<HTMLButtonElement>("preview-button"),
+  resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
+  footerResources: requireElement<HTMLElement>("footer-resources"),
+  settingsPanel: requireElement<HTMLElement>("settings-panel"),
+  scrim: requireElement<HTMLElement>("scrim"),
+  modelSelect: requireElement<HTMLSelectElement>("model-select"),
+  hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
+  insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
+  themeToggle: requireElement<HTMLElement>("theme-toggle"),
+  footerModel: requireElement<HTMLElement>("footer-model"),
+  footerHotkey: requireElement<HTMLElement>("footer-hotkey"),
+  hintKey: requireElement<HTMLElement>("hint-key"),
+  gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
+  gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
+  fnNote: requireElement<HTMLElement>("fn-note"),
+  accessibilityRow: requireElement<HTMLElement>("permission-accessibility"),
+  inputMonitoringRow: requireElement<HTMLElement>("permission-input-monitoring"),
+  meterBars: Array.from(document.querySelectorAll<HTMLElement>(".meter-bar")),
+};
 
-let selectedModelId = readSelectedModel();
+let settings: AppSettings = DEFAULT_SETTINGS;
+let hotkeyStatus: HotkeyStatus | null = null;
 let modelReady = false;
 let modelLoading = true;
-let actionInProgress = false;
 let listening = false;
-let mediaStream: MediaStream | null = null;
-let audioContext: AudioContext | null = null;
-let sourceNode: MediaStreamAudioSourceNode | null = null;
-let processorNode: ScriptProcessorNode | null = null;
-let segmenter: SpeechSegmenter | null = null;
-let queuedTranscriptions = 0;
+let settingsOpen = false;
+let phraseCount = 0;
 
-populateModelSelect();
-renderSelectedModel();
+void bootstrap();
 
-window.waveform.onModelEvent((event) => {
-  if (event.modelId !== selectedModelId) return;
-  updateModelState(event);
-  setStatus(event.message, event.stage);
-});
+async function bootstrap(): Promise<void> {
+  populateSelects();
+  wireEvents();
 
-modelSelect.addEventListener("change", () => {
-  if (!isSpeechModelId(modelSelect.value)) return;
-  void activateModel(modelSelect.value);
-});
+  settings = await window.waveform.getSettings();
+  applySettings(settings);
 
-actionButton.addEventListener("click", () => {
-  if (actionInProgress || modelLoading) return;
-  if (listening) {
-    stopListening();
-  } else {
-    void startListening();
-  }
-});
-
-clearButton.addEventListener("click", () => {
-  transcript.replaceChildren();
-  emptyState.hidden = false;
-  transcript.append(emptyState);
-});
-
-void activateModel(selectedModelId);
-
-async function activateModel(modelId: SpeechModelId): Promise<void> {
-  selectedModelId = modelId;
-  localStorage.setItem(MODEL_STORAGE_KEY, modelId);
-  modelReady = false;
-  modelLoading = true;
-  renderSelectedModel();
-  renderActionState();
-  setStatus(`Loading ${getSpeechModel(modelId).shortLabel}…`, "loading");
-
-  try {
-    await window.waveform.selectModel(modelId);
-  } catch (error) {
-    if (modelId !== selectedModelId) return;
-    modelReady = false;
-    modelLoading = false;
-    setStatus(errorMessage(error), "error");
-    renderActionState();
-  }
+  hotkeyStatus = await window.waveform.getHotkeyStatus();
+  renderHotkeyStatus();
 }
 
-async function startListening(): Promise<void> {
-  actionInProgress = true;
-  renderActionState();
+function wireEvents(): void {
+  window.waveform.onModelEvent(handleModelEvent);
+  window.waveform.onSettingsChanged((next) => applySettings(next));
+  window.waveform.onHotkeyStatusChanged((next) => {
+    hotkeyStatus = next;
+    renderHotkeyStatus();
+  });
+  window.waveform.onDictationUpdate(handleDictationUpdate);
+  window.waveform.onResourceUsage(renderResourceUsage);
 
-  try {
-    if (!modelReady) {
-      setStatus(`Loading ${getSpeechModel(selectedModelId).shortLabel}…`, "loading");
-      await window.waveform.startModel();
-      modelReady = true;
-    }
+  element.actionButton.addEventListener("click", () => {
+    if (element.actionButton.disabled) return;
+    void window.waveform.toggleDictation();
+  });
 
-    const microphonePermission = await window.waveform.requestMicrophoneAccess();
-    if (!microphonePermission.granted) {
-      throw new Error(microphonePermissionMessage(microphonePermission.status));
-    }
+  element.clearButton.addEventListener("click", clearTranscript);
+  element.copyButton.addEventListener("click", copyTranscript);
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        autoGainControl: true,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
+  element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
+  element.scrim.addEventListener("click", () => toggleSettings(false));
+  element.settingsClose.addEventListener("click", () => toggleSettings(false));
+  element.previewButton.addEventListener("click", () => {
+    void window.waveform.previewIndicator();
+  });
+  element.resetPositionButton.addEventListener("click", () => {
+    void patchSettings({ overlayX: null, overlayY: null });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && settingsOpen) toggleSettings(false);
+  });
+
+  element.modelSelect.addEventListener("change", () => {
+    if (!isSpeechModelId(element.modelSelect.value)) return;
+    void window.waveform.selectModel(element.modelSelect.value);
+  });
+
+  element.hotkeySelect.addEventListener("change", () => {
+    const value = element.hotkeySelect.value;
+    if (!isHotkeyBindingId(value)) return;
+    void patchSettings({ hotkeyId: value });
+  });
+
+  element.insertToggle.addEventListener("change", () => {
+    void patchSettings({ insertIntoFocusedApp: element.insertToggle.checked });
+  });
+
+  element.themeToggle.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]");
+    const theme = button?.dataset.themeValue;
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
+    void patchSettings({ theme });
+  });
+
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-scope]"),
+  )) {
+    button.addEventListener("click", () => {
+      const scope = button.dataset.scope;
+      if (scope !== "accessibility" && scope !== "input-monitoring") return;
+      if (isScopeGranted(scope)) return;
+      void window.waveform.requestHotkeyPermission(scope);
+      // The prompt only appears once per install; the pane is the reliable route.
+      void window.waveform.openPrivacySettings(scope);
     });
-    audioContext = new AudioContext();
-    await audioContext.resume();
-    segmenter = new SpeechSegmenter({ sampleRate: audioContext.sampleRate });
-    sourceNode = audioContext.createMediaStreamSource(mediaStream);
-    processorNode = audioContext.createScriptProcessor(2048, 1, 1);
-    processorNode.onaudioprocess = handleAudio;
-    sourceNode.connect(processorNode);
-    processorNode.connect(audioContext.destination);
-
-    listening = true;
-    actionButton.classList.add("is-listening");
-    actionButton.setAttribute("aria-pressed", "true");
-    setStatus("Listening — pause to transcribe", "ready");
-  } catch (error) {
-    releaseAudio();
-    setStatus(errorMessage(error), "error");
-  } finally {
-    actionInProgress = false;
-    renderActionState();
   }
 }
 
-function stopListening(): void {
-  const finalSegment = segmenter?.flush();
-  if (finalSegment && audioContext) queueTranscription(finalSegment, audioContext.sampleRate);
-
-  releaseAudio();
-  listening = false;
-  updateMeter(0);
-  actionButton.classList.remove("is-listening");
-  actionButton.setAttribute("aria-pressed", "false");
-  renderActionState();
-  setStatus(
-    queuedTranscriptions > 0
-      ? "Finishing transcript…"
-      : `${getSpeechModel(selectedModelId).shortLabel} ready`,
-    "ready",
-  );
+async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
+  settings = await window.waveform.updateSettings(patch);
+  applySettings(settings);
 }
 
-function releaseAudio(): void {
-  processorNode?.disconnect();
-  sourceNode?.disconnect();
-  mediaStream?.getTracks().forEach((track) => track.stop());
-  void audioContext?.close();
+function applySettings(next: AppSettings): void {
+  settings = next;
+  document.documentElement.dataset.theme = next.theme === "system" ? "" : next.theme;
+  if (next.theme === "system") delete document.documentElement.dataset.theme;
 
-  mediaStream = null;
-  audioContext = null;
-  sourceNode = null;
-  processorNode = null;
-  segmenter = null;
+  element.modelSelect.value = next.modelId;
+  element.hotkeySelect.value = next.hotkeyId;
+  element.insertToggle.checked = next.insertIntoFocusedApp;
+  renderThemeToggle(next.theme);
+
+  element.footerModel.textContent = getSpeechModel(next.modelId).label;
+
+  renderHotkeyLabels();
+  renderHotkeyStatus();
 }
 
-function handleAudio(event: AudioProcessingEvent): void {
-  const samples = new Float32Array(event.inputBuffer.getChannelData(0));
-  updateMeter(calculatePeak(samples));
-  const completeSegment = segmenter?.push(samples);
-  if (completeSegment && audioContext) {
-    queueTranscription(completeSegment, audioContext.sampleRate);
+function renderResourceUsage(usage: {
+  cpuPercent: number;
+  memoryMb: number;
+  engineMemoryMb: number | null;
+}): void {
+  const memory =
+    usage.memoryMb >= 1024
+      ? `${(usage.memoryMb / 1024).toFixed(1)} GB`
+      : `${usage.memoryMb} MB`;
+  element.footerResources.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
+  element.footerResources.title =
+    usage.engineMemoryMb === null
+      ? "Waveform only; the speech engine is not running"
+      : `Speech engine using ${usage.engineMemoryMb} MB of that`;
+}
+
+function renderThemeToggle(theme: AppSettings["theme"]): void {
+  for (const button of Array.from(
+    element.themeToggle.querySelectorAll<HTMLElement>("[data-theme-value]"),
+  )) {
+    button.setAttribute("aria-checked", String(button.dataset.themeValue === theme));
   }
 }
 
-function queueTranscription(samples: Float32Array, sampleRate: number): void {
-  queuedTranscriptions += 1;
-  setStatus("Transcribing locally…", "transcribing");
-
-  let failed = false;
-  const wavBytes = encodeMonoPcm16Wav(samples, sampleRate);
-  void window.waveform
-    .transcribe(wavBytes)
-    .then(({ text }) => {
-      if (text) appendTranscript(text);
-    })
-    .catch((error) => {
-      failed = true;
-      setStatus(errorMessage(error), "error");
-    })
-    .finally(() => {
-      queuedTranscriptions -= 1;
-      if (queuedTranscriptions === 0 && !failed) {
-        setStatus(
-          listening
-            ? "Listening — pause to transcribe"
-            : `${getSpeechModel(selectedModelId).shortLabel} ready`,
-          "ready",
-        );
-      }
-    });
+function populateSelects(): void {
+  for (const model of SPEECH_MODELS) {
+    element.modelSelect.append(new Option(model.shortLabel, model.id));
+  }
+  element.hotkeySelect.append(new Option("Off", "none"));
+  for (const binding of HOTKEY_BINDINGS) {
+    element.hotkeySelect.append(new Option(binding.label, binding.id));
+  }
 }
 
-function updateModelState(event: ModelEvent): void {
+function renderHotkeyLabels(): void {
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  const glyph = binding?.glyph ?? "—";
+  element.hintKey.textContent = glyph;
+  element.gestureKeyHold.textContent = glyph;
+  element.gestureKeyTap.textContent = `${glyph} ${glyph}`;
+  element.fnNote.hidden = settings.hotkeyId !== "fn";
+}
+
+function renderHotkeyStatus(): void {
+  const status = hotkeyStatus;
+  const binding = getHotkeyBinding(settings.hotkeyId);
+
+  setPermissionRow(element.accessibilityRow, status?.accessibility === true);
+  setPermissionRow(element.inputMonitoringRow, status?.inputMonitoring === true);
+
+  const armed =
+    status?.supported === true &&
+    status.running &&
+    status.inputMonitoring &&
+    binding !== null;
+
+  element.footerHotkey.dataset.armed = String(armed);
+  element.footerHotkey.textContent = describeHotkey(status, binding?.label ?? null);
+}
+
+function describeHotkey(status: HotkeyStatus | null, label: string | null): string {
+  if (status?.supported === false) return "Shortcut unavailable on this build";
+  if (!label) return "Shortcut off";
+  if (status?.inputMonitoring === false) return `${label} — needs Input Monitoring`;
+  if (status?.running === false) return `${label} — helper not running`;
+  return `Hold ${label} to dictate`;
+}
+
+function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
+  if (!hotkeyStatus) return false;
+  return scope === "accessibility"
+    ? hotkeyStatus.accessibility
+    : hotkeyStatus.inputMonitoring;
+}
+
+function setPermissionRow(row: HTMLElement, granted: boolean): void {
+  row.dataset.granted = String(granted);
+  const button = row.querySelector("button");
+  if (button) button.textContent = granted ? "Granted" : "Grant";
+}
+
+function handleModelEvent(event: ModelEvent): void {
+  if (event.modelId !== settings.modelId) return;
+
   if (event.stage === "ready") {
     modelReady = true;
     modelLoading = false;
   } else if (event.stage === "error") {
     modelReady = false;
     modelLoading = false;
-  } else if (["starting", "downloading", "loading"].includes(event.stage)) {
+  } else {
     modelLoading = true;
   }
+
+  setStatus(event.message, event.stage);
+  renderActionState();
+}
+
+function handleDictationUpdate(update: DictationUpdate): void {
+  const { status, phrase } = update;
+  listening = status.state === "listening" || status.state === "transcribing";
+
+  if (phrase) appendPhrase(phrase.text);
+
+  if (status.state === "error" && status.message) {
+    setStatus(status.message, "error");
+  } else if (status.state === "listening") {
+    setStatus("Listening — pause to transcribe", "ready");
+  } else if (status.state === "transcribing") {
+    setStatus("Transcribing locally…", "transcribing");
+  } else if (modelReady) {
+    setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
+  }
+
   renderActionState();
 }
 
 function renderActionState(): void {
-  const disabled = modelLoading || actionInProgress;
-  actionButton.disabled = disabled;
-  actionButton.classList.toggle("is-busy", disabled);
-  modelSelect.disabled = modelLoading || actionInProgress || listening;
-  actionLabel.textContent = listening
+  const disabled = modelLoading && !listening;
+  element.actionButton.disabled = disabled;
+  element.actionButton.classList.toggle("is-busy", disabled);
+  element.actionButton.classList.toggle("is-listening", listening);
+  element.actionButton.setAttribute("aria-pressed", String(listening));
+  element.actionLabel.textContent = listening
     ? "Stop listening"
     : modelLoading
       ? "Loading model"
-      : actionInProgress
-        ? "Starting microphone"
-        : modelReady
-          ? "Start listening"
-          : "Load model & start";
+      : modelReady
+        ? "Start listening"
+        : "Load model & start";
+
+  element.copyButton.disabled = phraseCount === 0;
+  element.clearButton.disabled = phraseCount === 0;
+  if (!listening) resetMeter();
 }
 
-function populateModelSelect(): void {
-  for (const model of SPEECH_MODELS) {
-    const option = document.createElement("option");
-    option.value = model.id;
-    option.textContent = model.shortLabel;
-    modelSelect.append(option);
-  }
-}
-
-function renderSelectedModel(): void {
-  const model = getSpeechModel(selectedModelId);
-  modelSelect.value = selectedModelId;
-  footerModel.textContent = model.label;
-}
-
-function readSelectedModel(): SpeechModelId {
-  const stored =
-    localStorage.getItem(MODEL_STORAGE_KEY) ??
-    localStorage.getItem(LEGACY_MODEL_STORAGE_KEY);
-  return isSpeechModelId(stored) ? stored : DEFAULT_SPEECH_MODEL_ID;
-}
-
-function appendTranscript(text: string): void {
-  emptyState.remove();
+function appendPhrase(text: string): void {
+  element.emptyState.remove();
   const phrase = document.createElement("span");
   phrase.className = "phrase";
   phrase.textContent = `${text} `;
-  transcript.append(phrase);
-  transcript.scrollTop = transcript.scrollHeight;
+  element.transcript.append(phrase);
+  element.transcript.scrollTop = element.transcript.scrollHeight;
+  phraseCount += 1;
+  renderActionState();
+}
+
+function clearTranscript(): void {
+  element.transcript.replaceChildren(element.emptyState);
+  element.emptyState.hidden = false;
+  phraseCount = 0;
+  renderActionState();
+}
+
+async function copyTranscript(): Promise<void> {
+  const text = Array.from(element.transcript.querySelectorAll(".phrase"))
+    .map((node) => node.textContent ?? "")
+    .join("")
+    .trim();
+  if (!text) return;
+
+  await navigator.clipboard.writeText(text);
+  element.copyButton.textContent = "Copied";
+  setTimeout(() => {
+    element.copyButton.textContent = "Copy";
+  }, 1_400);
+}
+
+function toggleSettings(open: boolean): void {
+  settingsOpen = open;
+  element.settingsPanel.hidden = !open;
+  element.scrim.hidden = !open;
+  element.settingsButton.setAttribute("aria-expanded", String(open));
+  if (open) {
+    void window.waveform.getHotkeyStatus().then((status) => {
+      hotkeyStatus = status;
+      renderHotkeyStatus();
+    });
+  }
 }
 
 function setStatus(message: string, stage: UiStage): void {
-  statusText.textContent = message;
-  status.dataset.stage = stage;
+  element.statusText.textContent = message;
+  element.status.dataset.stage = stage;
 }
 
-function updateMeter(level: number): void {
-  const normalized = Math.min(1, level * 8);
-  meterBars.forEach((bar, index) => {
-    const threshold = (index + 1) / meterBars.length;
-    const height = normalized >= threshold ? 10 + normalized * 22 : 6;
-    bar.style.height = `${height}px`;
-  });
-}
-
-function calculatePeak(samples: Float32Array): number {
-  let peak = 0;
-  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
-  return peak;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function microphonePermissionMessage(status: MicrophonePermissionStatus): string {
-  if (status === "denied") {
-    return "Microphone denied. Enable Waveform in System Settings → Privacy & Security → Microphone, then restart app.";
-  }
-  if (status === "restricted") return "Microphone blocked by macOS restrictions.";
-  return `Microphone unavailable: macOS permission status is ${status}.`;
+function resetMeter(): void {
+  for (const bar of element.meterBars) bar.style.height = "";
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (!element) throw new Error(`Missing #${id}`);
-  return element as T;
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`Missing #${id}`);
+  return node as T;
 }
+
