@@ -3,6 +3,8 @@ export interface SegmenterOptions {
   silenceThreshold?: number;
   trailingSilenceMs?: number;
   minimumSpeechMs?: number;
+  /** Floor applied when the user ends the session, rather than at a pause. */
+  flushMinimumSpeechMs?: number;
   preRollMs?: number;
   maximumSegmentMs?: number;
 }
@@ -11,6 +13,7 @@ export class SpeechSegmenter {
   private readonly silenceThreshold: number;
   private readonly trailingSilenceSamples: number;
   private readonly minimumSpeechSamples: number;
+  private readonly flushMinimumSpeechSamples: number;
   private readonly preRollSamples: number;
   private readonly maximumSegmentSamples: number;
   private preRoll: Float32Array[] = [];
@@ -27,8 +30,18 @@ export class SpeechSegmenter {
       options.trailingSilenceMs ?? 650,
       options.sampleRate,
     );
+    // Speech is not continuous: gaps between words and unvoiced consonants
+    // fall below the threshold, so a two-word phrase registers far less than
+    // its wall-clock duration. A high floor here silently drops short
+    // utterances entirely.
     this.minimumSpeechSamples = millisecondsToSamples(
-      options.minimumSpeechMs ?? 240,
+      options.minimumSpeechMs ?? 120,
+      options.sampleRate,
+    );
+    // Releasing the key says "I have finished", so the only thing worth
+    // rejecting at that point is a stray click or an empty room.
+    this.flushMinimumSpeechSamples = millisecondsToSamples(
+      options.flushMinimumSpeechMs ?? 60,
       options.sampleRate,
     );
     this.preRollSamples = millisecondsToSamples(options.preRollMs ?? 220, options.sampleRate);
@@ -75,8 +88,9 @@ export class SpeechSegmenter {
     return null;
   }
 
+  /** Ends the session and returns whatever was captured. */
   flush(): Float32Array | null {
-    return this.finishSegment();
+    return this.finishSegment(this.flushMinimumSpeechSamples);
   }
 
   private addPreRoll(chunk: Float32Array): void {
@@ -89,8 +103,8 @@ export class SpeechSegmenter {
     }
   }
 
-  private finishSegment(): Float32Array | null {
-    const valid = this.speaking && this.speechSamples >= this.minimumSpeechSamples;
+  private finishSegment(minimumSpeechSamples = this.minimumSpeechSamples): Float32Array | null {
+    const valid = this.speaking && this.speechSamples >= minimumSpeechSamples;
     const result = valid ? concatenate(this.segment, this.segmentLength) : null;
 
     this.segment = [];

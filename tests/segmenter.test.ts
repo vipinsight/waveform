@@ -47,3 +47,49 @@ describe("rootMeanSquare", () => {
   });
 });
 
+
+describe("short utterances", () => {
+  /**
+   * A real phrase is not continuous sound. Gaps between words and unvoiced
+   * consonants fall below the speech threshold, so "open settings" may only
+   * register a few hundred milliseconds of speech in total.
+   */
+  function speak(segmenter: SpeechSegmenter, wordMs: number, gapMs: number, words: number) {
+    for (let index = 0; index < words; index += 1) {
+      segmenter.push(samples(wordMs, 0.25));
+      if (index < words - 1) segmenter.push(samples(gapMs, 0));
+    }
+  }
+
+  it("keeps a two-word phrase when the key is released", () => {
+    const segmenter = new SpeechSegmenter({ sampleRate: 1000 });
+    speak(segmenter, 90, 60, 2);
+    // Releasing the key is an explicit "I am done", so whatever was captured
+    // should be transcribed rather than judged too short.
+    expect(segmenter.flush()).not.toBeNull();
+  });
+
+  it("keeps a single short word when the key is released", () => {
+    const segmenter = new SpeechSegmenter({ sampleRate: 1000 });
+    segmenter.push(samples(150, 0.25));
+    expect(segmenter.flush()).not.toBeNull();
+  });
+
+  it("still drops a release with no speech at all", () => {
+    const segmenter = new SpeechSegmenter({ sampleRate: 1000 });
+    segmenter.push(samples(500, 0));
+    expect(segmenter.flush()).toBeNull();
+  });
+
+  it("still drops a stray click on release", () => {
+    const segmenter = new SpeechSegmenter({ sampleRate: 1000 });
+    segmenter.push(samples(20, 0.3));
+    expect(segmenter.flush()).toBeNull();
+  });
+
+  it("keeps a short phrase that ends on a pause mid-session", () => {
+    const segmenter = new SpeechSegmenter({ sampleRate: 1000, trailingSilenceMs: 300 });
+    speak(segmenter, 90, 60, 2);
+    expect(segmenter.push(samples(300, 0))).not.toBeNull();
+  });
+});

@@ -8,9 +8,9 @@ import type {
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
-const BAR_COUNT = 9;
-const BAR_WIDTH = 2;
-const MIN_BAR = 1.5;
+const BAR_COUNT = 7;
+const BAR_WIDTH = 3;
+const MIN_BAR = 3;
 const LEVEL_GAIN = 7;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;
@@ -25,12 +25,13 @@ const SPECTRUM_SPAN = 0.42;
 const PREVIEW_MS = 2_600;
 
 /** Monochrome throughout: state shows as brightness, never as colour. */
+/** Opacity of the bars per state; height carries the level itself. */
 const STATE_BRIGHTNESS: Record<DictationState, number> = {
-  idle: 0.35,
-  listening: 1,
-  transcribing: 0.62,
-  rewriting: 0.78,
-  error: 0.42,
+  idle: 0.4,
+  listening: 0.96,
+  transcribing: 0.7,
+  rewriting: 0.85,
+  error: 0.5,
 };
 
 const STATE_LABEL: Record<DictationState, string> = {
@@ -309,15 +310,16 @@ function draw(): void {
   const centre = height / 2;
   const brightness = STATE_BRIGHTNESS[state];
 
+  // Every bar is drawn at the same weight. Fading the outer ones made the
+  // meter look unevenly lit rather than tapered, and at this size there is not
+  // enough width for a taper to read as one.
+  context.fillStyle = `rgba(255, 255, 255, ${brightness.toFixed(3)})`;
+
   for (let index = 0; index < BAR_COUNT; index += 1) {
     const value = levels[index] ?? 0;
-    // Taper the ends so the trace fades out rather than stopping dead.
-    const edge = Math.sin((index / (BAR_COUNT - 1)) * Math.PI) ** 0.55;
-    const barHeight = Math.max(MIN_BAR, value * edge * height);
+    const barHeight = Math.max(MIN_BAR, value * height);
     const x = index * (BAR_WIDTH + gap);
-    const alpha = (0.26 + edge * 0.64 * Math.min(1, value * 2.6 + 0.18)) * brightness;
 
-    context.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
     context.beginPath();
     context.roundRect(x, centre - barHeight / 2, BAR_WIDTH, barHeight, BAR_WIDTH / 2);
     context.fill();
