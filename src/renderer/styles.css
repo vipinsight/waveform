@@ -87,6 +87,26 @@
   box-sizing: border-box;
 }
 
+/*
+ * Native windows do not let you drag-select their chrome. Leaving the whole
+ * interface selectable is what makes an app built this way read as a web page,
+ * so selection is switched off by default and given back only where there is
+ * something worth selecting.
+ */
+body {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.transcript,
+input,
+textarea {
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 html,
 body {
   width: 100%;
@@ -212,7 +232,7 @@ kbd {
   font-size: 13.5px;
   font-weight: 520;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   transition: background 130ms ease, color 130ms ease;
 }
 
@@ -337,14 +357,6 @@ kbd {
   margin-bottom: 22px;
 }
 
-/* Chrome you can pick the window up by. Selectable text inside a drag region
-   shows a caret and reads as "this is not draggable", so suppress it. */
-[data-tauri-drag-region="deep"],
-[data-tauri-drag-region="deep"] :not(button, select, input, a, textarea) {
-  cursor: default;
-  user-select: none;
-}
-
 .icon-button {
   display: grid;
   width: 30px;
@@ -355,7 +367,7 @@ kbd {
   border-radius: 9px;
   background: transparent;
   color: var(--ink-soft);
-  cursor: pointer;
+  cursor: default;
   transition: background 130ms ease, color 130ms ease;
 }
 
@@ -679,7 +691,7 @@ kbd {
   font-size: 13.5px;
   font-weight: 620;
   letter-spacing: -0.005em;
-  cursor: pointer;
+  cursor: default;
   transition: background 140ms ease, transform 140ms ease;
 }
 
@@ -778,7 +790,7 @@ kbd {
   color: var(--ink-soft);
   font-size: 12.5px;
   font-weight: 560;
-  cursor: pointer;
+  cursor: default;
   transition: background 130ms ease, color 130ms ease;
 }
 
@@ -938,7 +950,7 @@ kbd {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-faint);
-  cursor: pointer;
+  cursor: default;
   transition: background 130ms ease, color 130ms ease;
 }
 
@@ -1063,7 +1075,7 @@ select {
   background: var(--surface);
   font-size: 12.5px;
   font-weight: 540;
-  cursor: pointer;
+  cursor: default;
 }
 
 .pill-button {
@@ -1075,7 +1087,7 @@ select {
   color: var(--ink);
   font-size: 12.5px;
   font-weight: 580;
-  cursor: pointer;
+  cursor: default;
   transition: background 130ms ease;
 }
 
@@ -1165,7 +1177,7 @@ select {
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 560;
-  cursor: pointer;
+  cursor: default;
   transition: background 140ms ease, color 140ms ease;
 }
 
@@ -1182,7 +1194,7 @@ select {
   appearance: none;
   border-radius: 999px;
   background: var(--hairline-strong);
-  cursor: pointer;
+  cursor: default;
   transition: background 160ms ease;
 }
 
