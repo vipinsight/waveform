@@ -17,7 +17,7 @@ await Promise.all([
   cp("src/renderer/styles.css", "dist/renderer/styles.css"),
   cp("src/renderer/overlay.html", "dist/renderer/overlay.html"),
   cp("src/renderer/overlay.css", "dist/renderer/overlay.css"),
-  cp("icons/slur-mono-ink.svg", "dist/renderer/slur-mono-ink.svg"),
+  cp("icons/waveform-mark.svg", "dist/renderer/waveform-mark.svg"),
   cp("icons/waveform-icon.png", "dist/renderer/waveform-icon.png"),
   bundle("src/renderer/renderer.ts", "dist/renderer/renderer.js"),
   bundle("src/renderer/overlay.ts", "dist/renderer/overlay.js"),

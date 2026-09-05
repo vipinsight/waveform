@@ -1,9 +1,14 @@
 /*
- * The dictation HUD: a small monochrome capsule that floats over other apps.
+ * The listening pill.
  *
- * The window is transparent, so the page background must stay fully clear and
- * the capsule has to draw all of its own chrome. Everything is greyscale by
- * design; state is carried by brightness and motion, never by hue.
+ * Implements the "listening pill" design: a floating capsule with cancel on the
+ * left, a live meter in the middle, and polish on the right. While a rewrite
+ * runs the meter becomes an indeterminate progress row and the polish button
+ * becomes a loader ring.
+ *
+ * The window is transparent and click-through except for the pill itself, so
+ * the page background must stay fully clear and the capsule draws all of its
+ * own chrome.
  */
 * {
   box-sizing: border-box;
@@ -18,6 +23,7 @@ body {
   background: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   user-select: none;
+  cursor: default;
 }
 
 .visually-hidden {
@@ -30,21 +36,22 @@ body {
 
 .hud {
   display: flex;
-  width: 124px;
-  height: 34px;
-  margin: 7px auto 0;
+  width: 128px;
+  height: 40px;
+  margin: 8px auto 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 7px;
-  padding: 0 5px;
-  border: 1.5px solid rgb(255 255 255 / 20%);
-  border-radius: 17px;
-  background: #08080a;
-  box-shadow: 0 5px 16px rgb(0 0 0 / 45%);
+  gap: 10px;
+  padding: 0 6px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 999px;
+  background: #11141a;
+  box-shadow:
+    0 10px 26px rgb(0 0 0 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
   opacity: 0;
-  /* Rises into place rather than just fading: the short travel is what makes
-     the HUD feel like a system control instead of a web element. */
-  transform: translateY(6px) scale(0.88);
+  /* Rises into place rather than only fading, which is what makes it read as
+     a system control instead of a web element. */
+  transform: translateY(6px) scale(0.9);
   transition:
     opacity 110ms linear,
     transform 260ms cubic-bezier(0.16, 1.3, 0.3, 1);
@@ -65,80 +72,125 @@ body {
 
 .hud[data-dragging="true"] {
   cursor: grabbing;
-  transform: translateY(0) scale(1.05);
+  transform: translateY(0) scale(1.04);
   transition: transform 90ms ease-out;
 }
 
-/* Latched dictation runs until dismissed, so it gets a permanent ring to
-   distinguish it from a momentary push-to-talk. */
+/* A locked session runs until dismissed, so it carries a brighter rim. */
 .hud[data-mode="latched"] {
-  border-color: rgb(255 255 255 / 70%);
+  border-color: rgb(255 255 255 / 34%);
 }
 
-.wave {
-  width: 52px;
-  height: 18px;
-}
+/* ------------------------------------------------------------------ cancel */
 
-/* Cancel and insert, either side of the meter. Both are reachable without
-   going back to the window, which is the point of the indicator being where
-   the user is already looking. */
-.hud-button {
+.hud-cancel {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(246 245 242 / 65%);
   cursor: default;
-  transition: transform 120ms ease, filter 120ms ease;
+  transition: background 120ms ease, color 120ms ease;
 }
 
-.hud-button svg {
-  width: 14px;
-  height: 14px;
-}
-
-.hud-button:active {
-  transform: scale(0.92);
-}
-
-.is-cancel {
-  background: #4a4a4e;
-  color: #fff;
-}
-
-.is-cancel:hover {
-  filter: brightness(1.25);
-}
-
-/* Reports work rather than inviting a click: the slot is reserved so the pill
-   does not change width when the spinner comes and goes. */
-.hud-busy {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: #fff;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.hud-busy svg {
+.hud-cancel svg {
   width: 15px;
   height: 15px;
 }
 
-.hud[data-state="transcribing"] .hud-busy,
-.hud[data-state="rewriting"] .hud-busy {
-  opacity: 1;
-  /* Stepped rather than smooth, which is how a spoke spinner reads. */
-  animation: spokes 0.8s steps(8) infinite;
+.hud-cancel:hover {
+  background: rgb(255 255 255 / 10%);
+  color: #f6f5f2;
 }
 
-@keyframes spokes {
+.hud-cancel:active {
+  transform: scale(0.94);
+}
+
+/* ------------------------------------------------------------------- meter */
+
+.wave {
+  width: 39px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------ polish */
+
+.hud-polish {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #3284d0;
+  cursor: default;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.hud-polish:hover {
+  filter: brightness(1.14);
+}
+
+.hud-polish:active {
+  transform: scale(0.94);
+}
+
+/* Hidden rather than disabled when there is no key: a control that cannot do
+   anything is worse than one that is not offered. */
+.hud-polish[hidden] {
+  display: none;
+}
+
+.polish-mark {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.polish-mark i {
+  width: 2.5px;
+  border-radius: 1.25px;
+  background: #fff;
+}
+
+.polish-mark i:nth-child(1) {
+  height: 6px;
+}
+
+.polish-mark i:nth-child(2) {
+  height: 12px;
+}
+
+.polish-mark i:nth-child(3) {
+  height: 8px;
+}
+
+/* While a rewrite runs the button becomes a ring: the same 28pt circle, so
+   nothing shifts as it changes role. */
+.hud[data-state="rewriting"] .hud-polish {
+  background: transparent;
+  border: 2px solid rgb(255 255 255 / 16%);
+  border-top-color: #3284d0;
+  border-right-color: #3284d0;
+  animation: ring 0.7s linear infinite;
+}
+
+.hud[data-state="rewriting"] .hud-polish:hover {
+  filter: none;
+}
+
+.hud[data-state="rewriting"] .polish-mark {
+  display: none;
+}
+
+@keyframes ring {
   to {
     transform: rotate(1turn);
   }
@@ -147,5 +199,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hud {
     transition-duration: 0.01ms;
+  }
+
+  .hud[data-state="rewriting"] .hud-polish {
+    animation-duration: 2s;
   }
 }

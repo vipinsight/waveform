@@ -136,6 +136,9 @@ pub struct Dictation {
     pending_sink: Mutex<String>,
     /// Set by a cancel, so the buffered text is dropped rather than inserted.
     discard_pending: Mutex<bool>,
+    /// Set by the indicator's polish button: rewrite this dictation even when
+    /// the standing "clean up dictation" setting is off.
+    rewrite_pending: Mutex<bool>,
 }
 
 impl Dictation {
@@ -177,6 +180,7 @@ impl Dictation {
             pending: Mutex::new(Vec::new()),
             pending_sink: Mutex::new("insert".into()),
             discard_pending: Mutex::new(false),
+            rewrite_pending: Mutex::new(false),
         })
     }
 
@@ -359,6 +363,16 @@ impl Dictation {
         self.begin_session("transcript", "latched").await;
     }
 
+    /// Ends a running session and rewrites what was said before inserting it.
+    pub async fn stop_and_polish(self: &Arc<Self>) {
+        if self.session.lock().await.is_none() {
+            return;
+        }
+        *self.rewrite_pending.lock().await = true;
+        self.gestures.lock().await.stop();
+        self.end_session("stop").await;
+    }
+
     /// Abandons a running session and drops whatever it had transcribed.
     pub async fn cancel_from_app(self: &Arc<Self>) {
         if self.session.lock().await.is_none() {
@@ -389,6 +403,7 @@ impl Dictation {
         self.pending.lock().await.clear();
         *self.pending_sink.lock().await = sink.to_string();
         *self.discard_pending.lock().await = false;
+        *self.rewrite_pending.lock().await = false;
 
         let updated = self.stats.lock().await.record_session();
         let _ = self.app.emit("stats-changed", updated);
@@ -598,8 +613,11 @@ impl Dictation {
         if *self.pending_sink.lock().await != "insert" {
             return false;
         }
+        if !self.rewriter.is_configured().await {
+            return false;
+        }
         self.settings.lock().await.value().transform_on_dictate
-            && self.rewriter.is_configured().await
+            || *self.rewrite_pending.lock().await
     }
 
     /// Delivers everything said during the session as one piece of text.
@@ -620,8 +638,16 @@ impl Dictation {
         // A failed rewrite falls back to the raw transcript rather than
         // dropping what was just said.
         let mut text = joined.clone();
-        if sink == "insert" {
-            match self.rewriter.clean_up_dictation(&joined).await {
+        let asked = std::mem::replace(&mut *self.rewrite_pending.lock().await, false);
+        if sink == "insert" || asked {
+            // An explicit press of polish rewrites regardless of the standing
+            // setting; otherwise the setting decides.
+            let outcome = if asked {
+                self.rewriter.polish(&joined).await.map(Some)
+            } else {
+                self.rewriter.clean_up_dictation(&joined).await
+            };
+            match outcome {
                 Ok(Some(cleaned)) => text = cleaned,
                 Ok(None) => {}
                 Err(message) => self.report_error(&message).await,

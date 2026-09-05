@@ -9,8 +9,12 @@ import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
 const BAR_COUNT = 7;
+const BAR_GAP = 3;
 const BAR_WIDTH = 3;
-const MIN_BAR = 3;
+const MIN_BAR = 5;
+/** Bar colours from the design, in sRGB. */
+const BAR_INK = "246, 245, 242";
+const ACCENT = "50, 132, 208";
 const LEVEL_GAIN = 7;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;
@@ -24,16 +28,6 @@ const SPRING_DAMPING = 0.62;
 const SPECTRUM_SPAN = 0.42;
 const PREVIEW_MS = 2_600;
 
-/** Monochrome throughout: state shows as brightness, never as colour. */
-/** Opacity of the bars per state; height carries the level itself. */
-const STATE_BRIGHTNESS: Record<DictationState, number> = {
-  idle: 0.4,
-  listening: 0.96,
-  transcribing: 0.7,
-  rewriting: 0.85,
-  error: 0.5,
-};
-
 const STATE_LABEL: Record<DictationState, string> = {
   idle: "Idle",
   listening: "Listening",
@@ -46,6 +40,7 @@ const hud = requireElement<HTMLElement>("hud");
 const srLabel = requireElement<HTMLElement>("hud-label");
 const canvas = requireElement<HTMLCanvasElement>("wave");
 const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
+const polishButton = requireElement<HTMLButtonElement>("hud-polish");
 const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
@@ -79,6 +74,7 @@ window.addEventListener("resize", resizeCanvasForDisplay);
 enableDragging();
 
 cancelButton.addEventListener("click", () => void host().cancelDictation());
+polishButton.addEventListener("click", () => void host().polishDictation());
 
 host().onDictationCommand((command) => void handleCommand(command));
 
@@ -115,6 +111,14 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "start") {
     cancelLinger();
     previewing = false;
+    // Polish needs a key; offering the button without one would only ever
+    // produce an error.
+    void host()
+      .getAiStatus()
+      .then((status) => {
+        polishButton.hidden = !status.hasApiKey;
+      })
+      .catch(() => undefined);
     if (capture.isRunning) {
       setState("listening");
       return;
@@ -309,19 +313,25 @@ function draw(): void {
   const { width, height } = canvas.getBoundingClientRect();
   context.clearRect(0, 0, width, height);
 
-  const gap = (width - BAR_COUNT * BAR_WIDTH) / (BAR_COUNT - 1);
+  const total = BAR_COUNT * BAR_WIDTH + (BAR_COUNT - 1) * BAR_GAP;
+  const left = (width - total) / 2;
   const centre = height / 2;
-  const brightness = STATE_BRIGHTNESS[state];
 
-  // Every bar is drawn at the same weight. Fading the outer ones made the
-  // meter look unevenly lit rather than tapered, and at this size there is not
-  // enough width for a taper to read as one.
-  context.fillStyle = `rgba(255, 255, 255, ${brightness.toFixed(3)})`;
+  // While a rewrite runs the meter stops being a meter: the bars flatten and
+  // fill from the left, which reads as progress rather than as sound.
+  const rewriting = state === "rewriting";
+  const filled = rewriting ? Math.floor(((phase * 0.6) % 1) * (BAR_COUNT + 1)) : 0;
 
   for (let index = 0; index < BAR_COUNT; index += 1) {
     const value = levels[index] ?? 0;
-    const barHeight = Math.max(MIN_BAR, value * height);
-    const x = index * (BAR_WIDTH + gap);
+    const barHeight = rewriting ? MIN_BAR : Math.max(MIN_BAR, value * height);
+    const x = left + index * (BAR_WIDTH + BAR_GAP);
+
+    context.fillStyle = rewriting
+      ? index < filled
+        ? `rgb(${ACCENT})`
+        : `rgba(${BAR_INK}, 0.28)`
+      : `rgba(${BAR_INK}, ${(0.5 + 0.5 * Math.min(1, value * 2.2)).toFixed(3)})`;
 
     context.beginPath();
     context.roundRect(x, centre - barHeight / 2, BAR_WIDTH, barHeight, BAR_WIDTH / 2);

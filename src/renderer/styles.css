@@ -187,15 +187,13 @@ kbd {
   gap: 9px;
 }
 
+/* The mark carries its own accent bar, so it is an <img> rather than a mask;
+   the four outer bars use currentColor and follow the interface's ink. */
 .mark {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   flex: 0 0 auto;
-  /* Masked rather than an <img>: the brand SVG is hardcoded near-black, which
-     vanishes against the dark theme. The mask keeps its shape and takes ink. */
-  background: currentColor;
-  -webkit-mask: url("./slur-mono-ink.svg") center / contain no-repeat;
-  mask: url("./slur-mono-ink.svg") center / contain no-repeat;
+  color: var(--ink);
 }
 
 .brand-name {

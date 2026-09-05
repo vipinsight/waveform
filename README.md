@@ -76,8 +76,11 @@ whatever you happened to click on. Long pauses still split the audio internally,
 which is what keeps transcription accurate, but the pieces are joined and
 delivered together.
 
-The indicator carries a cancel button, so a dictation can be abandoned without
-reaching for the keyboard, and a spinner that appears while the model is working.
+The indicator carries cancel on the left and polish on the right, so a dictation
+can be abandoned or rewritten without reaching for the keyboard. Pressing polish
+rewrites that dictation even when **Clean up dictation** is switched off; while
+it runs, the meter becomes a progress row and the button becomes a loader ring.
+Polish is only offered when an OpenRouter key is saved.
 
 A small monochrome indicator appears while it listens, so you always know the
 microphone is open. It never takes focus from the app you are typing into, and
