@@ -12,7 +12,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/release/Waveform.app"
-PROFILE="${WAVEFORM_PROFILE:-debug}"
+# Release by default: this is the build actually used day to day, and the audio
+# meter and spring animation are noticeably smoother optimised. An incremental
+# release build takes about twenty seconds. WAVEFORM_PROFILE=debug is there for
+# quicker Rust iteration.
+#
+# The Dock icon does not depend on this. That is decided by the custom-protocol
+# feature in src-tauri/Cargo.toml.
+PROFILE="${WAVEFORM_PROFILE:-release}"
 
 # macOS ties Accessibility and Input Monitoring to the code signature. An ad-hoc
 # signature is a hash of the bundle, so every rebuild is a different app as far

@@ -8,6 +8,17 @@ rust-version = "1.77"
 name = "waveform_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Tauri decides "dev" from the absence of this feature, not from the Cargo
+# profile (see tauri/build.rs: `let dev = !custom_protocol`). In a dev build it
+# calls setApplicationIconImage at startup with the embedded icon, which
+# replaces the Dock's rendering of the bundle icon -- no Dock shadow, drawn
+# edge to edge, so the icon looks flat and a size larger as soon as launching
+# finishes. Enabling it here also means assets are served the same way in every
+# build we make, rather than differing between our debug and release output.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
