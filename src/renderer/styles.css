@@ -332,7 +332,7 @@ kbd {
   border-radius: 16px;
   background: var(--surface);
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .view[hidden] {
@@ -341,7 +341,7 @@ kbd {
 
 .view-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 22px;
@@ -380,6 +380,45 @@ kbd {
   font-size: 30px;
 }
 
+.head-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Collapsed to the icon until asked for: the list is the page, and a field
+   sitting empty above it reads as something needing to be filled in. */
+.search {
+  display: flex;
+  align-items: center;
+}
+
+.search-field {
+  width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  opacity: 0;
+  transition: width 190ms cubic-bezier(0.22, 1, 0.36, 1), padding 190ms ease,
+    opacity 130ms ease;
+}
+
+.search.is-open .search-field {
+  width: 172px;
+  padding: 0 11px;
+  opacity: 1;
+}
+
+.search-field:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
 .view-note {
   color: var(--ink-faint);
   font-size: 12px;
@@ -391,9 +430,8 @@ kbd {
 .history {
   min-height: 0;
   flex: 1;
-  padding-right: 6px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 /* Centred while empty, top-aligned once there is something to read. */
@@ -403,54 +441,85 @@ kbd {
   justify-content: center;
 }
 
+/* No visible scrollbar anywhere. A track inside a rounded panel cuts across
+   its corner and reads as part of the content; the trackpad already reports
+   position, and the list is short enough to keep in your head. */
 .history::-webkit-scrollbar,
 .view::-webkit-scrollbar,
 .modal-body::-webkit-scrollbar {
-  width: 8px;
+  width: 0;
+  height: 0;
 }
 
-.history::-webkit-scrollbar-thumb,
-.view::-webkit-scrollbar-thumb,
-.modal-body::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: var(--hairline-strong);
-  background-clip: content-box;
+/* A day at a time: the label carries the date so each row only shows a time. */
+.day {
+  margin-bottom: 22px;
+}
+
+.day:last-child {
+  margin-bottom: 0;
+}
+
+.day-label {
+  margin: 0 0 9px 2px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* The card is drawn by its border alone, on the same ground as the panel.
+   Clipping it lets a hovered first or last row take the rounded corner. */
+.entry-card {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .entry {
-  padding: 16px 0 18px;
-  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 16px;
+  border-top: 1px solid var(--hairline);
   animation: entry-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: background 120ms ease;
 }
 
 .entry:first-child {
-  padding-top: 4px;
+  border-top: 0;
 }
 
-.entry-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 7px;
+.entry:hover {
+  background: var(--surface-sunken);
 }
 
 .entry-time {
+  flex: 0 0 82px;
   color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 560;
-  letter-spacing: 0.005em;
+  font-size: 12.5px;
+  font-weight: 480;
+  font-variant-numeric: tabular-nums;
 }
 
-.entry-words {
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 450;
+.entry-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 440;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
 }
 
 .entry-actions {
   display: flex;
-  margin-left: auto;
+  flex: 0 0 auto;
   gap: 2px;
   /* Revealed on hover: a row of controls beside every entry would compete
      with the words, which are the thing worth reading. */
@@ -471,19 +540,19 @@ kbd {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   cursor: default;
   transition: background 120ms ease, color 120ms ease;
 }
 
 .entry-action svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .entry-action:hover {
   color: var(--ink);
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
 }
 
 .entry-action.is-done {
@@ -495,16 +564,11 @@ kbd {
   background: var(--danger-soft);
 }
 
-.entry-text {
+.no-matches {
   margin: 0;
-  font-size: 16.5px;
-  font-weight: 440;
-  line-height: 1.55;
-  letter-spacing: -0.008em;
-  white-space: pre-wrap;
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: auto;
+  color: var(--ink-faint);
+  font-size: 13.5px;
+  text-align: center;
 }
 
 /* The dictation that just landed is briefly tinted, then settles. */
@@ -747,149 +811,35 @@ kbd {
   display: none;
 }
 
-/* -------------------------------------------------------------- controls */
+/* ------------------------------------------------------------ dictate hint */
 
-.controls {
+/* The shortcut replaced the button. It states the binding and nothing else:
+   the pill outside the app reports the session. */
+.dictate-hint {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding-top: 22px;
-  margin-top: 18px;
+  gap: 7px;
+  padding-top: 16px;
+  margin: 14px 0 0;
   border-top: 1px solid var(--hairline);
-}
-
-.action-button {
-  display: inline-flex;
-  height: 46px;
-  min-width: 186px;
-  align-items: center;
-  gap: 11px;
-  padding: 0 20px 0 6px;
-  border: 0;
-  border-radius: 13px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 13.5px;
-  font-weight: 620;
-  letter-spacing: -0.005em;
-  cursor: default;
-  transition: background 140ms ease, transform 140ms ease;
-}
-
-.action-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.action-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.action-button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.action-button.is-listening {
-  background: var(--danger);
-  color: #fff;
-}
-
-.action-glyph {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 16%);
-}
-
-.action-glyph svg {
-  width: 19px;
-  height: 19px;
-  grid-area: 1 / 1;
-}
-
-/* Mic while idle, stop square while listening: the shape says what pressing
-   it will do, which a label alone has to be read to learn. */
-.glyph-stop {
-  opacity: 0;
-  transform: scale(0.7);
-  transition: opacity 140ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.action-button.is-listening .glyph-mic {
-  opacity: 0;
-  transform: scale(0.7);
-}
-
-.action-button.is-listening .glyph-stop {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.glyph-mic {
-  transition: opacity 140ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.action-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  line-height: 1.25;
-}
-
-.action-hint {
-  font-size: 10.5px;
-  font-weight: 500;
-  opacity: 0.7;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 480;
   font-variant-numeric: tabular-nums;
 }
 
-.action-hint:empty {
-  display: none;
-}
-
-/* A soft pulse while the engine loads, so a press that is queued still reads
-   as the app doing something. */
-.action-button.is-warming {
-  animation: warming 1.6s ease-in-out infinite;
-}
-
-@keyframes warming {
-  50% {
-    opacity: 0.72;
-  }
-}
-
-.ghost-button {
-  height: 38px;
-  padding: 0 14px;
+.dictate-hint kbd {
+  padding: 1.5px 6px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 11px;
-  background: transparent;
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 560;
-  cursor: default;
-  transition: background 130ms ease, color 130ms ease;
-}
-
-.ghost-button:hover:not(:disabled) {
-  color: var(--ink);
+  border-radius: 5px;
   background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 560;
 }
 
-.ghost-button:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-
-.controls-spacer {
-  flex: 1;
-}
-
-/* -------------------------------------------------------------- activity */
+/* -------------------------------------------------------------- overview */
 
 .stat-grid {
   display: grid;
@@ -1049,7 +999,7 @@ kbd {
   position: relative;
   padding: 30px 34px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .modal-body .display {

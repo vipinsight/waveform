@@ -25,11 +25,11 @@
             </svg>
 <span>Dictation</span>
           </button>
-          <button class="nav-item" type="button" data-view="activity">
+          <button class="nav-item" type="button" data-view="overview">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M3.4 12.6V16M7.8 8v8M12.2 4.4V16M16.6 10.2V16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <span>Activity</span>
+            <span>Overview</span>
           </button>
         </nav>
 
@@ -70,7 +70,32 @@
         <section class="view" id="view-dictate">
           <div class="view-head">
             <h1 class="display">Dictation</h1>
-            <span class="view-note" id="dictate-note"></span>
+            <div class="head-tools">
+              <span class="view-note" id="dictate-note"></span>
+              <div class="search" id="search">
+                <input
+                  class="search-field"
+                  id="search-field"
+                  type="text"
+                  placeholder="Search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="Search dictations"
+                />
+                <button
+                  class="icon-button"
+                  id="search-button"
+                  type="button"
+                  aria-label="Search dictations"
+                  aria-expanded="false"
+                >
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="8.9" cy="8.9" r="5.3" stroke="currentColor" stroke-width="1.6"/>
+                    <path d="M12.9 12.9 17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
 
           <div id="setup-banner" class="banner" hidden>
@@ -99,28 +124,12 @@
             </div>
           </div>
 
-          <div class="controls">
-            <button id="action-button" class="action-button" type="button" aria-pressed="false">
-              <span class="action-glyph" aria-hidden="true">
-                <svg class="glyph-mic" viewBox="0 0 20 20" fill="none">
-                  <rect x="7.4" y="2.4" width="5.2" height="9.4" rx="2.6" stroke="currentColor" stroke-width="1.6"/>
-                  <path d="M4.6 9.2a5.4 5.4 0 0 0 10.8 0M10 14.6v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                </svg>
-                <svg class="glyph-stop" viewBox="0 0 20 20"><rect x="6" y="6" width="8" height="8" rx="2" fill="currentColor"/></svg>
-              </span>
-              <span class="action-text">
-                <span id="action-label">Start listening</span>
-                <span id="action-hint" class="action-hint"></span>
-              </span>
-            </button>
-            <span class="controls-spacer"></span>
-            <button id="clear-button" class="ghost-button" type="button">Clear all</button>
-          </div>
+          <p class="dictate-hint" id="dictate-hint"></p>
         </section>
 
-        <section class="view" id="view-activity" hidden>
+        <section class="view" id="view-overview" hidden>
           <div class="view-head">
-            <h1 class="display">Activity</h1>
+            <h1 class="display">Overview</h1>
             <span class="view-note">Counted on this Mac only</span>
           </div>
 
@@ -141,16 +150,16 @@
 
           <div class="panel">
             <div class="row">
-              <span class="row-label">Speech model<small id="activity-model">—</small></span>
-              <span class="row-actions"><span id="activity-model-state" class="view-note">—</span></span>
+              <span class="row-label">Speech model<small id="overview-model">—</small></span>
+              <span class="row-actions"><span id="overview-model-state" class="view-note">—</span></span>
             </div>
             <div class="row">
               <span class="row-label">Processor<small>Waveform and the speech engine combined</small></span>
-              <span class="row-actions"><span id="activity-cpu" class="view-note">—</span></span>
+              <span class="row-actions"><span id="overview-cpu" class="view-note">—</span></span>
             </div>
             <div class="row">
-              <span class="row-label">Memory<small id="activity-engine-memory">—</small></span>
-              <span class="row-actions"><span id="activity-memory" class="view-note">—</span></span>
+              <span class="row-label">Memory<small id="overview-engine-memory">—</small></span>
+              <span class="row-actions"><span id="overview-memory" class="view-note">—</span></span>
             </div>
           </div>
 

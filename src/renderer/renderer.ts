@@ -33,9 +33,10 @@ const element = {
   history: requireElement<HTMLElement>("history"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
-  actionButton: requireElement<HTMLButtonElement>("action-button"),
-  actionLabel: requireElement<HTMLElement>("action-label"),
-  clearButton: requireElement<HTMLButtonElement>("clear-button"),
+  dictateHint: requireElement<HTMLElement>("dictate-hint"),
+  search: requireElement<HTMLElement>("search"),
+  searchButton: requireElement<HTMLButtonElement>("search-button"),
+  searchField: requireElement<HTMLInputElement>("search-field"),
   settingsButton: requireElement<HTMLButtonElement>("settings-button"),
   settingsPanel: requireElement<HTMLElement>("settings-panel"),
   settingsClose: requireElement<HTMLButtonElement>("settings-close"),
@@ -70,11 +71,11 @@ const element = {
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
-  activityModel: requireElement<HTMLElement>("activity-model"),
-  activityModelState: requireElement<HTMLElement>("activity-model-state"),
-  activityCpu: requireElement<HTMLElement>("activity-cpu"),
-  activityMemory: requireElement<HTMLElement>("activity-memory"),
-  activityEngineMemory: requireElement<HTMLElement>("activity-engine-memory"),
+  overviewModel: requireElement<HTMLElement>("overview-model"),
+  overviewModelState: requireElement<HTMLElement>("overview-model-state"),
+  overviewCpu: requireElement<HTMLElement>("overview-cpu"),
+  overviewMemory: requireElement<HTMLElement>("overview-memory"),
+  overviewEngineMemory: requireElement<HTMLElement>("overview-engine-memory"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
   keyState: requireElement<HTMLElement>("key-state"),
@@ -85,20 +86,18 @@ const element = {
   polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
   polishNow: requireElement<HTMLButtonElement>("polish-now"),
-  actionHint: requireElement<HTMLElement>("action-hint"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
 let hotkeyStatus: HotkeyStatus | null = null;
 let modelReady = false;
 let modelLoading = false;
-let listening = false;
 let settingsOpen = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
 let lifetimeSessions = 0;
-let listeningSince = 0;
-let elapsedTimer: number | null = null;
+let searchOpen = false;
+let query = "";
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -151,16 +150,24 @@ function wireEvents(): void {
     showSettingsPage(button.dataset.page ?? "general"),
   );
 
-  element.actionButton.addEventListener("click", () => {
-    if (element.actionButton.disabled) return;
-    void host().toggleDictation();
+  // Without this the field blurs on mousedown, closes itself, and the click
+  // that followed reopened it: the icon could never close an empty search.
+  element.searchButton.addEventListener("mousedown", (event) => event.preventDefault());
+  element.searchButton.addEventListener("click", () => toggleSearch(!searchOpen));
+  element.searchField.addEventListener("input", () => {
+    query = element.searchField.value.trim();
+    renderHistory();
   });
-  element.clearButton.addEventListener("click", () => {
-    void host().clearHistory().then((next) => {
-      entries = next;
-      freshId = null;
-      renderHistory();
-    });
+  element.searchField.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      toggleSearch(false);
+    }
+  });
+  // Closing an empty field tidies the head; a field with a term in it stays,
+  // so clicking an entry does not silently drop the filter behind it.
+  element.searchField.addEventListener("blur", () => {
+    if (query === "") toggleSearch(false);
   });
 
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
@@ -265,7 +272,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "activity"]) {
+  for (const id of ["dictate", "overview"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
 }
@@ -313,7 +320,7 @@ function applySettings(next: AppSettings): void {
 
   const model = getSpeechModel(next.modelId);
   element.modelNote.textContent = `${model.modelId} · runs on this Mac`;
-  element.activityModel.textContent = model.label;
+  element.overviewModel.textContent = model.label;
 
 
   renderHotkeyLabels();
@@ -537,6 +544,9 @@ function renderHotkeyStatus(): void {
   element.hotkeySummary.textContent = binding
     ? `${binding.glyph} ${binding.label}`
     : "Shortcut off";
+  // The footer hint names the same binding, so it is rendered from here
+  // rather than from anything that could describe a different one.
+  renderDictateHint();
   renderSetup();
 }
 
@@ -591,9 +601,9 @@ function renderResourceUsage(usage: ResourceUsage): void {
   const memory = formatMemory(usage.memoryMb);
   element.resourceRow.hidden = false;
   element.resourceSummary.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
-  element.activityCpu.textContent = `${usage.cpuPercent}%`;
-  element.activityMemory.textContent = memory;
-  element.activityEngineMemory.textContent =
+  element.overviewCpu.textContent = `${usage.cpuPercent}%`;
+  element.overviewMemory.textContent = memory;
+  element.overviewEngineMemory.textContent =
     usage.engineMemoryMb === null
       ? "Speech engine is not running"
       : `Speech engine accounts for ${formatMemory(usage.engineMemoryMb)}`;
@@ -622,113 +632,126 @@ function handleModelEvent(event: ModelEvent): void {
   }
 
   setStatus(event.message, event.stage);
-  renderActionState();
 }
 
 function handleDictationUpdate(update: DictationUpdate): void {
-  const { status, phrase } = update;
-  const wasListening = listening;
-  listening =
-    status.state === "listening" ||
-    status.state === "transcribing" ||
-    status.state === "rewriting";
-  if (listening && !wasListening) listeningSince = Date.now();
-  syncElapsedTimer();
-
-
+  // The pill outside the app is the listening indicator, and it is the one you
+  // can actually see while dictating into another window. Mirroring its state
+  // in here gave two things to watch that could disagree, so the sidebar
+  // carries only the engine: which model, ready or not, and anything that
+  // went wrong.
+  const { status } = update;
   if (status.state === "error" && status.message) setStatus(status.message, "error");
-  else if (status.state === "listening") setStatus("Listening", "ready");
-  else if (status.state === "transcribing") setStatus("Transcribing…", "transcribing");
-  else if (status.state === "rewriting") setStatus("Rewriting with AI…", "transcribing");
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
-
-  renderActionState();
 }
 
-function renderActionState(): void {
-  // Never disabled while the engine loads. Recording starts immediately and the
-  // first phrase waits for the model, which beats a dead button that gives no
-  // way to begin.
-  element.actionButton.classList.toggle("is-listening", listening);
-  element.actionButton.classList.toggle("is-warming", modelLoading && !listening);
-  element.actionButton.setAttribute("aria-pressed", String(listening));
-  element.actionLabel.textContent = listening ? "Stop listening" : "Start listening";
+/** The shortcut is the way in, so the page says so where the button used to be. */
+function renderDictateHint(): void {
+  const hint = element.dictateHint;
+  hint.replaceChildren();
 
-  if (listening) {
-    const elapsed = formatElapsed(Date.now() - listeningSince);
-    element.actionHint.textContent = modelLoading
-      ? `${elapsed} · preparing the model…`
-      : elapsed;
-  } else if (modelLoading) {
-    element.actionHint.textContent = "Preparing the model…";
-  } else {
-    element.actionHint.textContent = shortcutHint();
-  }
-
-}
-
-/** Reminds the user the button is not the only way in. */
-function shortcutHint(): string {
+  // With no button on the page, an unusable shortcut would leave no way in at
+  // all, so say which one it is instead of repeating the instruction.
   const binding = getHotkeyBinding(settings.hotkeyId);
-  if (!binding || hotkeyStatus?.supported === false) return "";
-  return `or hold ${binding.label}`;
-}
-
-function formatElapsed(milliseconds: number): string {
-  const total = Math.max(0, Math.floor(milliseconds / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
-
-/** Ticks the elapsed readout only while a session is actually running. */
-function syncElapsedTimer(): void {
-  if (listening && elapsedTimer === null) {
-    listeningSince = listeningSince || Date.now();
-    elapsedTimer = window.setInterval(renderActionState, 1000);
+  if (!binding || hotkeyStatus?.supported === false) {
+    hint.append(text("Choose a shortcut in Settings to start dictating."));
     return;
   }
-  if (!listening && elapsedTimer !== null) {
-    clearInterval(elapsedTimer);
-    elapsedTimer = null;
-    listeningSince = 0;
-  }
+
+  hint.append(
+    text("Hold "),
+    key(binding.glyph),
+    text(" anywhere in macOS to dictate, or tap twice to keep listening."),
+  );
 }
 
-/** Renders the saved dictations, newest first. */
-function renderHistory(): void {
-  element.history.replaceChildren();
-  element.history.classList.toggle("is-empty", entries.length === 0);
+function text(value: string): Text {
+  return document.createTextNode(value);
+}
 
-  if (entries.length === 0) {
+function key(glyph: string): HTMLElement {
+  const element = document.createElement("kbd");
+  element.textContent = glyph;
+  return element;
+}
+
+/** Renders the saved dictations, newest first, grouped by the day they landed. */
+function renderHistory(): void {
+  const matches =
+    query === ""
+      ? entries
+      : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
+
+  element.history.replaceChildren();
+  element.history.classList.toggle("is-empty", matches.length === 0);
+
+  if (matches.length === 0 && query !== "") {
+    const note = document.createElement("p");
+    note.className = "no-matches";
+    note.textContent = `Nothing matches \u201c${query}\u201d.`;
+    element.history.append(note);
+  } else if (matches.length === 0) {
     element.emptyState.hidden = false;
     element.history.append(element.emptyState);
     renderEmptyState();
   } else {
-    for (const entry of entries) element.history.append(renderEntry(entry));
+    for (const day of groupByDay(matches)) element.history.append(renderDay(day));
   }
 
-  element.clearButton.disabled = entries.length === 0;
-  element.dictateNote.textContent =
-    entries.length === 0
-      ? ""
-      : `${entries.length.toLocaleString()} ${entries.length === 1 ? "dictation" : "dictations"}`;
+  element.dictateNote.textContent = describeCount(matches.length);
+}
+
+function describeCount(matched: number): string {
+  if (entries.length === 0) return "";
+  if (query !== "") return `${matched.toLocaleString()} of ${entries.length.toLocaleString()}`;
+  return `${entries.length.toLocaleString()} ${entries.length === 1 ? "dictation" : "dictations"}`;
+}
+
+/** Consecutive runs, not a map: the list is already ordered by time. */
+function groupByDay(list: SavedDictation[]): SavedDictation[][] {
+  const days: SavedDictation[][] = [];
+  let key = "";
+  let current: SavedDictation[] = [];
+  for (const entry of list) {
+    const day = new Date(entry.createdAt).toDateString();
+    if (day !== key) {
+      current = [];
+      days.push(current);
+      key = day;
+    }
+    current.push(entry);
+  }
+  return days;
+}
+
+function renderDay(day: SavedDictation[]): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "day";
+
+  const label = document.createElement("h2");
+  label.className = "day-label";
+  label.textContent = formatDay(day[0]?.createdAt ?? Date.now());
+
+  const card = document.createElement("div");
+  card.className = "entry-card";
+  for (const entry of day) card.append(renderEntry(entry));
+
+  section.append(label, card);
+  return section;
 }
 
 function renderEntry(entry: SavedDictation): HTMLElement {
   const article = document.createElement("article");
   article.className = entry.id === freshId ? "entry is-fresh" : "entry";
 
-  const head = document.createElement("div");
-  head.className = "entry-head";
-
   const time = document.createElement("span");
   time.className = "entry-time";
-  time.textContent = formatWhen(entry.createdAt);
+  time.textContent = formatTime(entry.createdAt);
   time.title = new Date(entry.createdAt).toLocaleString();
 
-  const words = document.createElement("span");
-  words.className = "entry-words";
-  const count = entry.text.split(/\s+/).filter(Boolean).length;
-  words.textContent = `${count} ${count === 1 ? "word" : "words"}`;
+  const text = document.createElement("p");
+  text.className = "entry-text";
+  text.textContent = entry.text;
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
@@ -745,13 +768,7 @@ function renderEntry(entry: SavedDictation): HTMLElement {
     }),
   );
 
-  head.append(time, words, actions);
-
-  const text = document.createElement("p");
-  text.className = "entry-text";
-  text.textContent = entry.text;
-
-  article.append(head, text);
+  article.append(time, text, actions);
   return article;
 }
 
@@ -784,21 +801,44 @@ const COPY_ICON =
 const TRASH_ICON =
   '<path d="M4.6 6.2h10.8M8.2 6.2V4.9c0-.6.5-1.1 1.1-1.1h1.4c.6 0 1.1.5 1.1 1.1v1.3M6.1 6.2l.6 8.6c.05.7.6 1.2 1.3 1.2h4c.7 0 1.25-.5 1.3-1.2l.6-8.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>';
 
-/** Relative for recent dictations, absolute once that stops being useful. */
-function formatWhen(timestamp: number): string {
-  const seconds = Math.max(0, (Date.now() - timestamp) / 1000);
-  if (seconds < 45) return "Just now";
-  if (seconds < 3600) {
-    const minutes = Math.round(seconds / 60);
-    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
-  }
+function toggleSearch(open: boolean): void {
+  searchOpen = open;
+  element.search.classList.toggle("is-open", open);
+  element.searchButton.setAttribute("aria-expanded", String(open));
 
-  const when = new Date(timestamp);
-  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (seconds < 86_400 && when.getDate() === new Date().getDate()) return time;
-  if (seconds < 172_800) return `Yesterday, ${time}`;
-  return `${when.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
+  if (open) {
+    element.searchField.focus();
+    return;
+  }
+  element.searchField.value = "";
+  if (query !== "") {
+    query = "";
+    renderHistory();
+  }
 }
+
+/** The day carries the date, so each row only needs its clock time. */
+function formatTime(timestamp: number): string {
+  return new Date(timestamp)
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    .toLowerCase();
+}
+
+function formatDay(timestamp: number): string {
+  const when = new Date(timestamp);
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const days = Math.floor((midnight.getTime() - when.getTime()) / 86_400_000) + 1;
+
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return when.toLocaleDateString([], { weekday: "long" });
+  if (when.getFullYear() === new Date().getFullYear()) {
+    return when.toLocaleDateString([], { day: "numeric", month: "long" });
+  }
+  return when.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
+}
+
 
 function toggleSettings(open: boolean): void {
   settingsOpen = open;
@@ -815,7 +855,7 @@ function toggleSettings(open: boolean): void {
 function setStatus(message: string, stage: UiStage): void {
   element.statusText.textContent = message;
   element.modelDot.dataset.stage = stage;
-  element.activityModelState.textContent = message;
+  element.overviewModelState.textContent = message;
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {
