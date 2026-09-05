@@ -26,6 +26,10 @@
   --danger-soft: #f6e6e3;
   --positive: #2f7d5a;
   --shadow-modal: 0 24px 70px rgb(28 27 24 / 22%);
+  --hint-surface: #fbf2ff;
+  --hint-ink: #5b4470;
+  --hint-hairline: rgb(91 68 112 / 18%);
+  --hint-key: rgb(255 255 255 / 55%);
   /* One gap all round the content panel. */
   --inset: 14px;
   --titlebar: 58px;
@@ -40,7 +44,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #16151300;
     --paper: #161513;
     --surface: #1f1e1a;
     --surface-sunken: #26241f;
@@ -58,6 +61,10 @@
     --danger-soft: rgb(224 138 131 / 14%);
     --positive: #6cc194;
     --shadow-modal: 0 24px 70px rgb(0 0 0 / 56%);
+    --hint-surface: rgb(178 130 224 / 13%);
+    --hint-ink: #d5bced;
+    --hint-hairline: rgb(213 188 237 / 24%);
+    --hint-key: rgb(255 255 255 / 9%);
     color-scheme: dark;
   }
 }
@@ -80,6 +87,10 @@
   --danger-soft: rgb(224 138 131 / 14%);
   --positive: #6cc194;
   --shadow-modal: 0 24px 70px rgb(0 0 0 / 56%);
+  --hint-surface: rgb(178 130 224 / 13%);
+  --hint-ink: #d5bced;
+  --hint-hairline: rgb(213 188 237 / 24%);
+  --hint-key: rgb(255 255 255 / 9%);
   color-scheme: dark;
 }
 
@@ -256,6 +267,30 @@ kbd {
 }
 
 /* Compact live state, always visible without leaving the current view. */
+/* The shortcut, stated once, next to the status it belongs with. Its own
+   colour because it is the only thing in the sidebar that teaches rather
+   than reports. */
+.shortcut-card {
+  padding: 11px 12px 12px;
+  border-radius: 11px;
+  margin: 0 0 8px;
+  background: var(--hint-surface);
+  color: var(--hint-ink);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.shortcut-card kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--hint-hairline);
+  border-radius: 5px;
+  background: var(--hint-key);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .sidebar-status {
   display: flex;
   flex-direction: column;
@@ -327,12 +362,21 @@ kbd {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding: 34px 38px 26px;
+  /* No bottom inset: the list scrolls to the panel's own edge, so a row that
+     is only half visible is cut off by the panel rather than by a rule
+     hanging in the space below it. */
+  padding: 34px 38px 0;
   border: 1px solid var(--hairline);
   border-radius: 16px;
   background: var(--surface);
   overflow-y: auto;
   scrollbar-width: none;
+}
+
+/* Only the list runs to the edge. The overview is ordinary content and keeps
+   its bottom inset. */
+#view-overview {
+  padding-bottom: 26px;
 }
 
 .view[hidden] {
@@ -809,34 +853,6 @@ kbd {
 
 .nav-badge[hidden] {
   display: none;
-}
-
-/* ------------------------------------------------------------ dictate hint */
-
-/* The shortcut replaced the button. It states the binding and nothing else:
-   the pill outside the app reports the session. */
-.dictate-hint {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding-top: 16px;
-  margin: 14px 0 0;
-  border-top: 1px solid var(--hairline);
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-weight: 480;
-  font-variant-numeric: tabular-nums;
-}
-
-.dictate-hint kbd {
-  padding: 1.5px 6px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 5px;
-  background: var(--surface-sunken);
-  color: var(--ink-soft);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 560;
 }
 
 /* -------------------------------------------------------------- overview */

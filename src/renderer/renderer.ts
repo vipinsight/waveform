@@ -33,7 +33,7 @@ const element = {
   history: requireElement<HTMLElement>("history"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
-  dictateHint: requireElement<HTMLElement>("dictate-hint"),
+  shortcutHint: requireElement<HTMLElement>("shortcut-hint"),
   search: requireElement<HTMLElement>("search"),
   searchButton: requireElement<HTMLButtonElement>("search-button"),
   searchField: requireElement<HTMLInputElement>("search-field"),
@@ -544,9 +544,9 @@ function renderHotkeyStatus(): void {
   element.hotkeySummary.textContent = binding
     ? `${binding.glyph} ${binding.label}`
     : "Shortcut off";
-  // The footer hint names the same binding, so it is rendered from here
+  // The sidebar card names the same binding, so it is rendered from here
   // rather than from anything that could describe a different one.
-  renderDictateHint();
+  renderShortcutCard();
   renderSetup();
 }
 
@@ -645,9 +645,9 @@ function handleDictationUpdate(update: DictationUpdate): void {
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
 }
 
-/** The shortcut is the way in, so the page says so where the button used to be. */
-function renderDictateHint(): void {
-  const hint = element.dictateHint;
+/** The shortcut is the way in, so the sidebar says which one to hold. */
+function renderShortcutCard(): void {
+  const hint = element.shortcutHint;
   hint.replaceChildren();
 
   // With no button on the page, an unusable shortcut would leave no way in at
