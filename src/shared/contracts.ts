@@ -136,6 +136,7 @@ export interface DesktopApi {
   openPrivacySettings(pane: PrivacyPane): Promise<void>;
 
   toggleDictation(): Promise<void>;
+  cancelDictation(): Promise<void>;
   previewIndicator(): Promise<void>;
   beginOverlayDrag(): void;
   moveOverlay(deltaX: number, deltaY: number): void;

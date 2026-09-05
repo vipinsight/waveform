@@ -45,6 +45,7 @@ const STATE_LABEL: Record<DictationState, string> = {
 const hud = requireElement<HTMLElement>("hud");
 const srLabel = requireElement<HTMLElement>("hud-label");
 const canvas = requireElement<HTMLCanvasElement>("wave");
+const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
 const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
@@ -76,6 +77,8 @@ installTauriBridge();
 resizeCanvasForDisplay();
 window.addEventListener("resize", resizeCanvasForDisplay);
 enableDragging();
+
+cancelButton.addEventListener("click", () => void host().cancelDictation());
 
 host().onDictationCommand((command) => void handleCommand(command));
 
@@ -337,6 +340,9 @@ function enableDragging(): void {
 
   hud.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
+    // The buttons sit inside the drag surface; pressing one must press it
+    // rather than start moving the window.
+    if ((event.target as HTMLElement).closest("button")) return;
     origin = { x: event.screenX, y: event.screenY };
     hud.dataset.dragging = "true";
     hud.setPointerCapture(event.pointerId);

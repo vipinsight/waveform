@@ -461,7 +461,7 @@ function renderSetup(): void {
       button.textContent = step.done
         ? "Done"
         : step.id === "engine"
-          ? "How"
+          ? "Copy command"
           : "Grant";
     }
   }
@@ -470,9 +470,13 @@ function renderSetup(): void {
   element.setupLede.textContent =
     outstanding.length === 0
       ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Waveform needs a few things from macOS before it can listen anywhere and type for you.";
+      : "Three of these are permissions macOS has to grant. The fourth is the model that does the transcribing, which runs on this Mac.";
 
-  element.checkEngineNote.textContent = `${getSpeechModel(settings.modelId).label} · runs offline on this Mac`;
+  const model = getSpeechModel(settings.modelId);
+  const engineInstalled = hotkeyStatus?.engineInstalled === true;
+  element.checkEngineNote.textContent = engineInstalled
+    ? `${model.label} · runs offline on this Mac`
+    : `${model.label} is not installed. Run ${engineSetupCommand()} in the project folder.`;
 
   // The banner names what is missing rather than saying "setup incomplete",
   // so the next action is obvious without opening anything.
@@ -487,6 +491,13 @@ function renderSetup(): void {
   }
 }
 
+/** The command that installs the runtime for the selected model. */
+function engineSetupCommand(): string {
+  return getSpeechModel(settings.modelId).engine === "qwen"
+    ? "pnpm setup:qwen"
+    : "pnpm setup:model";
+}
+
 /** Joins labels the way a sentence would: "a, b and c". */
 function listPhrase(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
@@ -495,7 +506,12 @@ function listPhrase(items: string[]): string {
 
 function resolveSetupStep(id: string): void {
   if (id === "engine") {
-    showSettingsPage("general");
+    // The app cannot install a runtime for itself, so the useful thing it can
+    // do is hand over the exact command rather than send the user to a page
+    // that does not explain anything.
+    void navigator.clipboard.writeText(engineSetupCommand());
+    const button = element.checklist.querySelector<HTMLButtonElement>('[data-fix="engine"]');
+    if (button) flash(button, "Copied");
     return;
   }
   if (id === "microphone") {

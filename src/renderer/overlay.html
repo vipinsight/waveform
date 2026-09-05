@@ -7,7 +7,13 @@
   </head>
   <body>
     <div id="hud" class="hud" data-state="idle" title="Drag to move">
+      <button id="hud-cancel" class="hud-button is-cancel" type="button" aria-label="Cancel">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </svg>
+      </button>
       <canvas id="wave" class="wave" width="240" height="40"></canvas>
+      <span id="hud-busy" class="hud-busy" aria-hidden="true"><svg viewBox="0 0 16 16" aria-hidden="true"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8.00 4.40L8.00 1.60" opacity="0.25"/><path d="M10.55 5.45L12.53 3.47" opacity="0.36"/><path d="M11.60 8.00L14.40 8.00" opacity="0.46"/><path d="M10.55 10.55L12.53 12.53" opacity="0.57"/><path d="M8.00 11.60L8.00 14.40" opacity="0.68"/><path d="M5.45 10.55L3.47 12.53" opacity="0.79"/><path d="M4.40 8.00L1.60 8.00" opacity="0.89"/><path d="M5.45 5.45L3.47 3.47" opacity="1.00"/></g></svg></span>
     </div>
     <span id="hud-label" class="visually-hidden" aria-live="polite">Idle</span>
     <script src="./overlay.js"></script>

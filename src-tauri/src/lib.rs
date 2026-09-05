@@ -35,8 +35,8 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_WIDTH: f64 = 64.0;
-const OVERLAY_HEIGHT: f64 = 34.0;
+const OVERLAY_WIDTH: f64 = 138.0;
+const OVERLAY_HEIGHT: f64 = 48.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
@@ -233,6 +233,12 @@ fn request_microphone() -> MicrophoneResult {
 #[tauri::command]
 async fn toggle_dictation(state: State<'_, AppState>) -> Result<(), String> {
     state.dictation.toggle_from_app().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_dictation(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.cancel_from_app().await;
     Ok(())
 }
 
@@ -529,6 +535,7 @@ pub fn run() {
             transcribe,
             request_microphone,
             toggle_dictation,
+            cancel_dictation,
             preview_indicator,
             report_dictation_state,
             report_dictation_phrase,

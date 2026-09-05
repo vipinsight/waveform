@@ -110,6 +110,7 @@ const api: DesktopApi = {
   polishSelection: () => invoke<void>("polish_selection"),
 
   toggleDictation: () => invoke<void>("toggle_dictation"),
+  cancelDictation: () => invoke<void>("cancel_dictation"),
   previewIndicator: () => invoke<void>("preview_indicator"),
   onDictationCommand: (listener) =>
     subscribe<DictationCommand>("dictation-command", listener),

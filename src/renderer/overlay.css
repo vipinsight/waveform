@@ -29,13 +29,16 @@ body {
 }
 
 .hud {
-  display: grid;
-  width: 50px;
-  height: 20px;
+  display: flex;
+  width: 124px;
+  height: 34px;
   margin: 7px auto 0;
-  place-items: center;
-  border: 1.5px solid rgb(255 255 255 / 26%);
-  border-radius: 11px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 0 5px;
+  border: 1.5px solid rgb(255 255 255 / 20%);
+  border-radius: 17px;
   background: #08080a;
   box-shadow: 0 5px 16px rgb(0 0 0 / 45%);
   opacity: 0;
@@ -73,8 +76,72 @@ body {
 }
 
 .wave {
-  width: 36px;
-  height: 13px;
+  width: 52px;
+  height: 18px;
+}
+
+/* Cancel and insert, either side of the meter. Both are reachable without
+   going back to the window, which is the point of the indicator being where
+   the user is already looking. */
+.hud-button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  cursor: default;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.hud-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hud-button:active {
+  transform: scale(0.92);
+}
+
+.is-cancel {
+  background: #4a4a4e;
+  color: #fff;
+}
+
+.is-cancel:hover {
+  filter: brightness(1.25);
+}
+
+/* Reports work rather than inviting a click: the slot is reserved so the pill
+   does not change width when the spinner comes and goes. */
+.hud-busy {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.hud-busy svg {
+  width: 15px;
+  height: 15px;
+}
+
+.hud[data-state="transcribing"] .hud-busy,
+.hud[data-state="rewriting"] .hud-busy {
+  opacity: 1;
+  /* Stepped rather than smooth, which is how a spoke spinner reads. */
+  animation: spokes 0.8s steps(8) infinite;
+}
+
+@keyframes spokes {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
