@@ -258,6 +258,10 @@ kbd {
   white-space: nowrap;
 }
 
+.sidebar-status-row[hidden] {
+  display: none;
+}
+
 .dot {
   width: 6px;
   height: 6px;
@@ -366,8 +370,17 @@ kbd {
   background-clip: content-box;
 }
 
+/* Centred while empty, top-aligned once dictation starts: an empty panel
+   should look composed, and a filling one should read like a document. */
+.transcript.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .empty-state {
   max-width: 520px;
+  padding-bottom: 6vh;
 }
 
 .empty-headline {
@@ -387,6 +400,65 @@ kbd {
 
 .phrase {
   animation: phrase-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* A phrase that has just landed is briefly tinted, then settles into the body
+   text. Dictation is a conversation with a delay, and this is the app's way of
+   saying it heard that one. */
+.phrase.is-fresh {
+  animation:
+    phrase-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    phrase-settle 1.4s 220ms ease-out both;
+}
+
+@keyframes phrase-settle {
+  from {
+    color: var(--accent);
+  }
+  to {
+    color: inherit;
+  }
+}
+
+.starter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  margin: 26px 0 0;
+  list-style: none;
+}
+
+.starter[hidden] {
+  display: none;
+}
+
+.starter li {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: -0.004em;
+}
+
+.starter-step {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.starter kbd {
+  font-size: 12px;
 }
 
 /* A standing notice that something is stopping dictation from working. It sits
@@ -720,6 +792,39 @@ kbd {
   background: var(--surface-sunken);
 }
 
+.privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  margin-top: 12px;
+}
+
+.privacy-mark {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.privacy p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.privacy strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 620;
+}
+
 /* -------------------------------------------------------------- settings */
 
 .scrim {
@@ -735,12 +840,12 @@ kbd {
   top: 50%;
   left: 50%;
   display: grid;
-  width: min(760px, 90vw);
-  height: min(560px, 86vh);
+  width: min(860px, 94vw);
+  height: min(600px, 88vh);
   border-radius: 18px;
   background: var(--surface);
   box-shadow: var(--shadow-modal);
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: 188px minmax(0, 1fr);
   overflow: hidden;
   transform: translate(-50%, -50%);
   animation: modal-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -864,6 +969,23 @@ kbd {
   flex: 0 0 auto;
   align-items: center;
   gap: 7px;
+}
+
+/* For rows whose control needs the full width, such as a pasted key: side by
+   side, the label wraps to two lines and the field is too small to read. */
+.row.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.row.is-stacked .row-actions {
+  width: 100%;
+}
+
+.row.is-stacked .text-input {
+  flex: 1;
+  width: auto;
 }
 
 .subhead {

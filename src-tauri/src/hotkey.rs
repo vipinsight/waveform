@@ -258,15 +258,21 @@ mod tests {
             serde_json::from_str(r#"{"type":"key","phase":"down","keyCode":63}"#).unwrap();
         assert!(matches!(key, HelperEvent::Key { key_code: 63, .. }));
 
+        // A helper predating the microphone field must still parse.
         let permissions: HelperEvent = serde_json::from_str(
             r#"{"type":"permissions","accessibility":true,"inputMonitoring":false}"#,
         )
         .unwrap();
         assert!(matches!(
+            &permissions,
+            HelperEvent::Permissions { microphone, .. } if microphone == "unknown"
+        ));
+        assert!(matches!(
             permissions,
             HelperEvent::Permissions {
                 accessibility: true,
-                input_monitoring: false
+                input_monitoring: false,
+                ..
             }
         ));
 

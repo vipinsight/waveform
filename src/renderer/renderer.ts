@@ -28,6 +28,7 @@ const element = {
   hotkeyDot: requireElement<HTMLElement>("hotkey-dot"),
   hotkeySummary: requireElement<HTMLElement>("hotkey-summary"),
   resourceSummary: requireElement<HTMLElement>("resource-summary"),
+  resourceRow: requireElement<HTMLElement>("resource-row"),
   transcript: requireElement<HTMLElement>("transcript"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
@@ -51,6 +52,10 @@ const element = {
   previewButton: requireElement<HTMLButtonElement>("preview-button"),
   resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
   hintKey: requireElement<HTMLElement>("hint-key"),
+  emptyHeadline: requireElement<HTMLElement>("empty-headline"),
+  emptyHint: requireElement<HTMLElement>("empty-hint"),
+  starter: requireElement<HTMLElement>("starter"),
+  starterKey: document.querySelector<HTMLElement>(".starter-key")!,
   gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
@@ -93,6 +98,7 @@ let modelLoading = false;
 let listening = false;
 let settingsOpen = false;
 let phraseCount = 0;
+let lifetimeSessions = 0;
 let listeningSince = 0;
 let elapsedTimer: number | null = null;
 
@@ -107,12 +113,14 @@ async function bootstrap(): Promise<void> {
 
   applySettings(await host().getSettings());
   renderStats(await host().getStats());
+  element.versionLine.textContent = `Waveform ${await host().getAppVersion()}`;
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
 
   hotkeyStatus = await host().getHotkeyStatus();
   renderHotkeyStatus();
+  renderTranscriptMeta();
   renderAiStatus(await host().getAiStatus());
 }
 
@@ -310,7 +318,7 @@ function applySettings(next: AppSettings): void {
   const model = getSpeechModel(next.modelId);
   element.modelNote.textContent = `${model.modelId} · runs on this Mac`;
   element.activityModel.textContent = model.label;
-  element.versionLine.textContent = `Waveform · ${model.shortLabel}`;
+
 
   renderHotkeyLabels();
   renderHotkeyStatus();
@@ -437,6 +445,7 @@ function renderSetup(): void {
 
   // The banner names what is missing rather than saying "setup incomplete",
   // so the next action is obvious without opening anything.
+  renderEmptyState();
   element.setupBanner.hidden = outstanding.length === 0;
   if (outstanding.length > 0) {
     element.bannerTitle.textContent =
@@ -479,9 +488,11 @@ function renderHotkeyStatus(): void {
     status?.supported === true && status.running && status.inputMonitoring && !!binding;
   element.hotkeyDot.dataset.armed = String(armed);
 
-  const summary = describeHotkey(status, binding?.label ?? null);
-  element.hotkeySummary.textContent = summary;
-  element.dictateNote.textContent = armed ? summary : "";
+  // The sidebar states the binding; anything wrong with it is the banner's
+  // job. Saying it in three places at once made the window look alarmed.
+  element.hotkeySummary.textContent = binding
+    ? `${binding.glyph} ${binding.label}`
+    : "Shortcut off";
   renderSetup();
 }
 
@@ -513,14 +524,49 @@ function setPermissionRow(row: HTMLElement, granted: boolean): void {
   button.classList.toggle("is-primary", !granted);
 }
 
+/**
+ * The transcript's resting state, which is the app's only real onboarding.
+ *
+ * Someone who has never dictated needs to be told what to do; someone who has
+ * done it a hundred times needs the panel to be quiet.
+ */
+function renderEmptyState(): void {
+  const outstanding = setupSteps().filter((step) => !step.done);
+  const glyph = getHotkeyBinding(settings.hotkeyId)?.glyph ?? "your shortcut";
+  const firstRun = lifetimeSessions === 0;
+
+  if (outstanding.length > 0) {
+    element.emptyHeadline.textContent = "Almost ready.";
+    element.emptyHint.textContent =
+      "Finish the steps above and your words will appear here, and wherever your cursor is.";
+    element.starter.hidden = true;
+    return;
+  }
+
+  element.starter.hidden = !firstRun;
+  element.starterKey.textContent = glyph;
+
+  if (firstRun) {
+    element.emptyHeadline.textContent = "Try it now.";
+    element.emptyHint.textContent = "Speak once and Waveform will type it for you.";
+    return;
+  }
+
+  element.emptyHeadline.textContent = "Your words will land here.";
+  element.emptyHint.textContent = `Hold ${glyph} anywhere in macOS and speak. Release to transcribe, or tap twice to keep listening.`;
+}
+
 function renderStats(stats: AppStats): void {
+  lifetimeSessions = stats.sessions;
   element.statWords.textContent = stats.words.toLocaleString();
   element.statPhrases.textContent = stats.phrases.toLocaleString();
   element.statSessions.textContent = stats.sessions.toLocaleString();
+  renderEmptyState();
 }
 
 function renderResourceUsage(usage: ResourceUsage): void {
   const memory = formatMemory(usage.memoryMb);
+  element.resourceRow.hidden = false;
   element.resourceSummary.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
   element.activityCpu.textContent = `${usage.cpuPercent}%`;
   element.activityMemory.textContent = memory;
@@ -627,14 +673,31 @@ function syncElapsedTimer(): void {
   }
 }
 
+function renderTranscriptMeta(): void {
+  const words = Array.from(element.transcript.querySelectorAll(".phrase"))
+    .map((node) => node.textContent ?? "")
+    .join(" ")
+    .split(/\s+/)
+    .filter(Boolean).length;
+
+  element.transcript.classList.toggle("is-empty", phraseCount === 0);
+  element.dictateNote.textContent =
+    words === 0 ? "" : `${words.toLocaleString()} ${words === 1 ? "word" : "words"}`;
+}
+
 function appendPhrase(text: string): void {
   element.emptyState.remove();
   const phrase = document.createElement("span");
-  phrase.className = "phrase";
+  phrase.className = "phrase is-fresh";
   phrase.textContent = `${text} `;
   element.transcript.append(phrase);
+  // The tint is a one-off; leaving the class on would re-run it on any reflow.
+  phrase.addEventListener("animationend", () => phrase.classList.remove("is-fresh"), {
+    once: true,
+  });
   element.transcript.scrollTop = element.transcript.scrollHeight;
   phraseCount += 1;
+  renderTranscriptMeta();
   renderActionState();
 }
 
@@ -642,6 +705,8 @@ function clearTranscript(): void {
   element.transcript.replaceChildren(element.emptyState);
   element.emptyState.hidden = false;
   phraseCount = 0;
+  renderTranscriptMeta();
+  renderEmptyState();
   renderActionState();
 }
 

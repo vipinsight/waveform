@@ -119,6 +119,7 @@ const api: DesktopApi = {
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>("resource-usage", listener),
   onOpenSettings: (listener) => subscribe<void>("open-settings", listener),
+  getAppVersion: () => invoke<string>("app_version"),
 };
 
 /**

@@ -81,6 +81,11 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     Ok(state.settings.lock().await.value())
 }
@@ -366,6 +371,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        // Remembers the main window's size and position. The overlay is
+        // excluded: it is placed deliberately and its position is already
+        // persisted in settings.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_denylist(&[OVERLAY_LABEL])
+                .build(),
+        )
         .menu(build_app_menu)
         .on_menu_event(|app, event| handle_menu_action(app.app_handle(), event.id().as_ref()))
         .setup(|app| {
@@ -439,6 +452,26 @@ pub fn run() {
                 });
             }
 
+            // The Exit event covers a normal quit, but a terminated or crashed
+            // app would leave the engine running -- it is a separate process
+            // and does not notice its parent going away.
+            let engine = models.clone();
+            tauri::async_runtime::spawn(async move {
+                use tokio::signal::unix::{signal, SignalKind};
+                let Ok(mut terminate) = signal(SignalKind::terminate()) else {
+                    return;
+                };
+                let Ok(mut interrupt) = signal(SignalKind::interrupt()) else {
+                    return;
+                };
+                tokio::select! {
+                    _ = terminate.recv() => {}
+                    _ = interrupt.recv() => {}
+                }
+                engine.stop().await;
+                std::process::exit(0);
+            });
+
             resources::spawn_monitor(app.handle().clone(), models.clone());
 
             // Load the engine at launch so the first dictation is not the thing
@@ -451,6 +484,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             show_main_window,
+            app_version,
             get_settings,
             update_settings,
             get_stats,

@@ -140,6 +140,7 @@ export interface DesktopApi {
   polishSelection(): Promise<void>;
   /** The application menu asking for the settings dialog. */
   onOpenSettings(listener: () => void): () => void;
+  getAppVersion(): Promise<string>;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;

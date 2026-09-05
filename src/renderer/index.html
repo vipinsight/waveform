@@ -43,9 +43,9 @@
             <span class="dot" id="hotkey-dot" data-armed="false" aria-hidden="true"></span>
             <span id="hotkey-summary">Shortcut off</span>
           </div>
-          <div class="sidebar-status-row">
+          <div class="sidebar-status-row" id="resource-row" hidden>
             <span class="dot" style="background: transparent" aria-hidden="true"></span>
-            <span id="resource-summary" title="CPU and memory across Waveform and the speech engine">—</span>
+            <span id="resource-summary" title="CPU and memory across Waveform and the speech engine"></span>
           </div>
         </div>
 
@@ -80,11 +80,16 @@
 
           <div id="transcript" class="transcript" aria-live="polite" tabindex="0">
             <div id="empty-state" class="empty-state">
-              <p class="empty-headline display">Your words will land here.</p>
-              <p class="empty-hint">
+              <p class="empty-headline display" id="empty-headline">Your words will land here.</p>
+              <p class="empty-hint" id="empty-hint">
                 Hold <kbd id="hint-key">fn</kbd> anywhere in macOS and speak. Release to
                 transcribe, or tap twice to keep listening.
               </p>
+              <ul class="starter" id="starter" hidden>
+                <li><span class="starter-step">1</span>Put your cursor in any text field.</li>
+                <li><span class="starter-step">2</span>Hold <kbd class="starter-key">fn</kbd> and say a sentence.</li>
+                <li><span class="starter-step">3</span>Let go. The text appears where you were typing.</li>
+              </ul>
             </div>
           </div>
 
@@ -142,6 +147,21 @@
               <span class="row-label">Memory<small id="activity-engine-memory">—</small></span>
               <span class="row-actions"><span id="activity-memory" class="view-note">—</span></span>
             </div>
+          </div>
+
+          <div class="privacy">
+            <svg viewBox="0 0 20 20" aria-hidden="true" class="privacy-mark">
+              <path d="M10 2.6 4.2 5v4.5c0 3.4 2.4 6.5 5.8 7.9 3.4-1.4 5.8-4.5 5.8-7.9V5L10 2.6Z"
+                fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="m7.4 9.9 1.9 1.9 3.4-3.6" fill="none" stroke="currentColor"
+                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p>
+              <strong>Your voice stays here.</strong>
+              Recording and transcription happen on this Mac, and no audio is ever
+              uploaded. Text leaves only when you use AI&nbsp;Polish, and only the words
+              you asked it to rewrite.
+            </p>
           </div>
         </section>
       </main>
@@ -310,7 +330,7 @@
         <section class="settings-page" data-page="ai" hidden>
           <h1 class="display">AI Polish</h1>
           <div class="card">
-            <div class="row">
+            <div class="row is-stacked">
               <span class="row-label">
                 OpenRouter API key
                 <small id="key-state">Stored in your login keychain, never in plain text.</small>

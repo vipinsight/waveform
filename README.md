@@ -81,14 +81,14 @@ in the app window only.
 
 ### Permissions
 
-Both live under **Settings → Shortcut**. macOS gates each half, and neither can
+**Settings → Setup** lists everything dictation depends on, with its live state
+and a button that opens the right pane. The list updates while you are still in
+System Settings, so you do not have to restart to see a grant take effect. macOS gates each half, and neither can
 be granted programmatically:
 
 - **Input Monitoring** — lets Waveform see the trigger key while other apps are
   focused.
 - **Accessibility** — lets Waveform paste into the focused app.
-
-Settings shows both and links straight to the right System Settings pane.
 
 macOS ties these to the app's code signature, which is why a grant can appear
 ticked in System Settings while the app is still refused: an ad-hoc signature
@@ -127,6 +127,17 @@ defaults. Pick any OpenRouter model id; the field suggests a few fast ones.
 Polishing has to copy the selection to read it, since no API exposes another
 app's selection — so it needs **Accessibility**, and it only ever runs when you
 press the shortcut. Your clipboard is restored afterwards.
+
+## Living in the menu bar
+
+Closing the window does not quit Waveform: the shortcut keeps working with
+nothing on screen, and the Dock icon or the menu bar icon brings the window
+back. **Settings → General** can drop the app out of the Dock entirely while
+the window is closed, leaving only the menu bar icon.
+
+The speech model is not loaded until your first dictation. It is the largest
+thing the app runs, so an idle Waveform costs about 140 MB rather than several
+hundred.
 
 The status bar shows live CPU and memory for Waveform and the speech engine
 combined, since the engine is the larger consumer of both.
