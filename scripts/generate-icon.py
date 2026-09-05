@@ -31,9 +31,11 @@ CANVAS = 1024
 # sit noticeably larger than every neighbour in the Dock -- the opposite of what
 # the design's Dock mock shows.
 TILE = 824
-# Continuous-corner exponent that matches the design's 22.4% radius while
-# keeping the sides straight, which is what reads as a native squircle.
-SQUIRCLE_EXPONENT = 7.2
+# Superellipse exponent, chosen by measuring a system icon rather than by eye:
+# App Store's silhouette turns in 20.1% of its width at the top, and this is
+# the exponent that matches. Higher reads as a rounded square, lower as a
+# lozenge; neither sits right next to the rest of the Dock.
+SQUIRCLE_EXPONENT = 5.9
 SUPERSAMPLE = 4
 
 # Proportions of the tile, per the design's size ladder. Bars take a larger
@@ -91,6 +93,34 @@ def squircle_mask(size: int, exponent: float = SQUIRCLE_EXPONENT) -> Image.Image
     return Image.fromarray((coverage * 255).round().astype(np.uint8), mode="L")
 
 
+def rim_layers(size: int, exponent: float = SQUIRCLE_EXPONENT):
+    """Light and dark alpha masks hugging the inside of the silhouette.
+
+    The design asks for an inset highlight along the top edge and a shadow
+    along the bottom. Drawn as straight bars they only touched the flat top and
+    bottom and the tile read as a sticker; following the curve is what gives it
+    an edge.
+    """
+    radius = size / 2
+    axis = np.arange(size, dtype=np.float64) + 0.5 - radius
+    dx = np.abs(axis)[None, :]
+    dy_signed = np.repeat(axis[:, None], size, axis=1)
+    dy = np.abs(dy_signed)
+
+    with np.errstate(over="ignore"):
+        r = (dx**exponent + dy**exponent) ** (1.0 / exponent)
+
+    depth = radius - r                       # how far inside the curve we are
+    thickness = max(1.5, size * 0.0075)
+    band = np.clip(1.0 - depth / thickness, 0.0, 1.0) * (depth > 0)
+
+    # Light gathers towards the top of the shape, shadow towards the bottom.
+    vertical = np.clip(dy_signed / radius, -1.0, 1.0)
+    light = band * np.clip(-vertical, 0.0, 1.0) ** 0.55 * 0.34
+    shadow = band * np.clip(vertical, 0.0, 1.0) ** 0.55 * 0.42
+    return light, shadow
+
+
 def vertical_gradient(size: int, top: tuple, bottom: tuple) -> Image.Image:
     gradient = Image.new("RGB", (1, size))
     for y in range(size):
@@ -141,17 +171,18 @@ def build_tile(point_size: int, pixels: int) -> Image.Image:
 
     draw_bars(tile, point_size)
 
-    # Inner top highlight and bottom shading, which give the tile its edge.
-    edges = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    edge_draw = ImageDraw.Draw(edges)
-    lip = max(1, round(size * 0.006))
-    edge_draw.rectangle([0, 0, size, lip], fill=(255, 255, 255, 41))
-    edge_draw.rectangle([0, size - lip, size, size], fill=(0, 0, 0, 89))
-    tile = Image.alpha_composite(tile, edges)
-
-    # Mask last, at final resolution: computing coverage here rather than
-    # supersampling a hard-edged mask is what keeps the corners smooth.
+    # Mask and rim last, at final resolution: computing coverage here rather
+    # than supersampling a hard-edged mask is what keeps the corners smooth.
     tile = tile.resize((pixels, pixels), Image.LANCZOS)
+
+    light, shadow = rim_layers(pixels)
+    pixels_rgba = np.array(tile, dtype=np.float64)
+    rgb = pixels_rgba[..., :3]
+    rgb += (255.0 - rgb) * light[..., None]
+    rgb *= 1.0 - shadow[..., None]
+    pixels_rgba[..., :3] = rgb
+    tile = Image.fromarray(pixels_rgba.round().clip(0, 255).astype(np.uint8), "RGBA")
+
     tile.putalpha(squircle_mask(pixels))
     return tile
 
