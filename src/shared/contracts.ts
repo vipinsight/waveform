@@ -89,6 +89,13 @@ export interface AiStatus {
   memoryOnly: boolean;
 }
 
+export interface SavedDictation {
+  id: string;
+  text: string;
+  /** Milliseconds since the epoch. */
+  createdAt: number;
+}
+
 export interface AppStats {
   words: number;
   phrases: number;
@@ -141,6 +148,10 @@ export interface DesktopApi {
   /** The application menu asking for the settings dialog. */
   onOpenSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
+  getHistory(): Promise<SavedDictation[]>;
+  deleteDictation(id: string): Promise<SavedDictation[]>;
+  clearHistory(): Promise<SavedDictation[]>;
+  onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;

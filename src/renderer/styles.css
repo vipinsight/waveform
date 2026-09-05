@@ -99,7 +99,6 @@ body {
   -webkit-user-select: none;
 }
 
-.transcript,
 input,
 textarea {
   cursor: auto;
@@ -399,40 +398,146 @@ kbd {
   font-weight: 500;
 }
 
-/* ------------------------------------------------------------- transcript */
+/* -------------------------------------------------------------- history */
 
-.transcript {
+.history {
   min-height: 0;
   flex: 1;
   padding-right: 6px;
   overflow-y: auto;
-  font-size: clamp(21px, 2.5vw, 29px);
-  font-weight: 460;
-  line-height: 1.45;
-  letter-spacing: -0.022em;
   scrollbar-width: thin;
-  outline: none;
 }
 
-.transcript::-webkit-scrollbar,
-.view::-webkit-scrollbar {
+/* Centred while empty, top-aligned once there is something to read. */
+.history.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.history::-webkit-scrollbar,
+.view::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar {
   width: 8px;
 }
 
-.transcript::-webkit-scrollbar-thumb,
-.view::-webkit-scrollbar-thumb {
+.history::-webkit-scrollbar-thumb,
+.view::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 8px;
   background: var(--hairline-strong);
   background-clip: content-box;
 }
 
-/* Centred while empty, top-aligned once dictation starts: an empty panel
-   should look composed, and a filling one should read like a document. */
-.transcript.is-empty {
+.entry {
+  padding: 16px 0 18px;
+  border-bottom: 1px solid var(--hairline);
+  animation: entry-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.entry:first-child {
+  padding-top: 4px;
+}
+
+.entry-head {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.entry-time {
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0.005em;
+}
+
+.entry-words {
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.entry-actions {
+  display: flex;
+  margin-left: auto;
+  gap: 2px;
+  /* Revealed on hover: a row of controls beside every entry would compete
+     with the words, which are the thing worth reading. */
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+
+.entry:hover .entry-actions,
+.entry:focus-within .entry-actions {
+  opacity: 1;
+}
+
+.entry-action {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.entry-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.entry-action:hover {
+  color: var(--ink);
+  background: var(--surface-sunken);
+}
+
+.entry-action.is-done {
+  color: var(--positive);
+}
+
+.entry-action.is-danger:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.entry-text {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 440;
+  line-height: 1.55;
+  letter-spacing: -0.008em;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+/* The dictation that just landed is briefly tinted, then settles. */
+.entry.is-fresh .entry-text {
+  animation: phrase-settle 1.6s 240ms ease-out both;
+}
+
+@keyframes entry-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes phrase-settle {
+  from {
+    color: var(--accent);
+  }
+  to {
+    color: inherit;
+  }
 }
 
 .empty-state {
@@ -446,7 +551,7 @@ kbd {
 }
 
 .empty-hint {
-  max-width: 400px;
+  max-width: 430px;
   margin: 18px 0 0;
   color: var(--ink-soft);
   font-size: 14px;
@@ -455,26 +560,8 @@ kbd {
   letter-spacing: -0.004em;
 }
 
-.phrase {
-  animation: phrase-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* A phrase that has just landed is briefly tinted, then settles into the body
-   text. Dictation is a conversation with a delay, and this is the app's way of
-   saying it heard that one. */
-.phrase.is-fresh {
-  animation:
-    phrase-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both,
-    phrase-settle 1.4s 220ms ease-out both;
-}
-
-@keyframes phrase-settle {
-  from {
-    color: var(--accent);
-  }
-  to {
-    color: inherit;
-  }
+.empty-hint kbd {
+  margin: 0 1px;
 }
 
 .starter {
@@ -516,157 +603,6 @@ kbd {
 
 .starter kbd {
   font-size: 12px;
-}
-
-/* A standing notice that something is stopping dictation from working. It sits
-   in the view rather than in a dialog, because it describes the app's whole
-   state, not a step the user is in the middle of. */
-.banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 13px;
-  margin-bottom: 18px;
-  background: var(--surface-sunken);
-  animation: banner-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.banner[hidden] {
-  display: none;
-}
-
-.banner-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-soft);
-}
-
-.banner-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12.5px;
-}
-
-.banner-text strong {
-  font-weight: 620;
-}
-
-.banner-text > span {
-  color: var(--ink-soft);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-@keyframes banner-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
-/* ---------------------------------------------------------------- setup */
-
-.lede {
-  max-width: 46ch;
-  margin: -8px 0 20px;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.checklist {
-  display: flex;
-  flex-direction: column;
-  padding: 4px 16px;
-  border-radius: 14px;
-  margin: 0;
-  background: var(--surface-sunken);
-  list-style: none;
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 0;
-}
-
-.check + .check {
-  border-top: 1px solid var(--hairline);
-}
-
-/* Empty ring while pending, filled tick once done, so the state of every step
-   is legible without reading a single label. */
-.check-mark {
-  position: relative;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  border: 1.5px solid var(--hairline-strong);
-  border-radius: 50%;
-  transition: background 200ms ease, border-color 200ms ease;
-}
-
-.check[data-done="true"] .check-mark {
-  border-color: var(--positive);
-  background: var(--positive);
-}
-
-.check[data-done="true"] .check-mark::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 5.6px;
-  width: 4px;
-  height: 8px;
-  border: solid #fff;
-  border-width: 0 1.7px 1.7px 0;
-  transform: rotate(45deg);
-}
-
-.check-body {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-}
-
-.check-body strong {
-  font-weight: 600;
-}
-
-.check-body small {
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-.check[data-done="true"] .pill-button {
-  background: transparent;
-  color: var(--positive);
-  cursor: default;
-  font-weight: 620;
-}
-
-.nav-badge {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-.nav-badge[hidden] {
-  display: none;
 }
 
 /* -------------------------------------------------------------- controls */

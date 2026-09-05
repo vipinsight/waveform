@@ -5,6 +5,7 @@
 //! told about it.
 
 use crate::gestures::{Command, GestureMachine};
+use crate::history::HistoryStore;
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
 use crate::model_server::ModelServer;
 use crate::rewrite::Rewriter;
@@ -92,6 +93,7 @@ pub struct Dictation {
     app: AppHandle,
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
+    history: Arc<Mutex<HistoryStore>>,
     rewriter: Arc<Rewriter>,
     models: Arc<ModelServer>,
     helper: Arc<HotkeyHelper>,
@@ -129,6 +131,7 @@ impl Dictation {
         app: AppHandle,
         settings: Arc<Mutex<SettingsStore>>,
         stats: Arc<Mutex<StatsStore>>,
+        history: Arc<Mutex<HistoryStore>>,
         rewriter: Arc<Rewriter>,
         models: Arc<ModelServer>,
     ) -> Arc<Self> {
@@ -136,6 +139,7 @@ impl Dictation {
             app,
             settings,
             stats,
+            history,
             rewriter,
             models,
             helper: HotkeyHelper::new(),
@@ -582,6 +586,9 @@ impl Dictation {
         if let Some(stats) = stats {
             let _ = self.app.emit("stats-changed", stats);
         }
+
+        let entries = self.history.lock().await.add(&text);
+        let _ = self.app.emit("history-changed", entries);
 
         let _ = self.app.emit_to(
             MAIN_LABEL,

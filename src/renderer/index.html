@@ -24,7 +24,7 @@
               <rect x="7.4" y="2.4" width="5.2" height="9.4" rx="2.6" stroke="currentColor" stroke-width="1.5"/>
               <path d="M4.6 9.2a5.4 5.4 0 0 0 10.8 0M10 14.6v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <span>Dictate</span>
+<span>Dictation</span>
           </button>
           <button class="nav-item" type="button" data-view="activity">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -70,7 +70,7 @@
       <main class="content">
         <section class="view" id="view-dictate">
           <div class="view-head">
-            <h1 class="display">Dictate</h1>
+            <h1 class="display">Dictation</h1>
             <span class="view-note" id="dictate-note"></span>
           </div>
 
@@ -85,9 +85,9 @@
             </button>
           </div>
 
-          <div id="transcript" class="transcript" aria-live="polite" tabindex="0">
+          <div id="history" class="history" aria-live="polite">
             <div id="empty-state" class="empty-state">
-              <p class="empty-headline display" id="empty-headline">Your words will land here.</p>
+              <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
               <p class="empty-hint" id="empty-hint">
                 Hold <kbd id="hint-key">fn</kbd> anywhere in macOS and speak. Release to
                 transcribe, or tap twice to keep listening.
@@ -115,8 +115,7 @@
               </span>
             </button>
             <span class="controls-spacer"></span>
-            <button id="copy-button" class="ghost-button" type="button">Copy</button>
-            <button id="clear-button" class="ghost-button" type="button">Clear</button>
+            <button id="clear-button" class="ghost-button" type="button">Clear all</button>
           </div>
         </section>
 
@@ -166,8 +165,10 @@
             <p>
               <strong>Your voice stays here.</strong>
               Recording and transcription happen on this Mac, and no audio is ever
-              uploaded. Text leaves only when you use AI&nbsp;Polish, and only the words
-              you asked it to rewrite.
+              uploaded or kept. Dictations are saved on this Mac so you can find them
+              again, and you can delete any of them, or all of them, from the Dictation
+              list. Text leaves the machine only when you use AI&nbsp;Polish, and only
+              the words you asked it to rewrite.
             </p>
           </div>
         </section>

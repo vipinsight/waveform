@@ -15,6 +15,7 @@ import type {
   MicrophonePermissionResult,
   ModelEvent,
   ResourceUsage,
+  SavedDictation,
   TranscriptionResult,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
@@ -88,6 +89,11 @@ const api: DesktopApi = {
   onSettingsChanged: (listener) =>
     subscribe<AppSettings>("settings-changed", listener),
 
+  getHistory: () => invoke<SavedDictation[]>("get_history"),
+  deleteDictation: (id) => invoke<SavedDictation[]>("delete_dictation", { id }),
+  clearHistory: () => invoke<SavedDictation[]>("clear_history"),
+  onHistoryChanged: (listener) =>
+    subscribe<SavedDictation[]>("history-changed", listener),
   getStats: () => invoke<AppStats>("get_stats"),
   onStatsChanged: (listener) => subscribe<AppStats>("stats-changed", listener),
 

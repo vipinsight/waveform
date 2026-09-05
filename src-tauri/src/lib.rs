@@ -5,6 +5,7 @@
 //! surface. This crate supplies that surface natively.
 
 mod gestures;
+mod history;
 mod hotkey;
 mod dictation;
 mod model_server;
@@ -14,6 +15,7 @@ mod settings;
 mod stats;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
+use history::{Dictation as SavedDictation, HistoryStore};
 use model_server::{ModelEvent, ModelServer};
 use rewrite::{AiStatus, Rewriter};
 use serde::Serialize;
@@ -40,6 +42,7 @@ const EDGE_MARGIN: f64 = 88.0;
 pub struct AppState {
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
+    history: Arc<Mutex<HistoryStore>>,
     models: Arc<ModelServer>,
     dictation: Arc<Dictation>,
     rewriter: Arc<Rewriter>,
@@ -149,6 +152,32 @@ async fn update_settings(
 
     let _ = app.emit("settings-changed", &next);
     Ok(next)
+}
+
+#[tauri::command]
+async fn get_history(state: State<'_, AppState>) -> Result<Vec<SavedDictation>, String> {
+    Ok(state.history.lock().await.entries())
+}
+
+#[tauri::command]
+async fn delete_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state.history.lock().await.remove(&id);
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn clear_history(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state.history.lock().await.clear();
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -387,6 +416,7 @@ pub fn run() {
 
             let settings = Arc::new(Mutex::new(SettingsStore::load(user_data.clone())));
             let stats = Arc::new(Mutex::new(StatsStore::load(user_data.clone())));
+            let history = Arc::new(Mutex::new(HistoryStore::load(user_data.clone())));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
 
@@ -406,6 +436,7 @@ pub fn run() {
                 app.handle().clone(),
                 settings.clone(),
                 stats.clone(),
+                history.clone(),
                 rewriter.clone(),
                 models.clone(),
             );
@@ -413,6 +444,7 @@ pub fn run() {
             app.manage(AppState {
                 settings,
                 stats,
+                history,
                 models: models.clone(),
                 dictation: dictation.clone(),
                 rewriter,
@@ -488,6 +520,9 @@ pub fn run() {
             get_settings,
             update_settings,
             get_stats,
+            get_history,
+            delete_dictation,
+            clear_history,
             get_model_state,
             start_model,
             select_model,

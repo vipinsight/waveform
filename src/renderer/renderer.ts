@@ -1,6 +1,7 @@
 import type {
   AiStatus,
   AppStats,
+  SavedDictation,
   DictationUpdate,
   HotkeyStatus,
   ModelEvent,
@@ -29,12 +30,11 @@ const element = {
   hotkeySummary: requireElement<HTMLElement>("hotkey-summary"),
   resourceSummary: requireElement<HTMLElement>("resource-summary"),
   resourceRow: requireElement<HTMLElement>("resource-row"),
-  transcript: requireElement<HTMLElement>("transcript"),
+  history: requireElement<HTMLElement>("history"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
   actionButton: requireElement<HTMLButtonElement>("action-button"),
   actionLabel: requireElement<HTMLElement>("action-label"),
-  copyButton: requireElement<HTMLButtonElement>("copy-button"),
   clearButton: requireElement<HTMLButtonElement>("clear-button"),
   settingsButton: requireElement<HTMLButtonElement>("settings-button"),
   settingsPanel: requireElement<HTMLElement>("settings-panel"),
@@ -94,7 +94,8 @@ let modelReady = false;
 let modelLoading = false;
 let listening = false;
 let settingsOpen = false;
-let phraseCount = 0;
+let entries: SavedDictation[] = [];
+let freshId: string | null = null;
 let lifetimeSessions = 0;
 let listeningSince = 0;
 let elapsedTimer: number | null = null;
@@ -110,6 +111,8 @@ async function bootstrap(): Promise<void> {
 
   applySettings(await host().getSettings());
   renderStats(await host().getStats());
+  entries = await host().getHistory();
+  renderHistory();
   // Falls back to the bare name: a version that failed to load should not be
   // rendered as "Waveform null".
   const version = await host().getAppVersion().catch(() => "");
@@ -120,7 +123,6 @@ async function bootstrap(): Promise<void> {
 
   hotkeyStatus = await host().getHotkeyStatus();
   renderHotkeyStatus();
-  renderTranscriptMeta();
   renderAiStatus(await host().getAiStatus());
 }
 
@@ -135,6 +137,12 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onStatsChanged(renderStats);
+  host().onHistoryChanged((next) => {
+    // The newest entry is the one that just landed, so it gets the tint.
+    freshId = next.length > entries.length ? (next[0]?.id ?? null) : null;
+    entries = next;
+    renderHistory();
+  });
 
   bindGroup(".nav[aria-label='Sections'] [data-view]", (button) =>
     showView(button.dataset.view ?? "dictate"),
@@ -147,8 +155,13 @@ function wireEvents(): void {
     if (element.actionButton.disabled) return;
     void host().toggleDictation();
   });
-  element.clearButton.addEventListener("click", clearTranscript);
-  element.copyButton.addEventListener("click", copyTranscript);
+  element.clearButton.addEventListener("click", () => {
+    void host().clearHistory().then((next) => {
+      entries = next;
+      freshId = null;
+      renderHistory();
+    });
+  });
 
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
   element.scrim.addEventListener("click", () => toggleSettings(false));
@@ -519,7 +532,7 @@ function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
 }
 
 /**
- * The transcript's resting state, which is the app's only real onboarding.
+ * The list's resting state, which is the app's only real onboarding.
  *
  * Someone who has never dictated needs to be told what to do; someone who has
  * done it a hundred times needs the panel to be quiet.
@@ -606,7 +619,6 @@ function handleDictationUpdate(update: DictationUpdate): void {
   if (listening && !wasListening) listeningSince = Date.now();
   syncElapsedTimer();
 
-  if (phrase) appendPhrase(phrase.text);
 
   if (status.state === "error" && status.message) setStatus(status.message, "error");
   else if (status.state === "listening") setStatus("Listening", "ready");
@@ -637,8 +649,6 @@ function renderActionState(): void {
     element.actionHint.textContent = shortcutHint();
   }
 
-  element.copyButton.disabled = phraseCount === 0;
-  element.clearButton.disabled = phraseCount === 0;
 }
 
 /** Reminds the user the button is not the only way in. */
@@ -667,52 +677,111 @@ function syncElapsedTimer(): void {
   }
 }
 
-function renderTranscriptMeta(): void {
-  const words = Array.from(element.transcript.querySelectorAll(".phrase"))
-    .map((node) => node.textContent ?? "")
-    .join(" ")
-    .split(/\s+/)
-    .filter(Boolean).length;
+/** Renders the saved dictations, newest first. */
+function renderHistory(): void {
+  element.history.replaceChildren();
+  element.history.classList.toggle("is-empty", entries.length === 0);
 
-  element.transcript.classList.toggle("is-empty", phraseCount === 0);
+  if (entries.length === 0) {
+    element.emptyState.hidden = false;
+    element.history.append(element.emptyState);
+    renderEmptyState();
+  } else {
+    for (const entry of entries) element.history.append(renderEntry(entry));
+  }
+
+  element.clearButton.disabled = entries.length === 0;
   element.dictateNote.textContent =
-    words === 0 ? "" : `${words.toLocaleString()} ${words === 1 ? "word" : "words"}`;
+    entries.length === 0
+      ? ""
+      : `${entries.length.toLocaleString()} ${entries.length === 1 ? "dictation" : "dictations"}`;
 }
 
-function appendPhrase(text: string): void {
-  element.emptyState.remove();
-  const phrase = document.createElement("span");
-  phrase.className = "phrase is-fresh";
-  phrase.textContent = `${text} `;
-  element.transcript.append(phrase);
-  // The tint is a one-off; leaving the class on would re-run it on any reflow.
-  phrase.addEventListener("animationend", () => phrase.classList.remove("is-fresh"), {
-    once: true,
+function renderEntry(entry: SavedDictation): HTMLElement {
+  const article = document.createElement("article");
+  article.className = entry.id === freshId ? "entry is-fresh" : "entry";
+
+  const head = document.createElement("div");
+  head.className = "entry-head";
+
+  const time = document.createElement("span");
+  time.className = "entry-time";
+  time.textContent = formatWhen(entry.createdAt);
+  time.title = new Date(entry.createdAt).toLocaleString();
+
+  const words = document.createElement("span");
+  words.className = "entry-words";
+  const count = entry.text.split(/\s+/).filter(Boolean).length;
+  words.textContent = `${count} ${count === 1 ? "word" : "words"}`;
+
+  const actions = document.createElement("span");
+  actions.className = "entry-actions";
+  actions.append(
+    iconButton("Copy", COPY_ICON, "", () => {
+      void navigator.clipboard.writeText(entry.text);
+    }),
+    iconButton("Delete", TRASH_ICON, "is-danger", () => {
+      void host().deleteDictation(entry.id).then((next) => {
+        entries = next;
+        freshId = null;
+        renderHistory();
+      });
+    }),
+  );
+
+  head.append(time, words, actions);
+
+  const text = document.createElement("p");
+  text.className = "entry-text";
+  text.textContent = entry.text;
+
+  article.append(head, text);
+  return article;
+}
+
+function iconButton(
+  label: string,
+  path: string,
+  modifier: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `entry-action ${modifier}`.trim();
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.innerHTML = `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">${path}</svg>`;
+  button.addEventListener("click", () => {
+    onClick();
+    if (label === "Copy") {
+      button.classList.add("is-done");
+      setTimeout(() => button.classList.remove("is-done"), 900);
+    }
   });
-  element.transcript.scrollTop = element.transcript.scrollHeight;
-  phraseCount += 1;
-  renderTranscriptMeta();
-  renderActionState();
+  return button;
 }
 
-function clearTranscript(): void {
-  element.transcript.replaceChildren(element.emptyState);
-  element.emptyState.hidden = false;
-  phraseCount = 0;
-  renderTranscriptMeta();
-  renderEmptyState();
-  renderActionState();
-}
+const COPY_ICON =
+  '<rect x="7" y="7" width="9.5" height="9.5" rx="2.2" stroke="currentColor" stroke-width="1.4"/>' +
+  '<path d="M13 7V5.5A2.2 2.2 0 0 0 10.8 3.3H5.5A2.2 2.2 0 0 0 3.3 5.5v5.3A2.2 2.2 0 0 0 5.5 13H7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>';
 
-async function copyTranscript(): Promise<void> {
-  const text = Array.from(element.transcript.querySelectorAll(".phrase"))
-    .map((node) => node.textContent ?? "")
-    .join("")
-    .trim();
-  if (!text) return;
+const TRASH_ICON =
+  '<path d="M4.6 6.2h10.8M8.2 6.2V4.9c0-.6.5-1.1 1.1-1.1h1.4c.6 0 1.1.5 1.1 1.1v1.3M6.1 6.2l.6 8.6c.05.7.6 1.2 1.3 1.2h4c.7 0 1.25-.5 1.3-1.2l.6-8.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>';
 
-  await navigator.clipboard.writeText(text);
-  flash(element.copyButton, "Copied");
+/** Relative for recent dictations, absolute once that stops being useful. */
+function formatWhen(timestamp: number): string {
+  const seconds = Math.max(0, (Date.now() - timestamp) / 1000);
+  if (seconds < 45) return "Just now";
+  if (seconds < 3600) {
+    const minutes = Math.round(seconds / 60);
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  }
+
+  const when = new Date(timestamp);
+  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (seconds < 86_400 && when.getDate() === new Date().getDate()) return time;
+  if (seconds < 172_800) return `Yesterday, ${time}`;
+  return `${when.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
 }
 
 function toggleSettings(open: boolean): void {

@@ -148,6 +148,15 @@ hundred.
 The status bar shows live CPU and memory for Waveform and the speech engine
 combined, since the engine is the larger consumer of both.
 
+## The Dictation list
+
+Every dictation is kept, newest first, with when it was said and how long it
+was. Each one can be copied or deleted, and the whole list cleared.
+
+The list is the only thing Waveform writes down. It lives in
+`~/Library/Application Support/Waveform/history.json`, readable only by you,
+capped at the most recent 300 entries. Audio is never written to disk at all.
+
 ## Use in the app window
 
 1. Choose a model from **Settings → Model**.
