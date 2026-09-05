@@ -28,6 +28,7 @@
   --shadow-modal: 0 24px 70px rgb(28 27 24 / 22%);
   /* One gap all round the content panel. */
   --inset: 14px;
+  --titlebar: 44px;
 
   color: var(--ink);
   background: var(--paper);
@@ -135,21 +136,33 @@ kbd {
   display: grid;
   height: 100%;
   grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-rows: var(--titlebar) minmax(0, 1fr);
+}
+
+/* The only place the window can be picked up.
+ *
+ * Dragging from anywhere -- the sidebar, a heading -- meant ordinary content
+ * behaved like window chrome, and text that looked selectable was not. A strip
+ * beside the traffic lights is where a Mac window expects to be grabbed. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 78px; /* clears the traffic lights */
+  grid-column: 1 / -1;
 }
 
 .sidebar {
   display: flex;
+  min-height: 0;
   flex-direction: column;
-  padding: 0 var(--inset) var(--inset);
+  padding: var(--inset) var(--inset) var(--inset);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 10px 18px 12px;
-  /* Clears the traffic lights, which the window draws over the sidebar. */
-  margin-top: 42px;
 }
 
 .mark {
@@ -330,6 +343,35 @@ kbd {
 [data-tauri-drag-region="deep"] :not(button, select, input, a, textarea) {
   cursor: default;
   user-select: none;
+}
+
+.icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.icon-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.icon-button:hover {
+  color: var(--ink);
+  background: var(--surface-sunken);
+}
+
+.icon-button[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .view-head .display {

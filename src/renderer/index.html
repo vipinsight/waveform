@@ -9,13 +9,28 @@
   </head>
   <body>
     <div class="app">
-      <aside class="sidebar" data-tauri-drag-region="deep">
+      <header class="titlebar" data-tauri-drag-region="deep">
         <div class="brand">
           <span class="mark" aria-hidden="true"></span>
           <span class="brand-name">Waveform</span>
           <span class="badge">Local</span>
         </div>
+        <button
+          id="settings-button"
+          class="icon-button"
+          type="button"
+          aria-haspopup="dialog"
+          title="Settings"
+          aria-label="Settings"
+        >
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 2.6v1.6M10 15.8v1.6M17.4 10h-1.6M4.2 10H2.6M15.2 4.8l-1.1 1.1M5.9 14.1l-1.1 1.1M15.2 15.2l-1.1-1.1M5.9 5.9 4.8 4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
 
+      <aside class="sidebar">
         <nav class="nav" aria-label="Sections">
           <button class="nav-item" type="button" data-view="dictate" aria-current="page">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -48,21 +63,11 @@
             <span id="resource-summary" title="CPU and memory across Waveform and the speech engine"></span>
           </div>
         </div>
-
-        <nav class="nav" aria-label="Settings">
-          <button class="nav-item" type="button" id="settings-button" aria-haspopup="dialog">
-            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M10 2.6v1.6M10 15.8v1.6M17.4 10h-1.6M4.2 10H2.6M15.2 4.8l-1.1 1.1M5.9 14.1l-1.1 1.1M15.2 15.2l-1.1-1.1M5.9 5.9 4.8 4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <span>Settings</span>
-          </button>
-        </nav>
       </aside>
 
       <main class="content">
         <section class="view" id="view-dictate">
-          <div class="view-head" data-tauri-drag-region="deep">
+          <div class="view-head">
             <h1 class="display">Dictate</h1>
             <span class="view-note" id="dictate-note"></span>
           </div>
@@ -114,7 +119,7 @@
         </section>
 
         <section class="view" id="view-activity" hidden>
-          <div class="view-head" data-tauri-drag-region="deep">
+          <div class="view-head">
             <h1 class="display">Activity</h1>
             <span class="view-note">Counted on this Mac only</span>
           </div>
