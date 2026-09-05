@@ -601,8 +601,162 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-.starter kbd {
+.starter kbd,
+.starter-key {
   font-size: 12px;
+}
+
+/* --------------------------------------------------------------- banner */
+
+/* A standing notice that something is stopping dictation from working. It sits
+   in the view rather than in a dialog, because it describes the app's whole
+   state, not a step the user is in the middle of. */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 13px;
+  margin-bottom: 18px;
+  background: var(--surface-sunken);
+  animation: banner-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+.banner-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.banner-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+
+.banner-text strong {
+  font-weight: 620;
+}
+
+.banner-text > span {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* ---------------------------------------------------------------- setup */
+
+.lede {
+  max-width: 46ch;
+  margin: -8px 0 20px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 16px;
+  border-radius: 14px;
+  margin: 0;
+  background: var(--surface-sunken);
+  list-style: none;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.check + .check {
+  border-top: 1px solid var(--hairline);
+}
+
+/* Empty ring while pending, filled tick once done, so the state of every step
+   is legible without reading a single label. */
+.check-mark {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 50%;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.check[data-done="true"] .check-mark {
+  border-color: var(--positive);
+  background: var(--positive);
+}
+
+.check[data-done="true"] .check-mark::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 5.6px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.7px 1.7px 0;
+  transform: rotate(45deg);
+}
+
+.check-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.check-body strong {
+  font-weight: 600;
+}
+
+.check-body small {
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.check[data-done="true"] .pill-button {
+  background: transparent;
+  color: var(--positive);
+  cursor: default;
+  font-weight: 620;
+}
+
+.nav-badge {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.nav-badge[hidden] {
+  display: none;
 }
 
 /* -------------------------------------------------------------- controls */
