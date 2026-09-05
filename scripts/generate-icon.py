@@ -38,6 +38,11 @@ TILE = 824
 SQUIRCLE_EXPONENT = 5.9
 SUPERSAMPLE = 4
 
+# How much of the menu bar slot the tallest bar fills. The bar cluster reads a
+# touch large against the system items next to it at 0.78, which is roughly two
+# pixels of this 44px master.
+TRAY_FILL = 0.735
+
 # Proportions of the tile, per the design's size ladder. Bars take a larger
 # share of the tile as it shrinks so they survive the downsample.
 LADDER = [
@@ -239,12 +244,18 @@ def build_tray_icon(size: int = 44) -> Image.Image:
     padding. Reused directly here the bars would fill only half the menu bar's
     height, so they are rescaled about the tallest bar -- the ratios between
     bar width, gap and each height are the mark's, the overall size is not.
+
+    Drawn supersampled and reduced. ImageDraw does not antialias, so at the
+    final size the bar caps came out as a hard staircase: the alpha channel
+    held two values, 0 and 255, and nothing in between. The bars are also thin
+    enough that their vertical edges rarely land on a pixel boundary, which
+    without a gradient makes each one a column of jagged steps.
     """
     bar_width, gap, heights = proportions(128)
     tallest_ratio = max(heights)
 
     # Tallest bar fills most of the slot; everything else follows the mark.
-    tallest = size * 0.78
+    tallest = size * TRAY_FILL
     width = tallest * (bar_width / tallest_ratio)
     spacing = tallest * (gap / tallest_ratio)
 
@@ -252,17 +263,27 @@ def build_tray_icon(size: int = 44) -> Image.Image:
     x = (size - total) / 2
     centre = size / 2
 
-    icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # Area averaging over a fine grid, so each pixel's alpha is the fraction of
+    # it the bar actually covers. LANCZOS overshoots at an edge this hard and
+    # ringed every bar with a bright outline, which on a template icon reads as
+    # a halo once macOS recolours it.
+    scale = SUPERSAMPLE * 2
+    icon = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
     draw = ImageDraw.Draw(icon)
     for height_ratio in heights:
         height = tallest * (height_ratio / tallest_ratio)
         draw.rounded_rectangle(
-            [x, centre - height / 2, x + width, centre + height / 2],
-            radius=width / 2,
+            [
+                x * scale,
+                (centre - height / 2) * scale,
+                (x + width) * scale,
+                (centre + height / 2) * scale,
+            ],
+            radius=width * scale / 2,
             fill=(0, 0, 0, 255),
         )
         x += width + spacing
-    return icon
+    return icon.resize((size, size), Image.BOX)
 
 
 def main() -> None:
