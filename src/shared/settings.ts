@@ -44,6 +44,10 @@ export interface AppSettings {
   polishPrompt: string;
   /** Electron accelerator that polishes the current selection, or "none". */
   polishShortcut: string;
+  /** Show a menu bar icon. */
+  menuBarIcon: boolean;
+  /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
+  hideDockWhenClosed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -61,6 +65,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   transformPrompt: DEFAULT_TRANSFORM_PROMPT,
   polishPrompt: DEFAULT_POLISH_PROMPT,
   polishShortcut: "Alt+1",
+  menuBarIcon: true,
+  hideDockWhenClosed: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -102,6 +108,12 @@ export function normalizeSettings(
     polishShortcut: isAccelerator(input.polishShortcut)
       ? input.polishShortcut
       : base.polishShortcut,
+    menuBarIcon:
+      typeof input.menuBarIcon === "boolean" ? input.menuBarIcon : base.menuBarIcon,
+    hideDockWhenClosed:
+      typeof input.hideDockWhenClosed === "boolean"
+        ? input.hideDockWhenClosed
+        : base.hideDockWhenClosed,
   };
 }
 

@@ -73,6 +73,10 @@ pub struct ModelServer {
     /// With a warm engine "ready" fires before any window exists.
     last_event: Mutex<ModelEvent>,
     qwen: Mutex<Option<QwenState>>,
+    /// Held so the engine can be shut down. Parakeet serves over HTTP and does
+    /// not exit on its own, so dropping this handle would leave a process of
+    /// several hundred megabytes running after the app quits.
+    parakeet: Mutex<Option<Child>>,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
     user_data: PathBuf,
@@ -90,7 +94,7 @@ impl ModelServer {
     ) -> Self {
         let initial = ModelEvent {
             stage: "idle".into(),
-            message: "Preparing…".into(),
+            message: "Loads when you start listening".into(),
             model_id: selected.clone(),
         };
         Self {
@@ -99,6 +103,7 @@ impl ModelServer {
             engine_pid: Mutex::new(None),
             last_event: Mutex::new(initial),
             qwen: Mutex::new(None),
+            parakeet: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
             user_data,
@@ -170,9 +175,13 @@ impl ModelServer {
         Ok(())
     }
 
+    /// Shuts the engine down. Called when the app exits.
     pub async fn stop(&self) {
         if let Some(mut state) = self.qwen.lock().await.take() {
             let _ = state.child.kill().await;
+        }
+        if let Some(mut child) = self.parakeet.lock().await.take() {
+            let _ = child.kill().await;
         }
         *self.engine_pid.lock().await = None;
         for (_, sender) in self.pending.lock().await.drain(..) {
@@ -214,9 +223,18 @@ impl ModelServer {
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|error| format!("Could not start nemo-speech: {error}"))?;
         *self.engine_pid.lock().await = child.id();
+
+        // Replace any server this app started earlier. The lock is released
+        // before the readiness loop below, which would otherwise hold it for
+        // minutes and block a concurrent stop().
+        let previous = self.parakeet.lock().await.replace(child);
+        if let Some(mut previous) = previous {
+            let _ = previous.kill().await;
+        }
 
         let deadline = Instant::now() + START_TIMEOUT;
         while Instant::now() < deadline {

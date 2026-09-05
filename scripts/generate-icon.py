@@ -144,6 +144,30 @@ def build_icon() -> Image.Image:
     return icon.resize((CANVAS, CANVAS), Image.LANCZOS)
 
 
+def build_tray_icon(size: int = 44) -> Image.Image:
+    """A monochrome template icon for the menu bar.
+
+    macOS recolours template images to suit the menu bar's appearance, so this
+    carries shape in the alpha channel only; any colour here would be discarded
+    and would look wrong beside the system items.
+    """
+    mark = draw_mark(round(size * 2.4))
+    scaled = mark.resize(
+        (size, round(mark.height * size / mark.width)), Image.LANCZOS
+    )
+
+    icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    icon.alpha_composite(scaled, (0, (size - scaled.height) // 2))
+
+    # Template images are black; the system supplies the colour.
+    pixels = icon.load()
+    for y in range(size):
+        for x in range(size):
+            *_, alpha = pixels[x, y]
+            pixels[x, y] = (0, 0, 0, alpha)
+    return icon
+
+
 def main() -> None:
     icons_dir = Path(__file__).resolve().parent.parent / "icons"
     icon = build_icon()
@@ -151,6 +175,10 @@ def main() -> None:
     png_path = icons_dir / "waveform-icon.png"
     icon.save(png_path)
     print(f"wrote {png_path} ({CANVAS}x{CANVAS})")
+
+    tray_path = icons_dir / "tray-icon.png"
+    build_tray_icon().save(tray_path)
+    print(f"wrote {tray_path} (menu bar template)")
 
     if not shutil.which("iconutil"):
         print("iconutil not found; skipped .icns")

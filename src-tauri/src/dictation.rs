@@ -6,6 +6,7 @@
 
 use crate::gestures::{Command, GestureMachine};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
+use crate::model_server::ModelServer;
 use crate::rewrite::Rewriter;
 use crate::settings::SettingsStore;
 use crate::stats::StatsStore;
@@ -88,6 +89,7 @@ pub struct Dictation {
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
     rewriter: Arc<Rewriter>,
+    models: Arc<ModelServer>,
     helper: Arc<HotkeyHelper>,
     gestures: Mutex<GestureMachine>,
     session: Mutex<Option<Session>>,
@@ -96,6 +98,9 @@ pub struct Dictation {
     /// Set when Escape arrives mid-polish. The request itself cannot be
     /// recalled, but its result must not be pasted after the user backed out.
     polish_cancelled: Mutex<bool>,
+    /// The system Accessibility dialog is shown once per run at most; macOS
+    /// only presents it the first time anyway, and repeating it is noise.
+    accessibility_prompted: Mutex<bool>,
     /// Accelerators currently bound, so each can be released individually.
     /// Releasing all of them would drop Escape along with the polish key.
     polish_accelerator: Mutex<Option<String>>,
@@ -110,12 +115,14 @@ impl Dictation {
         settings: Arc<Mutex<SettingsStore>>,
         stats: Arc<Mutex<StatsStore>>,
         rewriter: Arc<Rewriter>,
+        models: Arc<ModelServer>,
     ) -> Arc<Self> {
         Arc::new(Self {
             app,
             settings,
             stats,
             rewriter,
+            models,
             helper: HotkeyHelper::new(),
             gestures: Mutex::new(GestureMachine::new(300, 420)),
             session: Mutex::new(None),
@@ -129,6 +136,7 @@ impl Dictation {
             }),
             polishing: Mutex::new(false),
             polish_cancelled: Mutex::new(false),
+            accessibility_prompted: Mutex::new(false),
             polish_accelerator: Mutex::new(None),
             escape_bound: Mutex::new(false),
             watched_key: Mutex::new(None),
@@ -252,8 +260,27 @@ impl Dictation {
                 .await;
             }
             HelperEvent::Paste { ok, reason } => {
-                if !ok && reason.as_deref() == Some("accessibility") {
+                if ok {
+                    return;
+                }
+                // Dictation appears to work and then nothing arrives, which
+                // reads as the app being broken rather than as a permission
+                // that was never granted. Say so, and offer the system dialog.
+                if reason.as_deref() == Some("accessibility") {
                     self.helper.refresh_permissions().await;
+                    self.report_error(
+                        "Waveform needs Accessibility permission to paste into other apps. \
+                         Grant it in Settings → Shortcut.",
+                    )
+                    .await;
+                    self.show_overlay().await;
+                    self.send_to_overlay("fail", "insert", "hold").await;
+
+                    let mut prompted = self.accessibility_prompted.lock().await;
+                    if !*prompted {
+                        *prompted = true;
+                        self.helper.request_permission("accessibility").await;
+                    }
                 }
             }
             HelperEvent::Selection { .. } => {}
@@ -299,6 +326,15 @@ impl Dictation {
 
         let updated = self.stats.lock().await.record_session();
         let _ = self.app.emit("stats-changed", updated);
+
+        // Start the engine alongside the microphone rather than before it. The
+        // model is only needed once a phrase completes, so loading it here
+        // costs nothing at the start of a session and nothing at all until the
+        // first one. Stage changes drive the interface's loading state.
+        let models = self.models.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = models.start().await;
+        });
 
         self.show_overlay().await;
         self.send_to_overlay("start", sink, mode).await;

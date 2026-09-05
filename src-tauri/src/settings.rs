@@ -43,6 +43,13 @@ pub struct AppSettings {
     pub transform_prompt: String,
     pub polish_prompt: String,
     pub polish_shortcut: String,
+    /// Show a menu bar icon, which is the only way back to a closed window
+    /// when the Dock icon is hidden.
+    pub menu_bar_icon: bool,
+    /// Drop out of the Dock while the window is closed, leaving only the menu
+    /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
+    /// no visible presence at all.
+    pub hide_dock_when_closed: bool,
 }
 
 impl Default for AppSettings {
@@ -62,6 +69,8 @@ impl Default for AppSettings {
             transform_prompt: DEFAULT_TRANSFORM_PROMPT.trim().to_string(),
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
             polish_shortcut: "Alt+1".to_string(),
+            menu_bar_icon: true,
+            hide_dock_when_closed: false,
         }
     }
 }
@@ -94,6 +103,11 @@ impl AppSettings {
         self.open_router_model = non_empty(&self.open_router_model, &base.open_router_model, 200);
         self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
         self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
+        // Leaving the Dock with no menu bar icon would strand the app with no
+        // way to reach it, so the two settings are not independent.
+        if !self.menu_bar_icon {
+            self.hide_dock_when_closed = false;
+        }
         self
     }
 }
@@ -207,6 +221,28 @@ mod tests {
         assert!(body.contains("\"modelId\""));
         assert!(body.contains("\"insertIntoFocusedApp\""));
         assert!(!body.contains("model_id"));
+    }
+
+    /// The app must always keep at least one way back to its window.
+    #[test]
+    fn hiding_the_dock_requires_a_menu_bar_icon() {
+        let base = AppSettings::default();
+        let mut input = base.clone();
+        input.menu_bar_icon = false;
+        input.hide_dock_when_closed = true;
+
+        let settings = input.normalize(&base);
+        assert!(!settings.hide_dock_when_closed);
+    }
+
+    #[test]
+    fn keeps_the_dock_setting_when_the_menu_bar_icon_is_on() {
+        let base = AppSettings::default();
+        let mut input = base.clone();
+        input.menu_bar_icon = true;
+        input.hide_dock_when_closed = true;
+
+        assert!(input.normalize(&base).hide_dock_when_closed);
     }
 
     #[test]

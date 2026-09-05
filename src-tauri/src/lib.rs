@@ -20,11 +20,18 @@ use serde::Serialize;
 use settings::{AppSettings, SettingsStore};
 use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{
+    ActivationPolicy, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
+};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 
+const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
 const OVERLAY_WIDTH: f64 = 64.0;
 const OVERLAY_HEIGHT: f64 = 34.0;
@@ -38,6 +45,13 @@ pub struct AppState {
     rewriter: Arc<Rewriter>,
     /// Bounds captured when an overlay drag begins, so moves are relative.
     drag_origin: Mutex<Option<(f64, f64)>>,
+    /// Mirrors the setting of the same name.
+    ///
+    /// Window events arrive on the main thread, where blocking on the async
+    /// settings lock could deadlock against a task already holding it. Closing
+    /// a window is the worst possible place to risk that, so this one flag is
+    /// kept where it can be read without waiting.
+    hide_dock_when_closed: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -45,6 +59,25 @@ pub struct AppState {
 struct MicrophoneResult {
     granted: bool,
     status: String,
+}
+
+/// Brings the window back and restores the Dock icon with it.
+///
+/// The Dock icon and the window are shown together: an app in the Dock whose
+/// icon does nothing when clicked is worse than one that is not there at all.
+fn present_main_window(app: &tauri::AppHandle) {
+    let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
+async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    present_main_window(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -86,6 +119,22 @@ async fn update_settings(
     {
         state.dictation.apply_settings().await;
     }
+    if next.menu_bar_icon != previous.menu_bar_icon {
+        if next.menu_bar_icon {
+            let _ = build_tray(&app);
+        } else {
+            app.remove_tray_by_id("waveform");
+        }
+    }
+    state
+        .hide_dock_when_closed
+        .store(next.hide_dock_when_closed, Ordering::Relaxed);
+    // Turning the setting off while the Dock icon is already hidden has to put
+    // it back, or the change appears not to have applied until a restart.
+    if !next.hide_dock_when_closed && previous.hide_dock_when_closed {
+        let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    }
+
     if next.polish_shortcut != previous.polish_shortcut {
         state
             .dictation
@@ -343,6 +392,7 @@ pub fn run() {
                 settings.clone(),
                 stats.clone(),
                 rewriter.clone(),
+                models.clone(),
             );
 
             app.manage(AppState {
@@ -352,6 +402,7 @@ pub fn run() {
                 dictation: dictation.clone(),
                 rewriter,
                 drag_origin: Mutex::new(None),
+                hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
             });
 
             build_overlay_window(app.handle())?;
@@ -360,6 +411,31 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 dictation.initialize(root).await;
             });
+
+            if initial.menu_bar_icon {
+                build_tray(app.handle())?;
+            }
+
+            // Closing the window must not end the process: the whole point is
+            // that the shortcut keeps working with no window on screen.
+            if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+                let handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Some(window) = handle.get_webview_window(MAIN_LABEL) {
+                            let _ = window.hide();
+                        }
+                        let hide_dock = handle
+                            .state::<AppState>()
+                            .hide_dock_when_closed
+                            .load(Ordering::Relaxed);
+                        if hide_dock {
+                            let _ = handle.set_activation_policy(ActivationPolicy::Accessory);
+                        }
+                    }
+                });
+            }
 
             resources::spawn_monitor(app.handle().clone(), models.clone());
 
@@ -372,6 +448,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            show_main_window,
             get_settings,
             update_settings,
             get_stats,
@@ -395,8 +472,67 @@ pub fn run() {
             drag_overlay,
             end_overlay_drag,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Waveform");
+        .build(tauri::generate_context!())
+        .expect("error while building Waveform")
+        .run(|app, event| match event {
+            // Clicking the Dock icon of a running app with no open window.
+            // Without this the icon appears inert.
+            RunEvent::Reopen { .. } => present_main_window(app),
+            // The engine is a separate process of several hundred megabytes and
+            // does not exit on its own, so it has to be shut down explicitly or
+            // it outlives the app.
+            RunEvent::Exit => {
+                let models = app.state::<AppState>().models.clone();
+                tauri::async_runtime::block_on(async move { models.stop().await });
+            }
+            _ => {}
+        });
+}
+
+/// Builds the menu bar icon.
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
+    let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Waveform", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open,
+            &PredefinedMenuItem::separator(app)?,
+            &polish,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png"))?;
+
+    TrayIconBuilder::with_id("waveform")
+        .icon(icon)
+        // A template image is recoloured by macOS to match the menu bar, in
+        // light and dark and when the bar is highlighted.
+        .icon_as_template(true)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => present_main_window(app),
+            "polish" => {
+                let dictation = app.state::<AppState>().dictation.clone();
+                tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // Left click opens the window; the menu is on right click.
+            if let TrayIconEvent::Click { button, .. } = event {
+                if button == tauri::tray::MouseButton::Left {
+                    present_main_window(tray.app_handle());
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
 }
 
 /// Builds the dictation HUD: frameless, transparent, and never focusable.

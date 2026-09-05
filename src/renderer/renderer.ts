@@ -45,6 +45,9 @@ const element = {
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
+  menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
+  dockToggle: requireElement<HTMLInputElement>("dock-toggle"),
+  dockNote: requireElement<HTMLElement>("dock-note"),
   previewButton: requireElement<HTMLButtonElement>("preview-button"),
   resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
   hintKey: requireElement<HTMLElement>("hint-key"),
@@ -78,7 +81,7 @@ const element = {
 let settings: AppSettings = DEFAULT_SETTINGS;
 let hotkeyStatus: HotkeyStatus | null = null;
 let modelReady = false;
-let modelLoading = true;
+let modelLoading = false;
 let listening = false;
 let settingsOpen = false;
 let phraseCount = 0;
@@ -197,6 +200,12 @@ function wireEvents(): void {
     });
   }
 
+  element.menubarToggle.addEventListener("change", () => {
+    void patchSettings({ menuBarIcon: element.menubarToggle.checked });
+  });
+  element.dockToggle.addEventListener("change", () => {
+    void patchSettings({ hideDockWhenClosed: element.dockToggle.checked });
+  });
   element.previewButton.addEventListener("click", () => {
     void host().previewIndicator();
   });
@@ -265,6 +274,13 @@ function applySettings(next: AppSettings): void {
   element.modelSelect.value = next.modelId;
   element.hotkeySelect.value = next.hotkeyId;
   element.insertToggle.checked = next.insertIntoFocusedApp;
+  element.menubarToggle.checked = next.menuBarIcon;
+  element.dockToggle.checked = next.hideDockWhenClosed;
+  // Without a menu bar icon there would be no way back to the window.
+  element.dockToggle.disabled = !next.menuBarIcon;
+  element.dockNote.textContent = next.menuBarIcon
+    ? "Runs from the menu bar alone. Closing the window never quits Waveform."
+    : "Needs the menu bar icon, so there is a way back to the window.";
   element.aiModel.value = next.openRouterModel;
   element.transformToggle.checked = next.transformOnDictate;
   element.transformPrompt.value = next.transformPrompt;
@@ -363,6 +379,11 @@ function describeHotkey(status: HotkeyStatus | null, label: string | null): stri
   if (!label) return "Shortcut off";
   if (status?.inputMonitoring === false) return `${label} — needs Input Monitoring`;
   if (status?.running === false) return `${label} — helper not running`;
+  // Dictation works without this, but the text silently stays in the app,
+  // which is the more confusing failure of the two.
+  if (settings.insertIntoFocusedApp && status?.accessibility === false) {
+    return `${label} — needs Accessibility to paste`;
+  }
   return `Hold ${label} to dictate`;
 }
 
@@ -411,6 +432,11 @@ function handleModelEvent(event: ModelEvent): void {
   } else if (event.stage === "error") {
     modelReady = false;
     modelLoading = false;
+  } else if (event.stage === "idle") {
+    // Not loaded, and not loading either: the engine waits for a first
+    // session, so this must not read as work in progress.
+    modelReady = false;
+    modelLoading = false;
   } else {
     modelLoading = true;
   }
@@ -450,11 +476,12 @@ function renderActionState(): void {
   element.actionLabel.textContent = listening ? "Stop listening" : "Start listening";
 
   if (listening) {
-    element.actionHint.textContent = formatElapsed(Date.now() - listeningSince);
+    const elapsed = formatElapsed(Date.now() - listeningSince);
+    element.actionHint.textContent = modelLoading
+      ? `${elapsed} · preparing the model…`
+      : elapsed;
   } else if (modelLoading) {
     element.actionHint.textContent = "Preparing the model…";
-  } else if (!modelReady) {
-    element.actionHint.textContent = "Model unavailable";
   } else {
     element.actionHint.textContent = shortcutHint();
   }
