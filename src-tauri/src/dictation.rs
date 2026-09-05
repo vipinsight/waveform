@@ -111,6 +111,17 @@ pub struct Dictation {
     escape_bound: Mutex<bool>,
     /// The key the helper is watching, used to reject stray events.
     watched_key: Mutex<Option<i64>>,
+    /// Phrases transcribed so far in this session.
+    ///
+    /// Held until the session ends rather than inserted as they arrive:
+    /// text appearing mid-sentence interrupts the person still speaking, and
+    /// pastes into whatever they may have clicked on in the meantime.
+    pending: Mutex<Vec<String>>,
+    /// Where this session's text is going, kept because the last phrases
+    /// arrive after the session itself has ended.
+    pending_sink: Mutex<String>,
+    /// Set by a cancel, so the buffered text is dropped rather than inserted.
+    discard_pending: Mutex<bool>,
 }
 
 impl Dictation {
@@ -146,6 +157,9 @@ impl Dictation {
             polish_accelerator: Mutex::new(None),
             escape_bound: Mutex::new(false),
             watched_key: Mutex::new(None),
+            pending: Mutex::new(Vec::new()),
+            pending_sink: Mutex::new("insert".into()),
+            discard_pending: Mutex::new(false),
         })
     }
 
@@ -327,6 +341,15 @@ impl Dictation {
         self.begin_session("transcript", "latched").await;
     }
 
+    /// Abandons a running session and drops whatever it had transcribed.
+    pub async fn cancel_from_app(self: &Arc<Self>) {
+        if self.session.lock().await.is_none() {
+            return;
+        }
+        self.gestures.lock().await.cancel();
+        self.end_session("cancel").await;
+    }
+
     pub async fn preview_indicator(self: &Arc<Self>) {
         self.show_overlay().await;
         self.send_to_overlay("preview", "transcript", "hold").await;
@@ -343,6 +366,9 @@ impl Dictation {
                 mode: mode.into(),
             });
         }
+        self.pending.lock().await.clear();
+        *self.pending_sink.lock().await = sink.to_string();
+        *self.discard_pending.lock().await = false;
 
         let updated = self.stats.lock().await.record_session();
         let _ = self.app.emit("stats-changed", updated);
@@ -375,6 +401,9 @@ impl Dictation {
         let Some(session) = self.session.lock().await.take() else {
             return;
         };
+        if action == "cancel" {
+            *self.discard_pending.lock().await = true;
+        }
         self.release_escape().await;
         self.send_to_overlay(action, &session.sink, &session.mode)
             .await;
@@ -405,10 +434,7 @@ impl Dictation {
                         *handler.polish_cancelled.lock().await = true;
                         return;
                     }
-                    let command = handler.gestures.lock().await.cancel();
-                    if command.is_some() {
-                        handler.end_session("cancel").await;
-                    }
+                    handler.cancel_from_app().await;
                 });
             })
             .is_ok();
@@ -462,10 +488,26 @@ impl Dictation {
 
     pub async fn on_overlay_state(self: &Arc<Self>, status: DictationStatus) {
         if status.state == "idle" {
-            self.hide_overlay();
             if self.session.lock().await.take().is_some() {
                 // The overlay stopped on its own, e.g. a device error; resync.
                 self.gestures.lock().await.reset();
+            }
+
+            // A rewrite is a network round trip, so the indicator stays up for
+            // it. Without one there is nothing to wait for and it should go.
+            let rewriting = self.will_rewrite().await;
+            if rewriting {
+                self.send_to_overlay("busy", "insert", "hold").await;
+            } else {
+                self.hide_overlay();
+            }
+
+            // Idle means every queued transcription has finished, which makes
+            // it the point at which the whole dictation is known.
+            self.flush_pending().await;
+
+            if rewriting {
+                self.hide_overlay();
             }
         }
         let _ = self.app.emit_to(
@@ -478,17 +520,48 @@ impl Dictation {
         );
     }
 
+    /// Collects a finished phrase. Nothing is delivered until the session ends.
     pub async fn on_overlay_phrase(self: &Arc<Self>, phrase: DictationPhrase) {
         let trimmed = phrase.text.trim().to_string();
         if trimmed.is_empty() {
             return;
         }
+        *self.pending_sink.lock().await = phrase.sink;
+        self.pending.lock().await.push(trimmed);
+    }
 
-        // A failed rewrite falls back to the raw transcript rather than dropping
-        // what was just said.
-        let mut text = trimmed.clone();
-        if phrase.sink == "insert" {
-            match self.rewriter.clean_up_dictation(&trimmed).await {
+    /// Whether the buffered text is about to be sent to a model.
+    async fn will_rewrite(&self) -> bool {
+        if self.pending.lock().await.is_empty() || *self.discard_pending.lock().await {
+            return false;
+        }
+        if *self.pending_sink.lock().await != "insert" {
+            return false;
+        }
+        self.settings.lock().await.value().transform_on_dictate
+            && self.rewriter.is_configured().await
+    }
+
+    /// Delivers everything said during the session as one piece of text.
+    ///
+    /// Joining first also means the model rewrite sees whole sentences rather
+    /// than fragments split at a pause, and costs one request instead of one
+    /// per phrase.
+    async fn flush_pending(self: &Arc<Self>) {
+        let phrases: Vec<String> = self.pending.lock().await.drain(..).collect();
+        let discard = std::mem::replace(&mut *self.discard_pending.lock().await, false);
+        if phrases.is_empty() || discard {
+            return;
+        }
+
+        let sink = self.pending_sink.lock().await.clone();
+        let joined = phrases.join(" ");
+
+        // A failed rewrite falls back to the raw transcript rather than
+        // dropping what was just said.
+        let mut text = joined.clone();
+        if sink == "insert" {
+            match self.rewriter.clean_up_dictation(&joined).await {
                 Ok(Some(cleaned)) => text = cleaned,
                 Ok(None) => {}
                 Err(message) => self.report_error(&message).await,
@@ -496,28 +569,31 @@ impl Dictation {
         }
 
         let insert = self.settings.lock().await.value().insert_into_focused_app;
-        if phrase.sink == "insert" && insert {
+        if sink == "insert" && insert {
             self.helper.paste(&format!("{text} ")).await;
         }
 
-        let updated = self.stats.lock().await.record_phrase(&text);
-        let _ = self.app.emit("stats-changed", updated);
+        // Counted per phrase so the Activity figures still describe speech
+        // rather than sessions.
+        let mut stats = None;
+        for phrase in &phrases {
+            stats = Some(self.stats.lock().await.record_phrase(phrase));
+        }
+        if let Some(stats) = stats {
+            let _ = self.app.emit("stats-changed", stats);
+        }
 
-        let active = self.session.lock().await.is_some();
         let _ = self.app.emit_to(
             MAIN_LABEL,
             "dictation-update",
             DictationUpdate {
                 status: DictationStatus {
-                    state: if active { "listening".into() } else { "idle".into() },
-                    sink: phrase.sink.clone(),
+                    state: "idle".into(),
+                    sink: sink.clone(),
                     mode: "hold".into(),
                     message: None,
                 },
-                phrase: Some(DictationPhrase {
-                    text,
-                    sink: phrase.sink,
-                }),
+                phrase: Some(DictationPhrase { text, sink }),
             },
         );
     }

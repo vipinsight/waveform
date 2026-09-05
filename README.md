@@ -67,8 +67,14 @@ any text field — Mail, a browser, a terminal — and:
 | --- | --- |
 | Hold the key, speak, release | Transcribes what you said and pastes it |
 | Double-tap the key | Keeps listening until you press the key again |
-| Press the key again while locked | Stops listening and transcribes the last phrase |
+| Press the key again while locked | Stops listening and inserts what was said |
 | `esc` | Cancels: the unfinished phrase is dropped, and an in-flight polish is abandoned |
+
+Text arrives when you stop speaking, not while you are still going: nothing is
+inserted until you release the key, so a sentence never lands half-written in
+whatever you happened to click on. Long pauses still split the audio internally,
+which is what keeps transcription accurate, but the pieces are joined and
+delivered together.
 
 A small monochrome indicator appears while it listens, so you always know the
 microphone is open. It never takes focus from the app you are typing into, and
