@@ -24,6 +24,12 @@ const MAIN_LABEL: &str = "main";
 /// The gesture machine's tap window has to be polled; this is fine-grained
 /// enough that a released tap is never perceptibly late.
 const TICK: Duration = Duration::from_millis(50);
+/// How long a tapped session waits for speech before giving up.
+///
+/// A tap ends when the speaker pauses, but a tap with nobody speaking has no
+/// pause to wait for. The trigger key is one people also press for ordinary
+/// shortcuts, so a stray tap must not leave the microphone open indefinitely.
+const TAP_SESSION_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +93,9 @@ struct DictationUpdate {
 struct Session {
     sink: String,
     mode: String,
+    /// Set for a tapped session: it ends itself once the speaker pauses,
+    /// rather than waiting to be stopped.
+    stop_when_speech_ends: bool,
 }
 
 pub struct Dictation {
@@ -113,6 +122,9 @@ pub struct Dictation {
     escape_bound: Mutex<bool>,
     /// The key the helper is watching, used to reject stray events.
     watched_key: Mutex<Option<i64>>,
+    /// Incremented per session, so a timeout only ends the session it was
+    /// started for and never a later one.
+    generation: Mutex<u64>,
     /// Phrases transcribed so far in this session.
     ///
     /// Held until the session ends rather than inserted as they arrive:
@@ -161,6 +173,7 @@ impl Dictation {
             polish_accelerator: Mutex::new(None),
             escape_bound: Mutex::new(false),
             watched_key: Mutex::new(None),
+            generation: Mutex::new(0),
             pending: Mutex::new(Vec::new()),
             pending_sink: Mutex::new("insert".into()),
             discard_pending: Mutex::new(false),
@@ -329,6 +342,7 @@ impl Dictation {
         match command {
             Command::Start => self.begin_session("insert", "hold").await,
             Command::Latch => self.promote_to_latched().await,
+            Command::HoldUntilSilence => self.hold_until_silence().await,
             Command::Commit => self.end_session("stop").await,
             Command::Discard => self.end_session("cancel").await,
         }
@@ -368,8 +382,10 @@ impl Dictation {
             *session = Some(Session {
                 sink: sink.into(),
                 mode: mode.into(),
+                stop_when_speech_ends: false,
             });
         }
+        *self.generation.lock().await += 1;
         self.pending.lock().await.clear();
         *self.pending_sink.lock().await = sink.to_string();
         *self.discard_pending.lock().await = false;
@@ -389,6 +405,32 @@ impl Dictation {
         self.show_overlay().await;
         self.send_to_overlay("start", sink, mode).await;
         self.capture_escape().await;
+    }
+
+    /// Keeps a tapped session open until the speaker pauses.
+    async fn hold_until_silence(self: &Arc<Self>) {
+        let sink = {
+            let mut session = self.session.lock().await;
+            let Some(current) = session.as_mut() else { return };
+            current.stop_when_speech_ends = true;
+            current.mode = "latched".into();
+            current.sink.clone()
+        };
+        self.send_to_overlay("start", &sink, "latched").await;
+
+        let generation = *self.generation.lock().await;
+        let this = self.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(TAP_SESSION_TIMEOUT).await;
+            if *this.generation.lock().await != generation {
+                return;
+            }
+            if this.session.lock().await.is_none() {
+                return;
+            }
+            this.gestures.lock().await.stop();
+            this.end_session("stop").await;
+        });
     }
 
     async fn promote_to_latched(self: &Arc<Self>) {
@@ -532,6 +574,20 @@ impl Dictation {
         }
         *self.pending_sink.lock().await = phrase.sink;
         self.pending.lock().await.push(trimmed);
+
+        // A completed phrase means the speaker paused, which is what a tapped
+        // session was waiting for.
+        let ends_here = self
+            .session
+            .lock()
+            .await
+            .as_ref()
+            .map(|session| session.stop_when_speech_ends)
+            .unwrap_or(false);
+        if ends_here {
+            self.gestures.lock().await.stop();
+            self.end_session("stop").await;
+        }
     }
 
     /// Whether the buffered text is about to be sent to a model.

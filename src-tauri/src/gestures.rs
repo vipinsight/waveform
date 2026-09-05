@@ -15,6 +15,9 @@ use std::time::{Duration, Instant};
 pub enum Command {
     Start,
     Latch,
+    /// A lone tap: keep listening until the speaker stops, or until the key is
+    /// pressed again.
+    HoldUntilSilence,
     Commit,
     Discard,
 }
@@ -108,7 +111,7 @@ impl GestureMachine {
         }
     }
 
-    /// Must be polled: a lone tap only becomes a discard once its window closes.
+    /// Must be polled: a lone tap only resolves once its window closes.
     pub fn tick(&mut self, now: Instant) -> Option<Command> {
         let deadline = self.tap_deadline?;
         if now < deadline {
@@ -118,8 +121,10 @@ impl GestureMachine {
         if self.state != State::TapWait {
             return None;
         }
-        self.state = State::Idle;
-        Some(Command::Discard)
+        // Latched, so pressing the key again still stops it; the difference is
+        // that this one also stops itself once the speaker pauses.
+        self.state = State::Latched;
+        Some(Command::HoldUntilSilence)
     }
 
     /// Ends a session from outside the keyboard, e.g. a click on the interface.
@@ -193,15 +198,41 @@ mod tests {
         assert!(!machine.is_active());
     }
 
+    /// A one word phrase is tapped, not held. Discarding a lone tap threw away
+    /// precisely the dictations people are most likely to tap.
+    /// A one or two word phrase is tapped, not held. Ending at the tap window
+    /// would capture a few hundred milliseconds; the session stays open.
     #[test]
-    fn lone_tap_is_discarded_once_the_window_closes() {
+    fn lone_tap_listens_until_the_speaker_stops() {
         let mut machine = GestureMachine::new(300, 420);
         let t0 = Instant::now();
         machine.key_down(t0);
         machine.key_up(at(t0, 80));
         assert_eq!(machine.tick(at(t0, 200)), None);
-        assert_eq!(machine.tick(at(t0, 600)), Some(Command::Discard));
+        assert_eq!(machine.tick(at(t0, 600)), Some(Command::HoldUntilSilence));
+        assert!(machine.is_active());
+    }
+
+    #[test]
+    fn a_tapped_session_can_still_be_stopped_by_the_key() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        machine.key_up(at(t0, 80));
+        machine.tick(at(t0, 600));
+
+        assert_eq!(machine.key_down(at(t0, 3_000)), Some(Command::Commit));
+        assert_eq!(machine.key_up(at(t0, 3_060)), None);
         assert!(!machine.is_active());
+    }
+
+    /// Escape still throws the audio away; only the tap timeout changed.
+    #[test]
+    fn cancelling_still_discards() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        assert_eq!(machine.cancel(), Some(Command::Discard));
     }
 
     #[test]
