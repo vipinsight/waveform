@@ -28,7 +28,7 @@
   --shadow-modal: 0 24px 70px rgb(28 27 24 / 22%);
   /* One gap all round the content panel. */
   --inset: 14px;
-  --titlebar: 44px;
+  --titlebar: 58px;
 
   color: var(--ink);
   background: var(--paper);
@@ -168,7 +168,10 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 0 78px; /* clears the traffic lights */
+  /* The bottom inset belongs to the title bar rather than to the panels below,
+     so the empty band above the content is draggable too. Left padding clears
+     the traffic lights. */
+  padding: 0 12px var(--inset) 78px;
   grid-column: 1 / -1;
 }
 
@@ -176,7 +179,7 @@ kbd {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  padding: var(--inset) var(--inset) var(--inset);
+  padding: 0 var(--inset) var(--inset);
 }
 
 .brand {
@@ -329,7 +332,7 @@ kbd {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: var(--inset) var(--inset) var(--inset) 0;
+  padding: 0 var(--inset) var(--inset) 0;
 }
 
 .view {
