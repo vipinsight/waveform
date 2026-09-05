@@ -42,9 +42,28 @@ cd src-tauri
 if [ "$PROFILE" = "release" ]; then cargo build --release; else cargo build; fi
 cd "$ROOT"
 
+# Every Waveform belonging to this checkout has to go, not just the bundle
+# about to be replaced.
+#
+# A `pnpm dev` Electron instance from before the Tauri port stayed alive for
+# 21 hours, holding its own CGEventTap and writing to the same
+# ~/Library/Application Support/Waveform/history.json. One Fn press reached
+# both apps, and the stale one saved its own in-memory list over the other's
+# ten dictations. The pattern here used to name Waveform-tauri/Waveform.app,
+# a path no build has produced for a while, so it matched nothing.
 osascript -e 'quit app "Waveform"' 2>/dev/null || true
-pkill -f "Waveform-tauri/Waveform.app" 2>/dev/null || true
-sleep 0.4
+pkill -f "$ROOT/release/Waveform.app" 2>/dev/null || true
+pkill -f "$ROOT/dist/src/main/waveform-hotkey" 2>/dev/null || true
+pkill -f "$ROOT/node_modules/.*electron/cli.js" 2>/dev/null || true
+sleep 0.6
+
+# Anything left is a second writer for the same history file, so say so rather
+# than launch beside it.
+strays=$(pgrep -fl "[Ww]aveform" | grep -v -e "$$" -e "run-tauri" -e pgrep || true)
+if [ -n "$strays" ]; then
+  echo "warning: other Waveform processes are still running:" >&2
+  echo "$strays" >&2
+fi
 
 # Earlier builds used other output directories. Leaving those behind means a
 # second registered bundle for the same app, which is how a stale icon or an

@@ -32,14 +32,41 @@ pub struct HistoryStore {
 impl HistoryStore {
     pub fn load(dir: PathBuf) -> Self {
         let path = dir.join("history.json");
-        let entries: Vec<Dictation> = fs::read_to_string(&path)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
+        let entries = match fs::read_to_string(&path) {
+            Err(_) => Vec::new(),
+            Ok(raw) => match serde_json::from_str(&raw) {
+                Ok(entries) => entries,
+                // A file that exists but will not parse is still the only copy
+                // of what someone dictated. Starting empty here means the next
+                // dictation writes a one-entry file over it, so it is kept
+                // under another name first.
+                Err(_) => {
+                    let _ = fs::rename(&path, path.with_file_name("history.unreadable.json"));
+                    Vec::new()
+                }
+            },
+        };
         Self {
             path,
             entries,
             next_id: 0,
+        }
+    }
+
+    /// Re-reads the file before changing it.
+    ///
+    /// The list lives in memory and is written whole, so a second process
+    /// holding the same file overwrites whatever the first one added. That is
+    /// not hypothetical: an Electron build left over from before the Tauri
+    /// port shared this path, and one Fn press reached both apps -- the stale
+    /// one saved its own list of one over ten real dictations. Disk wins,
+    /// because every change here is written the moment it is made.
+    fn sync_from_disk(&mut self) {
+        if let Some(entries) = fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Vec<Dictation>>(&raw).ok())
+        {
+            self.entries = entries;
         }
     }
 
@@ -52,6 +79,7 @@ impl HistoryStore {
         if trimmed.is_empty() {
             return self.entries();
         }
+        self.sync_from_disk();
 
         self.next_id += 1;
         let created_at = SystemTime::now()
@@ -75,6 +103,7 @@ impl HistoryStore {
     }
 
     pub fn remove(&mut self, id: &str) -> Vec<Dictation> {
+        self.sync_from_disk();
         self.entries.retain(|entry| entry.id != id);
         self.write();
         self.entries()
@@ -106,9 +135,26 @@ impl HistoryStore {
 mod tests {
     use super::*;
 
+    /// A file of its own per store: add() reads the file back now, so a shared
+    /// path would carry one test's dictations into the next.
     fn store() -> HistoryStore {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNT: AtomicU32 = AtomicU32::new(0);
+        let name = format!(
+            "waveform-history-test-{}-{}.json",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        );
         HistoryStore {
-            path: std::env::temp_dir().join("waveform-history-test.json"),
+            path: std::env::temp_dir().join(name),
+            entries: Vec::new(),
+            next_id: 0,
+        }
+    }
+
+    fn beside(other: &HistoryStore) -> HistoryStore {
+        HistoryStore {
+            path: other.path.clone(),
             entries: Vec::new(),
             next_id: 0,
         }
@@ -121,6 +167,50 @@ mod tests {
         let entries = history.add("second");
         assert_eq!(entries[0].text, "second");
         assert_eq!(entries[1].text, "first");
+    }
+
+    /// The bug that lost ten dictations: two processes, one file, and a write
+    /// of the whole list from memory.
+    #[test]
+    fn a_second_writer_keeps_what_the_first_one_saved() {
+        let mut first = store();
+        first.add("theirs");
+
+        let mut second = beside(&first);
+        let entries = second.add("mine");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].text, "mine");
+        assert_eq!(entries[1].text, "theirs");
+    }
+
+    #[test]
+    fn a_second_writer_deletes_from_the_saved_list_not_its_own() {
+        let mut first = store();
+        first.add("keep");
+        let id = first.add("drop")[0].id.clone();
+
+        let left = beside(&first).remove(&id);
+
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].text, "keep");
+    }
+
+    #[test]
+    fn an_unreadable_file_is_kept_under_another_name() {
+        let dir = std::env::temp_dir().join(format!("waveform-corrupt-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("history.json");
+        fs::write(&path, "{not json").unwrap();
+
+        let mut history = HistoryStore::load(dir.clone());
+        history.add("after");
+
+        assert_eq!(
+            fs::read_to_string(dir.join("history.unreadable.json")).unwrap(),
+            "{not json"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
