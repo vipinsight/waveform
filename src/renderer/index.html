@@ -300,31 +300,6 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
-
-          <h2 class="subhead">Permissions</h2>
-          <p class="note">
-            macOS requires both before a shortcut can listen anywhere and insert
-            text. It ties them to the app's signature, so an unsigned rebuild can
-            leave them ticked in System Settings while the app is refused.
-          </p>
-<div class="card">
-            <div class="row" id="permission-input-monitoring">
-              <span class="row-label">Input Monitoring<small>Lets Waveform see the trigger key in other apps.</small></span>
-              <span class="row-actions">
-                <button class="pill-button is-primary" type="button" data-scope="input-monitoring">Grant</button>
-              </span>
-            </div>
-            <div class="row" id="permission-accessibility">
-              <span class="row-label">Accessibility<small>Lets Waveform paste into the focused app.</small></span>
-              <span class="row-actions">
-                <button class="pill-button is-primary" type="button" data-scope="accessibility">Grant</button>
-              </span>
-            </div>
-          </div>
-          <p class="note">
-            macOS ties these to the app's code signature. An ad-hoc signed build looks
-            like a new app after every rebuild, so both need granting again.
-          </p>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>
@@ -345,7 +320,6 @@
                   spellcheck="false"
                 />
                 <button id="key-save" class="pill-button is-primary" type="button">Save</button>
-                <button id="key-clear" class="pill-button" type="button" hidden>Remove</button>
               </span>
             </div>
             <div class="row">

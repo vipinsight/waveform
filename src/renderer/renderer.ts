@@ -59,7 +59,6 @@ const element = {
   gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
-  accessibilityRow: requireElement<HTMLElement>("permission-accessibility"),
   setupBanner: requireElement<HTMLElement>("setup-banner"),
   bannerTitle: requireElement<HTMLElement>("banner-title"),
   bannerDetail: requireElement<HTMLElement>("banner-detail"),
@@ -68,7 +67,6 @@ const element = {
   setupLede: requireElement<HTMLElement>("setup-lede"),
   checkEngineNote: requireElement<HTMLElement>("check-engine-note"),
   checklist: requireElement<HTMLElement>("checklist"),
-  inputMonitoringRow: requireElement<HTMLElement>("permission-input-monitoring"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
@@ -79,7 +77,6 @@ const element = {
   activityEngineMemory: requireElement<HTMLElement>("activity-engine-memory"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
-  keyClear: requireElement<HTMLButtonElement>("key-clear"),
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLInputElement>("ai-model"),
   modelSuggestions: requireElement<HTMLElement>("model-suggestions"),
@@ -113,7 +110,10 @@ async function bootstrap(): Promise<void> {
 
   applySettings(await host().getSettings());
   renderStats(await host().getStats());
-  element.versionLine.textContent = `Waveform ${await host().getAppVersion()}`;
+  // Falls back to the bare name: a version that failed to load should not be
+  // rendered as "Waveform null".
+  const version = await host().getAppVersion().catch(() => "");
+  element.versionLine.textContent = version ? `Waveform ${version}` : "Waveform";
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -185,18 +185,14 @@ function wireEvents(): void {
       void patchSettings({ theme });
     }
   });
-  // The key is write-only from here: it is sent to main and never read back.
-  element.keySave.addEventListener("click", () => {
-    const key = element.keyInput.value;
-    if (!key.trim()) return;
-    void host().setOpenRouterKey(key).then((status) => {
-      element.keyInput.value = "";
-      renderAiStatus(status);
-    });
+  // Typing anything means the field no longer holds the placeholder mask.
+  element.keyInput.addEventListener("input", () => {
+    element.keyInput.dataset.pristine = "false";
   });
-  element.keyClear.addEventListener("click", () => {
-    void host().clearOpenRouterKey().then(renderAiStatus);
+  element.keyInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") saveApiKey();
   });
+  element.keySave.addEventListener("click", saveApiKey);
   element.aiModel.addEventListener("change", () => {
     void patchSettings({ openRouterModel: element.aiModel.value });
   });
@@ -240,18 +236,6 @@ function wireEvents(): void {
     void patchSettings({ overlayX: null, overlayY: null });
   });
 
-  for (const button of Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-scope]"),
-  )) {
-    button.addEventListener("click", () => {
-      const scope = button.dataset.scope;
-      if (scope !== "accessibility" && scope !== "input-monitoring") return;
-      if (isScopeGranted(scope)) return;
-      void host().requestHotkeyPermission(scope);
-      // The system prompt only appears once per install; the pane always works.
-      void host().openPrivacySettings(scope);
-    });
-  }
 }
 
 /** Wires a set of buttons that behave as one exclusive selection. */
@@ -349,10 +333,18 @@ function describeAccelerator(accelerator: string): string {
   return accelerator.replace("Alt+", "⌥");
 }
 
+/**
+ * A stand-in for a saved key.
+ *
+ * The key is write-only: it goes to the keychain and is never handed back, so
+ * the field can only ever show that one exists. `pristine` marks the mask as
+ * untouched, which is what stops Save from writing these bullets in as the key.
+ */
+const KEY_MASK = "•".repeat(20);
+
 function renderAiStatus(status: AiStatus): void {
-  element.keyClear.hidden = !status.hasApiKey;
-  element.keySave.textContent = status.hasApiKey ? "Replace" : "Save";
-  element.keyInput.placeholder = status.hasApiKey ? "Saved" : "sk-or-v1-…";
+  element.keyInput.value = status.hasApiKey ? KEY_MASK : "";
+  element.keyInput.dataset.pristine = "true";
   element.keyState.classList.toggle("key-saved", status.hasApiKey && !status.memoryOnly);
 
   if (!status.hasApiKey) {
@@ -362,11 +354,34 @@ function renderAiStatus(status: AiStatus): void {
     element.keyState.textContent =
       "Saved for this session only: the keychain was unavailable.";
   } else {
-    element.keyState.textContent = "Saved to your login keychain.";
+    element.keyState.textContent =
+      "Saved to your login keychain. Clear the field and save to remove it.";
   }
 
   element.polishNow.disabled = !status.hasApiKey;
   element.transformToggle.disabled = !status.hasApiKey;
+}
+
+/** Saves, replaces or removes the key depending on what the field holds. */
+function saveApiKey(): void {
+  if (element.keyInput.dataset.pristine === "true") return;
+
+  const value = element.keyInput.value.trim();
+  const request = value ? host().setOpenRouterKey(value) : host().clearOpenRouterKey();
+
+  void request.then((status) => {
+    renderAiStatus(status);
+    flash(element.keySave, value ? "Saved" : "Removed");
+  });
+}
+
+/** Briefly confirms an action on the button that triggered it. */
+function flash(button: HTMLButtonElement, message: string): void {
+  const original = button.textContent;
+  button.textContent = message;
+  setTimeout(() => {
+    button.textContent = original;
+  }, 1_400);
 }
 
 function renderThemeToggle(theme: AppSettings["theme"]): void {
@@ -481,9 +496,6 @@ function renderHotkeyStatus(): void {
   const status = hotkeyStatus;
   const binding = getHotkeyBinding(settings.hotkeyId);
 
-  setPermissionRow(element.accessibilityRow, status?.accessibility === true);
-  setPermissionRow(element.inputMonitoringRow, status?.inputMonitoring === true);
-
   const armed =
     status?.supported === true && status.running && status.inputMonitoring && !!binding;
   element.hotkeyDot.dataset.armed = String(armed);
@@ -496,32 +508,11 @@ function renderHotkeyStatus(): void {
   renderSetup();
 }
 
-function describeHotkey(status: HotkeyStatus | null, label: string | null): string {
-  if (status?.supported === false) return "Shortcut unavailable on this build";
-  if (!label) return "Shortcut off";
-  if (status?.inputMonitoring === false) return `${label} — needs Input Monitoring`;
-  if (status?.running === false) return `${label} — helper not running`;
-  // Dictation works without this, but the text silently stays in the app,
-  // which is the more confusing failure of the two.
-  if (settings.insertIntoFocusedApp && status?.accessibility === false) {
-    return `${label} — needs Accessibility to paste`;
-  }
-  return `Hold ${label} to dictate`;
-}
-
 function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
   if (!hotkeyStatus) return false;
   return scope === "accessibility"
     ? hotkeyStatus.accessibility
     : hotkeyStatus.inputMonitoring;
-}
-
-function setPermissionRow(row: HTMLElement, granted: boolean): void {
-  const button = row.querySelector("button");
-  if (!button) return;
-  button.textContent = granted ? "Granted" : "Grant";
-  button.classList.toggle("is-done", granted);
-  button.classList.toggle("is-primary", !granted);
 }
 
 /**
@@ -718,10 +709,7 @@ async function copyTranscript(): Promise<void> {
   if (!text) return;
 
   await navigator.clipboard.writeText(text);
-  element.copyButton.textContent = "Copied";
-  setTimeout(() => {
-    element.copyButton.textContent = "Copy";
-  }, 1_400);
+  flash(element.copyButton, "Copied");
 }
 
 function toggleSettings(open: boolean): void {
