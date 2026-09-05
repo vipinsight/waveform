@@ -145,6 +145,9 @@ is warm.
 The selected model is remembered and loaded at launch. Audio is segmented at
 short pauses and transcribed locally while the model stays loaded.
 
+Pick the window up by the sidebar or by a view's heading. Buttons, inputs and
+the transcript keep their own behaviour.
+
 ## How it is put together
 
 The window layer — interface, audio capture, segmentation, the overlay meter —

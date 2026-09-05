@@ -310,8 +310,14 @@ kbd {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 22px;
-  /* Doubles as the window's drag handle. */
+}
+
+/* Chrome you can pick the window up by. Selectable text inside a drag region
+   shows a caret and reads as "this is not draggable", so suppress it. */
+[data-tauri-drag-region="deep"],
+[data-tauri-drag-region="deep"] :not(button, select, input, a, textarea) {
   cursor: default;
+  user-select: none;
 }
 
 .view-head .display {

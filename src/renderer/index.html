@@ -9,8 +9,8 @@
   </head>
   <body>
     <div class="app">
-      <aside class="sidebar" data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region>
+      <aside class="sidebar" data-tauri-drag-region="deep">
+        <div class="brand">
           <span class="mark" aria-hidden="true"></span>
           <span class="brand-name">Waveform</span>
           <span class="badge">Local</span>
@@ -32,7 +32,7 @@
           </button>
         </nav>
 
-        <div class="sidebar-spacer" data-tauri-drag-region></div>
+        <div class="sidebar-spacer"></div>
 
         <div class="sidebar-status">
           <div class="sidebar-status-row">
@@ -62,7 +62,7 @@
 
       <main class="content">
         <section class="view" id="view-dictate">
-          <div class="view-head" data-tauri-drag-region>
+          <div class="view-head" data-tauri-drag-region="deep">
             <h1 class="display">Dictate</h1>
             <span class="view-note" id="dictate-note"></span>
           </div>
@@ -98,7 +98,7 @@
         </section>
 
         <section class="view" id="view-activity" hidden>
-          <div class="view-head" data-tauri-drag-region>
+          <div class="view-head" data-tauri-drag-region="deep">
             <h1 class="display">Activity</h1>
             <span class="view-note">Counted on this Mac only</span>
           </div>
@@ -144,7 +144,7 @@
         <button class="nav-item" type="button" data-page="general" aria-current="page"><span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut"><span>Shortcut</span></button>
         <button class="nav-item" type="button" data-page="ai"><span>AI Polish</span></button>
-        <div class="sidebar-spacer" data-tauri-drag-region></div>
+        <div class="sidebar-spacer"></div>
         <div class="modal-foot" id="version-line">Waveform</div>
       </nav>
 
