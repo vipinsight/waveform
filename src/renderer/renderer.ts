@@ -189,9 +189,8 @@ function wireEvents(): void {
   element.keyInput.addEventListener("input", () => {
     element.keyInput.dataset.pristine = "false";
   });
-  element.keyInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") saveApiKey();
-  });
+  // Save is the only way the key changes. Typing edits the field and nothing
+  // more, so a half-pasted key cannot be committed by a stray keystroke.
   element.keySave.addEventListener("click", saveApiKey);
   element.aiModel.addEventListener("change", () => {
     void patchSettings({ openRouterModel: element.aiModel.value });
@@ -343,8 +342,12 @@ function describeAccelerator(accelerator: string): string {
 const KEY_MASK = "•".repeat(20);
 
 function renderAiStatus(status: AiStatus): void {
-  element.keyInput.value = status.hasApiKey ? KEY_MASK : "";
-  element.keyInput.dataset.pristine = "true";
+  // Never overwrite an edit in progress: reopening settings used to discard a
+  // key that had been typed but not yet saved.
+  if (element.keyInput.dataset.pristine !== "false") {
+    element.keyInput.value = status.hasApiKey ? KEY_MASK : "";
+    element.keyInput.dataset.pristine = "true";
+  }
   element.keyState.classList.toggle("key-saved", status.hasApiKey && !status.memoryOnly);
 
   if (!status.hasApiKey) {
