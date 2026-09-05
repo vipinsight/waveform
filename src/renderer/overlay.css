@@ -34,19 +34,28 @@ body {
   clip-path: inset(50%);
 }
 
+/*
+ * Sizes are the design's, scaled down by a fifth. At 40pt the pill sat over
+ * other apps like a panel rather than an indicator; the proportions between
+ * the buttons, the meter and the capsule are unchanged.
+ *
+ * The window in src-tauri must stay a little larger than this: it is
+ * transparent but not click-through, so surplus area would swallow clicks
+ * meant for whatever is underneath.
+ */
 .hud {
   display: flex;
-  width: 128px;
-  height: 40px;
+  width: 108px;
+  height: 32px;
   margin: 8px auto 0;
   align-items: center;
-  gap: 10px;
-  padding: 0 6px;
+  gap: 8px;
+  padding: 0 5px;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 999px;
   background: #11141a;
   box-shadow:
-    0 10px 26px rgb(0 0 0 / 32%),
+    0 8px 20px rgb(0 0 0 / 32%),
     inset 0 1px 0 rgb(255 255 255 / 12%);
   opacity: 0;
   /* Rises into place rather than only fading, which is what makes it read as
@@ -85,8 +94,8 @@ body {
 
 .hud-cancel {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
@@ -98,8 +107,8 @@ body {
 }
 
 .hud-cancel svg {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
 }
 
 .hud-cancel:hover {
@@ -114,8 +123,8 @@ body {
 /* ------------------------------------------------------------------- meter */
 
 .wave {
-  width: 39px;
-  height: 20px;
+  width: 34px;
+  height: 16px;
   flex: 0 0 auto;
 }
 
@@ -123,8 +132,8 @@ body {
 
 .hud-polish {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
@@ -151,32 +160,32 @@ body {
 .polish-mark {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1.5px;
 }
 
 .polish-mark i {
-  width: 2.5px;
-  border-radius: 1.25px;
+  width: 2px;
+  border-radius: 1px;
   background: #fff;
 }
 
 .polish-mark i:nth-child(1) {
-  height: 6px;
+  height: 5px;
 }
 
 .polish-mark i:nth-child(2) {
-  height: 12px;
+  height: 10px;
 }
 
 .polish-mark i:nth-child(3) {
-  height: 8px;
+  height: 7px;
 }
 
 /* While a rewrite runs the button becomes a ring: the same 28pt circle, so
    nothing shifts as it changes role. */
 .hud[data-state="rewriting"] .hud-polish {
   background: transparent;
-  border: 2px solid rgb(255 255 255 / 16%);
+  border: 1.8px solid rgb(255 255 255 / 16%);
   border-top-color: #3284d0;
   border-right-color: #3284d0;
   animation: ring 0.7s linear infinite;

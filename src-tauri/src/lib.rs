@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{
     ActivationPolicy, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
@@ -35,8 +35,8 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_WIDTH: f64 = 144.0;
-const OVERLAY_HEIGHT: f64 = 58.0;
+const OVERLAY_WIDTH: f64 = 122.0;
+const OVERLAY_HEIGHT: f64 = 48.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
@@ -695,16 +695,11 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         // light and dark and when the bar is highlighted.
         .icon_as_template(true)
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        // Either button opens the menu. A left click that launched the window
+        // instead made the icon behave unlike every other menu bar item, and
+        // left no way to reach Quit without knowing to right click.
+        .show_menu_on_left_click(true)
         .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
-        .on_tray_icon_event(|tray, event| {
-            // Left click opens the window; the menu is on right click.
-            if let TrayIconEvent::Click { button, .. } = event {
-                if button == tauri::tray::MouseButton::Left {
-                    present_main_window(tray.app_handle());
-                }
-            }
-        })
         .build(app)?;
     Ok(())
 }

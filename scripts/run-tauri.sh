@@ -39,6 +39,10 @@ osascript -e 'quit app "Waveform"' 2>/dev/null || true
 pkill -f "Waveform-tauri/Waveform.app" 2>/dev/null || true
 sleep 0.4
 
+# Earlier builds used other output directories. Leaving those behind means a
+# second registered bundle for the same app, which is how a stale icon or an
+# old binary gets launched by accident.
+rm -rf "$ROOT/release/Waveform-tauri" "$ROOT/release/Waveform-darwin-arm64"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "src-tauri/target/$PROFILE/waveform" "$APP/Contents/MacOS/Waveform"

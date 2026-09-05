@@ -9,9 +9,9 @@ import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
 const BAR_COUNT = 7;
-const BAR_GAP = 3;
-const BAR_WIDTH = 3;
-const MIN_BAR = 5;
+const BAR_GAP = 2.5;
+const BAR_WIDTH = 2.5;
+const MIN_BAR = 4;
 /** Bar colours from the design, in sRGB. */
 const BAR_INK = "246, 245, 242";
 const ACCENT = "50, 132, 208";

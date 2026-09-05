@@ -191,20 +191,28 @@ def build_tray_icon(size: int = 44) -> Image.Image:
 
     macOS recolours template images, so this carries shape in the alpha channel
     only and drops both the tile and the accent.
-    """
-    icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    _, _, heights = proportions(32)
-    bar_width, gap = 0.105, 0.075
 
-    width = bar_width * size
-    spacing = gap * size
+    The mark's own proportions are relative to a tile it sits inside with
+    padding. Reused directly here the bars would fill only half the menu bar's
+    height, so they are rescaled about the tallest bar -- the ratios between
+    bar width, gap and each height are the mark's, the overall size is not.
+    """
+    bar_width, gap, heights = proportions(128)
+    tallest_ratio = max(heights)
+
+    # Tallest bar fills most of the slot; everything else follows the mark.
+    tallest = size * 0.78
+    width = tallest * (bar_width / tallest_ratio)
+    spacing = tallest * (gap / tallest_ratio)
+
     total = len(heights) * width + (len(heights) - 1) * spacing
     x = (size - total) / 2
     centre = size / 2
 
+    icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(icon)
     for height_ratio in heights:
-        height = height_ratio * size * 0.86
+        height = tallest * (height_ratio / tallest_ratio)
         draw.rounded_rectangle(
             [x, centre - height / 2, x + width, centre + height / 2],
             radius=width / 2,
