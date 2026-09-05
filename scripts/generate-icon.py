@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 # Colours are the design's OKLCH values converted to sRGB.
@@ -67,19 +68,27 @@ def proportions(point_size: int) -> tuple[float, float, tuple[float, ...]]:
 
 
 def squircle_mask(size: int, exponent: float = SQUIRCLE_EXPONENT) -> Image.Image:
-    """A superellipse mask: |x|^n + |y|^n = 1, the continuous corner Apple uses."""
-    mask = Image.new("L", (size, size), 0)
+    """A superellipse mask: |x|^n + |y|^n = 1, the continuous corner Apple uses.
+
+    Coverage is computed per pixel from the distance to the curve rather than
+    by filling a polygon and relying on the downsample to soften it. A polygon
+    fill is hard-edged, so its only smoothing came from supersampling, which
+    left a handful of alpha steps along the corners; this gives a full
+    gradient and stays exact on the flat sides.
+    """
     radius = size / 2
-    points = []
-    steps = 2048
-    for index in range(steps):
-        theta = 2 * math.pi * index / steps
-        cos_t, sin_t = math.cos(theta), math.sin(theta)
-        x = radius * math.copysign(abs(cos_t) ** (2 / exponent), cos_t)
-        y = radius * math.copysign(abs(sin_t) ** (2 / exponent), sin_t)
-        points.append((radius + x, radius + y))
-    ImageDraw.Draw(mask).polygon(points, fill=255)
-    return mask
+    # Pixel centres, in units where the curve sits at r = radius.
+    axis = np.arange(size, dtype=np.float64) + 0.5 - radius
+    dx = np.abs(axis)[None, :]
+    dy = np.abs(axis)[:, None]
+
+    # r is the superellipse radius through each point; the curve is r = radius.
+    with np.errstate(over="ignore"):
+        r = (dx**exponent + dy**exponent) ** (1.0 / exponent)
+
+    # One pixel of falloff centred on the curve.
+    coverage = np.clip(radius - r + 0.5, 0.0, 1.0)
+    return Image.fromarray((coverage * 255).round().astype(np.uint8), mode="L")
 
 
 def vertical_gradient(size: int, top: tuple, bottom: tuple) -> Image.Image:
@@ -140,8 +149,11 @@ def build_tile(point_size: int, pixels: int) -> Image.Image:
     edge_draw.rectangle([0, size - lip, size, size], fill=(0, 0, 0, 89))
     tile = Image.alpha_composite(tile, edges)
 
-    tile.putalpha(squircle_mask(size))
-    return tile.resize((pixels, pixels), Image.LANCZOS)
+    # Mask last, at final resolution: computing coverage here rather than
+    # supersampling a hard-edged mask is what keeps the corners smooth.
+    tile = tile.resize((pixels, pixels), Image.LANCZOS)
+    tile.putalpha(squircle_mask(pixels))
+    return tile
 
 
 def build_icon(point_size: int, pixels: int) -> Image.Image:
@@ -223,7 +235,8 @@ def build_tray_icon(size: int = 44) -> Image.Image:
 
 
 def main() -> None:
-    icons = Path(__file__).resolve().parent.parent / "icons"
+    root = Path(__file__).resolve().parent.parent
+    icons = root / "icons"
 
     master = build_icon(1024, CANVAS)
     master.save(icons / "waveform-icon.png")
@@ -251,6 +264,15 @@ def main() -> None:
             check=True,
         )
         print(f"wrote {icns}")
+
+    # Tauri embeds these into the binary and applies them at runtime, which
+    # overrides whatever the bundle carries. Left stale, the correct icon
+    # appears for a moment at launch and is then replaced by the old one.
+    embedded = root / "src-tauri" / "icons"
+    embedded.mkdir(parents=True, exist_ok=True)
+    shutil.copy(icons / "waveform-icon.png", embedded / "icon.png")
+    shutil.copy(icons / "waveform.icns", embedded / "icon.icns")
+    print(f"wrote {embedded / 'icon.png'} and icon.icns (embedded by Tauri)")
 
 
 if __name__ == "__main__":
