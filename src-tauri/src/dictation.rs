@@ -93,6 +93,9 @@ pub struct Dictation {
     session: Mutex<Option<Session>>,
     status: Mutex<HotkeyStatus>,
     polishing: Mutex<bool>,
+    /// Set when Escape arrives mid-polish. The request itself cannot be
+    /// recalled, but its result must not be pasted after the user backed out.
+    polish_cancelled: Mutex<bool>,
     /// Accelerators currently bound, so each can be released individually.
     /// Releasing all of them would drop Escape along with the polish key.
     polish_accelerator: Mutex<Option<String>>,
@@ -125,6 +128,7 @@ impl Dictation {
                 binding: "none".into(),
             }),
             polishing: Mutex::new(false),
+            polish_cancelled: Mutex::new(false),
             polish_accelerator: Mutex::new(None),
             escape_bound: Mutex::new(false),
             watched_key: Mutex::new(None),
@@ -222,13 +226,20 @@ impl Dictation {
                     self.run_command(command).await;
                 }
             }
-            HelperEvent::Tap { active, reason } => {
+            HelperEvent::Tap {
+                active,
+                listening,
+                reason,
+            } => {
                 if !active {
                     if let Some(reason) = reason {
                         eprintln!("hotkey tap inactive: {reason}");
                     }
                 }
-                self.patch_status(|status| status.tap_active = active).await;
+                // Report whether the shortcut can actually fire, not merely
+                // whether a tap object was created.
+                self.patch_status(|status| status.tap_active = active && listening)
+                    .await;
             }
             HelperEvent::Permissions {
                 accessibility,
@@ -334,6 +345,10 @@ impl Dictation {
                 }
                 let handler = this.clone();
                 tauri::async_runtime::spawn(async move {
+                    if *handler.polishing.lock().await {
+                        *handler.polish_cancelled.lock().await = true;
+                        return;
+                    }
                     let command = handler.gestures.lock().await.cancel();
                     if command.is_some() {
                         handler.end_session("cancel").await;
@@ -469,12 +484,17 @@ impl Dictation {
         }
 
         *self.polishing.lock().await = true;
+        *self.polish_cancelled.lock().await = false;
         self.show_overlay().await;
         self.send_to_overlay("busy", "insert", "hold").await;
+        self.capture_escape().await;
 
         let outcome = async {
             let selection = self.helper.request_selection().await?;
             let polished = self.rewriter.polish(&selection).await?;
+            if *self.polish_cancelled.lock().await {
+                return Err("Cancelled.".to_string());
+            }
             if polished != selection {
                 self.helper.paste(&polished).await;
             }
@@ -482,8 +502,13 @@ impl Dictation {
         }
         .await;
 
+        self.release_escape().await;
+
         match outcome {
             Ok(()) => self.send_to_overlay("stop", "insert", "hold").await,
+            Err(message) if message == "Cancelled." => {
+                self.send_to_overlay("cancel", "insert", "hold").await;
+            }
             Err(message) => {
                 self.send_to_overlay("fail", "insert", "hold").await;
                 self.report_error(&message).await;

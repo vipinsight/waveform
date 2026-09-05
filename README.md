@@ -67,7 +67,8 @@ any text field — Mail, a browser, a terminal — and:
 | --- | --- |
 | Hold the key, speak, release | Transcribes what you said and pastes it |
 | Double-tap the key | Keeps listening until you press the key again |
-| `esc` while listening | Cancels; nothing is pasted |
+| Press the key again while locked | Stops listening and transcribes the last phrase |
+| `esc` | Cancels: the unfinished phrase is dropped, and an in-flight polish is abandoned |
 
 A small monochrome indicator appears while it listens, so you always know the
 microphone is open. It never takes focus from the app you are typing into, and
@@ -80,14 +81,22 @@ in the app window only.
 
 ### Permissions
 
-macOS gates both halves of this, and neither can be granted programmatically:
+Both live under **Settings → Shortcut**. macOS gates each half, and neither can
+be granted programmatically:
 
 - **Input Monitoring** — lets Waveform see the trigger key while other apps are
   focused.
 - **Accessibility** — lets Waveform paste into the focused app.
 
-The Settings panel shows both and links straight to the right System Settings
-pane. Grant them, then restart Waveform.
+Settings shows both and links straight to the right System Settings pane.
+
+macOS ties these to the app's code signature, which is why a grant can appear
+ticked in System Settings while the app is still refused: an ad-hoc signature
+changes on every rebuild, so each build is a different app as far as the
+permission system is concerned. `pnpm app` therefore signs with the first
+code-signing certificate it finds, which keeps the identity stable. If the
+permissions were first granted to an ad-hoc build, remove Waveform from both
+lists and add it again once.
 
 If you use **Fn**, also set **System Settings → Keyboard → Press 🌐 to** to
 **Do Nothing**, otherwise tapping it switches input source at the same time.
@@ -95,13 +104,13 @@ If you use **Fn**, also set **System Settings → Keyboard → Press 🌐 to** t
 Because the app is ad-hoc signed, macOS treats each rebuild as a new binary and
 you will need to re-grant these permissions after `pnpm package:mac`.
 
-## AI rewrite (OpenRouter)
+## AI Polish (OpenRouter)
 
 Transcription always runs on this Mac. Optionally, text can be rewritten by a
 model through [OpenRouter](https://openrouter.ai) — that step, and only that
 step, sends text off the machine.
 
-Open **Settings → AI rewrite** and paste an OpenRouter API key. It is encrypted
+Open **Settings → AI Polish** and paste an OpenRouter API key. It is encrypted
 with `safeStorage` into your login keychain, written to `secrets.json` as
 ciphertext with `0600` permissions, and never handed back to the interface.
 

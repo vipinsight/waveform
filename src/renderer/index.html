@@ -9,8 +9,8 @@
   </head>
   <body>
     <div class="app">
-      <aside class="sidebar">
-        <div class="brand">
+      <aside class="sidebar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
           <span class="mark" aria-hidden="true"></span>
           <span class="brand-name">Waveform</span>
           <span class="badge">Local</span>
@@ -32,7 +32,7 @@
           </button>
         </nav>
 
-        <div class="sidebar-spacer"></div>
+        <div class="sidebar-spacer" data-tauri-drag-region></div>
 
         <div class="sidebar-status">
           <div class="sidebar-status-row">
@@ -62,7 +62,7 @@
 
       <main class="content">
         <section class="view" id="view-dictate">
-          <div class="view-head">
+          <div class="view-head" data-tauri-drag-region>
             <h1 class="display">Dictate</h1>
             <span class="view-note" id="dictate-note"></span>
           </div>
@@ -78,14 +78,18 @@
           </div>
 
           <div class="controls">
-            <button id="action-button" class="action-button is-busy" disabled type="button" aria-pressed="false">
-              <span class="record-glyph" aria-hidden="true">
-                <span class="meter">
-                  <i class="meter-bar"></i><i class="meter-bar"></i><i class="meter-bar"></i
-                  ><i class="meter-bar"></i><i class="meter-bar"></i>
-                </span>
+            <button id="action-button" class="action-button" type="button" aria-pressed="false">
+              <span class="action-glyph" aria-hidden="true">
+                <svg class="glyph-mic" viewBox="0 0 20 20" fill="none">
+                  <rect x="7.4" y="2.4" width="5.2" height="9.4" rx="2.6" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M4.6 9.2a5.4 5.4 0 0 0 10.8 0M10 14.6v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+                <svg class="glyph-stop" viewBox="0 0 20 20"><rect x="6" y="6" width="8" height="8" rx="2" fill="currentColor"/></svg>
               </span>
-              <span id="action-label">Loading model</span>
+              <span class="action-text">
+                <span id="action-label">Start listening</span>
+                <span id="action-hint" class="action-hint"></span>
+              </span>
             </button>
             <span class="controls-spacer"></span>
             <button id="copy-button" class="ghost-button" type="button">Copy</button>
@@ -94,7 +98,7 @@
         </section>
 
         <section class="view" id="view-activity" hidden>
-          <div class="view-head">
+          <div class="view-head" data-tauri-drag-region>
             <h1 class="display">Activity</h1>
             <span class="view-note">Counted on this Mac only</span>
           </div>
@@ -139,9 +143,8 @@
         <h2>Settings</h2>
         <button class="nav-item" type="button" data-page="general" aria-current="page"><span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut"><span>Shortcut</span></button>
-        <button class="nav-item" type="button" data-page="ai"><span>AI rewrite</span></button>
-        <button class="nav-item" type="button" data-page="permissions"><span>Permissions</span></button>
-        <div class="sidebar-spacer"></div>
+        <button class="nav-item" type="button" data-page="ai"><span>AI Polish</span></button>
+        <div class="sidebar-spacer" data-tauri-drag-region></div>
         <div class="modal-foot" id="version-line">Waveform</div>
       </nav>
 
@@ -201,10 +204,35 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
+
+          <h2 class="subhead">Permissions</h2>
+          <p class="note">
+            macOS requires both before a shortcut can listen anywhere and insert
+            text. It ties them to the app's signature, so an unsigned rebuild can
+            leave them ticked in System Settings while the app is refused.
+          </p>
+<div class="card">
+            <div class="row" id="permission-input-monitoring">
+              <span class="row-label">Input Monitoring<small>Lets Waveform see the trigger key in other apps.</small></span>
+              <span class="row-actions">
+                <button class="pill-button is-primary" type="button" data-scope="input-monitoring">Grant</button>
+              </span>
+            </div>
+            <div class="row" id="permission-accessibility">
+              <span class="row-label">Accessibility<small>Lets Waveform paste into the focused app.</small></span>
+              <span class="row-actions">
+                <button class="pill-button is-primary" type="button" data-scope="accessibility">Grant</button>
+              </span>
+            </div>
+          </div>
+          <p class="note">
+            macOS ties these to the app's code signature. An ad-hoc signed build looks
+            like a new app after every rebuild, so both need granting again.
+          </p>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>
-          <h1 class="display">AI rewrite</h1>
+          <h1 class="display">AI Polish</h1>
           <div class="card">
             <div class="row">
               <span class="row-label">
@@ -275,27 +303,6 @@
           </p>
         </section>
 
-        <section class="settings-page" data-page="permissions" hidden>
-          <h1 class="display">Permissions</h1>
-          <div class="card">
-            <div class="row" id="permission-input-monitoring">
-              <span class="row-label">Input Monitoring<small>Lets Waveform see the trigger key in other apps.</small></span>
-              <span class="row-actions">
-                <button class="pill-button is-primary" type="button" data-scope="input-monitoring">Grant</button>
-              </span>
-            </div>
-            <div class="row" id="permission-accessibility">
-              <span class="row-label">Accessibility<small>Lets Waveform paste into the focused app.</small></span>
-              <span class="row-actions">
-                <button class="pill-button is-primary" type="button" data-scope="accessibility">Grant</button>
-              </span>
-            </div>
-          </div>
-          <p class="note">
-            macOS ties these to the app's code signature. An ad-hoc signed build looks
-            like a new app after every rebuild, so both need granting again.
-          </p>
-        </section>
       </div>
     </div>
 

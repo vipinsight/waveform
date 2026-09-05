@@ -29,6 +29,10 @@ pub enum HelperEvent {
     },
     Tap {
         active: bool,
+        /// Whether the tap can actually receive events. A tap can be created
+        /// while Input Monitoring is denied and then deliver nothing at all.
+        #[serde(default = "default_listening")]
+        listening: bool,
         #[serde(default)]
         reason: Option<String>,
     },
@@ -52,6 +56,10 @@ pub enum HelperEvent {
 }
 
 /// Maps a binding id to the macOS virtual key code the helper watches.
+fn default_listening() -> bool {
+    true
+}
+
 pub fn key_code_for(hotkey_id: &str) -> Option<i64> {
     Some(match hotkey_id {
         "fn" => 63,
@@ -259,6 +267,18 @@ mod tests {
         let selection: HelperEvent =
             serde_json::from_str(r#"{"type":"selection","ok":false,"reason":"empty"}"#).unwrap();
         assert!(matches!(selection, HelperEvent::Selection { ok: false, .. }));
+
+        // A tap that exists but cannot receive is not the same as a working one.
+        let tap: HelperEvent =
+            serde_json::from_str(r#"{"type":"tap","active":true,"listening":false}"#).unwrap();
+        assert!(matches!(
+            tap,
+            HelperEvent::Tap {
+                active: true,
+                listening: false,
+                ..
+            }
+        ));
     }
 
     // A future helper version, or stray logging, must not be fatal.

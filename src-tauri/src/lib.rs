@@ -26,8 +26,8 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 
 const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_WIDTH: f64 = 148.0;
-const OVERLAY_HEIGHT: f64 = 46.0;
+const OVERLAY_WIDTH: f64 = 64.0;
+const OVERLAY_HEIGHT: f64 = 34.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {

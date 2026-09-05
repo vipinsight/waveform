@@ -153,6 +153,9 @@ private final class ModifierWatcher {
   private var tap: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
   private var retryTimer: Timer?
+  private var accessTimer: Timer?
+  /// Input Monitoring state at the moment the current tap was created.
+  private var hadAccess = false
   private(set) var watchedKeyCode: Int64?
   private var isDown = false
 
@@ -160,6 +163,7 @@ private final class ModifierWatcher {
     watchedKeyCode = keyCode
     isDown = false
     if tap == nil { install() }
+    startAccessWatch()
   }
 
   func unwatch() {
@@ -183,6 +187,40 @@ private final class ModifierWatcher {
   func reenable() {
     guard let tap else { return }
     CGEvent.tapEnable(tap: tap, enable: true)
+  }
+
+  /// Watches for Input Monitoring being granted while we are already running.
+  ///
+  /// `CGEvent.tapCreate` succeeds even when access is denied; the tap simply
+  /// never delivers anything. Granting the permission does not revive it, so
+  /// the tap has to be rebuilt once access appears -- otherwise the shortcut
+  /// stays dead until the app is relaunched, which is what makes permissions
+  /// look like they were granted but did not take.
+  private func startAccessWatch() {
+    guard accessTimer == nil else { return }
+    hadAccess = hasInputMonitoring()
+    accessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+      guard let self, self.watchedKeyCode != nil else { return }
+      let access = hasInputMonitoring()
+      defer { self.hadAccess = access }
+      guard access, !self.hadAccess else { return }
+      self.reinstall()
+    }
+  }
+
+  private func reinstall() {
+    if let source = runLoopSource {
+      CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+    if let tap {
+      CGEvent.tapEnable(tap: tap, enable: false)
+      CFMachPortInvalidate(tap)
+    }
+    tap = nil
+    runLoopSource = nil
+    isDown = false
+    install()
+    emitPermissions()
   }
 
   private func install() {
@@ -223,9 +261,12 @@ private final class ModifierWatcher {
     CGEvent.tapEnable(tap: created, enable: true)
     tap = created
     runLoopSource = source
+    hadAccess = hasInputMonitoring()
     retryTimer?.invalidate()
     retryTimer = nil
-    emit(["type": "tap", "active": true])
+    // A tap can exist without permission, so report whether it can actually
+    // receive anything rather than merely that it was created.
+    emit(["type": "tap", "active": true, "listening": hadAccess])
   }
 
   private func scheduleRetry() {

@@ -30,17 +30,17 @@ body {
 
 .hud {
   display: grid;
-  width: 132px;
-  height: 30px;
+  width: 50px;
+  height: 20px;
   margin: 7px auto 0;
   place-items: center;
   border: 0.5px solid rgb(255 255 255 / 16%);
-  border-radius: 15px;
+  border-radius: 10px;
   background: rgb(18 18 20 / 84%);
   box-shadow:
-    0 8px 22px rgb(0 0 0 / 40%),
+    0 4px 14px rgb(0 0 0 / 38%),
     inset 0 0.5px 0 rgb(255 255 255 / 10%);
-  backdrop-filter: blur(24px) saturate(120%);
+  backdrop-filter: blur(20px) saturate(120%);
   opacity: 0;
   /* Rises into place rather than just fading: the short travel is what makes
      the HUD feel like a system control instead of a web element. */
@@ -72,12 +72,12 @@ body {
 /* Latched dictation runs until dismissed, so it gets a permanent ring to
    distinguish it from a momentary push-to-talk. */
 .hud[data-mode="latched"] {
-  border-color: rgb(255 255 255 / 40%);
+  border-color: rgb(255 255 255 / 55%);
 }
 
 .wave {
-  width: 104px;
-  height: 20px;
+  width: 38px;
+  height: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

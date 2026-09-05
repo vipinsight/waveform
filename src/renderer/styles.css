@@ -26,6 +26,8 @@
   --danger-soft: #f6e6e3;
   --positive: #2f7d5a;
   --shadow-modal: 0 24px 70px rgb(28 27 24 / 22%);
+  /* One gap all round the content panel. */
+  --inset: 14px;
 
   color: var(--ink);
   background: var(--paper);
@@ -138,16 +140,16 @@ kbd {
 .sidebar {
   display: flex;
   flex-direction: column;
-  padding: 0 12px 14px;
-  -webkit-app-region: drag;
+  padding: 0 var(--inset) var(--inset);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 18px 10px 20px 12px;
-  margin-top: 26px; /* clears the traffic lights */
+  padding: 0 10px 18px 12px;
+  /* Clears the traffic lights, which the window draws over the sidebar. */
+  margin-top: 42px;
 }
 
 .mark {
@@ -182,7 +184,6 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  -webkit-app-region: no-drag;
 }
 
 .nav-item {
@@ -232,7 +233,6 @@ kbd {
   border-radius: 11px;
   margin-bottom: 8px;
   background: var(--surface-sunken);
-  -webkit-app-region: no-drag;
 }
 
 .sidebar-status-row {
@@ -281,13 +281,16 @@ kbd {
 /* ----------------------------------------------------------------- views */
 
 .content {
+  display: flex;
   min-width: 0;
-  padding: 0 14px 14px 0;
+  flex-direction: column;
+  padding: var(--inset) var(--inset) var(--inset) 0;
 }
 
 .view {
   display: flex;
-  height: 100%;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   padding: 34px 38px 26px;
   border: 1px solid var(--hairline);
@@ -307,6 +310,8 @@ kbd {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 22px;
+  /* Doubles as the window's drag handle. */
+  cursor: default;
 }
 
 .view-head .display {
@@ -417,7 +422,7 @@ kbd {
   color: #fff;
 }
 
-.record-glyph {
+.action-glyph {
   display: grid;
   width: 34px;
   height: 34px;
@@ -426,28 +431,63 @@ kbd {
   background: rgb(255 255 255 / 16%);
 }
 
-.meter {
+.action-glyph svg {
+  width: 19px;
+  height: 19px;
+  grid-area: 1 / 1;
+}
+
+/* Mic while idle, stop square while listening: the shape says what pressing
+   it will do, which a label alone has to be read to learn. */
+.glyph-stop {
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 140ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-button.is-listening .glyph-mic {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.action-button.is-listening .glyph-stop {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.glyph-mic {
+  transition: opacity 140ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-text {
   display: flex;
-  height: 22px;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.25;
 }
 
-.meter-bar {
-  width: 2px;
-  height: 5px;
-  border-radius: 2px;
-  background: currentColor;
-  transition: height 90ms linear;
+.action-hint {
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
 
-.action-button.is-busy .meter-bar {
-  animation: meter-wait 850ms ease-in-out infinite alternate;
+.action-hint:empty {
+  display: none;
 }
 
-.action-button.is-busy .meter-bar:nth-child(2),
-.action-button.is-busy .meter-bar:nth-child(4) {
-  animation-delay: 180ms;
+/* A soft pulse while the engine loads, so a press that is queued still reads
+   as the app doing something. */
+.action-button.is-warming {
+  animation: warming 1.6s ease-in-out infinite;
+}
+
+@keyframes warming {
+  50% {
+    opacity: 0.72;
+  }
 }
 
 .ghost-button {
@@ -661,6 +701,15 @@ kbd {
   gap: 7px;
 }
 
+.subhead {
+  margin: 26px 0 10px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 680;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .note {
   margin: 14px 2px 0;
   color: var(--ink-faint);
@@ -861,12 +910,6 @@ select {
 @keyframes pulse {
   50% {
     opacity: 0.35;
-  }
-}
-
-@keyframes meter-wait {
-  to {
-    height: 18px;
   }
 }
 

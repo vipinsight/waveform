@@ -14,6 +14,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/release/Waveform.app"
 PROFILE="${WAVEFORM_PROFILE:-debug}"
 
+# macOS ties Accessibility and Input Monitoring to the code signature. An ad-hoc
+# signature is a hash of the bundle, so every rebuild is a different app as far
+# as TCC is concerned -- while System Settings still shows the old entry ticked,
+# which looks exactly like a granted permission that stopped working. Preferring
+# a real certificate keeps the identity, and the grants, stable across rebuilds.
+IDENTITY="${WAVEFORM_SIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/"/ { print $2; exit }')"
+fi
+if [ -z "$IDENTITY" ]; then
+  IDENTITY="-"
+fi
+
 cd "$ROOT"
 pnpm build
 
@@ -56,7 +70,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 
-codesign --force --deep --sign "${WAVEFORM_SIGN_IDENTITY:--}" "$APP"
+codesign --force --deep --sign "$IDENTITY" "$APP"
+
+if [ "$IDENTITY" = "-" ]; then
+  echo
+  echo "Signed ad-hoc: no code-signing certificate was found. macOS will revoke"
+  echo "Accessibility and Input Monitoring on every rebuild."
+else
+  echo "Signed as: $IDENTITY"
+fi
 
 # `open` deliberately does not forward the environment. To pass overrides such
 # as NEMO_SPEECH_BIN, run the executable inside the bundle directly instead.

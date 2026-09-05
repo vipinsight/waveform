@@ -8,9 +8,9 @@ import type {
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
-const BAR_COUNT = 20;
+const BAR_COUNT = 9;
 const BAR_WIDTH = 2;
-const MIN_BAR = 2;
+const MIN_BAR = 1.5;
 const LEVEL_GAIN = 7;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;

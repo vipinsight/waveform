@@ -72,7 +72,7 @@ const element = {
   polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
   polishNow: requireElement<HTMLButtonElement>("polish-now"),
-  meterBars: Array.from(document.querySelectorAll<HTMLElement>(".meter-bar")),
+  actionHint: requireElement<HTMLElement>("action-hint"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
@@ -82,6 +82,8 @@ let modelLoading = true;
 let listening = false;
 let settingsOpen = false;
 let phraseCount = 0;
+let listeningSince = 0;
+let elapsedTimer: number | null = null;
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -419,10 +421,13 @@ function handleModelEvent(event: ModelEvent): void {
 
 function handleDictationUpdate(update: DictationUpdate): void {
   const { status, phrase } = update;
+  const wasListening = listening;
   listening =
     status.state === "listening" ||
     status.state === "transcribing" ||
     status.state === "rewriting";
+  if (listening && !wasListening) listeningSince = Date.now();
+  syncElapsedTimer();
 
   if (phrase) appendPhrase(phrase.text);
 
@@ -436,22 +441,52 @@ function handleDictationUpdate(update: DictationUpdate): void {
 }
 
 function renderActionState(): void {
-  const disabled = modelLoading && !listening;
-  element.actionButton.disabled = disabled;
-  element.actionButton.classList.toggle("is-busy", disabled);
+  // Never disabled while the engine loads. Recording starts immediately and the
+  // first phrase waits for the model, which beats a dead button that gives no
+  // way to begin.
   element.actionButton.classList.toggle("is-listening", listening);
+  element.actionButton.classList.toggle("is-warming", modelLoading && !listening);
   element.actionButton.setAttribute("aria-pressed", String(listening));
-  element.actionLabel.textContent = listening
-    ? "Stop listening"
-    : modelLoading
-      ? "Loading model"
-      : modelReady
-        ? "Start listening"
-        : "Load model & start";
+  element.actionLabel.textContent = listening ? "Stop listening" : "Start listening";
+
+  if (listening) {
+    element.actionHint.textContent = formatElapsed(Date.now() - listeningSince);
+  } else if (modelLoading) {
+    element.actionHint.textContent = "Preparing the model…";
+  } else if (!modelReady) {
+    element.actionHint.textContent = "Model unavailable";
+  } else {
+    element.actionHint.textContent = shortcutHint();
+  }
 
   element.copyButton.disabled = phraseCount === 0;
   element.clearButton.disabled = phraseCount === 0;
-  if (!listening) for (const bar of element.meterBars) bar.style.height = "";
+}
+
+/** Reminds the user the button is not the only way in. */
+function shortcutHint(): string {
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  if (!binding || hotkeyStatus?.supported === false) return "";
+  return `or hold ${binding.label}`;
+}
+
+function formatElapsed(milliseconds: number): string {
+  const total = Math.max(0, Math.floor(milliseconds / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Ticks the elapsed readout only while a session is actually running. */
+function syncElapsedTimer(): void {
+  if (listening && elapsedTimer === null) {
+    listeningSince = listeningSince || Date.now();
+    elapsedTimer = window.setInterval(renderActionState, 1000);
+    return;
+  }
+  if (!listening && elapsedTimer !== null) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
+    listeningSince = 0;
+  }
 }
 
 function appendPhrase(text: string): void {
