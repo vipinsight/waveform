@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/release/Waveform-tauri/Waveform.app"
+APP="$ROOT/release/Waveform.app"
 PROFILE="${WAVEFORM_PROFILE:-debug}"
 
 cd "$ROOT"
@@ -33,19 +33,20 @@ cp icons/waveform.icns "$APP/Contents/Resources/icon.icns"
 # The Swift hotkey helper is a sibling process, not a library. It must live
 # inside the bundle so macOS attributes its event tap and synthetic keystrokes
 # to Waveform rather than to whatever launched it.
-if [ -x dist/src/main/waveform-hotkey ]; then
-  cp dist/src/main/waveform-hotkey "$APP/Contents/Resources/waveform-hotkey"
+if [ -x dist/native/waveform-hotkey ]; then
+  cp dist/native/waveform-hotkey "$APP/Contents/Resources/waveform-hotkey"
 fi
 
-# A distinct bundle id while the port is in progress: macOS ties microphone and
-# accessibility grants to the identity, and sharing one with the Electron build
-# would make it unclear which app a permission belongs to.
+# The Qwen engine is a Python script, not a library. Bundling it keeps the app
+# independent of the checkout it was built from.
+cp scripts/qwen-worker.py "$APP/Contents/Resources/qwen-worker.py"
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>Waveform</string>
-  <key>CFBundleIdentifier</key><string>com.webtiara.waveform.tauri</string>
+  <key>CFBundleIdentifier</key><string>com.webtiara.waveform</string>
   <key>CFBundleName</key><string>Waveform</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -57,6 +58,7 @@ PLIST
 
 codesign --force --deep --sign "${WAVEFORM_SIGN_IDENTITY:--}" "$APP"
 
-# scripts/ and the model runtimes live beside the repo, not inside the bundle.
-WAVEFORM_PROJECT_ROOT="$ROOT" open "$APP"
+# `open` deliberately does not forward the environment. To pass overrides such
+# as NEMO_SPEECH_BIN, run the executable inside the bundle directly instead.
+open "$APP"
 echo "Launched $APP"

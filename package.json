@@ -3,26 +3,22 @@
   "version": "0.2.0",
   "private": true,
   "description": "Local-first desktop voice transcription with selectable speech models.",
-  "main": "dist/src/main/main.js",
   "packageManager": "pnpm@9.4.0",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs && node scripts/build-helper.mjs",
-    "dev": "pnpm build && electron .",
-    "start": "pnpm build && electron .",
-    "package:mac": "pnpm build && ./scripts/package-mac.sh",
-    "test": "vitest run --exclude 'release/**'",
+    "start": "./scripts/run-tauri.sh",
+    "app": "./scripts/run-tauri.sh",
+    "package:mac": "WAVEFORM_PROFILE=release ./scripts/run-tauri.sh",
+    "test": "vitest run && cd src-tauri && cargo test",
+    "test:ui": "vitest run",
+    "test:rust": "cd src-tauri && cargo test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "setup:model": "./scripts/setup-model.sh",
     "setup:qwen": "./scripts/setup-qwen.sh",
-    "icon": "./.venv-qwen/bin/python scripts/generate-icon.py",
-    "app": "./scripts/run-app.sh",
-    "tauri": "./scripts/run-tauri.sh",
-    "tauri:test": "cd src-tauri && cargo test"
+    "icon": "./.venv-qwen/bin/python scripts/generate-icon.py"
   },
   "devDependencies": {
-    "@electron/packager": "^20.3.0",
     "@types/node": "^24.3.0",
-    "electron": "^44.2.0",
     "esbuild": "^0.25.9",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

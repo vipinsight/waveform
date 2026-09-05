@@ -51,7 +51,7 @@ export type DictationState =
 export interface DictationCommand {
   /** "preview" shows the HUD with synthetic levels, so it can be checked
       without a microphone, a loaded model, or granted permissions. */
-  action: "start" | "stop" | "cancel" | "preview" | "busy";
+  action: "start" | "stop" | "cancel" | "preview" | "busy" | "fail";
   sink: DictationSink;
   mode: DictationMode;
 }

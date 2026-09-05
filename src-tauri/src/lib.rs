@@ -52,16 +52,24 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
     Ok(state.settings.lock().await.value())
 }
 
+/// Applies a partial patch.
+///
+/// The interface sends only the fields it changed. Deserializing straight into
+/// `AppSettings` would fill every absent field with a default -- and because a
+/// default is a *valid* value, normalization would keep it, so changing one
+/// setting would quietly reset all the others. The patch is merged onto the
+/// current value first.
 #[tauri::command]
 async fn update_settings(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-    patch: AppSettings,
+    patch: serde_json::Value,
 ) -> Result<AppSettings, String> {
     let (previous, next) = {
         let mut settings = state.settings.lock().await;
         let previous = settings.value();
-        (previous, settings.update(patch))
+        let merged = merge_settings(&previous, &patch)?;
+        (previous, settings.update(merged))
     };
 
     if next.model_id != previous.model_id {
@@ -105,8 +113,22 @@ async fn start_model(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn select_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
-    state.models.select(&model_id).await
+async fn select_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<(), String> {
+    // Persist before starting: otherwise the choice is lost on relaunch, and
+    // the next settings broadcast snaps the picker back to the stored value.
+    let next = {
+        let mut settings = state.settings.lock().await;
+        let mut value = settings.value();
+        value.model_id = model_id.clone();
+        settings.update(value)
+    };
+    let _ = app.emit("settings-changed", &next);
+
+    state.models.select(&next.model_id).await
 }
 
 #[tauri::command]
@@ -308,6 +330,7 @@ pub fn run() {
             let models = Arc::new(ModelServer::new(
                 user_data,
                 project_root(),
+                app.path().resource_dir().ok(),
                 selected.clone(),
                 Box::new(move |event: ModelEvent| {
                     let _ = handle.emit("model-event", event);
@@ -400,6 +423,23 @@ fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Overlays the changed fields of `patch` onto `current`.
+fn merge_settings(
+    current: &AppSettings,
+    patch: &serde_json::Value,
+) -> Result<AppSettings, String> {
+    let mut merged =
+        serde_json::to_value(current).map_err(|error| format!("Invalid settings: {error}"))?;
+
+    if let (Some(base), Some(fields)) = (merged.as_object_mut(), patch.as_object()) {
+        for (key, value) in fields {
+            base.insert(key.clone(), value.clone());
+        }
+    }
+
+    serde_json::from_value(merged).map_err(|error| format!("Invalid settings patch: {error}"))
+}
+
 /// The directory both hosts keep their settings, stats and model runtime in.
 ///
 /// Tauri's `app_config_dir` would resolve to the bundle identifier, but the
@@ -431,3 +471,65 @@ fn project_root() -> PathBuf {
 }
 
 use std::path::Path;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn customised() -> AppSettings {
+        AppSettings {
+            model_id: "qwen3-asr-0.6b".into(),
+            hotkey_id: "right-option".into(),
+            hold_ms: 200,
+            theme: "light".into(),
+            ..AppSettings::default()
+        }
+    }
+
+    /// The interface sends only what changed. Every other choice must survive.
+    #[test]
+    fn a_partial_patch_leaves_other_settings_alone() {
+        let current = customised();
+        let patch = serde_json::json!({ "theme": "dark" });
+        let merged = merge_settings(&current, &patch).expect("merges");
+
+        assert_eq!(merged.theme, "dark");
+        assert_eq!(merged.model_id, "qwen3-asr-0.6b");
+        assert_eq!(merged.hotkey_id, "right-option");
+        assert_eq!(merged.hold_ms, 200);
+    }
+
+    #[test]
+    fn an_empty_patch_changes_nothing() {
+        let current = customised();
+        let merged = merge_settings(&current, &serde_json::json!({})).expect("merges");
+        assert_eq!(merged.model_id, current.model_id);
+        assert_eq!(merged.hotkey_id, current.hotkey_id);
+        assert_eq!(merged.theme, current.theme);
+    }
+
+    #[test]
+    fn a_patch_can_clear_the_overlay_position() {
+        let mut current = customised();
+        current.overlay_x = Some(10);
+        current.overlay_y = Some(20);
+
+        let patch = serde_json::json!({ "overlayX": null, "overlayY": null });
+        let merged = merge_settings(&current, &patch).expect("merges");
+        assert!(merged.overlay_x.is_none());
+        assert!(merged.overlay_y.is_none());
+    }
+
+    #[test]
+    fn patching_several_fields_at_once_keeps_all_of_them() {
+        let current = customised();
+        let patch = serde_json::json!({
+            "transformOnDictate": true,
+            "polishShortcut": "Alt+2",
+        });
+        let merged = merge_settings(&current, &patch).expect("merges");
+        assert!(merged.transform_on_dictate);
+        assert_eq!(merged.polish_shortcut, "Alt+2");
+        assert_eq!(merged.hotkey_id, "right-option");
+    }
+}

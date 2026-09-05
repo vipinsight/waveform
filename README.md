@@ -12,6 +12,7 @@ typing into. Audio stays on this Mac.
 
 - Apple Silicon Mac
 - macOS 13 or newer
+- Rust and Cargo
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
 - Node.js 20 or newer
 - Python 3.9 or newer for Qwen3-ASR
@@ -23,7 +24,7 @@ typing into. Audio stays on this Mac.
 pnpm install
 pnpm setup:model
 pnpm setup:qwen
-bun start
+pnpm app
 ```
 
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
@@ -33,57 +34,29 @@ weights remain in local Hugging Face and NeMo caches.
 
 Grant microphone permission when macOS asks.
 
-## macOS app bundle
-
-Build a native macOS app with bundle ID `com.webtiara.waveform`:
+## Build and run
 
 ```bash
-pnpm package:mac
-open release/Waveform-darwin-arm64/Waveform.app
+pnpm app            # build and launch
+pnpm package:mac    # same, optimised release build
 ```
 
-Use this packaged app for microphone permission. `pnpm dev` runs Electron's
-development bundle, so macOS identifies it as `com.github.Electron` instead.
-After upgrading, run `pnpm setup:qwen` once to install Qwen runtime for Waveform.
+Both quit any running copy, rebuild, assemble `release/Waveform.app` and open
+it. The bundle is put together by hand rather than by the Tauri CLI, which is
+not just convenience: WKWebView refuses microphone access to a bare binary, so
+the executable has to sit inside a real `.app` carrying
+`NSMicrophoneUsageDescription`. Installing the CLI (`cargo install tauri-cli`)
+gets you `cargo tauri build` and dmg packaging when you want to distribute it.
 
-### Running your latest code
-
-The bundle in `release/` is a snapshot: `package:mac` copies `dist/` into it, so
-edits to `src/` do not reach the running app until you package again. One
-command rebuilds, repackages and relaunches:
-
-```bash
-pnpm app
-```
-
-It quits any running copy **before** repackaging. Packaging over a running
-bundle deletes the executable underneath it, which leaves a dead Dock tile and
-makes `open` re-activate the dying instance instead of the new build.
-
-Use `pnpm start` for quick UI work — it runs straight from `dist/` — but the
-global shortcut will not work there, because macOS grants Input Monitoring and
-Accessibility to `com.github.Electron` rather than to Waveform.
-
-To check whether the running bundle matches your build:
-
-```bash
-shasum -a256 dist/src/main/main.js release/Waveform-darwin-arm64/Waveform.app/Contents/Resources/app/dist/src/main/main.js
-```
-
-### Keeping permissions across rebuilds
-
-macOS keys Accessibility and Input Monitoring to the app's code signature. The
-default ad-hoc signature is a hash of the bundle's contents, so every rebuild
-looks like a different app and both permissions have to be granted again.
-Signing with a stable certificate avoids that:
+macOS ties Accessibility and Input Monitoring to the code signature. The default
+ad-hoc signature is a hash of the bundle, so every rebuild looks like a new app
+and both permissions need granting again. Sign with a stable certificate to
+avoid that:
 
 ```bash
 security find-identity -v -p codesigning
 WAVEFORM_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" pnpm app
 ```
-
-Grant the permissions once to that signed build and they survive later
-rebuilds. Export the variable in your shell profile to make it the default.
 
 ## Dictate anywhere
 
@@ -163,72 +136,49 @@ is warm.
 The selected model is remembered and loaded at launch. Audio is segmented at
 short pauses and transcribed locally while the model stays loaded.
 
-## Tauri host
+## How it is put together
 
-The app is being ported from Electron to Tauri 2. Both hosts build from this one
-repository and share the entire window layer — interface, audio capture,
-segmentation and the overlay meter — through the `window.waveform` surface in
-`src/renderer/host.ts`. Electron supplies it from a preload script; Tauri
-supplies the same shape from `src/renderer/tauri-bridge.ts`.
+The window layer — interface, audio capture, segmentation, the overlay meter —
+runs in a WebKit webview and talks to a Rust host through the `window.waveform`
+surface in `src/renderer/host.ts`. `getUserMedia`, `AudioContext` and
+`ScriptProcessorNode` all work there, so audio never has to cross into Rust;
+only finished WAV segments do.
 
-```bash
-pnpm tauri        # build and launch the Tauri host
-pnpm tauri:test   # Rust unit tests
-```
+Rust owns everything the page cannot do for itself: the speech engines, the
+dictation state machine, the overlay window, the global shortcuts, the
+OpenRouter calls and the keychain.
 
-Measured idle over each host's own process tree, same engine attached:
-
-| Host | Processes | Resident memory |
-| --- | --- | --- |
-| Electron | 6 | 562 MB |
-| Tauri | 2 | 153 MB |
-
-Read that as indicative rather than exact. Tauri renders through WebKit XPC
-services owned by `launchd` and shared with other apps, so the page's rendering
-cost is not attributable to the app and is not in its figure; Electron ships its
-own renderer processes and carries that cost visibly. The saving is real but
-smaller than the numbers alone suggest.
-
-`getUserMedia`, `AudioContext` and `ScriptProcessorNode` all work in WKWebView,
-which is why the audio pipeline needed no changes. It does require a real `.app`
-bundle carrying `NSMicrophoneUsageDescription`; a bare binary is refused.
-
-Working under Tauri: the interface, settings, Activity counters, engine startup
-for both models, transcription, the dictation overlay, the global shortcut with
-its hold and double-tap gestures, pasting into the focused app, OpenRouter
-rewriting, and the CPU and memory readout.
-
-Two differences from the Electron build remain:
-
-- **Settings are shared, secrets are not.** Both hosts read and write the same
-  `~/Library/Application Support/Waveform/settings.json`, so configuration
-  carries over. The OpenRouter key does not: Electron keeps it in an encrypted
-  `secrets.json`, Tauri in the login keychain. Paste it once per host.
-- **Permissions are per-host.** macOS ties Input Monitoring and Accessibility to
-  a code signature, and the two builds use different bundle identifiers while
-  the port is in progress, so each needs granting separately.
+One thing is neither: `src/native/HotkeyHelper.swift`. No API lets an app see Fn
+pressed while another app is frontmost, or type into one — that needs a
+`CGEventTap` and synthetic `CGEvent`s. It is a separate process speaking
+newline-delimited JSON over stdio, which is why it survived the move from
+Electron untouched.
 
 ## Commands
 
 ```bash
-bun start       # build and open app
-pnpm typecheck  # check TypeScript
-pnpm test       # run unit tests
-pnpm build      # build into dist/
-pnpm setup:qwen # install and download Qwen3-ASR 0.6B
-pnpm icon       # regenerate the app icon and .icns
-pnpm tauri      # build and launch the Tauri host
+pnpm app         # build and launch
+pnpm test        # all tests, TypeScript and Rust
+pnpm test:ui     # TypeScript only
+pnpm test:rust   # Rust only
+pnpm typecheck   # check TypeScript
+pnpm build       # build the frontend and the native helper into dist/
+pnpm setup:qwen  # install and download Qwen3-ASR 0.6B
+pnpm icon        # regenerate the app icon and .icns
 ```
 
-The build also compiles `src/native/HotkeyHelper.swift` into
-`dist/src/main/waveform-hotkey`. Without a Swift toolchain the build still
+`pnpm build` also compiles `src/native/HotkeyHelper.swift` into
+`dist/native/waveform-hotkey`. Without a Swift toolchain the build still
 succeeds and the app runs, with the global shortcut disabled.
 
 Override runtime paths when needed:
+
+`open` does not forward the environment, so run the executable inside the
+bundle directly when you need to override a path:
 
 ```bash
 NEMO_SPEECH_BIN=/path/to/nemo-speech \
 QWEN_ASR_PYTHON=/path/to/python3 \
 WAVEFORM_PORT=8178 \
-bun start
+release/Waveform.app/Contents/MacOS/Waveform
 ```

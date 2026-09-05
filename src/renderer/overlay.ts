@@ -14,6 +14,8 @@ const MIN_BAR = 2;
 const LEVEL_GAIN = 7;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;
+/** Errors stay up longer: they carry information the user has to notice. */
+const ERROR_LINGER_MS = 1_600;
 /** Spring constants for the meter. Attack outruns release on purpose. */
 const SPRING_ATTACK = 0.55;
 const SPRING_RELEASE = 0.14;
@@ -79,6 +81,17 @@ host().onDictationCommand((command) => void handleCommand(command));
 async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "preview") {
     startPreview();
+    return;
+  }
+
+  // Something went wrong out of sight of the app window; show it rather than
+  // vanishing, which reads as the shortcut doing nothing at all.
+  if (command.action === "fail") {
+    cancelLinger();
+    previewing = false;
+    setState("error");
+    startAnimation();
+    scheduleIdle();
     return;
   }
 
@@ -157,11 +170,14 @@ function syncDerivedState(): void {
 
 function scheduleIdle(): void {
   cancelLinger();
-  lingerTimer = setTimeout(() => {
-    lingerTimer = null;
-    if (capture.isRunning || capture.pendingCount > 0) return;
-    finish();
-  }, LINGER_MS);
+  lingerTimer = setTimeout(
+    () => {
+      lingerTimer = null;
+      if (capture.isRunning || capture.pendingCount > 0) return;
+      finish();
+    },
+    state === "error" ? ERROR_LINGER_MS : LINGER_MS,
+  );
 }
 
 function cancelLinger(): void {

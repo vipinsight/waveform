@@ -216,7 +216,7 @@ pub fn find_helper(resource_dir: Option<&Path>, project_root: &Path) -> Option<P
     if let Some(dir) = resource_dir {
         candidates.push(dir.join("waveform-hotkey"));
     }
-    candidates.push(project_root.join("dist/src/main/waveform-hotkey"));
+    candidates.push(project_root.join("dist/native/waveform-hotkey"));
 
     candidates.into_iter().find(|path| {
         use std::os::unix::fs::PermissionsExt;

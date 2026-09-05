@@ -121,13 +121,15 @@ const api: DesktopApi = {
 };
 
 /**
- * Installs the bridge, or does nothing when the host is not Tauri.
+ * Installs the bridge.
  *
- * Both entry points call this unconditionally so a single bundle can serve
- * either shell; under Electron the preload script has already supplied
- * `window.waveform` and this returns immediately.
+ * Called by both entry points before anything reaches for the host. Silence
+ * here would surface much later as an unrelated failure, so a missing Tauri
+ * global throws immediately.
  */
 export function installTauriBridge(): void {
-  if (!maybeTauri()) return;
+  if (!maybeTauri()) {
+    throw new Error("Tauri global is unavailable; the window cannot reach its host.");
+  }
   window.waveform = api;
 }

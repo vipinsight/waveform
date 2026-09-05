@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "identifier": "com.webtiara.waveform",
   "build": {
-    "frontendDist": "../dist/src/renderer",
+    "frontendDist": "../dist/renderer",
     "beforeBuildCommand": "pnpm build",
     "beforeDevCommand": "pnpm build"
   },
@@ -24,12 +24,20 @@
         "hiddenTitle": true
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns"
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist"

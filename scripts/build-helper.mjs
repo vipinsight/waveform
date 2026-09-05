@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
 
 const SOURCE = "src/native/HotkeyHelper.swift";
-const OUTPUT = "dist/src/main/waveform-hotkey";
+const OUTPUT = "dist/native/waveform-hotkey";
 
 async function newestMtime(...paths) {
   const stats = await Promise.all(paths.map((path) => stat(path).catch(() => null)));
@@ -26,7 +26,7 @@ if ((await newestMtime(OUTPUT)) > (await newestMtime(SOURCE))) {
   process.exit(0);
 }
 
-await mkdir("dist/src/main", { recursive: true });
+await mkdir("dist/native", { recursive: true });
 const result = spawnSync(
   "swiftc",
   [

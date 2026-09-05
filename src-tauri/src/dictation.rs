@@ -384,6 +384,8 @@ impl Dictation {
             .is_ok();
         if registered {
             *current = Some(accelerator.to_string());
+        } else {
+            eprintln!("could not bind the polish shortcut {accelerator}; another app may own it");
         }
     }
 
@@ -461,6 +463,8 @@ impl Dictation {
         if !self.rewriter.is_configured().await {
             self.report_error("Add an OpenRouter API key in Settings first.")
                 .await;
+            self.show_overlay().await;
+            self.send_to_overlay("fail", "insert", "hold").await;
             return;
         }
 
@@ -481,7 +485,7 @@ impl Dictation {
         match outcome {
             Ok(()) => self.send_to_overlay("stop", "insert", "hold").await,
             Err(message) => {
-                self.send_to_overlay("cancel", "insert", "hold").await;
+                self.send_to_overlay("fail", "insert", "hold").await;
                 self.report_error(&message).await;
             }
         }

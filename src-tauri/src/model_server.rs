@@ -65,6 +65,8 @@ struct QwenState {
 
 pub struct ModelServer {
     selected: Mutex<String>,
+    /// Where bundled scripts live, when running from a real .app.
+    resource_dir: Option<PathBuf>,
     /// Pid of the running engine, for resource reporting.
     engine_pid: Mutex<Option<u32>>,
     /// Most recent stage change, so a window that loads late can pull it.
@@ -82,6 +84,7 @@ impl ModelServer {
     pub fn new(
         user_data: PathBuf,
         project_root: PathBuf,
+        resource_dir: Option<PathBuf>,
         selected: String,
         emit: Box<dyn Fn(ModelEvent) + Send + Sync>,
     ) -> Self {
@@ -92,6 +95,7 @@ impl ModelServer {
         };
         Self {
             selected: Mutex::new(selected),
+            resource_dir,
             engine_pid: Mutex::new(None),
             last_event: Mutex::new(initial),
             qwen: Mutex::new(None),
@@ -232,7 +236,7 @@ impl ModelServer {
             .await;
 
         let mut child = Command::new(python)
-            .arg(self.project_root.join("scripts/qwen-worker.py"))
+            .arg(self.qwen_worker_script())
             .args(["--model", definition.remote_id])
             .env("PYTHONUNBUFFERED", "1")
             .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -297,6 +301,18 @@ impl ModelServer {
             state.ready = true;
         }
         Ok(())
+    }
+
+    /// Prefers the copy inside the bundle, so a distributed app does not depend
+    /// on the machine it was built on still having the repository.
+    fn qwen_worker_script(&self) -> PathBuf {
+        if let Some(dir) = &self.resource_dir {
+            let bundled = dir.join("qwen-worker.py");
+            if bundled.is_file() {
+                return bundled;
+            }
+        }
+        self.project_root.join("scripts/qwen-worker.py")
     }
 
     async fn parakeet_ready(&self) -> bool {
