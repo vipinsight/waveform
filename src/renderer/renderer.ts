@@ -55,6 +55,14 @@ const element = {
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   accessibilityRow: requireElement<HTMLElement>("permission-accessibility"),
+  setupBanner: requireElement<HTMLElement>("setup-banner"),
+  bannerTitle: requireElement<HTMLElement>("banner-title"),
+  bannerDetail: requireElement<HTMLElement>("banner-detail"),
+  bannerAction: requireElement<HTMLButtonElement>("banner-action"),
+  setupBadge: requireElement<HTMLElement>("setup-badge"),
+  setupLede: requireElement<HTMLElement>("setup-lede"),
+  checkEngineNote: requireElement<HTMLElement>("check-engine-note"),
+  checklist: requireElement<HTMLElement>("checklist"),
   inputMonitoringRow: requireElement<HTMLElement>("permission-input-monitoring"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
@@ -117,6 +125,7 @@ function wireEvents(): void {
   });
   host().onDictationUpdate(handleDictationUpdate);
   host().onResourceUsage(renderResourceUsage);
+  host().onOpenSettings(() => toggleSettings(true));
   host().onStatsChanged(renderStats);
 
   bindGroup(".nav[aria-label='Sections'] [data-view]", (button) =>
@@ -136,6 +145,16 @@ function wireEvents(): void {
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
   element.scrim.addEventListener("click", () => toggleSettings(false));
   element.settingsClose.addEventListener("click", () => toggleSettings(false));
+  element.bannerAction.addEventListener("click", () => {
+    toggleSettings(true);
+    showSettingsPage("setup");
+  });
+
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[data-fix]"),
+  )) {
+    button.addEventListener("click", () => resolveSetupStep(button.dataset.fix ?? ""));
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && settingsOpen) toggleSettings(false);
   });
@@ -358,6 +377,97 @@ function renderHotkeyLabels(): void {
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
+/**
+ * The steps that have to be complete before dictation works end to end.
+ *
+ * Ordered the way a person hits them: hear you, understand you, notice the
+ * shortcut, type the result.
+ */
+function setupSteps(): { id: string; done: boolean; label: string }[] {
+  const status = hotkeyStatus;
+  return [
+    {
+      id: "microphone",
+      done: status?.microphone === "granted",
+      label: "microphone access",
+    },
+    {
+      id: "engine",
+      done: status?.engineInstalled === true,
+      label: "the speech model",
+    },
+    {
+      id: "input-monitoring",
+      done: status?.inputMonitoring === true,
+      label: "Input Monitoring",
+    },
+    {
+      id: "accessibility",
+      done: status?.accessibility === true,
+      label: "Accessibility",
+    },
+  ];
+}
+
+function renderSetup(): void {
+  const steps = setupSteps();
+  const outstanding = steps.filter((step) => !step.done);
+
+  for (const step of steps) {
+    const row = element.checklist.querySelector<HTMLElement>(`[data-check="${step.id}"]`);
+    if (!row) continue;
+    row.dataset.done = String(step.done);
+    const button = row.querySelector("button");
+    if (button) {
+      button.textContent = step.done
+        ? "Done"
+        : step.id === "engine"
+          ? "How"
+          : "Grant";
+    }
+  }
+
+  element.setupBadge.hidden = outstanding.length === 0;
+  element.setupLede.textContent =
+    outstanding.length === 0
+      ? "Everything is in place. Hold your shortcut anywhere and speak."
+      : "Waveform needs a few things from macOS before it can listen anywhere and type for you.";
+
+  element.checkEngineNote.textContent = `${getSpeechModel(settings.modelId).label} · runs offline on this Mac`;
+
+  // The banner names what is missing rather than saying "setup incomplete",
+  // so the next action is obvious without opening anything.
+  element.setupBanner.hidden = outstanding.length === 0;
+  if (outstanding.length > 0) {
+    element.bannerTitle.textContent =
+      outstanding.length === 1 ? "One thing left" : `${outstanding.length} things left`;
+    element.bannerDetail.textContent = `Waveform still needs ${listPhrase(
+      outstanding.map((step) => step.label),
+    )}.`;
+  }
+}
+
+/** Joins labels the way a sentence would: "a, b and c". */
+function listPhrase(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+function resolveSetupStep(id: string): void {
+  if (id === "engine") {
+    showSettingsPage("general");
+    return;
+  }
+  if (id === "microphone") {
+    void host().openPrivacySettings("microphone");
+    return;
+  }
+  if (id !== "accessibility" && id !== "input-monitoring") return;
+  if (isScopeGranted(id)) return;
+  void host().requestHotkeyPermission(id);
+  void host().openPrivacySettings(id);
+}
+
 function renderHotkeyStatus(): void {
   const status = hotkeyStatus;
   const binding = getHotkeyBinding(settings.hotkeyId);
@@ -372,6 +482,7 @@ function renderHotkeyStatus(): void {
   const summary = describeHotkey(status, binding?.label ?? null);
   element.hotkeySummary.textContent = summary;
   element.dictateNote.textContent = armed ? summary : "";
+  renderSetup();
 }
 
 function describeHotkey(status: HotkeyStatus | null, label: string | null): string {

@@ -67,6 +67,17 @@
             <span class="view-note" id="dictate-note"></span>
           </div>
 
+          <div id="setup-banner" class="banner" hidden>
+            <span class="banner-dot" aria-hidden="true"></span>
+            <span class="banner-text">
+              <strong id="banner-title">Finish setting up</strong>
+              <span id="banner-detail"></span>
+            </span>
+            <button id="banner-action" class="pill-button is-primary" type="button">
+              Open setup
+            </button>
+          </div>
+
           <div id="transcript" class="transcript" aria-live="polite" tabindex="0">
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display">Your words will land here.</p>
@@ -141,7 +152,10 @@
     <div id="settings-panel" class="modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
       <nav class="modal-nav">
         <h2>Settings</h2>
-        <button class="nav-item" type="button" data-page="general" aria-current="page"><span>General</span></button>
+        <button class="nav-item" type="button" data-page="setup" aria-current="page">
+          <span>Setup</span><span class="nav-badge" id="setup-badge" hidden></span>
+        </button>
+        <button class="nav-item" type="button" data-page="general"><span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut"><span>Shortcut</span></button>
         <button class="nav-item" type="button" data-page="ai"><span>AI Polish</span></button>
         <div class="sidebar-spacer"></div>
@@ -154,7 +168,55 @@
             <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
           </svg>
         </button>
-        <section class="settings-page" data-page="general">
+        <section class="settings-page" data-page="setup">
+          <h1 class="display">Setup</h1>
+          <p class="lede" id="setup-lede">
+            Waveform needs a few things from macOS before it can listen anywhere and
+            type for you.
+          </p>
+
+          <ol class="checklist" id="checklist">
+            <li class="check" data-check="microphone">
+              <span class="check-mark" aria-hidden="true"></span>
+              <span class="check-body">
+                <strong>Microphone</strong>
+                <small>To hear you. Audio is transcribed on this Mac and never uploaded.</small>
+              </span>
+              <button class="pill-button is-primary" type="button" data-fix="microphone">Grant</button>
+            </li>
+            <li class="check" data-check="engine">
+              <span class="check-mark" aria-hidden="true"></span>
+              <span class="check-body">
+                <strong>Speech model</strong>
+                <small id="check-engine-note">Runs offline on this Mac.</small>
+              </span>
+              <button class="pill-button is-primary" type="button" data-fix="engine">How</button>
+            </li>
+            <li class="check" data-check="input-monitoring">
+              <span class="check-mark" aria-hidden="true"></span>
+              <span class="check-body">
+                <strong>Input Monitoring</strong>
+                <small>To notice your shortcut while another app is in front.</small>
+              </span>
+              <button class="pill-button is-primary" type="button" data-fix="input-monitoring">Grant</button>
+            </li>
+            <li class="check" data-check="accessibility">
+              <span class="check-mark" aria-hidden="true"></span>
+              <span class="check-body">
+                <strong>Accessibility</strong>
+                <small>To insert text where your cursor is. Without it, words land here only.</small>
+              </span>
+              <button class="pill-button is-primary" type="button" data-fix="accessibility">Grant</button>
+            </li>
+          </ol>
+
+          <p class="note" id="setup-hint">
+            macOS ties these to the app's signature. If a permission looks granted but
+            is refused, remove Waveform from the list and add it again.
+          </p>
+        </section>
+
+        <section class="settings-page" data-page="general" hidden>
           <h1 class="display">General</h1>
           <div class="card">
             <div class="row">

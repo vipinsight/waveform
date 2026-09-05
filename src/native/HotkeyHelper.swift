@@ -13,6 +13,7 @@
 //                    {"type":"tap","active":true} | {"type":"permissions",…}
 //                    {"type":"paste","ok":true} | {"type":"selection","ok":…}
 
+import AVFoundation
 import AppKit
 import CoreGraphics
 import Foundation
@@ -60,12 +61,54 @@ private func hasInputMonitoring() -> Bool {
   IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
 }
 
+/// Microphone authorisation, reported so the app can show one honest checklist
+/// rather than discovering the problem when recording produces silence.
+private func microphoneStatus() -> String {
+  switch AVCaptureDevice.authorizationStatus(for: .audio) {
+  case .authorized: return "granted"
+  case .denied: return "denied"
+  case .restricted: return "restricted"
+  case .notDetermined: return "not-determined"
+  @unknown default: return "unknown"
+  }
+}
+
+private var lastPermissions: [String: String] = [:]
+private let permissionLock = NSLock()
+
+private func currentPermissions() -> [String: String] {
+  [
+    "accessibility": hasAccessibility(prompt: false) ? "yes" : "no",
+    "inputMonitoring": hasInputMonitoring() ? "yes" : "no",
+    "microphone": microphoneStatus(),
+  ]
+}
+
 private func emitPermissions() {
+  let snapshot = currentPermissions()
+  permissionLock.lock()
+  lastPermissions = snapshot
+  permissionLock.unlock()
+
   emit([
     "type": "permissions",
-    "accessibility": hasAccessibility(prompt: false),
-    "inputMonitoring": hasInputMonitoring(),
+    "accessibility": snapshot["accessibility"] == "yes",
+    "inputMonitoring": snapshot["inputMonitoring"] == "yes",
+    "microphone": snapshot["microphone"] ?? "unknown",
   ])
+}
+
+/// Emits only when something actually changed.
+///
+/// Permissions are granted in System Settings, in another window, so the app
+/// has to notice on its own; polling is the only way macOS offers. Reporting
+/// only on change keeps that quiet.
+private func emitPermissionsIfChanged() {
+  let snapshot = currentPermissions()
+  permissionLock.lock()
+  let changed = snapshot != lastPermissions
+  permissionLock.unlock()
+  if changed { emitPermissions() }
 }
 
 // MARK: - Pasting
@@ -166,6 +209,12 @@ private final class ModifierWatcher {
     startAccessWatch()
   }
 
+  /// Begins polling without binding a key, so the setup checklist still
+  /// updates while the shortcut is switched off.
+  func observePermissions() {
+    startAccessWatch()
+  }
+
   func unwatch() {
     watchedKeyCode = nil
     isDown = false
@@ -200,7 +249,10 @@ private final class ModifierWatcher {
     guard accessTimer == nil else { return }
     hadAccess = hasInputMonitoring()
     accessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-      guard let self, self.watchedKeyCode != nil else { return }
+      guard let self else { return }
+      emitPermissionsIfChanged()
+
+      guard self.watchedKeyCode != nil else { return }
       let access = hasInputMonitoring()
       defer { self.hadAccess = access }
       guard access, !self.hadAccess else { return }
@@ -295,6 +347,7 @@ private func handle(command line: String) {
     }
   case "unwatch":
     watcher.unwatch()
+    watcher.observePermissions()
   case "paste":
     if let text = payload["text"] as? String, !text.isEmpty { pasteIntoFrontmostApp(text) }
   case "read-selection":
@@ -321,4 +374,5 @@ DispatchQueue.global(qos: .userInitiated).async {
 
 emit(["type": "ready"])
 emitPermissions()
+watcher.observePermissions()
 CFRunLoopRun()

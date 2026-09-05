@@ -32,7 +32,11 @@ pub struct HotkeyStatus {
     pub tap_active: bool,
     pub accessibility: bool,
     pub input_monitoring: bool,
+    /// "granted", "denied", "restricted", "not-determined" or "unknown".
+    pub microphone: String,
     pub binding: String,
+    /// Whether the selected speech engine is installed on this machine.
+    pub engine_installed: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -132,7 +136,9 @@ impl Dictation {
                 tap_active: false,
                 accessibility: false,
                 input_monitoring: false,
+                microphone: "unknown".into(),
                 binding: "none".into(),
+                engine_installed: false,
             }),
             polishing: Mutex::new(false),
             polish_cancelled: Mutex::new(false),
@@ -144,7 +150,19 @@ impl Dictation {
     }
 
     pub async fn status(&self) -> HotkeyStatus {
-        self.status.lock().await.clone()
+        self.snapshot().await
+    }
+
+    /// The stored status with the live fields filled in.
+    ///
+    /// Engine installation is checked rather than remembered, because it can
+    /// change while the app is open. Every path that reports status goes
+    /// through here; emitting the stored value directly would push a stale
+    /// `engine_installed` over a correct one.
+    async fn snapshot(&self) -> HotkeyStatus {
+        let mut status = self.status.lock().await.clone();
+        status.engine_installed = self.models.is_installed().await;
+        status
     }
 
     pub async fn initialize(self: &Arc<Self>, project_root: PathBuf) {
@@ -252,10 +270,12 @@ impl Dictation {
             HelperEvent::Permissions {
                 accessibility,
                 input_monitoring,
+                microphone,
             } => {
                 self.patch_status(|status| {
                     status.accessibility = accessibility;
                     status.input_monitoring = input_monitoring;
+                    status.microphone = microphone;
                 })
                 .await;
             }
@@ -609,11 +629,11 @@ impl Dictation {
     }
 
     async fn patch_status<F: FnOnce(&mut HotkeyStatus)>(&self, patch: F) {
-        let next = {
+        {
             let mut status = self.status.lock().await;
             patch(&mut status);
-            status.clone()
-        };
+        }
+        let next = self.snapshot().await;
         let _ = self.app.emit_to(MAIN_LABEL, "hotkey-status-changed", next);
     }
 }

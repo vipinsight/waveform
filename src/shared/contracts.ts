@@ -99,11 +99,14 @@ export interface HotkeyStatus {
   /** False when the native helper is missing, e.g. a non-macOS build. */
   supported: boolean;
   running: boolean;
-  /** The event tap was created. Not proof that events are actually flowing. */
+  /** The tap exists and can actually receive events. */
   tapActive: boolean;
   accessibility: boolean;
   inputMonitoring: boolean;
+  microphone: MicrophonePermissionStatus;
   binding: HotkeyBindingId;
+  /** Whether the selected speech engine's runtime is present. */
+  engineInstalled: boolean;
 }
 
 export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone";
@@ -135,6 +138,8 @@ export interface DesktopApi {
   setOpenRouterKey(key: string): Promise<AiStatus>;
   clearOpenRouterKey(): Promise<AiStatus>;
   polishSelection(): Promise<void>;
+  /** The application menu asking for the settings dialog. */
+  onOpenSettings(listener: () => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;

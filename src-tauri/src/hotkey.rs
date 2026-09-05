@@ -40,6 +40,8 @@ pub enum HelperEvent {
         accessibility: bool,
         #[serde(rename = "inputMonitoring")]
         input_monitoring: bool,
+        #[serde(default = "default_microphone")]
+        microphone: String,
     },
     Paste {
         ok: bool,
@@ -58,6 +60,10 @@ pub enum HelperEvent {
 /// Maps a binding id to the macOS virtual key code the helper watches.
 fn default_listening() -> bool {
     true
+}
+
+fn default_microphone() -> String {
+    "unknown".to_string()
 }
 
 pub fn key_code_for(hotkey_id: &str) -> Option<i64> {

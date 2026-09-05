@@ -123,6 +123,21 @@ impl ModelServer {
         *self.engine_pid.lock().await
     }
 
+    /// Whether the selected engine's runtime exists on this machine.
+    ///
+    /// Reported up front so setup can say what is missing, rather than the
+    /// user discovering it when their first phrase fails.
+    pub async fn is_installed(&self) -> bool {
+        let id = self.selected.lock().await.clone();
+        match model(&id).engine {
+            Engine::Nemo => find_nemo_runtime().is_some(),
+            Engine::Qwen => {
+                find_qwen_runtime(&self.user_data, &self.project_root).is_some()
+                    && self.qwen_worker_script().is_file()
+            }
+        }
+    }
+
     pub async fn state(&self) -> ModelEvent {
         self.last_event.lock().await.clone()
     }

@@ -22,7 +22,7 @@ use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{
     ActivationPolicy, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
@@ -366,6 +366,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .menu(build_app_menu)
+        .on_menu_event(|app, event| handle_menu_action(app.app_handle(), event.id().as_ref()))
         .setup(|app| {
             let user_data = user_data_dir(app.handle());
             std::fs::create_dir_all(&user_data).ok();
@@ -489,6 +491,103 @@ pub fn run() {
         });
 }
 
+/// Builds the application menu.
+///
+/// Without one the standard editing shortcuts do not exist, so ⌘C and ⌘V do
+/// nothing in a text field -- which matters most in the one field where typing
+/// by hand is least likely, the API key.
+fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let about = AboutMetadata {
+        name: Some("Waveform".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        comments: Some("Private, on-device voice transcription.".into()),
+        ..Default::default()
+    };
+
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let dictate = MenuItem::with_id(
+        app,
+        "toggle-dictation",
+        "Start or Stop Listening",
+        true,
+        Some("CmdOrCtrl+D"),
+    )?;
+    let polish = MenuItem::with_id(app, "polish", "Polish Selection", true, None::<&str>)?;
+
+    let app_menu = Submenu::with_items(
+        app,
+        "Waveform",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some("About Waveform"), Some(about))?,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+
+    let dictation_menu =
+        Submenu::with_items(app, "Dictation", true, &[&dictate, &polish])?;
+
+    let window_menu = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+
+    Menu::with_items(
+        app,
+        &[&app_menu, &edit_menu, &dictation_menu, &window_menu],
+    )
+}
+
+/// Runs a menu action, from either the app menu or the menu bar icon.
+fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "open" => present_main_window(app),
+        "settings" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-settings", ());
+        }
+        "toggle-dictation" => {
+            let dictation = app.state::<AppState>().dictation.clone();
+            tauri::async_runtime::spawn(async move { dictation.toggle_from_app().await });
+        }
+        "polish" => {
+            let dictation = app.state::<AppState>().dictation.clone();
+            tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    }
+}
+
 /// Builds the menu bar icon.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
@@ -514,15 +613,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open" => present_main_window(app),
-            "polish" => {
-                let dictation = app.state::<AppState>().dictation.clone();
-                tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
-            }
-            "quit" => app.exit(0),
-            _ => {}
-        })
+        .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
             // Left click opens the window; the menu is on right click.
             if let TrayIconEvent::Click { button, .. } = event {
