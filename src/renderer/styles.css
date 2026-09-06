@@ -176,7 +176,10 @@ kbd {
 /* Collapsed to the icons rather than to nothing: every destination stays one
    click away, and the rail still shows which one you are on. */
 .app[data-sidebar="collapsed"] {
-  grid-template-columns: 60px minmax(0, 1fr);
+  /* Wide enough for the rail's contents at the insets they already have. The
+     width is the only thing that changes, so every icon stays exactly where it
+     was and the panel edge is the only thing in motion. */
+  grid-template-columns: 74px minmax(0, 1fr);
 }
 
 /* The only place the window can be picked up.
@@ -191,7 +194,7 @@ kbd {
   /* The bottom inset belongs to the title bar rather than to the panels below,
      so the empty band above the content is draggable too. Left padding clears
      the traffic lights. */
-  padding: 0 12px var(--inset) 78px;
+  padding: 0 12px var(--inset) 96px;
   grid-column: 1 / -1;
 }
 
@@ -206,25 +209,18 @@ kbd {
   padding: 0 var(--inset) var(--inset);
 }
 
-.app[data-sidebar="collapsed"] .sidebar {
-  padding-right: 8px;
-  padding-left: 8px;
-}
-
 /*
  * Only the words go. The labels are what the rail cannot afford at this width,
  * and hiding them rather than the buttons keeps every destination reachable.
+ *
+ * Nothing is re-aligned or re-padded on the way: centring the icons meant they
+ * slid sideways while the panel closed, and two things moving at once is what
+ * made the collapse read as a lurch rather than a fold.
  */
 .app[data-sidebar="collapsed"] .brand-name,
 .app[data-sidebar="collapsed"] .nav-item span,
 .app[data-sidebar="collapsed"] .shortcut-card {
   display: none;
-}
-
-.app[data-sidebar="collapsed"] .brand,
-.app[data-sidebar="collapsed"] .nav-item {
-  justify-content: center;
-  padding: 0;
 }
 
 /* Above the rail it names, rather than across the top of the window: the strip
@@ -235,7 +231,7 @@ kbd {
   align-items: center;
   gap: 9px;
   min-width: 0;
-  height: 36px;
+  height: 40px;
   padding: 0 11px;
   margin-bottom: 6px;
 }
@@ -248,10 +244,10 @@ kbd {
 /* The mark carries its own accent bar, so it is an <img> rather than a mask;
    the four outer bars use currentColor and follow the interface's ink. */
 /* Sized for the bars, not the box: the artwork sits inside about two thirds of
-   its own viewBox, so a nominal 30px reads as roughly 20. */
+   its own viewBox, so a nominal 34px reads as roughly 22. */
 .mark {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
   color: var(--ink);
 }
@@ -399,10 +395,15 @@ kbd {
   height: 17px;
 }
 
-/* Sits where the title bar's padding leaves off, which is just clear of the
-   traffic lights. */
+/* Sits where the title bar's padding leaves off, clear of the traffic lights.
+   It carries no fill of its own, and lights up like the nav items it folds. */
 .rail-toggle {
   cursor: pointer;
+}
+
+.rail-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-hover);
 }
 
 .icon-button:hover {
@@ -410,7 +411,10 @@ kbd {
   background: var(--surface-sunken);
 }
 
-.icon-button[aria-expanded="true"] {
+/* Expanded is a pressed state for the search field, which this button opens.
+   The rail toggle states the same attribute for the panel it controls without
+   being pressed itself, so it is left out. */
+.icon-button[aria-expanded="true"]:not(.rail-toggle) {
   color: var(--accent);
   background: var(--accent-soft);
 }

@@ -102,9 +102,9 @@ microphone is open. It never takes focus from the app you are typing into, and
 you can **drag it anywhere on screen** — the position is remembered. Settings has
 **Show** to make it appear on demand and **Reset** to put it back.
 
-The default trigger is **Fn**. Open **Settings** (gear icon) to pick a different
-one — Right/Left ⌘, ⌥, ⌃ or Right ⇧ — or to turn insertion off and keep the text
-in the app window only.
+The default trigger is **Fn**. Open **Settings → Shortcut** to pick a different
+one — Right/Left ⌘, ⌥, ⌃ or Right ⇧. Finished dictation is automatically inserted
+at the cursor in the focused app.
 
 ### Permissions
 

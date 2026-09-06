@@ -48,7 +48,6 @@ const element = {
   modelSelect: requireElement<HTMLSelectElement>("model-select"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
-  insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
   menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
@@ -92,7 +91,6 @@ const element = {
   transformPrompt: requireElement<HTMLTextAreaElement>("transform-prompt"),
   polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
-  polishNow: requireElement<HTMLButtonElement>("polish-now"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
@@ -225,9 +223,6 @@ function wireEvents(): void {
     const value = element.hotkeySelect.value;
     if (isHotkeyBindingId(value)) void patchSettings({ hotkeyId: value });
   });
-  element.insertToggle.addEventListener("change", () => {
-    void patchSettings({ insertIntoFocusedApp: element.insertToggle.checked });
-  });
   element.themeToggle.addEventListener("click", (event) => {
     const theme = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]")
       ?.dataset.themeValue;
@@ -256,9 +251,6 @@ function wireEvents(): void {
   });
   element.polishShortcut.addEventListener("change", () => {
     void patchSettings({ polishShortcut: element.polishShortcut.value });
-  });
-  element.polishNow.addEventListener("click", () => {
-    void host().polishSelection();
   });
   for (const button of Array.from(
     document.querySelectorAll<HTMLButtonElement>("[data-reset]"),
@@ -335,7 +327,6 @@ function applySettings(next: AppSettings): void {
   element.modelSelect.value = next.modelId;
   renderMicrophoneSelect();
   element.hotkeySelect.value = next.hotkeyId;
-  element.insertToggle.checked = next.insertIntoFocusedApp;
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
@@ -444,7 +435,6 @@ function renderAiStatus(status: AiStatus): void {
       "Saved to your login keychain. Clear the field and save to remove it.";
   }
 
-  element.polishNow.disabled = !status.hasApiKey;
   element.transformToggle.disabled = !status.hasApiKey;
 }
 

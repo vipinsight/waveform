@@ -688,8 +688,7 @@ impl Dictation {
             }
         }
 
-        let insert = self.settings.lock().await.value().insert_into_focused_app;
-        if sink == "insert" && insert {
+        if sink == "insert" {
             self.helper.paste(&format!("{text} ")).await;
         }
 

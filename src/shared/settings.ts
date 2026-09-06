@@ -25,8 +25,6 @@ export interface AppSettings {
   microphoneDeviceName: string;
   /** Modifier key that starts dictation anywhere in macOS. */
   hotkeyId: HotkeyBindingId;
-  /** Paste each finished phrase into whichever app is frontmost. */
-  insertIntoFocusedApp: boolean;
   /** Press longer than this and the release ends dictation (push-to-talk). */
   holdMs: number;
   /** Two taps inside this window latch dictation on until the key is pressed again. */
@@ -69,7 +67,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   microphoneDeviceId: "",
   microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
-  insertIntoFocusedApp: true,
   holdMs: 300,
   doubleTapMs: 420,
   overlayPlacement: "bottom",
@@ -108,10 +105,6 @@ export function normalizeSettings(
     microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
     microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,
-    insertIntoFocusedApp:
-      typeof input.insertIntoFocusedApp === "boolean"
-        ? input.insertIntoFocusedApp
-        : base.insertIntoFocusedApp,
     holdMs: clampNumber(input.holdMs, HOLD_RANGE, base.holdMs),
     doubleTapMs: clampNumber(input.doubleTapMs, DOUBLE_TAP_RANGE, base.doubleTapMs),
     overlayPlacement:

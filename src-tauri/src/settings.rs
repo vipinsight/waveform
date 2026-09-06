@@ -35,7 +35,6 @@ pub struct AppSettings {
     /// Human-readable label shown in the tray while the main window is hidden.
     pub microphone_device_name: String,
     pub hotkey_id: String,
-    pub insert_into_focused_app: bool,
     pub hold_ms: u64,
     pub double_tap_ms: u64,
     pub overlay_placement: String,
@@ -76,7 +75,6 @@ impl Default for AppSettings {
             microphone_device_id: String::new(),
             microphone_device_name: String::new(),
             hotkey_id: "fn".to_string(),
-            insert_into_focused_app: true,
             hold_ms: 300,
             double_tap_ms: 420,
             overlay_placement: "bottom".to_string(),
@@ -245,7 +243,7 @@ mod tests {
         let raw = r#"{
             "modelId": "qwen3-asr-0.6b",
             "hotkeyId": "right-option",
-            "insertIntoFocusedApp": true,
+            "insertIntoFocusedApp": false,
             "holdMs": 200,
             "doubleTapMs": 420,
             "overlayPlacement": "bottom",
@@ -266,7 +264,7 @@ mod tests {
     fn writes_camel_case_keys() {
         let body = serde_json::to_string(&AppSettings::default()).expect("serializes");
         assert!(body.contains("\"modelId\""));
-        assert!(body.contains("\"insertIntoFocusedApp\""));
+        assert!(!body.contains("\"insertIntoFocusedApp\""));
         assert!(body.contains("\"launchAtLogin\""));
         assert!(body.contains("\"showFlowBarAlways\""));
         assert!(!body.contains("model_id"));
