@@ -2,7 +2,7 @@ import type { MicrophoneDevice } from "./contracts";
 
 /** One ordered, labeled device list for Settings and the native menu bar. */
 export function microphoneDevices(devices: readonly MediaDeviceInfo[]): MicrophoneDevice[] {
-  const recommended = (label: string): boolean => /macbook|iphone/i.test(label);
+  const recommended = (label: string): boolean => /macbook/i.test(label);
   return devices
     .filter((device) => device.kind === "audioinput" && device.deviceId !== "default" && device.deviceId)
     .map((device, index) => {

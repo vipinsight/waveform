@@ -6,7 +6,7 @@ function device(deviceId: string, label: string, kind: MediaDeviceKind = "audioi
 }
 
 describe("microphone list shared with the menu bar", () => {
-  it("recommends MacBook and iPhone inputs first while preserving selection IDs and original names", () => {
+  it("recommends only MacBook inputs while preserving selection IDs and original names", () => {
     const inputs = [
       device("usb", "AT2020 USB"),
       device("mac", "MacBook Pro Microphone"),
@@ -15,9 +15,9 @@ describe("microphone list shared with the menu bar", () => {
     ];
     expect(microphoneDevices(inputs)).toEqual([
       { id: "mac", label: "MacBook Pro Microphone", displayLabel: "MacBook Pro Microphone (Recommended)" },
-      { id: "phone", label: "Vipin’s iPhone Microphone", displayLabel: "Vipin’s iPhone Microphone (Recommended)" },
       { id: "airpods", label: "AirPods", displayLabel: "AirPods" },
       { id: "usb", label: "AT2020 USB", displayLabel: "AT2020 USB" },
+      { id: "phone", label: "Vipin’s iPhone Microphone", displayLabel: "Vipin’s iPhone Microphone" },
     ]);
     expect(inputs[0]?.deviceId).toBe("usb");
   });
