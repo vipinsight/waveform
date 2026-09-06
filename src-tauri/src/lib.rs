@@ -1032,7 +1032,12 @@ fn watch_overlay_hover(app: tauri::AppHandle) {
                 None
             };
 
-            if next == last {
+            // Quiet while the pointer is away, but every tick while it is
+            // near: the HUD decides what counts as "on the pill" by measuring
+            // itself, and the pill changes size under a cursor that never
+            // moved. Reporting only on change would leave it collapsed under a
+            // pointer sitting right on it.
+            if next.is_none() && last.is_none() {
                 continue;
             }
             last = next;

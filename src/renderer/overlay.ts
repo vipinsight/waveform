@@ -6,7 +6,6 @@ import type {
   DictationMode,
   DictationSink,
   DictationState,
-  OverlayPoint,
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -125,15 +124,19 @@ enableDragging();
  * thing that actually knows where the pointer is.
  */
 host().onOverlayCursor((point) => {
-  pointerOver = point !== null;
+  const node = point ? document.elementFromPoint(point.x, point.y) : null;
+  // The window is much larger than the pill -- it has to hold the tooltips --
+  // so being inside it is not being on the control. Hit testing against the
+  // capsule keeps the target the size it looks.
+  const target = node instanceof Element ? node.closest(".hud") : null;
+  pointerOver = target !== null;
   if (state === "idle") hud.dataset.expanded = pointerOver ? "true" : "false";
-  hud.dataset.hover = point ? controlAt(point) : "";
+  hud.dataset.hover = pointerOver ? controlAt(node) : "";
 });
 
 /** Which control the pointer is over, as a `data-hover` value. */
-function controlAt(point: OverlayPoint): string {
-  const node = document.elementFromPoint(point.x, point.y);
-  const button = node instanceof Element ? node.closest("button") : null;
+function controlAt(node: Element | null): string {
+  const button = node?.closest("button");
   if (button === micButton) return "mic";
   if (button === cancelButton) return "cancel";
   if (button === acceptButton) return "accept";

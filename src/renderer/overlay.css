@@ -115,12 +115,13 @@ body {
   box-shadow: 0 4px 11px rgb(0 0 0 / 22%);
 }
 
-/* A transparent skirt around the six-pixel mark, so it can be grabbed and
-   dragged without hunting for it. */
+/* A transparent skirt around the six-pixel mark, so it can be hovered and
+   dragged without hunting for it. This is the whole hover target while the
+   HUD rests -- the window is far larger, but only to hold the tooltips. */
 .hud[data-state="idle"]::before {
   content: "";
   position: absolute;
-  inset: -9px -5px;
+  inset: -7px -4px;
   border-radius: 999px;
 }
 
