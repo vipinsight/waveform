@@ -19,6 +19,19 @@ const DEFAULT_PORT: u16 = 8178;
 const START_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// What the interface needs to say whether a model can be used, and what to run
+/// if it cannot.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    pub id: String,
+    pub label: String,
+    pub selected: bool,
+    pub runtime_installed: bool,
+    pub weights_installed: bool,
+    pub setup_command: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelEvent {
@@ -32,6 +45,24 @@ pub struct ModelDefinition {
     pub short_label: &'static str,
     pub remote_id: &'static str,
     pub engine: Engine,
+    pub weights: Weights,
+}
+
+/// Where an engine leaves the weights it has downloaded.
+///
+/// Having a runtime installed is not the same as having a model: `setup:model`
+/// installs nemo-speech and pulls Parakeet in two separate steps, and either
+/// can be done without the other. Reporting them apart is the only way to say
+/// something useful about a model that is not ready.
+#[derive(Clone, Copy)]
+pub enum Weights {
+    /// nemo-speech caches by repository under the platform cache directory.
+    NemoCache,
+    /// The Hugging Face hub layout, `models--<org>--<name>`.
+    HuggingFace,
+    /// Whisper names its own file under `~/.cache/whisper`; the name is not
+    /// the model id, so it is spelled out.
+    WhisperFile(&'static str),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,12 +78,14 @@ pub const MODELS: [ModelDefinition; 3] = [
         short_label: "Parakeet 0.6B",
         remote_id: "nvidia/parakeet-tdt-0.6b-v3",
         engine: Engine::Nemo,
+        weights: Weights::NemoCache,
     },
     ModelDefinition {
         id: "qwen3-asr-0.6b",
         short_label: "Qwen3-ASR 0.6B",
         remote_id: "Qwen/Qwen3-ASR-0.6B",
         engine: Engine::Qwen,
+        weights: Weights::HuggingFace,
     },
     ModelDefinition {
         id: "whisper-turbo",
@@ -61,6 +94,7 @@ pub const MODELS: [ModelDefinition; 3] = [
         // official package names its own weights.
         remote_id: "turbo",
         engine: Engine::Whisper,
+        weights: Weights::WhisperFile("large-v3-turbo.pt"),
     },
 ];
 
@@ -193,6 +227,31 @@ impl ModelServer {
                 self.find_worker_runtime(spec).is_some() && self.worker_script(spec).is_file()
             }
         }
+    }
+
+    /// Every model, and what is on this machine for each of them.
+    pub async fn catalog(&self) -> Vec<ModelStatus> {
+        let selected = self.selected.lock().await.clone();
+        MODELS
+            .iter()
+            .map(|definition| ModelStatus {
+                id: definition.id.into(),
+                label: definition.short_label.into(),
+                selected: definition.id == selected,
+                runtime_installed: match worker_spec(definition.engine) {
+                    None => find_nemo_runtime().is_some(),
+                    Some(spec) => {
+                        self.find_worker_runtime(spec).is_some()
+                            && self.worker_script(spec).is_file()
+                    }
+                },
+                weights_installed: weights_present(definition),
+                setup_command: match worker_spec(definition.engine) {
+                    None => "pnpm setup:model".into(),
+                    Some(spec) => spec.setup_command.into(),
+                },
+            })
+            .collect()
     }
 
     pub async fn state(&self) -> ModelEvent {
@@ -554,6 +613,39 @@ impl ModelServer {
         *self.last_event.lock().await = event.clone();
         (self.emit)(event);
     }
+}
+
+/// Whether a model's weights are already on this machine.
+///
+/// Each engine keeps them somewhere of its own choosing, so this asks each in
+/// its own terms rather than pretending there is one cache.
+fn weights_present(definition: &ModelDefinition) -> bool {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return false;
+    };
+    match definition.weights {
+        Weights::NemoCache => {
+            let root = std::env::var_os("NEMO_SPEECH_MODEL_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join("Library/Caches/NeMoSpeech/models"));
+            has_contents(&root.join(definition.remote_id))
+        }
+        Weights::HuggingFace => {
+            let cache = std::env::var_os("HF_HOME")
+                .map(|value| PathBuf::from(value).join("hub"))
+                .unwrap_or_else(|| home.join(".cache/huggingface/hub"));
+            let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
+            has_contents(&cache.join(folder).join("snapshots"))
+        }
+        Weights::WhisperFile(name) => home.join(".cache/whisper").join(name).is_file(),
+    }
+}
+
+/// A directory that exists but is empty is a download that did not finish.
+fn has_contents(path: &Path) -> bool {
+    std::fs::read_dir(path)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
 }
 
 fn find_nemo_runtime() -> Option<PathBuf> {

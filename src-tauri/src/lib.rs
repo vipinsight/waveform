@@ -17,7 +17,7 @@ mod stats;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
-use model_server::{ModelEvent, ModelServer};
+use model_server::{ModelEvent, ModelServer, ModelStatus};
 use rewrite::{AiStatus, Rewriter};
 use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SettingsStore};
@@ -306,6 +306,11 @@ async fn select_model(
     let _ = app.emit("settings-changed", &next);
 
     state.models.select(&next.model_id).await
+}
+
+#[tauri::command]
+async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
+    Ok(state.models.catalog().await)
 }
 
 #[tauri::command]
@@ -707,6 +712,7 @@ pub fn run() {
             transcribe,
             request_microphone,
             toggle_dictation,
+            model_catalog,
             start_overlay_dictation,
             accept_dictation,
             polish_dictation,

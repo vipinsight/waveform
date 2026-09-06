@@ -241,13 +241,21 @@ kbd {
   white-space: nowrap;
 }
 
-/* The mark carries its own accent bar, so it is an <img> rather than a mask;
-   the four outer bars use currentColor and follow the interface's ink. */
-/* Sized for the bars, not the box: the artwork sits inside about two thirds of
-   its own viewBox, so a nominal 34px reads as roughly 22. */
+/* Inline SVG lets the four outer bars inherit the theme's ink while keeping
+   the centre accent bar blue. An external <img> cannot inherit currentColor. */
+/*
+ * Sized for the bars, not the box: the artwork sits inside about two thirds of
+ * its own viewBox, so a nominal 34px reads as roughly 22.
+ *
+ * That padding is also why it is pulled left. The mark's bars begin 17% into
+ * its box while a Lucide glyph begins about 12% into its own, so boxes that
+ * line up leave the mark looking indented against the icons below it. The
+ * offset lines up what is drawn rather than what contains it.
+ */
 .mark {
   width: 34px;
   height: 34px;
+  margin-left: -4px;
   flex: 0 0 auto;
   color: var(--ink);
 }
