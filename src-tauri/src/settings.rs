@@ -28,6 +28,10 @@ pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
 pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4.1-mini";
 /// Defaults that turned out not to name a model OpenRouter serves.
 pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
+/// The dictation prompt as it was before it described how speech is written
+/// down. Kept only to recognise it: a default nobody chose is not a preference
+/// worth preserving, so it is replaced rather than left in place.
+pub const RETIRED_TRANSFORM_PROMPT: &str = include_str!("prompts/transform-retired.txt");
 
 /// Serialized as camelCase so one settings.json serves both hosts and the
 /// shape matches what the shared frontend expects.
@@ -136,6 +140,9 @@ impl AppSettings {
         if RETIRED_OPENROUTER_MODELS.contains(&self.open_router_model.as_str()) {
             self.open_router_model = DEFAULT_OPENROUTER_MODEL.to_string();
         }
+        if self.transform_prompt.trim() == RETIRED_TRANSFORM_PROMPT.trim() {
+            self.transform_prompt = DEFAULT_TRANSFORM_PROMPT.trim().to_string();
+        }
         self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
         self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
         // Leaving the Dock with no menu bar icon would strand the app with no
@@ -200,6 +207,25 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
+    /// A prompt left at the old default is replaced, since it predates the
+    /// rules about how spoken numbers and times are written down.
+    #[test]
+    fn a_retired_prompt_is_replaced_on_load() {
+        let mut stored = AppSettings::default();
+        stored.transform_prompt = RETIRED_TRANSFORM_PROMPT.trim().to_string();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
+    }
+
+    /// A prompt the user wrote is theirs, however close to the old one.
+    #[test]
+    fn an_edited_prompt_survives_load() {
+        let mut stored = AppSettings::default();
+        stored.transform_prompt = "Clean it up. Keep it short.".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.transform_prompt, "Clean it up. Keep it short.");
+    }
+
     /// The old default never named a real model, so every rewrite failed and
     /// fell back to the raw transcript. Loading must not preserve it.
     #[test]

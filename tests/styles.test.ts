@@ -72,3 +72,23 @@ describe("markup provides what the renderer requires", () => {
     expect(required.filter((id) => !present.has(id))).toEqual([]);
   });
 });
+
+/*
+ * The prompts exist twice: as text files the host embeds, and as constants the
+ * interface shows in Settings. Nothing makes them agree, so a change to one and
+ * not the other would ship a default the app does not actually use.
+ */
+describe("prompt defaults match the files the host embeds", () => {
+  const cases = [
+    ["transform.txt", "DEFAULT_TRANSFORM_PROMPT"],
+    ["polish.txt", "DEFAULT_POLISH_PROMPT"],
+    ["transform-retired.txt", "RETIRED_TRANSFORM_PROMPTS"],
+  ] as const;
+
+  it.each(cases)("keeps %s in step with %s", (file, constant) => {
+    const embedded = readFileSync(`src-tauri/src/prompts/${file}`, "utf8").trim();
+    const shared = readFileSync("src/shared/prompts.ts", "utf8");
+    expect(shared).toContain(constant);
+    expect(shared).toContain(embedded);
+  });
+});
