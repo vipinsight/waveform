@@ -169,21 +169,25 @@ body {
  * open, and toggling `display` to avoid that cannot be transitioned -- the
  * icons snapped in and out, which is what made the pill feel abrupt.
  *
- * They rise and fade but never scale. Scaling resamples the glyphs every frame,
- * and at this size that reads as a shimmer rather than as motion.
+ * They fade, and do not move at all.
+ *
+ * They used to sit at `top: 50%` -- half of a height that is itself animating,
+ * so the icon slid upward as the capsule grew -- while running a `translateY`
+ * of their own on a different duration. Two vertical motions of different
+ * lengths over the same glyph is what the shaking was. Anchoring to the
+ * capsule's bottom edge, which is fixed, puts the microphone at exactly the
+ * same point whether the capsule is 6px tall or 28px, so there is nothing left
+ * to animate and nothing left to disagree about.
  */
 .hud-mic,
 .hud-session {
   position: absolute;
-  top: 50%;
   right: 0;
+  bottom: 0;
   left: 0;
   height: 28px;
   opacity: 0;
-  transform: translateY(-50%) translateY(4px);
-  transition:
-    opacity 130ms linear,
-    transform 200ms cubic-bezier(0.22, 0.9, 0.3, 1);
+  transition: opacity 130ms linear;
   pointer-events: none;
 }
 
@@ -199,9 +203,8 @@ body {
 .hud[data-state="idle"][data-visible="true"][data-expanded="true"] .hud-mic,
 .hud[data-state]:not([data-state="idle"]) .hud-session {
   opacity: 1;
-  transform: translateY(-50%);
-  /* Lets the capsule take up its new width first, so the controls land in
-     place instead of racing the edges outwards. */
+  /* Lets the capsule take up its new width first, so the controls arrive into
+     a shape that has stopped changing. */
   transition-delay: 70ms;
   pointer-events: auto;
 }
