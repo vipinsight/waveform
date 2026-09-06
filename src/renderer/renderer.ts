@@ -42,7 +42,6 @@ const element = {
   settingsPanel: requireElement<HTMLElement>("settings-panel"),
   app: requireElement<HTMLElement>("app-shell"),
   sidebarToggle: requireElement<HTMLButtonElement>("sidebar-toggle"),
-  settingsClose: requireElement<HTMLButtonElement>("settings-close"),
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
   modelSelect: requireElement<HTMLSelectElement>("model-select"),
@@ -190,7 +189,6 @@ function wireEvents(): void {
     void patchSettings({ sidebarCollapsed: collapsed });
   });
   element.scrim.addEventListener("click", () => toggleSettings(false));
-  element.settingsClose.addEventListener("click", () => toggleSettings(false));
   element.bannerAction.addEventListener("click", () => {
     toggleSettings(true, "setup");
   });

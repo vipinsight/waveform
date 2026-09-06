@@ -16,6 +16,7 @@
   --ink: #1a1a1a;
   --ink-soft: #6b685f;
   --ink-faint: #97938a;
+  --ink-label: #4e4a42;
   --hairline: rgb(28 27 24 / 9%);
   --hairline-strong: rgb(28 27 24 / 16%);
   --accent: #15544f;
@@ -53,6 +54,8 @@
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
+  --ink-label: #b3aea3;
+    --ink-label: #b3aea3;
     --hairline: rgb(255 255 255 / 10%);
     --hairline-strong: rgb(255 255 255 / 18%);
     --accent: #6cbdb2;
@@ -80,6 +83,7 @@
   --ink: #f2efe8;
   --ink-soft: #a8a49a;
   --ink-faint: #78746b;
+  --ink-label: #b3aea3;
   --hairline: rgb(255 255 255 / 10%);
   --hairline-strong: rgb(255 255 255 / 18%);
   --accent: #6cbdb2;
@@ -972,7 +976,7 @@ kbd {
   display: grid;
   width: min(860px, 94vw);
   height: min(600px, 88vh);
-  border-radius: 18px;
+  border-radius: 12px;
   background: var(--paper);
   isolation: isolate;
   box-shadow: var(--shadow-modal);
@@ -998,7 +1002,7 @@ kbd {
 .modal-nav h2 {
   padding: 0 11px;
   margin: 0 0 8px;
-  color: var(--ink-faint);
+  color: var(--ink-label);
   font-size: 10px;
   font-weight: 620;
   text-transform: uppercase;
@@ -1014,32 +1018,6 @@ kbd {
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 500;
-}
-
-.modal-close {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink-faint);
-  cursor: default;
-  transition: background 130ms ease, color 130ms ease;
-}
-
-.modal-close svg {
-  width: 15px;
-  height: 15px;
-}
-
-.modal-close:hover {
-  color: var(--ink);
-  background: var(--surface-hover);
 }
 
 .modal-body {
