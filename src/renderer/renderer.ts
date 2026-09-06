@@ -30,7 +30,8 @@ const element = {
   modelDot: requireElement<HTMLElement>("model-dot"),
   hotkeyDot: requireElement<HTMLElement>("hotkey-dot"),
   hotkeySummary: requireElement<HTMLElement>("hotkey-summary"),
-  resourceSummary: requireElement<HTMLElement>("resource-summary"),
+  resourceCpu: requireElement<HTMLElement>("resource-cpu"),
+  resourceMemory: requireElement<HTMLElement>("resource-memory"),
   resourceRow: requireElement<HTMLElement>("resource-row"),
   history: requireElement<HTMLElement>("history"),
   dictationDeck: requireElement<HTMLElement>("dictation-deck"),
@@ -697,7 +698,8 @@ function renderStats(stats: AppStats): void {
 function renderResourceUsage(usage: ResourceUsage): void {
   const memory = formatMemory(usage.memoryMb);
   element.resourceRow.hidden = false;
-  element.resourceSummary.textContent = `${usage.cpuPercent}% CPU · ${memory}`;
+  element.resourceCpu.textContent = `${usage.cpuPercent}%`;
+  element.resourceMemory.textContent = memory;
   element.overviewCpu.textContent = `${usage.cpuPercent}%`;
   element.overviewMemory.textContent = memory;
   element.overviewEngineMemory.textContent =
