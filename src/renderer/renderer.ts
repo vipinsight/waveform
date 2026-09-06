@@ -143,8 +143,8 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
-  host().onOpenMicrophoneSettings(() => toggleSettings(true));
-  host().onOpenShortcutSettings(() => toggleSettings(true, "shortcut"));
+  host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
@@ -195,7 +195,7 @@ function wireEvents(): void {
     toggleSettings(true, "setup");
   });
   element.deckSettings.addEventListener("click", () => {
-    toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "shortcut");
+    toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
   });
 
   for (const button of Array.from(
@@ -312,7 +312,7 @@ function showSettingsPage(page: string): void {
   )) {
     section.hidden = section.dataset.page !== page;
   }
-  if (page === "general") void refreshMicrophones(true);
+  if (page === "dictation") void refreshMicrophones(true);
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
@@ -694,7 +694,7 @@ function renderDictationDeck(): void {
     element.deckStatus.textContent = "Preparing speech model";
     element.deckTitle.textContent = "Your words are about to be ready";
     element.deckDescription.textContent = `${getSpeechModel(settings.modelId).shortLabel} is loading on this Mac.`;
-    element.deckSettings.textContent = "Shortcut settings";
+    element.deckSettings.textContent = "Dictation settings";
     return;
   }
 
@@ -703,7 +703,7 @@ function renderDictationDeck(): void {
   element.deckDescription.textContent = modelReady
     ? "Words will land at your cursor, then stay here for easy copying."
     : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
-  element.deckSettings.textContent = "Shortcut settings";
+  element.deckSettings.textContent = "Dictation settings";
 }
 
 function renderStats(stats: AppStats): void {

@@ -52,12 +52,15 @@
             <span>Overview</span>
           </button>
           <button class="nav-item" type="button" data-view="dictate" aria-current="page">
-            <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 19v3" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <rect x="9" y="2" width="6" height="13" rx="3" />
+            <svg data-icon="audio-lines" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 10v3" />
+              <path d="M6 6v11" />
+              <path d="M10 3v18" />
+              <path d="M14 8v7" />
+              <path d="M18 5v13" />
+              <path d="M22 10v3" />
             </svg>
-            <span>Dictation</span>
+            <span>Transcripts</span>
           </button>
         </nav>
 
@@ -79,7 +82,7 @@
       <main class="content">
         <section class="view" id="view-dictate">
           <div class="view-head">
-            <h1 class="display">Dictation</h1>
+            <h1 class="display">Transcripts</h1>
             <div class="head-tools">
               <span class="view-note" id="dictate-note"></span>
               <div class="search" id="search">
@@ -136,7 +139,7 @@
                 <span><strong>Hold</strong> Speak, then release</span>
                 <span><strong>Tap twice</strong> Keep listening</span>
               </div>
-              <button id="deck-settings" class="deck-settings" type="button">Shortcut settings</button>
+              <button id="deck-settings" class="deck-settings" type="button">Dictation settings</button>
             </section>
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
@@ -225,15 +228,13 @@
               <path d="M8 12H3" />
             </svg>
             <span>General</span></button>
-        <button class="nav-item" type="button" data-page="shortcut">
-            <svg data-icon="command" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 8H5.5A2.5 2.5 0 1 1 8 5.5V8Z" />
-              <path d="M16 8V5.5A2.5 2.5 0 1 1 18.5 8H16Z" />
-              <path d="M16 16h2.5a2.5 2.5 0 1 1-2.5 2.5V16Z" />
-              <path d="M8 16v2.5A2.5 2.5 0 1 1 5.5 16H8Z" />
-              <rect width="8" height="8" x="8" y="8" />
+        <button class="nav-item" type="button" data-page="dictation">
+            <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 19v3" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
-            <span>Shortcut</span></button>
+            <span>Dictation</span></button>
         <button class="nav-item" type="button" data-page="ai">
             <svg data-icon="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 18V5" />
@@ -316,12 +317,6 @@
           <h1 class="display">General</h1>
           <div class="card">
             <div class="row">
-              <span class="row-label">Microphone</span>
-              <span class="row-actions">
-                <select id="microphone-select" aria-label="Microphone"></select>
-              </span>
-            </div>
-            <div class="row">
               <span class="row-label">Speech model</span>
               <span class="row-actions"><select id="model-select" aria-label="Speech model"></select></span>
             </div>
@@ -354,9 +349,15 @@
           </div>
         </section>
 
-        <section class="settings-page" data-page="shortcut" hidden>
-          <h1 class="display">Shortcut</h1>
+        <section class="settings-page" data-page="dictation" hidden>
+          <h1 class="display">Dictation</h1>
           <div class="card">
+            <div class="row">
+              <span class="row-label">Microphone</span>
+              <span class="row-actions">
+                <select id="microphone-select" aria-label="Microphone"></select>
+              </span>
+            </div>
             <div class="row">
               <span class="row-label">Dictation shortcut</span>
               <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
