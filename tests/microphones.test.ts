@@ -6,29 +6,42 @@ function device(deviceId: string, label: string, kind: MediaDeviceKind = "audioi
 }
 
 describe("microphone list shared with the menu bar", () => {
-  it("recommends only MacBook inputs while preserving selection IDs and original names", () => {
+  it("leads with auto-detect, names what it resolves to, and shortens the rest", () => {
     const inputs = [
+      device("default", "Default - MacBook Pro Microphone"),
       device("usb", "AT2020 USB"),
       device("mac", "MacBook Pro Microphone"),
-      device("phone", "Vipin’s iPhone Microphone"),
-      device("airpods", "AirPods"),
+      device("phone", "Vipin\u2019s iPhone Microphone"),
+      device("teams", "Microsoft Teams Audio Device (Virtual)"),
     ];
     expect(microphoneDevices(inputs)).toEqual([
-      { id: "mac", label: "MacBook Pro Microphone", displayLabel: "MacBook Pro Microphone (Recommended)" },
-      { id: "airpods", label: "AirPods", displayLabel: "AirPods" },
+      { id: "", label: "Auto-detect", displayLabel: "Auto-detect (MacBook Pro)" },
+      { id: "mac", label: "MacBook Pro Microphone", displayLabel: "Built-in mic (recommended)" },
       { id: "usb", label: "AT2020 USB", displayLabel: "AT2020 USB" },
-      { id: "phone", label: "Vipin’s iPhone Microphone", displayLabel: "Vipin’s iPhone Microphone" },
+      { id: "teams", label: "Microsoft Teams Audio Device (Virtual)", displayLabel: "Microsoft Teams Audio Device (Virtual)" },
+      { id: "phone", label: "Vipin\u2019s iPhone Microphone", displayLabel: "Vipin\u2019s iPhone" },
     ]);
-    expect(inputs[0]?.deviceId).toBe("usb");
+    // The original names are what settings and the tray store, so they survive.
+    expect(inputs[1]?.deviceId).toBe("usb");
   });
 
-  it("excludes the duplicate system default, outputs, cameras, and unusable device IDs", () => {
+  it("says auto-detect plainly when macOS has not said what it resolves to", () => {
+    expect(microphoneDevices([device("mac", "MacBook Pro Microphone")])[0]).toEqual({
+      id: "",
+      label: "Auto-detect",
+      displayLabel: "Auto-detect",
+    });
+  });
+
+  it("excludes outputs, cameras, and unusable device IDs", () => {
     expect(microphoneDevices([
-      device("default", "Default - MacBook Pro Microphone"),
       device("speaker", "Speaker", "audiooutput"),
       device("camera", "Camera", "videoinput"),
       device("", ""),
       device("unnamed", ""),
-    ])).toEqual([{ id: "unnamed", label: "Microphone 1", displayLabel: "Microphone 1" }]);
+    ])).toEqual([
+      { id: "", label: "Auto-detect", displayLabel: "Auto-detect" },
+      { id: "unnamed", label: "Microphone 1", displayLabel: "Microphone 1" },
+    ]);
   });
 });

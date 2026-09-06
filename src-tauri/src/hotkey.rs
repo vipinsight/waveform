@@ -73,7 +73,6 @@ pub fn key_code_for(hotkey_id: &str) -> Option<i64> {
         "left-command" => 55,
         "right-option" => 61,
         "left-option" => 58,
-        "right-control" => 62,
         "right-shift" => 60,
         _ => return None,
     })
@@ -88,7 +87,6 @@ pub fn label_for(hotkey_id: &str) -> Option<&'static str> {
         "left-command" => "Left Command",
         "right-option" => "Right Option",
         "left-option" => "Left Option",
-        "right-control" => "Right Control",
         "right-shift" => "Right Shift",
         _ => return None,
     })

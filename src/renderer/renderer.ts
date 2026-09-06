@@ -11,6 +11,8 @@ import type {
 import {
   HOTKEY_BINDINGS,
   getHotkeyBinding,
+  hotkeyKeycap,
+  hotkeyMenuLabel,
   isHotkeyBindingId,
 } from "../shared/hotkeys";
 import {
@@ -353,7 +355,7 @@ function applySettings(next: AppSettings): void {
 function populateSelects(): void {
   element.hotkeySelect.append(new Option("Off", "none"));
   for (const binding of HOTKEY_BINDINGS) {
-    element.hotkeySelect.append(new Option(binding.label, binding.id));
+    element.hotkeySelect.append(new Option(hotkeyMenuLabel(binding), binding.id));
   }
 
   for (const accelerator of POLISH_SHORTCUTS) {
@@ -385,9 +387,13 @@ async function refreshMicrophones(requestLabels = false): Promise<void> {
 
 function renderMicrophoneSelect(): void {
   const selected = settings.microphoneDeviceId;
-  element.microphoneSelect.replaceChildren(new Option("System default", ""));
-  for (const device of microphones) {
-    element.microphoneSelect.append(new Option(device.displayLabel, device.id));
+  // The list carries the system default as its first entry, so there is no
+  // case for it here.
+  element.microphoneSelect.replaceChildren(
+    ...microphones.map((device) => new Option(device.displayLabel, device.id)),
+  );
+  if (microphones.length === 0) {
+    element.microphoneSelect.append(new Option("Auto-detect", ""));
   }
   if (selected && !microphones.some((device) => device.id === selected)) {
     element.microphoneSelect.append(
@@ -466,7 +472,8 @@ function renderThemeToggle(theme: AppSettings["theme"]): void {
 }
 
 function renderHotkeyLabels(): void {
-  const glyph = getHotkeyBinding(settings.hotkeyId)?.glyph ?? "—";
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  const glyph = binding ? hotkeyKeycap(binding) : "—";
   element.hintKey.textContent = glyph;
   element.gestureKeyHold.textContent = glyph;
   element.gestureKeyTap.textContent = `${glyph} ${glyph}`;
@@ -650,7 +657,8 @@ function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
  */
 function renderEmptyState(): void {
   const outstanding = setupSteps().filter((step) => !step.done);
-  const glyph = getHotkeyBinding(settings.hotkeyId)?.glyph ?? "your shortcut";
+  const shortcut = getHotkeyBinding(settings.hotkeyId);
+  const glyph = shortcut ? hotkeyKeycap(shortcut) : "your shortcut";
   const firstRun = lifetimeSessions === 0;
 
   if (outstanding.length > 0) {
@@ -678,7 +686,7 @@ function renderEmptyState(): void {
 function renderDictationDeck(): void {
   const outstanding = setupSteps().filter((step) => !step.done);
   const binding = getHotkeyBinding(settings.hotkeyId);
-  const key = binding?.glyph ?? "—";
+  const key = binding ? hotkeyKeycap(binding) : "—";
 
   element.deckKey.textContent = key;
   if (outstanding.length > 0) {
@@ -785,7 +793,7 @@ function renderShortcutCard(): void {
 
   hint.append(
     text("Hold "),
-    key(binding.glyph),
+    key(hotkeyKeycap(binding)),
     text(" anywhere in macOS to dictate, or tap twice to keep listening."),
   );
 }

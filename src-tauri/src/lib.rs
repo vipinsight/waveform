@@ -1007,16 +1007,27 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .lock()
         .map(|devices| devices.clone())
         .unwrap_or_default();
+    // The renderer carries the system default as the first entry, naming the
+    // device it currently resolves to. Before the first capture there is no
+    // list yet, so the plain word stands in.
+    let auto_label = devices
+        .iter()
+        .find(|device| device.id.is_empty())
+        .map(|device| device.display_label.clone())
+        .unwrap_or_else(|| "Auto-detect".to_string());
     let system_default = CheckMenuItem::with_id(
         app,
         "microphone-default",
-        "System default",
+        auto_label,
         true,
         settings.microphone_device_id.is_empty(),
         None::<&str>,
     )?;
     microphone_menu.append(&system_default)?;
     for (index, device) in devices.iter().enumerate() {
+        if device.id.is_empty() {
+            continue;
+        }
         let item = CheckMenuItem::with_id(
             app,
             format!("microphone-device-{index}"),

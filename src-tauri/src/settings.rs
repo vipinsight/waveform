@@ -9,14 +9,13 @@ use std::fs;
 use std::path::PathBuf;
 
 pub const POLISH_SHORTCUTS: [&str; 5] = ["none", "Alt+1", "Alt+2", "Alt+3", "Alt+P"];
-const HOTKEY_IDS: [&str; 8] = [
+const HOTKEY_IDS: [&str; 7] = [
     "none",
     "fn",
     "right-command",
     "left-command",
     "right-option",
     "left-option",
-    "right-control",
     "right-shift",
 ];
 const MODEL_IDS: [&str; 2] = ["parakeet-tdt-0.6b-v3", "qwen3-asr-0.6b"];
