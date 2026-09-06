@@ -16,7 +16,6 @@ import {
 import {
   getSpeechModel,
   isSpeechModelId,
-  type SpeechEngine,
 } from "../shared/models";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
@@ -70,7 +69,6 @@ const element = {
   bannerAction: requireElement<HTMLButtonElement>("banner-action"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   setupLede: requireElement<HTMLElement>("setup-lede"),
-  checkEngineNote: requireElement<HTMLElement>("check-engine-note"),
   checklist: requireElement<HTMLElement>("checklist"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
@@ -490,11 +488,6 @@ function setupSteps(): { id: string; done: boolean; label: string }[] {
       label: "microphone access",
     },
     {
-      id: "engine",
-      done: status?.engineInstalled === true,
-      label: "the speech model",
-    },
-    {
       id: "input-monitoring",
       done: status?.inputMonitoring === true,
       label: "Input Monitoring",
@@ -520,9 +513,7 @@ function renderSetup(): void {
       // A granted step already carries its tick. A button reading "Done" says
       // the same thing a second time, and looks like something to press.
       button.hidden = step.done;
-      if (!step.done) {
-        button.textContent = step.id === "engine" ? "Choose model" : "Grant";
-      }
+      if (!step.done) button.textContent = "Grant";
     }
   }
 
@@ -530,13 +521,7 @@ function renderSetup(): void {
   element.setupLede.textContent =
     outstanding.length === 0
       ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Enable macOS permissions and install a speech model to dictate in any app.";
-
-  const model = getSpeechModel(settings.modelId);
-  const engineInstalled = hotkeyStatus?.engineInstalled === true;
-  element.checkEngineNote.textContent = engineInstalled
-    ? `${model.label} · runs offline on this Mac`
-    : `${model.label} is not installed. Run ${engineSetupCommand()} in the project folder.`;
+      : "Enable the macOS permissions Waveform needs to dictate in any app.";
 
   // The banner names what is missing rather than saying "setup incomplete",
   // so the next action is obvious without opening anything.
@@ -625,17 +610,6 @@ async function renderModels(): Promise<void> {
   );
 }
 
-/** The command that installs the runtime for the selected model. */
-const ENGINE_SETUP_COMMANDS: Record<SpeechEngine, string> = {
-  nemo: "pnpm setup:model",
-  qwen: "pnpm setup:qwen",
-  whisper: "pnpm setup:whisper",
-};
-
-function engineSetupCommand(): string {
-  return ENGINE_SETUP_COMMANDS[getSpeechModel(settings.modelId).engine];
-}
-
 /** Joins labels the way a sentence would: "a, b and c". */
 function listPhrase(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
@@ -643,13 +617,6 @@ function listPhrase(items: string[]): string {
 }
 
 function resolveSetupStep(id: string): void {
-  if (id === "engine") {
-    // Setup asks only whether a model is ready; which models exist and what
-    // each still needs is the Models page's subject, and it names the command
-    // for the one being asked about.
-    showSettingsPage("models");
-    return;
-  }
   if (id === "microphone") {
     void host().openPrivacySettings("microphone");
     return;
