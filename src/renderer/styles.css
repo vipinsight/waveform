@@ -1395,7 +1395,6 @@ select {
     radial-gradient(circle at 86% 0%, rgb(143 128 255 / 42%), transparent 31%),
     radial-gradient(circle at 62% 100%, rgb(48 214 161 / 18%), transparent 34%),
     linear-gradient(130deg, #1a2140, #292260);
-  box-shadow: 0 16px 30px rgb(39 38 107 / 20%);
   color: #f8f8ff;
 }
 
