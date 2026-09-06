@@ -1,14 +1,20 @@
 /*
  * The listening pill.
  *
- * Implements the "listening pill" design: a floating capsule with cancel on the
- * left, a live meter in the middle, and polish on the right. While a rewrite
- * runs the meter becomes an indeterminate progress row and the polish button
- * becomes a loader ring.
+ * One capsule with four shapes, which it springs between:
  *
- * The window is transparent and click-through except for the pill itself, so
- * the page background must stay fully clear and the capsule draws all of its
- * own chrome.
+ *   rest      44x6    a quiet mark, the idle Wave Bar
+ *   offer     64x32   hovered: the microphone, inviting a click
+ *   hold      64x32   key held down: the meter alone, nothing to decide
+ *   latched  110x32   double-tap or mic: the meter between cancel and accept
+ *
+ * Which of the two session shapes appears is decided by `data-mode`, written
+ * from the gesture that opened the session. Holding the shortcut is already a
+ * decision -- letting go commits -- so offering buttons there is noise; a
+ * latched session runs until told otherwise, so it must offer both.
+ *
+ * The window is transparent, so the page background must stay fully clear and
+ * the capsule draws all of its own chrome.
  */
 * {
   box-sizing: border-box;
@@ -44,16 +50,14 @@ body {
  * meant for whatever is underneath.
  */
 .hud {
-  display: flex;
-  width: 108px;
+  position: relative;
+  display: block;
+  width: 110px;
   height: 32px;
   margin: 8px auto 0;
-  align-items: center;
-  gap: 8px;
-  padding: 0 5px;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 999px;
-  background: #11141a;
+  background: #080808;
   box-shadow:
     0 8px 20px rgb(0 0 0 / 32%),
     inset 0 1px 0 rgb(255 255 255 / 12%);
@@ -61,12 +65,16 @@ body {
   /* Rises into place rather than only fading, which is what makes it read as
      a system control instead of a web element. */
   transform: translateY(6px) scale(0.9);
+  /* Overshoots on the way out and settles back. A capsule that changes size
+     without any spring in it reads as a box being resized; with one it reads
+     as a control opening. */
   transition:
-    width 220ms cubic-bezier(0.16, 1.3, 0.3, 1),
-    height 220ms cubic-bezier(0.16, 1.3, 0.3, 1),
-    margin 220ms cubic-bezier(0.16, 1.3, 0.3, 1),
-    padding 180ms ease,
-    gap 180ms ease,
+    width 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    margin 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 200ms ease,
+    background 200ms ease,
+    box-shadow 200ms ease,
     opacity 110ms linear,
     transform 260ms cubic-bezier(0.16, 1.3, 0.3, 1);
   cursor: grab;
@@ -84,34 +92,56 @@ body {
     transform 120ms ease-in;
 }
 
+/* ------------------------------------------------------------------- rest */
+
 /* When always visible, Wave Bar rests as a quiet status mark: half the pill's
-   width and roughly one sixth its height. Starting dictation switches state
-   to listening, so the same element unfolds into the complete control. */
+   width and roughly one sixth its height. */
 .hud[data-state="idle"][data-visible="true"] {
   width: 44px;
   height: 6px;
   margin-top: 21px;
-  gap: 0;
-  padding: 0;
   border-color: rgb(255 255 255 / 16%);
   background: rgb(17 20 26 / 82%);
   box-shadow: 0 4px 11px rgb(0 0 0 / 22%);
 }
 
-.hud[data-state="idle"] .hud-cancel,
-.hud[data-state="idle"] .wave,
-.hud[data-state="idle"] .hud-polish {
-  display: none;
+/* The transparent hit area keeps the six-pixel mark easy to hover. Expanding
+   within the existing native window avoids stealing clicks from nearby apps. */
+.hud[data-state="idle"]::before {
+  content: "";
+  position: absolute;
+  inset: -9px -5px;
+  border-radius: 999px;
 }
 
-/* CSS state changes must restore the meter explicitly. Without this, WebKit
-   can retain the idle display:none while the pill has already expanded. */
-.hud[data-state]:not([data-state="idle"]) .hud-cancel {
-  display: grid;
+/* ------------------------------------------------------------------ offer */
+
+.hud[data-state="idle"][data-visible="true"][data-expanded="true"] {
+  width: 64px;
+  height: 32px;
+  margin-top: 8px;
+  border-color: rgb(255 255 255 / 30%);
+  background: #303030;
+  box-shadow:
+    0 10px 22px rgb(0 0 0 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
 }
 
-.hud[data-state]:not([data-state="idle"]) .wave {
-  display: block;
+/* --------------------------------------------------------------- sessions */
+
+/*
+ * Holding the shortcut keeps the capsule at the width it was already offering,
+ * so the gesture reads as the microphone lighting up rather than as a new
+ * control appearing. Only a latched session widens to make room for a choice.
+ */
+.hud[data-state]:not([data-state="idle"])[data-mode="hold"] {
+  width: 64px;
+}
+
+.hud[data-state]:not([data-state="idle"])[data-mode="latched"] {
+  width: 110px;
+  /* A locked session runs until dismissed, so it carries a brighter rim. */
+  border-color: rgb(255 255 255 / 34%);
 }
 
 .hud[data-dragging="true"] {
@@ -120,40 +150,101 @@ body {
   transition: transform 90ms ease-out;
 }
 
-/* A locked session runs until dismissed, so it carries a brighter rim. */
-.hud[data-mode="latched"] {
-  border-color: rgb(255 255 255 / 34%);
+/* --------------------------------------------------------------- the layers */
+
+/*
+ * The microphone and the session controls occupy the same spot and cross-fade,
+ * so the capsule only ever animates its own width. They are taken out of flow
+ * on purpose: a 24px button inside the 6px resting bar would otherwise prop it
+ * open, and toggling `display` to avoid that cannot be transitioned -- the
+ * icons snapped in and out, which is what made the pill feel abrupt.
+ */
+.hud-mic,
+.hud-session {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 32px;
+  opacity: 0;
+  /* Shrunk towards the capsule's centre and dropped slightly, so a reveal
+     reads as the controls rising out of the bar rather than appearing on
+     top of it. */
+  transform: translateY(-50%) translateY(5px) scale(0.5);
+  transition:
+    opacity 130ms linear,
+    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.hud-session {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+/* Hovering the resting bar offers the microphone; a live session replaces it
+   with the meter, which stays put until the session ends. */
+.hud[data-state="idle"][data-visible="true"][data-expanded="true"] .hud-mic,
+.hud[data-state]:not([data-state="idle"]) .hud-session {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+  /* Lets the capsule take up its new width first, so the controls land in
+     place instead of racing the edges outwards. */
+  transition-delay: 70ms;
+  pointer-events: auto;
 }
 
 /* ------------------------------------------------------------------ cancel */
 
-.hud-cancel {
+/*
+ * Cancel and accept carry their own gaps rather than the row carrying a `gap`,
+ * so collapsing them for a held session takes the spacing with them and leaves
+ * the meter centred with nothing to show for their absence.
+ */
+.hud-cancel,
+.hud-accept {
   display: grid;
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
   place-items: center;
+  padding: 0;
+  overflow: hidden;
   border: 0;
   border-radius: 999px;
-  background: transparent;
-  color: rgb(246 245 242 / 65%);
-  cursor: default;
-  transition: background 120ms ease, color 120ms ease;
+  cursor: pointer;
+  transition:
+    width 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    margin 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 140ms linear,
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
 
-.hud-cancel svg {
-  width: 13px;
-  height: 13px;
+.hud-cancel { margin-right: 8px; background: #484741; color: #f6f5f2; }
+.hud-accept { margin-left: 8px; background: #f6f5f2; color: #171717; }
+
+/* Holding the shortcut is its own commitment -- releasing the key accepts --
+   so the session shows the meter and nothing to press. */
+.hud[data-mode="hold"] .hud-cancel,
+.hud[data-mode="hold"] .hud-accept {
+  width: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.hud-cancel:hover {
-  background: rgb(255 255 255 / 10%);
-  color: #f6f5f2;
-}
+.hud-cancel svg { width: 13px; height: 13px; }
+.hud-accept svg { width: 16px; height: 16px; }
 
-.hud-cancel:active {
-  transform: scale(0.94);
-}
+.hud-cancel:hover { background: rgb(255 255 255 / 26%); }
+.hud-accept:hover { background: #fff; }
+.hud-cancel:active,
+.hud-accept:active { transform: scale(0.9); }
+.hud-accept:disabled { opacity: 0.4; cursor: default; }
 
 /* ------------------------------------------------------------------- meter */
 
@@ -163,89 +254,42 @@ body {
   flex: 0 0 auto;
 }
 
-/* ------------------------------------------------------------------ polish */
+/* --------------------------------------------------------------- microphone */
 
-.hud-polish {
+.hud-mic {
   display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
   place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: #3284d0;
-  cursor: default;
-  transition: filter 120ms ease, transform 120ms ease;
-}
-
-.hud-polish:hover {
-  filter: brightness(1.14);
-}
-
-.hud-polish:active {
-  transform: scale(0.94);
-}
-
-/* Hidden rather than disabled when there is no key: a control that cannot do
-   anything is worse than one that is not offered. */
-.hud-polish[hidden] {
-  display: none;
-}
-
-.polish-mark {
-  display: flex;
-  align-items: center;
-  gap: 1.5px;
-}
-
-.polish-mark i {
-  width: 2px;
-  border-radius: 1px;
-  background: #fff;
-}
-
-.polish-mark i:nth-child(1) {
-  height: 5px;
-}
-
-.polish-mark i:nth-child(2) {
-  height: 10px;
-}
-
-.polish-mark i:nth-child(3) {
-  height: 7px;
-}
-
-/* While a rewrite runs the button becomes a ring: the same 28pt circle, so
-   nothing shifts as it changes role. */
-.hud[data-state="rewriting"] .hud-polish {
   background: transparent;
-  border: 1.8px solid rgb(255 255 255 / 16%);
-  border-top-color: #3284d0;
-  border-right-color: #3284d0;
-  animation: ring 0.7s linear infinite;
+  color: #fff;
+  cursor: pointer;
 }
 
-.hud[data-state="rewriting"] .hud-polish:hover {
-  filter: none;
+/* The press lands on the icon, not the layer: the layer's transform is what
+   animates the reveal, and overriding it here would cancel that mid-flight. */
+.hud-mic svg {
+  width: 22px;
+  height: 22px;
+  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.hud[data-state="rewriting"] .polish-mark {
-  display: none;
-}
+.hud-mic:active svg { transform: scale(0.86); }
+.hud-mic:disabled { opacity: 0.5; cursor: wait; }
 
-@keyframes ring {
-  to {
-    transform: rotate(1turn);
-  }
+.hud button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud {
+  .hud,
+  .hud-mic,
+  .hud-mic svg,
+  .hud-session,
+  .hud-cancel,
+  .hud-accept {
     transition-duration: 0.01ms;
-  }
-
-  .hud[data-state="rewriting"] .hud-polish {
-    animation-duration: 2s;
+    transition-delay: 0ms;
   }
 }

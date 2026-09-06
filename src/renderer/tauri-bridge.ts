@@ -113,11 +113,14 @@ const api: DesktopApi = {
   polishSelection: () => invoke<void>("polish_selection"),
 
   toggleDictation: () => invoke<void>("toggle_dictation"),
+  startOverlayDictation: () => invoke<void>("start_overlay_dictation"),
+  acceptDictation: () => invoke<void>("accept_dictation"),
   polishDictation: () => invoke<void>("polish_dictation"),
   cancelDictation: () => invoke<void>("cancel_dictation"),
   previewIndicator: () => invoke<void>("preview_indicator"),
   onDictationCommand: (listener) =>
     subscribe<DictationCommand>("dictation-command", listener),
+  onOverlayHover: (listener) => subscribe<boolean>("overlay-hover", listener),
   onDictationUpdate: (listener) =>
     subscribe<DictationUpdate>("dictation-update", listener),
   reportDictationState: (status) => void invoke("report_dictation_state", { status }),

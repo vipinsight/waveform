@@ -60,6 +60,9 @@ pub struct AppState {
     /// WebKit enumerates input devices; the tray uses this cached list when
     /// Waveform's main window is closed.
     microphones: StdMutex<Vec<MicrophoneDevice>>,
+    /// Whether the pointer is over the HUD, from `watch_overlay_hover`. Read
+    /// on the main thread while handling reopen, so it cannot be a lock.
+    overlay_hovered: AtomicBool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -286,6 +289,18 @@ fn request_microphone() -> MicrophoneResult {
 #[tauri::command]
 async fn toggle_dictation(state: State<'_, AppState>) -> Result<(), String> {
     state.dictation.toggle_from_app().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_overlay_dictation(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.start_from_overlay().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn accept_dictation(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.accept_from_overlay().await;
     Ok(())
 }
 
@@ -517,9 +532,11 @@ pub fn run() {
                 drag_origin: Mutex::new(None),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
+                overlay_hovered: AtomicBool::new(false),
             });
 
             build_overlay_window(app.handle())?;
+            watch_overlay_hover(app.handle().clone());
 
             set_launch_at_login(app.handle(), initial.launch_at_login);
             if initial.show_flow_bar_always {
@@ -605,6 +622,8 @@ pub fn run() {
             transcribe,
             request_microphone,
             toggle_dictation,
+            start_overlay_dictation,
+            accept_dictation,
             polish_dictation,
             cancel_dictation,
             preview_indicator,
@@ -626,7 +645,23 @@ pub fn run() {
         .run(|app, event| match event {
             // Clicking the Dock icon of a running app with no open window.
             // Without this the icon appears inert.
-            RunEvent::Reopen { .. } => present_main_window(app),
+            //
+            // The HUD is an ordinary NSWindow -- tao's `focusable(false)` only
+            // stops it becoming key, it does not stop a click activating the
+            // application -- and AppKit reports that activation as a reopen
+            // too. Pressing cancel or accept therefore raised the main window,
+            // which is both wrong on its own terms and takes focus from the app
+            // being dictated into. A reopen while the pointer is on the HUD came
+            // from the HUD, not from the Dock, and is not a request for a window.
+            RunEvent::Reopen { .. } => {
+                if !app
+                    .state::<AppState>()
+                    .overlay_hovered
+                    .load(Ordering::Relaxed)
+                {
+                    present_main_window(app);
+                }
+            }
             // The engine is a separate process of several hundred megabytes and
             // does not exit on its own, so it has to be shut down explicitly or
             // it outlives the app.
@@ -906,6 +941,71 @@ fn set_launch_at_login(app: &tauri::AppHandle, enabled: bool) {
     };
 }
 
+/// How often the cursor is sampled while the HUD is on screen. Fast enough
+/// that the pill reacts as a hover should, slow enough to be free.
+const OVERLAY_HOVER_POLL_MS: u64 = 60;
+
+/**
+ * Reports whether the pointer is over the HUD, because the HUD cannot see it.
+ *
+ * WebKit raises `mouseenter` from an `NSTrackingArea` that only fires for the
+ * key window, or at most the active application. The HUD is neither by
+ * construction: it is built non-focusable so it can never steal focus from the
+ * app being dictated into, and it is on screen precisely when some other app is
+ * frontmost. So no `pointerenter` ever arrives, and the pill only expanded once
+ * a click had been delivered -- clicks reach the window under the cursor
+ * whatever app owns it, and WebKit synthesises the enter it never sent.
+ *
+ * Sampling the cursor from the host sidesteps the whole question. The event is
+ * emitted only when the answer changes, so the webview is idle while nothing
+ * is happening.
+ */
+fn watch_overlay_hover(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut inside = false;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(OVERLAY_HOVER_POLL_MS)).await;
+
+            let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) else {
+                continue;
+            };
+            // A hidden HUD cannot be hovered, and asking a hidden window for
+            // its bounds is wasted work on every tick it stays hidden.
+            if !matches!(overlay.is_visible(), Ok(true)) {
+                if inside {
+                    inside = false;
+                    app.state::<AppState>()
+                        .overlay_hovered
+                        .store(false, Ordering::Relaxed);
+                    let _ = overlay.emit_to(OVERLAY_LABEL, "overlay-hover", false);
+                }
+                continue;
+            }
+
+            let (Ok(cursor), Ok(origin), Ok(size)) = (
+                app.cursor_position(),
+                overlay.outer_position(),
+                overlay.outer_size(),
+            ) else {
+                continue;
+            };
+
+            let over = cursor.x >= origin.x as f64
+                && cursor.x < (origin.x + size.width as i32) as f64
+                && cursor.y >= origin.y as f64
+                && cursor.y < (origin.y + size.height as i32) as f64;
+
+            if over != inside {
+                inside = over;
+                app.state::<AppState>()
+                    .overlay_hovered
+                    .store(over, Ordering::Relaxed);
+                let _ = overlay.emit_to(OVERLAY_LABEL, "overlay-hover", over);
+            }
+        }
+    });
+}
+
 /// Builds the dictation HUD: frameless, transparent, and never focusable.
 fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     WebviewWindowBuilder::new(
@@ -924,6 +1024,7 @@ fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .skip_taskbar(true)
     // Load-bearing: a focusable HUD would steal focus from the app being
     // dictated into, and the synthetic paste would land in Waveform.
+    .focusable(false)
     .focused(false)
     .visible(false)
     .build()?;

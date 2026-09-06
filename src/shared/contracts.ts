@@ -144,6 +144,8 @@ export interface DesktopApi {
   openPrivacySettings(pane: PrivacyPane): Promise<void>;
 
   toggleDictation(): Promise<void>;
+  startOverlayDictation(): Promise<void>;
+  acceptDictation(): Promise<void>;
   polishDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
   previewIndicator(): Promise<void>;
@@ -167,6 +169,9 @@ export interface DesktopApi {
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;
+  /** Whether the pointer is over the HUD. The HUD cannot detect this itself:
+      it is never the key window, so WebKit sends it no pointer-enter. */
+  onOverlayHover(listener: (over: boolean) => void): () => void;
   onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
   reportDictationState(status: DictationStatus): void;
   reportDictationPhrase(phrase: DictationPhrase): void;

@@ -1,5 +1,6 @@
 import { AudioCapture } from "./audio/capture";
 import { microphoneDevices } from "../shared/microphones";
+import { getHotkeyBinding } from "../shared/hotkeys";
 import type {
   DictationCommand,
   DictationMode,
@@ -41,7 +42,8 @@ const hud = requireElement<HTMLElement>("hud");
 const srLabel = requireElement<HTMLElement>("hud-label");
 const canvas = requireElement<HTMLCanvasElement>("wave");
 const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
-const polishButton = requireElement<HTMLButtonElement>("hud-polish");
+const micButton = requireElement<HTMLButtonElement>("hud-mic");
+const acceptButton = requireElement<HTMLButtonElement>("hud-accept");
 const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
@@ -57,6 +59,8 @@ let lingerTimer: ReturnType<typeof setTimeout> | null = null;
 let phase = 0;
 let microphoneDeviceId = "";
 let showFlowBarAlways = false;
+/** Last hover answer from the host; see the `onOverlayHover` subscription. */
+let pointerOver = false;
 
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
@@ -76,19 +80,75 @@ installTauriBridge();
 void host().getSettings().then((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
   showFlowBarAlways = settings.showFlowBarAlways;
+  micButton.title = dictationTooltip(settings.hotkeyId);
   if (showFlowBarAlways) showIdle();
 });
 host().onSettingsChanged((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
   showFlowBarAlways = settings.showFlowBarAlways;
+  micButton.title = dictationTooltip(settings.hotkeyId);
 });
+
+function dictationTooltip(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): string {
+  const binding = getHotkeyBinding(hotkeyId);
+  return binding ? `Dictate · ${binding.label}` : "Dictate";
+}
 
 resizeCanvasForDisplay();
 window.addEventListener("resize", resizeCanvasForDisplay);
+new ResizeObserver(resizeCanvasForDisplay).observe(canvas);
 enableDragging();
 
+/*
+ * Hover is reported by the host, not observed here. The HUD is built
+ * non-focusable so it can never steal focus from the app being dictated into,
+ * which also means WebKit never sends it a pointer-enter: its tracking area
+ * only fires for the key window. Listening for `pointerenter` left the pill
+ * inert until a click had been delivered.
+ *
+ * `pointerleave` is still worth keeping. It fires reliably once the pointer
+ * has been inside, and it beats the next poll, so leaving stays crisp.
+ */
+host().onOverlayHover((over) => {
+  pointerOver = over;
+  if (state === "idle") hud.dataset.expanded = over ? "true" : "false";
+});
+hud.addEventListener("pointerleave", () => {
+  pointerOver = false;
+  hud.dataset.expanded = "false";
+});
+hud.addEventListener("focusin", (event) => {
+  if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {
+    hud.dataset.expanded = "true";
+  }
+});
+hud.addEventListener("focusout", (event) => {
+  if (!hud.contains(event.relatedTarget as Node | null) && !pointerOver) {
+    hud.dataset.expanded = "false";
+  }
+});
+
 cancelButton.addEventListener("click", () => void host().cancelDictation());
-polishButton.addEventListener("click", () => void host().polishDictation());
+micButton.addEventListener("click", async () => {
+  if (state !== "idle") return;
+  micButton.disabled = true;
+  try {
+    await host().startOverlayDictation();
+  } catch {
+    setState("error");
+    scheduleIdle();
+  } finally {
+    micButton.disabled = false;
+  }
+});
+acceptButton.addEventListener("click", async () => {
+  acceptButton.disabled = true;
+  try {
+    await host().acceptDictation();
+  } catch {
+    acceptButton.disabled = false;
+  }
+});
 
 host().onDictationCommand((command) => void handleCommand(command));
 
@@ -108,6 +168,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "fail") {
     cancelLinger();
     previewing = false;
+    hud.dataset.mode = "hold";
     setState("error");
     startAnimation();
     scheduleIdle();
@@ -130,14 +191,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "start") {
     cancelLinger();
     previewing = false;
-    // Polish needs a key; offering the button without one would only ever
-    // produce an error.
-    void host()
-      .getAiStatus()
-      .then((status) => {
-        polishButton.hidden = !status.hasApiKey;
-      })
-      .catch(() => undefined);
+    acceptButton.disabled = false;
     if (capture.isRunning) {
       setState("listening");
       return;
@@ -164,6 +218,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   }
 
   capture.stop();
+  acceptButton.disabled = true;
   syncDerivedState();
   scheduleIdle();
 }
@@ -182,7 +237,7 @@ async function syncAvailableMicrophones(): Promise<void> {
 function startPreview(): void {
   cancelLinger();
   previewing = true;
-  mode = "hold";
+  mode = "latched";
   hud.dataset.mode = mode;
   setState("listening");
   startAnimation();
@@ -234,7 +289,18 @@ function finish(): void {
   hud.dataset.state = "idle";
   hud.dataset.visible = showFlowBarAlways ? "true" : "false";
   srLabel.textContent = STATE_LABEL.idle;
+  syncIdleHover();
   host().reportDictationState({ state: "idle", sink, mode });
+}
+
+/**
+ * Accepting or cancelling collapses the pill under a pointer that never left
+ * it, so nothing else would tell the bar it is still hovered until the cursor
+ * moved away and back.
+ */
+function syncIdleHover(): void {
+  const hovered = pointerOver && hud.dataset.visible === "true";
+  hud.dataset.expanded = hovered ? "true" : "false";
 }
 
 /** Renders the persistent Wave Bar without starting capture or reporting a session. */
@@ -249,14 +315,17 @@ function showIdle(): void {
   hud.dataset.state = "idle";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL.idle;
+  syncIdleHover();
 }
 
 function setState(next: DictationState): void {
+  hud.dataset.expanded = "false";
   const changed = next !== state;
   state = next;
   hud.dataset.state = next;
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL[next];
+  if (next === "rewriting" || next === "error") acceptButton.disabled = true;
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {
@@ -355,7 +424,7 @@ function fillTargets(): void {
 
 function draw(): void {
   if (!context) return;
-  const { width, height } = canvas.getBoundingClientRect();
+  const { width, height } = meterSize();
   context.clearRect(0, 0, width, height);
 
   const total = BAR_COUNT * BAR_WIDTH + (BAR_COUNT - 1) * BAR_GAP;
@@ -420,10 +489,22 @@ function enableDragging(): void {
   hud.addEventListener("pointercancel", end);
 }
 
+/**
+ * The meter's layout size, which is not what `getBoundingClientRect` reports:
+ * the controls layer scales from 0.5 to 1 as it is revealed, and a rect
+ * carries ancestor transforms. Measuring that way sized the backing store
+ * against a half-scale canvas and drew the bars at twice the size they should
+ * be. `clientWidth` is the untransformed box.
+ */
+function meterSize(): { width: number; height: number } {
+  return { width: canvas.clientWidth, height: canvas.clientHeight };
+}
+
 /** Backs the canvas with real device pixels so the bars are not blurry. */
 function resizeCanvasForDisplay(): void {
   const ratio = window.devicePixelRatio || 1;
-  const { width, height } = canvas.getBoundingClientRect();
+  const { width, height } = meterSize();
+  if (width === 0 || height === 0) return;
   canvas.width = Math.round(width * ratio);
   canvas.height = Math.round(height * ratio);
   context?.setTransform(ratio, 0, 0, ratio, 0, 0);

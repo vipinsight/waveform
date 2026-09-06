@@ -6,20 +6,29 @@
     <link rel="stylesheet" href="./overlay.css" />
   </head>
   <body>
-    <div id="hud" class="hud" data-state="idle" title="Drag to move">
-      <button id="hud-cancel" class="hud-cancel" type="button" aria-label="Cancel">
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <div id="hud" class="hud" data-state="idle" tabindex="0" role="group" aria-label="Dictation controls">
+      <button id="hud-mic" class="hud-mic" type="button" aria-label="Start dictation" title="Dictate">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
+          <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
 
-      <canvas id="wave" class="wave" width="240" height="80"></canvas>
+      <div class="hud-session">
+        <button id="hud-cancel" class="hud-cancel" type="button" aria-label="Cancel">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
 
-      <button id="hud-polish" class="hud-polish" type="button" aria-label="Polish and insert">
-        <span class="polish-mark" aria-hidden="true">
-          <i></i><i></i><i></i>
-        </span>
-      </button>
+        <canvas id="wave" class="wave" width="240" height="80"></canvas>
+
+        <button id="hud-accept" class="hud-accept" type="button" aria-label="Accept dictation" title="Accept dictation">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="m4 8 2.5 2.5L12 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <span id="hud-label" class="visually-hidden" aria-live="polite">Idle</span>
     <script src="./overlay.js"></script>

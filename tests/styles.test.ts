@@ -37,10 +37,17 @@ describe("stylesheet covers the markup", () => {
     expect(unstyled).toEqual([]);
   });
 
-  it("restores the listening meter after the idle Wave Bar", () => {
+  /*
+   * Cancel and accept were once hidden with `display: none` in the idle state
+   * and restored one selector at a time; accept was missed, so a session came
+   * back with no way to finish it. The controls now share one layer that is
+   * revealed for every non-idle state at once.
+   */
+  it("reveals the session controls for every state but idle", () => {
     expect(overlayCss).toContain(
-      '.hud[data-state]:not([data-state="idle"]) .wave {\n  display: block;\n}',
+      '.hud[data-state]:not([data-state="idle"]) .hud-session',
     );
+    expect(overlayCss).not.toMatch(/\.hud\[data-state="idle"\][^{]*\{[^}]*display:\s*none/);
   });
 });
 

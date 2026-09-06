@@ -363,6 +363,17 @@ impl Dictation {
         self.begin_session("transcript", "latched").await;
     }
 
+    /// The floating microphone starts hands-free dictation in the focused app.
+    pub async fn start_from_overlay(self: &Arc<Self>) {
+        self.begin_session("insert", "latched").await;
+    }
+
+    /// Accept only ends an existing session; repeated clicks cannot start one.
+    pub async fn accept_from_overlay(self: &Arc<Self>) {
+        self.gestures.lock().await.stop();
+        self.end_session("stop").await;
+    }
+
     /// Ends a running session and rewrites what was said before inserting it.
     pub async fn stop_and_polish(self: &Arc<Self>) {
         if self.session.lock().await.is_none() {
