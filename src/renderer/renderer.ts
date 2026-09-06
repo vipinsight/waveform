@@ -14,7 +14,12 @@ import {
   getHotkeyBinding,
   isHotkeyBindingId,
 } from "../shared/hotkeys";
-import { SPEECH_MODELS, getSpeechModel, isSpeechModelId } from "../shared/models";
+import {
+  SPEECH_MODELS,
+  getSpeechModel,
+  isSpeechModelId,
+  type SpeechEngine,
+} from "../shared/models";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import {
@@ -556,10 +561,14 @@ function renderSetup(): void {
 }
 
 /** The command that installs the runtime for the selected model. */
+const ENGINE_SETUP_COMMANDS: Record<SpeechEngine, string> = {
+  nemo: "pnpm setup:model",
+  qwen: "pnpm setup:qwen",
+  whisper: "pnpm setup:whisper",
+};
+
 function engineSetupCommand(): string {
-  return getSpeechModel(settings.modelId).engine === "qwen"
-    ? "pnpm setup:qwen"
-    : "pnpm setup:model";
+  return ENGINE_SETUP_COMMANDS[getSpeechModel(settings.modelId).engine];
 }
 
 /** Joins labels the way a sentence would: "a, b and c". */

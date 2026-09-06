@@ -549,11 +549,16 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
-        // Remembers the main window's size and position. The overlay is
+        // Remembers the main window's size and position, but never restores
+        // visibility: every launch starts with the main window hidden. The overlay is
         // excluded: it is placed deliberately and its position is already
         // persisted in settings.
         .plugin(
             tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
                 .with_denylist(&[OVERLAY_LABEL])
                 .build(),
         )

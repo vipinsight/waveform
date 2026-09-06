@@ -4,6 +4,7 @@ Waveform is a small macOS app for private, local voice transcription. Choose bet
 
 - [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B)
+- [OpenAI Whisper](https://github.com/openai/whisper) `turbo` (large-v3-turbo)
 
 Hold a key anywhere in macOS, speak, and the text lands in whatever you were
 typing into. Audio stays on this Mac.
@@ -15,7 +16,7 @@ typing into. Audio stays on this Mac.
 - Rust and Cargo
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
 - Node.js 20 or newer
-- Python 3.9 or newer for Qwen3-ASR
+- Python 3.9 or newer for Qwen3-ASR and Whisper
 - Internet access for initial runtime and model downloads
 
 ## Setup
@@ -23,14 +24,22 @@ typing into. Audio stays on this Mac.
 ```bash
 pnpm install
 pnpm setup:model
-pnpm setup:qwen
+pnpm setup:qwen      # optional
+pnpm setup:whisper   # optional
 pnpm app
 ```
 
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
 `setup:qwen` creates an isolated runtime in `~/Library/Application Support/Waveform/qwen`,
-installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B. Model
-weights remain in local Hugging Face and NeMo caches.
+installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B.
+`setup:whisper` does the same for OpenAI's own `openai-whisper` package under
+`~/Library/Application Support/Waveform/whisper`, and downloads the `turbo`
+weights. Each engine keeps its own environment, because they pin different
+torch versions and one failing to resolve should not take the others with it.
+Model weights remain in local Hugging Face, NeMo and Whisper caches.
+
+Install only the engines you intend to use. Waveform names the missing command
+when a model is selected whose runtime is not present.
 
 Grant microphone permission when macOS asks.
 
@@ -148,6 +157,9 @@ press the shortcut. Your clipboard is restored afterwards.
 
 ## Living in the menu bar
 
+Waveform starts with its main window hidden. Open it from the Dock or menu bar
+when needed; dictation shortcuts remain available in the background.
+
 Closing the window does not quit Waveform: the shortcut keeps working with
 nothing on screen, and the Dock icon or the menu bar icon brings the window
 back. **Settings → General** can drop the app out of the Dock entirely while
@@ -214,6 +226,7 @@ pnpm test:rust   # Rust only
 pnpm typecheck   # check TypeScript
 pnpm build       # build the frontend and the native helper into dist/
 pnpm setup:qwen  # install and download Qwen3-ASR 0.6B
+pnpm setup:whisper  # install and download OpenAI Whisper turbo
 pnpm icon        # regenerate the app icon and .icns
 ```
 

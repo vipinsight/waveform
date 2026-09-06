@@ -1,8 +1,10 @@
 //! Runs the local speech engine and turns WAV bytes into text.
 //!
-//! Two engines with very different shapes sit behind one interface: Parakeet
-//! serves an OpenAI-compatible HTTP endpoint, while Qwen is a Python worker
-//! spoken to over newline-delimited JSON on stdin/stdout.
+//! Two shapes sit behind one interface. Parakeet serves an OpenAI-compatible
+//! HTTP endpoint. Qwen and Whisper are Python workers spoken to over
+//! newline-delimited JSON on stdin/stdout -- the same protocol, so they share
+//! one reader loop, one pending-job table and one readiness handshake, and
+//! differ only in which interpreter and script are launched.
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -36,9 +38,10 @@ pub struct ModelDefinition {
 pub enum Engine {
     Nemo,
     Qwen,
+    Whisper,
 }
 
-pub const MODELS: [ModelDefinition; 2] = [
+pub const MODELS: [ModelDefinition; 3] = [
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
         short_label: "Parakeet 0.6B",
@@ -51,14 +54,69 @@ pub const MODELS: [ModelDefinition; 2] = [
         remote_id: "Qwen/Qwen3-ASR-0.6B",
         engine: Engine::Qwen,
     },
+    ModelDefinition {
+        id: "whisper-turbo",
+        short_label: "Whisper Turbo",
+        // What `whisper.load_model` takes, not a Hugging Face path: the
+        // official package names its own weights.
+        remote_id: "turbo",
+        engine: Engine::Whisper,
+    },
 ];
+
+/// Everything that differs between the two Python engines.
+///
+/// Each keeps its own virtual environment: they pin different torch versions,
+/// and one failing to resolve should not take the other down with it.
+struct WorkerSpec {
+    /// How the engine is named in anything the user reads.
+    label: &'static str,
+    /// Virtual environment under Application Support, and beside the checkout.
+    venv: &'static str,
+    project_venv: &'static str,
+    /// Overrides the interpreter, for running against another install.
+    env_var: &'static str,
+    script: &'static str,
+    setup_command: &'static str,
+}
+
+const QWEN_WORKER: WorkerSpec = WorkerSpec {
+    label: "Qwen3-ASR",
+    venv: "qwen",
+    project_venv: ".venv-qwen",
+    env_var: "QWEN_ASR_PYTHON",
+    script: "qwen-worker.py",
+    setup_command: "pnpm setup:qwen",
+};
+
+const WHISPER_WORKER: WorkerSpec = WorkerSpec {
+    label: "Whisper",
+    venv: "whisper",
+    project_venv: ".venv-whisper",
+    env_var: "WAVEFORM_WHISPER_PYTHON",
+    script: "whisper-worker.py",
+    setup_command: "pnpm setup:whisper",
+};
+
+/// The worker behind an engine, or none for Parakeet, which is not one.
+fn worker_spec(engine: Engine) -> Option<&'static WorkerSpec> {
+    match engine {
+        Engine::Nemo => None,
+        Engine::Qwen => Some(&QWEN_WORKER),
+        Engine::Whisper => Some(&WHISPER_WORKER),
+    }
+}
 
 pub fn model(id: &str) -> &'static ModelDefinition {
     MODELS.iter().find(|m| m.id == id).unwrap_or(&MODELS[0])
 }
 
-struct QwenState {
+struct WorkerState {
     child: Child,
+    /// Which engine this worker serves. Qwen and Whisper share the one slot, so
+    /// "is a worker ready?" is not a useful question on its own -- a Qwen
+    /// worker left running would otherwise be handed Whisper's audio.
+    engine: Engine,
     ready: bool,
     next_job: u64,
 }
@@ -72,7 +130,7 @@ pub struct ModelServer {
     /// Most recent stage change, so a window that loads late can pull it.
     /// With a warm engine "ready" fires before any window exists.
     last_event: Mutex<ModelEvent>,
-    qwen: Mutex<Option<QwenState>>,
+    worker: Mutex<Option<WorkerState>>,
     /// Held so the engine can be shut down. Parakeet serves over HTTP and does
     /// not exit on its own, so dropping this handle would leave a process of
     /// several hundred megabytes running after the app quits.
@@ -102,7 +160,7 @@ impl ModelServer {
             resource_dir,
             engine_pid: Mutex::new(None),
             last_event: Mutex::new(initial),
-            qwen: Mutex::new(None),
+            worker: Mutex::new(None),
             parakeet: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
@@ -129,11 +187,10 @@ impl ModelServer {
     /// user discovering it when their first phrase fails.
     pub async fn is_installed(&self) -> bool {
         let id = self.selected.lock().await.clone();
-        match model(&id).engine {
-            Engine::Nemo => find_nemo_runtime().is_some(),
-            Engine::Qwen => {
-                find_qwen_runtime(&self.user_data, &self.project_root).is_some()
-                    && self.qwen_worker_script().is_file()
+        match worker_spec(model(&id).engine) {
+            None => find_nemo_runtime().is_some(),
+            Some(spec) => {
+                self.find_worker_runtime(spec).is_some() && self.worker_script(spec).is_file()
             }
         }
     }
@@ -157,14 +214,14 @@ impl ModelServer {
         let id = self.selected.lock().await.clone();
         let definition = model(&id);
 
-        let ready = match definition.engine {
-            Engine::Nemo => self.parakeet_ready().await,
-            Engine::Qwen => self
-                .qwen
+        let ready = match worker_spec(definition.engine) {
+            None => self.parakeet_ready().await,
+            Some(_) => self
+                .worker
                 .lock()
                 .await
                 .as_ref()
-                .map(|state| state.ready)
+                .map(|state| state.ready && state.engine == definition.engine)
                 .unwrap_or(false),
         };
         if ready {
@@ -180,9 +237,16 @@ impl ModelServer {
         )
         .await;
 
-        match definition.engine {
-            Engine::Nemo => self.start_parakeet(definition, &id).await?,
-            Engine::Qwen => self.start_qwen(definition, &id).await?,
+        match worker_spec(definition.engine) {
+            None => self.start_parakeet(definition, &id).await?,
+            Some(spec) => {
+                // Whichever engine was running, it is not this one, and both
+                // are hundreds of megabytes of Python.
+                if let Some(mut previous) = self.worker.lock().await.take() {
+                    let _ = previous.child.kill().await;
+                }
+                self.start_worker(spec, definition, &id).await?
+            }
         }
 
         self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
@@ -192,7 +256,7 @@ impl ModelServer {
 
     /// Shuts the engine down. Called when the app exits.
     pub async fn stop(&self) {
-        if let Some(mut state) = self.qwen.lock().await.take() {
+        if let Some(mut state) = self.worker.lock().await.take() {
             let _ = state.child.kill().await;
         }
         if let Some(mut child) = self.parakeet.lock().await.take() {
@@ -211,9 +275,9 @@ impl ModelServer {
         self.start().await?;
 
         let id = self.selected.lock().await.clone();
-        match model(&id).engine {
-            Engine::Nemo => self.transcribe_parakeet(wav).await,
-            Engine::Qwen => self.transcribe_qwen(wav).await,
+        match worker_spec(model(&id).engine) {
+            None => self.transcribe_parakeet(wav).await,
+            Some(spec) => self.transcribe_worker(spec, wav).await,
         }
     }
 
@@ -261,15 +325,29 @@ impl ModelServer {
         Err("Timed out while loading Parakeet model.".into())
     }
 
-    async fn start_qwen(&self, definition: &ModelDefinition, id: &str) -> Result<(), String> {
-        let python = find_qwen_runtime(&self.user_data, &self.project_root)
-            .ok_or("Qwen3-ASR is not installed. Run `pnpm setup:qwen`, then try again.")?;
+    /// Starts a Python worker and waits for it to say it is ready.
+    async fn start_worker(
+        &self,
+        spec: &'static WorkerSpec,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        let python = self.find_worker_runtime(spec).ok_or_else(|| {
+            format!(
+                "{} is not installed. Run `{}`, then try again.",
+                spec.label, spec.setup_command
+            )
+        })?;
 
-        self.emit_stage("loading", "Loading Qwen3-ASR on Apple Silicon…", id)
-            .await;
+        self.emit_stage(
+            "loading",
+            &format!("Loading {} on Apple Silicon…", spec.label),
+            id,
+        )
+        .await;
 
         let mut child = Command::new(python)
-            .arg(self.qwen_worker_script())
+            .arg(self.worker_script(spec))
             .args(["--model", definition.remote_id])
             .env("PYTHONUNBUFFERED", "1")
             .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -277,12 +355,16 @@ impl ModelServer {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|error| format!("Could not start Qwen worker: {error}"))?;
+            .map_err(|error| format!("Could not start the {} worker: {error}", spec.label))?;
 
-        let stdout = child.stdout.take().ok_or("Qwen worker has no stdout.")?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| format!("The {} worker has no stdout.", spec.label))?;
         *self.engine_pid.lock().await = child.id();
-        *self.qwen.lock().await = Some(QwenState {
+        *self.worker.lock().await = Some(WorkerState {
             child,
+            engine: definition.engine,
             ready: false,
             next_job: 0,
         });
@@ -314,7 +396,7 @@ impl ModelServer {
                                 None => Err(message
                                     .get("message")
                                     .and_then(|v| v.as_str())
-                                    .unwrap_or("Qwen3-ASR failed.")
+                                    .unwrap_or(spec.label)
                                     .to_string()),
                             };
                             let _ = sender.send(outcome);
@@ -327,10 +409,12 @@ impl ModelServer {
 
         tokio::select! {
             _ = ready_flag.notified() => {}
-            _ = sleep(START_TIMEOUT) => return Err("Timed out while loading Qwen3-ASR model.".into()),
+            _ = sleep(START_TIMEOUT) => {
+                return Err(format!("Timed out while loading the {} model.", spec.label))
+            }
         }
 
-        if let Some(state) = self.qwen.lock().await.as_mut() {
+        if let Some(state) = self.worker.lock().await.as_mut() {
             state.ready = true;
         }
         Ok(())
@@ -338,14 +422,26 @@ impl ModelServer {
 
     /// Prefers the copy inside the bundle, so a distributed app does not depend
     /// on the machine it was built on still having the repository.
-    fn qwen_worker_script(&self) -> PathBuf {
+    fn worker_script(&self, spec: &WorkerSpec) -> PathBuf {
         if let Some(dir) = &self.resource_dir {
-            let bundled = dir.join("qwen-worker.py");
+            let bundled = dir.join(spec.script);
             if bundled.is_file() {
                 return bundled;
             }
         }
-        self.project_root.join("scripts/qwen-worker.py")
+        self.project_root.join("scripts").join(spec.script)
+    }
+
+    /// The interpreter for an engine: an override, the environment the setup
+    /// script builds, or one beside the checkout.
+    fn find_worker_runtime(&self, spec: &WorkerSpec) -> Option<PathBuf> {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(configured) = std::env::var(spec.env_var) {
+            candidates.push(PathBuf::from(configured));
+        }
+        candidates.push(self.user_data.join(spec.venv).join("bin/python3"));
+        candidates.push(self.project_root.join(spec.project_venv).join("bin/python3"));
+        candidates.into_iter().find(|path| is_executable(path))
     }
 
     async fn parakeet_ready(&self) -> bool {
@@ -399,17 +495,22 @@ impl ModelServer {
             .ok_or_else(|| "Transcription response did not contain text.".to_string())
     }
 
-    async fn transcribe_qwen(&self, wav: Vec<u8>) -> Result<String, String> {
+    async fn transcribe_worker(
+        &self,
+        spec: &WorkerSpec,
+        wav: Vec<u8>,
+    ) -> Result<String, String> {
         let job_id;
         let request;
         {
-            let mut guard = self.qwen.lock().await;
-            let state = guard.as_mut().ok_or("Qwen3-ASR is not ready.")?;
-            if !state.ready {
-                return Err("Qwen3-ASR is not ready.".into());
+            let mut guard = self.worker.lock().await;
+            let not_ready = || format!("{} is not ready.", spec.label);
+            let state = guard.as_mut().ok_or_else(not_ready)?;
+            if !state.ready || worker_spec(state.engine).map(|s| s.script) != Some(spec.script) {
+                return Err(not_ready());
             }
             state.next_job += 1;
-            job_id = format!("qwen-{}", state.next_job);
+            job_id = format!("{}-{}", spec.venv, state.next_job);
 
             use base64::Engine as _;
             request = serde_json::json!({
@@ -418,11 +519,15 @@ impl ModelServer {
             })
             .to_string();
 
-            let stdin = state.child.stdin.as_mut().ok_or("Qwen worker has no stdin.")?;
+            let stdin = state
+                .child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| format!("The {} worker has no stdin.", spec.label))?;
             stdin
                 .write_all(format!("{request}\n").as_bytes())
                 .await
-                .map_err(|error| format!("Could not reach Qwen worker: {error}"))?;
+                .map_err(|error| format!("Could not reach the {} worker: {error}", spec.label))?;
             stdin.flush().await.ok();
         }
 
@@ -430,10 +535,12 @@ impl ModelServer {
         self.pending.lock().await.push((job_id.clone(), sender));
 
         tokio::select! {
-            outcome = receiver => outcome.unwrap_or_else(|_| Err("Qwen worker stopped.".into())),
+            outcome = receiver => {
+                outcome.unwrap_or_else(|_| Err(format!("The {} worker stopped.", spec.label)))
+            }
             _ = sleep(TRANSCRIBE_TIMEOUT) => {
                 self.pending.lock().await.retain(|(id, _)| id != &job_id);
-                Err("Qwen3-ASR transcription timed out.".into())
+                Err(format!("{} transcription timed out.", spec.label))
             }
         }
     }
@@ -462,16 +569,6 @@ fn find_nemo_runtime() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("PATH") {
         candidates.extend(path.split(':').map(|dir| Path::new(dir).join("nemo-speech")));
     }
-    candidates.into_iter().find(|path| is_executable(path))
-}
-
-fn find_qwen_runtime(user_data: &Path, project_root: &Path) -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(configured) = std::env::var("QWEN_ASR_PYTHON") {
-        candidates.push(PathBuf::from(configured));
-    }
-    candidates.push(user_data.join("qwen/bin/python3"));
-    candidates.push(project_root.join(".venv-qwen/bin/python3"));
     candidates.into_iter().find(|path| is_executable(path))
 }
 
