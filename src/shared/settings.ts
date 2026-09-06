@@ -19,6 +19,10 @@ export type OverlayPlacement = "bottom" | "top";
 
 export interface AppSettings {
   modelId: SpeechModelId;
+  /** Empty means let macOS choose its current default input. */
+  microphoneDeviceId: string;
+  /** Last readable device label, used by the menu bar while the window is hidden. */
+  microphoneDeviceName: string;
   /** Modifier key that starts dictation anywhere in macOS. */
   hotkeyId: HotkeyBindingId;
   /** Paste each finished phrase into whichever app is frontmost. */
@@ -46,12 +50,18 @@ export interface AppSettings {
   polishShortcut: string;
   /** Show a menu bar icon. */
   menuBarIcon: boolean;
+  /** Start Waveform when this Mac's user signs in. */
+  launchAtLogin: boolean;
+  /** Keep the compact listening indicator visible while idle. */
+  showFlowBarAlways: boolean;
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelId: DEFAULT_SPEECH_MODEL_ID,
+  microphoneDeviceId: "",
+  microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
   insertIntoFocusedApp: true,
   holdMs: 300,
@@ -66,6 +76,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   polishPrompt: DEFAULT_POLISH_PROMPT,
   polishShortcut: "Alt+1",
   menuBarIcon: true,
+  launchAtLogin: false,
+  showFlowBarAlways: false,
   hideDockWhenClosed: false,
 };
 
@@ -84,6 +96,8 @@ export function normalizeSettings(
   const input = isRecord(value) ? value : {};
   return {
     modelId: isSpeechModelId(input.modelId) ? input.modelId : base.modelId,
+    microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
+    microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,
     insertIntoFocusedApp:
       typeof input.insertIntoFocusedApp === "boolean"
@@ -110,6 +124,12 @@ export function normalizeSettings(
       : base.polishShortcut,
     menuBarIcon:
       typeof input.menuBarIcon === "boolean" ? input.menuBarIcon : base.menuBarIcon,
+    launchAtLogin:
+      typeof input.launchAtLogin === "boolean" ? input.launchAtLogin : base.launchAtLogin,
+    showFlowBarAlways:
+      typeof input.showFlowBarAlways === "boolean"
+        ? input.showFlowBarAlways
+        : base.showFlowBarAlways,
     hideDockWhenClosed:
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed
@@ -123,6 +143,11 @@ function text(value: unknown, fallback: string, maxLength: number): string {
   const trimmed = value.trim();
   if (!trimmed) return fallback;
   return trimmed.slice(0, maxLength);
+}
+
+/** Unlike prompts, an empty microphone id is meaningful: it selects system default. */
+function optionalText(value: unknown, fallback: string, maxLength: number): string {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
 }
 
 /**

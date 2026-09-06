@@ -50,13 +50,19 @@ gets you `cargo tauri build` and dmg packaging when you want to distribute it.
 
 macOS ties Accessibility and Input Monitoring to the code signature. The default
 ad-hoc signature is a hash of the bundle, so every rebuild looks like a new app
-and both permissions need granting again. Sign with a stable certificate to
-avoid that:
+and both permissions need granting again. `pnpm app` therefore signs with a real
+certificate: the one belonging to the personal developer team `H6892VVKC5`. To
+sign as a different team, or with one named certificate:
 
 ```bash
 security find-identity -v -p codesigning
-WAVEFORM_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" pnpm app
+WAVEFORM_SIGN_TEAM=TEAMID pnpm app
+WAVEFORM_SIGN_IDENTITY="Apple Development: Your Name (XXXXXXXXXX)" pnpm app
 ```
+
+Pinning the team rather than the certificate survives renewal — the name in
+parentheses is the certificate, not the team, and it changes when the
+certificate is reissued.
 
 ## Dictate anywhere
 
@@ -105,8 +111,8 @@ be granted programmatically:
 macOS ties these to the app's code signature, which is why a grant can appear
 ticked in System Settings while the app is still refused: an ad-hoc signature
 changes on every rebuild, so each build is a different app as far as the
-permission system is concerned. `pnpm app` therefore signs with the first
-code-signing certificate it finds, which keeps the identity stable. If the
+permission system is concerned. `pnpm app` therefore signs with a real
+certificate, which keeps the identity stable. If the
 permissions were first granted to an ad-hoc build, remove Waveform from both
 lists and add it again once.
 

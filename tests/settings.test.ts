@@ -14,6 +14,28 @@ describe("normalizeSettings", () => {
     expect(result.theme).toBe("dark");
   });
 
+  it("keeps the system toggles", () => {
+    const result = normalizeSettings({ launchAtLogin: true, showFlowBarAlways: true });
+    expect(result.launchAtLogin).toBe(true);
+    expect(result.showFlowBarAlways).toBe(true);
+  });
+
+  it("keeps a selected microphone, or an explicit system default", () => {
+    const selected = normalizeSettings({
+      microphoneDeviceId: "built-in-mic-id",
+      microphoneDeviceName: "MacBook Pro Microphone",
+    });
+    expect(selected.microphoneDeviceId).toBe("built-in-mic-id");
+    expect(selected.microphoneDeviceName).toBe("MacBook Pro Microphone");
+
+    const defaulted = normalizeSettings(
+      { microphoneDeviceId: "", microphoneDeviceName: "" },
+      selected,
+    );
+    expect(defaulted.microphoneDeviceId).toBe("");
+    expect(defaulted.microphoneDeviceName).toBe("");
+  });
+
   it("rejects an unknown hotkey rather than disabling the shortcut", () => {
     expect(normalizeSettings({ hotkeyId: "f13" }).hotkeyId).toBe(
       DEFAULT_SETTINGS.hotkeyId,

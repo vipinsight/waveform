@@ -54,6 +54,8 @@ let previewing = false;
 let animationFrame: number | null = null;
 let lingerTimer: ReturnType<typeof setTimeout> | null = null;
 let phase = 0;
+let microphoneDeviceId = "";
+let showFlowBarAlways = false;
 
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
@@ -64,10 +66,21 @@ const capture = new AudioCapture({
   },
   transcribe: (bytes) => host().transcribe(bytes),
   requestMicrophoneAccess: () => host().requestMicrophoneAccess(),
+  getMicrophoneDeviceId: () => microphoneDeviceId,
 });
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+
+void host().getSettings().then((settings) => {
+  microphoneDeviceId = settings.microphoneDeviceId;
+  showFlowBarAlways = settings.showFlowBarAlways;
+  if (showFlowBarAlways) showIdle();
+});
+host().onSettingsChanged((settings) => {
+  microphoneDeviceId = settings.microphoneDeviceId;
+  showFlowBarAlways = settings.showFlowBarAlways;
+});
 
 resizeCanvasForDisplay();
 window.addEventListener("resize", resizeCanvasForDisplay);
@@ -81,6 +94,11 @@ host().onDictationCommand((command) => void handleCommand(command));
 async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "preview") {
     startPreview();
+    return;
+  }
+
+  if (command.action === "idle") {
+    showIdle();
     return;
   }
 
@@ -130,6 +148,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     startAnimation();
     try {
       await capture.start();
+      void syncAvailableMicrophones();
     } catch {
       setState("error");
       scheduleIdle();
@@ -146,6 +165,23 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   capture.stop();
   syncDerivedState();
   scheduleIdle();
+}
+
+/** After first capture WebKit exposes readable labels, so populate the tray. */
+async function syncAvailableMicrophones(): Promise<void> {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    await host().setAvailableMicrophones(
+      devices
+        .filter((device) => device.kind === "audioinput" && device.deviceId !== "default")
+        .map((device, index) => ({
+          id: device.deviceId,
+          label: device.label || `Microphone ${index + 1}`,
+        })),
+    );
+  } catch {
+    // Capture itself succeeded; a missing tray refresh must not interrupt it.
+  }
 }
 
 /** Shows the HUD with synthetic levels so it can be found without dictating. */
@@ -200,10 +236,25 @@ function finish(): void {
   velocities.fill(0);
   targets.fill(0);
   state = "idle";
+  hud.dataset.mode = "hold";
   hud.dataset.state = "idle";
-  hud.dataset.visible = "false";
+  hud.dataset.visible = showFlowBarAlways ? "true" : "false";
   srLabel.textContent = STATE_LABEL.idle;
   host().reportDictationState({ state: "idle", sink, mode });
+}
+
+/** Renders the persistent Wave Bar without starting capture or reporting a session. */
+function showIdle(): void {
+  cancelLinger();
+  previewing = false;
+  stopAnimation();
+  levels.fill(0);
+  velocities.fill(0);
+  targets.fill(0);
+  state = "idle";
+  hud.dataset.state = "idle";
+  hud.dataset.visible = "true";
+  srLabel.textContent = STATE_LABEL.idle;
 }
 
 function setState(next: DictationState): void {

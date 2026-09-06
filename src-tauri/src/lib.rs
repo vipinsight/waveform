@@ -18,19 +18,21 @@ use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
 use model_server::{ModelEvent, ModelServer};
 use rewrite::{AiStatus, Rewriter};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SettingsStore};
 use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     ActivationPolicy, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartManagerExt};
 use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
@@ -55,6 +57,16 @@ pub struct AppState {
     /// a window is the worst possible place to risk that, so this one flag is
     /// kept where it can be read without waiting.
     hide_dock_when_closed: AtomicBool,
+    /// WebKit enumerates input devices; the tray uses this cached list when
+    /// Waveform's main window is closed.
+    microphones: StdMutex<Vec<MicrophoneDevice>>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MicrophoneDevice {
+    id: String,
+    label: String,
 }
 
 #[derive(Serialize)]
@@ -93,6 +105,32 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
     Ok(state.settings.lock().await.value())
 }
 
+/// Device discovery belongs to WebKit because it owns getUserMedia. Keep a
+/// short validated copy for the native menu bar, which has no media-device API.
+#[tauri::command]
+async fn set_available_microphones(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    devices: Vec<MicrophoneDevice>,
+) -> Result<(), String> {
+    let devices = devices
+        .into_iter()
+        .filter_map(|device| {
+            let id: String = device.id.trim().chars().take(1_024).collect();
+            let label: String = device.label.trim().chars().take(200).collect();
+            (!id.is_empty() && !label.is_empty()).then_some(MicrophoneDevice { id, label })
+        })
+        .take(32)
+        .collect();
+    *state.microphones.lock().map_err(|_| "Microphone list unavailable")? = devices;
+
+    let settings = state.settings.lock().await.value();
+    if settings.menu_bar_icon {
+        rebuild_tray(&app);
+    }
+    Ok(())
+}
+
 /// Applies a partial patch.
 ///
 /// The interface sends only the fields it changed. Deserializing straight into
@@ -128,10 +166,19 @@ async fn update_settings(
         state.dictation.apply_settings().await;
     }
     if next.menu_bar_icon != previous.menu_bar_icon {
+        set_tray_visibility(&app, next.menu_bar_icon);
+    }
+    if next.launch_at_login != previous.launch_at_login {
+        set_launch_at_login(&app, next.launch_at_login);
+    }
+    if next.show_flow_bar_always != previous.show_flow_bar_always {
+        state.dictation.apply_flow_bar_setting().await;
+    }
+    if next.microphone_device_id != previous.microphone_device_id
+        || next.microphone_device_name != previous.microphone_device_name
+    {
         if next.menu_bar_icon {
-            let _ = build_tray(&app);
-        } else {
-            app.remove_tray_by_id("waveform");
+            rebuild_tray(&app);
         }
     }
     state
@@ -412,6 +459,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         // Remembers the main window's size and position. The overlay is
         // excluded: it is placed deliberately and its position is already
         // persisted in settings.
@@ -462,9 +510,18 @@ pub fn run() {
                 rewriter,
                 drag_origin: Mutex::new(None),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
+                microphones: StdMutex::new(Vec::new()),
             });
 
             build_overlay_window(app.handle())?;
+
+            set_launch_at_login(app.handle(), initial.launch_at_login);
+            if initial.show_flow_bar_always {
+                let dictation = dictation.clone();
+                tauri::async_runtime::spawn(async move {
+                    dictation.apply_flow_bar_setting().await;
+                });
+            }
 
             let root = project_root();
             tauri::async_runtime::spawn(async move {
@@ -531,6 +588,7 @@ pub fn run() {
             app_version,
             get_settings,
             update_settings,
+            set_available_microphones,
             get_stats,
             get_history,
             delete_dictation,
@@ -652,11 +710,34 @@ fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 /// Runs a menu action, from either the app menu or the menu bar icon.
 fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
+    if id == "microphone-default" {
+        select_microphone_from_menu(app, String::new(), String::new());
+        return;
+    }
+    if let Some(index) = id
+        .strip_prefix("microphone-device-")
+        .and_then(|value| value.parse::<usize>().ok())
+    {
+        let device = app
+            .state::<AppState>()
+            .microphones
+            .lock()
+            .ok()
+            .and_then(|devices| devices.get(index).cloned());
+        if let Some(device) = device {
+            select_microphone_from_menu(app, device.id, device.label);
+        }
+        return;
+    }
     match id {
         "open" => present_main_window(app),
         "settings" => {
             present_main_window(app);
             let _ = app.emit_to(MAIN_LABEL, "open-settings", ());
+        }
+        "microphone-settings" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-microphone-settings", ());
         }
         "toggle-dictation" => {
             let dictation = app.state::<AppState>().dictation.clone();
@@ -671,15 +752,78 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
     }
 }
 
+/// Menu selections are settings changes too, so every WebView gets the same
+/// event and the next dictation session uses the chosen input.
+fn select_microphone_from_menu(app: &tauri::AppHandle, device_id: String, device_name: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let next = {
+            let state = app.state::<AppState>();
+            let mut settings = state.settings.lock().await;
+            let mut next = settings.value();
+            next.microphone_device_id = device_id;
+            next.microphone_device_name = device_name;
+            settings.update(next)
+        };
+        let _ = app.emit("settings-changed", &next);
+        if next.menu_bar_icon {
+            rebuild_tray(&app);
+        }
+    });
+}
+
 /// Builds the menu bar icon.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Waveform", true, None::<&str>)?;
+    let microphone_menu = Submenu::new(app, "Microphone", true)?;
+    let state = app.state::<AppState>();
+    let settings = state
+        .settings
+        .try_lock()
+        .map(|settings| settings.value())
+        .unwrap_or_default();
+    let devices = state
+        .microphones
+        .lock()
+        .map(|devices| devices.clone())
+        .unwrap_or_default();
+    let system_default = CheckMenuItem::with_id(
+        app,
+        "microphone-default",
+        "System default",
+        true,
+        settings.microphone_device_id.is_empty(),
+        None::<&str>,
+    )?;
+    microphone_menu.append(&system_default)?;
+    for (index, device) in devices.iter().enumerate() {
+        let item = CheckMenuItem::with_id(
+            app,
+            format!("microphone-device-{index}"),
+            &device.label,
+            true,
+            device.id == settings.microphone_device_id,
+            None::<&str>,
+        )?;
+        microphone_menu.append(&item)?;
+    }
+    let microphone_settings = MenuItem::with_id(
+        app,
+        "microphone-settings",
+        "Microphone settings…",
+        true,
+        None::<&str>,
+    )?;
+    microphone_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    microphone_menu.append(&microphone_settings)?;
     let menu = Menu::with_items(
         app,
         &[
             &open,
+            &PredefinedMenuItem::separator(app)?,
+            &microphone_menu,
             &PredefinedMenuItem::separator(app)?,
             &polish,
             &PredefinedMenuItem::separator(app)?,
@@ -702,6 +846,38 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
         .build(app)?;
     Ok(())
+}
+
+/// WebView commands run off the AppKit thread. Tray mutation must return to it
+/// or macOS aborts with a BoardServices threading violation.
+fn rebuild_tray(app: &tauri::AppHandle) {
+    let app = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        app.remove_tray_by_id("waveform");
+        let _ = build_tray(&app);
+    });
+}
+
+/// WebView commands run off the AppKit thread. Creating and removing a menu
+/// bar icon must both return to it or macOS terminates the process.
+fn set_tray_visibility(app: &tauri::AppHandle, visible: bool) {
+    let app = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        if visible {
+            let _ = build_tray(&app);
+        } else {
+            app.remove_tray_by_id("waveform");
+        }
+    });
+}
+
+fn set_launch_at_login(app: &tauri::AppHandle, enabled: bool) {
+    let manager = app.autolaunch();
+    let _ = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
 }
 
 /// Builds the dictation HUD: frameless, transparent, and never focusable.

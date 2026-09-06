@@ -26,13 +26,32 @@ PROFILE="${WAVEFORM_PROFILE:-release}"
 # as TCC is concerned -- while System Settings still shows the old entry ticked,
 # which looks exactly like a granted permission that stopped working. Preferring
 # a real certificate keeps the identity, and the grants, stable across rebuilds.
+#
+# Several certificates can be installed at once -- one per Apple developer team
+# -- and the first one `security` happens to list is not necessarily the right
+# one. Waveform is a personal app, so it is signed with the personal team. The
+# team is what gets pinned rather than the certificate name: the name carries a
+# per-certificate suffix that changes when the certificate is renewed, while the
+# team stays put, and so does the identity macOS grants permissions to.
+# Waveform's stable TCC identity. Override only for an intentional signing-team
+# migration; changing it makes macOS treat the rebuilt app as a new client.
+TEAM="${WAVEFORM_SIGN_TEAM:-H6892VVKC5}"
 IDENTITY="${WAVEFORM_SIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
-  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
-    | awk -F'"' '/"/ { print $2; exit }')"
+  while read -r hash name; do
+    [ -n "$hash" ] || continue
+    subject="$(security find-certificate -c "$name" -p 2>/dev/null \
+      | openssl x509 -noout -subject 2>/dev/null)"
+    case "$subject" in
+      *"OU=$TEAM"*) IDENTITY="$name"; break ;;
+    esac
+  done <<< "$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^ *[0-9]*) \([0-9A-F]*\) "\(.*\)"$/\1 \2/p')"
 fi
 if [ -z "$IDENTITY" ]; then
-  IDENTITY="-"
+  echo "No code-signing identity found for team $TEAM." >&2
+  echo "Unlock or install the Apple Development certificate for $TEAM before running pnpm app." >&2
+  exit 1
 fi
 
 cd "$ROOT"
@@ -102,13 +121,7 @@ PLIST
 
 codesign --force --deep --sign "$IDENTITY" "$APP"
 
-if [ "$IDENTITY" = "-" ]; then
-  echo
-  echo "Signed ad-hoc: no code-signing certificate was found. macOS will revoke"
-  echo "Accessibility and Input Monitoring on every rebuild."
-else
-  echo "Signed as: $IDENTITY"
-fi
+echo "Signed as: $IDENTITY"
 
 # `open` deliberately does not forward the environment. To pass overrides such
 # as NEMO_SPEECH_BIN, run the executable inside the bundle directly instead.

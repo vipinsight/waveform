@@ -112,6 +112,24 @@
           </div>
 
           <div id="history" class="history" aria-live="polite">
+            <section class="dictation-deck" id="dictation-deck" aria-live="polite">
+              <div class="deck-intro">
+                <p class="deck-status" id="deck-status">Checking setup</p>
+                <h2 class="deck-title" id="deck-title">Get ready to dictate</h2>
+                <p class="deck-description" id="deck-description">
+                  Waveform checks your shortcut, permissions, and local speech model here.
+                </p>
+              </div>
+              <div class="deck-key" aria-label="Dictation shortcut">
+                <span>Hold</span>
+                <kbd id="deck-key">—</kbd>
+              </div>
+              <div class="deck-gestures" aria-label="Dictation gestures">
+                <span><strong>Hold</strong> Speak, then release</span>
+                <span><strong>Tap twice</strong> Keep listening</span>
+              </div>
+              <button id="deck-settings" class="deck-settings" type="button">Shortcut settings</button>
+            </section>
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
               <p class="empty-hint" id="empty-hint">
@@ -188,12 +206,7 @@
     <div id="settings-panel" class="modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
       <nav class="modal-nav">
         <h2>Settings</h2>
-        <button class="nav-item" type="button" data-page="setup" aria-current="page">
-            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.6 6 5 7.4 7.8 4.6M3.6 13 5 14.4 7.8 11.6M10.8 6h5.6M10.8 13h5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            
-          <span>Setup</span><span class="nav-badge" id="setup-badge" hidden></span>
-        </button>
-        <button class="nav-item" type="button" data-page="general">
+        <button class="nav-item" type="button" data-page="general" aria-current="page">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 6.6h14M3 13.4h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7.6" cy="6.6" r="2.1" fill="var(--paper)" stroke="currentColor" stroke-width="1.5"/><circle cx="12.8" cy="13.4" r="2.1" fill="var(--paper)" stroke="currentColor" stroke-width="1.5"/></svg>
             <span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut">
@@ -202,6 +215,10 @@
         <button class="nav-item" type="button" data-page="ai">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7.7 3 8.85 6.35 12.2 7.5 8.85 8.65 7.7 12 6.55 8.65 3.2 7.5 6.55 6.35Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.9 11.6 14.5 13.4 16.3 14 14.5 14.6 13.9 16.4 13.3 14.6 11.5 14 13.3 13.4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
             <span>AI Polish</span></button>
+        <button class="nav-item" type="button" data-page="setup">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.6 6 5 7.4 7.8 4.6M3.6 13 5 14.4 7.8 11.6M10.8 6h5.6M10.8 13h5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Setup</span><span class="nav-badge" id="setup-badge" hidden></span>
+        </button>
         <div class="sidebar-spacer"></div>
         <div class="modal-foot" id="version-line">Waveform</div>
       </nav>
@@ -264,6 +281,12 @@
         <section class="settings-page" data-page="general" hidden>
           <h1 class="display">General</h1>
           <div class="card">
+  <div class="row">
+    <span class="row-label">Microphone<small>Choose MacBook microphone when available (recommended). System default follows macOS.</small></span>
+    <span class="row-actions">
+      <select id="microphone-select" aria-label="Microphone"></select>
+    </span>
+  </div>
             <div class="row">
               <span class="row-label">Speech model<small id="model-note">Runs entirely on this Mac.</small></span>
               <span class="row-actions"><select id="model-select" aria-label="Speech model"></select></span>
@@ -286,19 +309,17 @@
               <span class="row-actions"><input id="menubar-toggle" type="checkbox" class="switch" /></span>
             </div>
             <label class="row">
-              <span class="row-label">
-                Hide from the Dock when closed
-                <small id="dock-note">Runs from the menu bar alone. Closing the window never quits Waveform.</small>
-              </span>
+              <span class="row-label">Launch app at login</span>
+              <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <label class="row">
+              <span class="row-label">Show Wave Bar at all times</span>
+              <span class="row-actions"><input id="flow-bar-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <label class="row">
+              <span class="row-label">Show app in Dock</span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
-            <div class="row">
-              <span class="row-label">Listening indicator<small>Drag it anywhere while it is on screen.</small></span>
-              <span class="row-actions">
-                <button id="preview-button" class="pill-button" type="button">Show</button>
-                <button id="reset-position-button" class="pill-button" type="button">Reset</button>
-              </span>
-            </div>
           </div>
         </section>
 

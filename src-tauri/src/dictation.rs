@@ -387,6 +387,16 @@ impl Dictation {
         self.send_to_overlay("preview", "transcript", "hold").await;
     }
 
+    /// Makes the Wave Bar persist while idle, or removes it immediately.
+    pub async fn apply_flow_bar_setting(self: &Arc<Self>) {
+        if self.settings.lock().await.value().show_flow_bar_always {
+            self.show_overlay().await;
+            self.send_to_overlay("idle", "insert", "hold").await;
+        } else {
+            self.hide_overlay();
+        }
+    }
+
     async fn begin_session(self: &Arc<Self>, sink: &str, mode: &str) {
         {
             let mut session = self.session.lock().await;
@@ -555,19 +565,19 @@ impl Dictation {
             }
 
             // A rewrite is a network round trip, so the indicator stays up for
-            // it. Without one there is nothing to wait for and it should go.
+            // it. Otherwise Wave Bar decides whether idle state remains visible.
             let rewriting = self.will_rewrite().await;
             if rewriting {
                 self.send_to_overlay("busy", "insert", "hold").await;
-            } else {
-                self.hide_overlay();
             }
 
             // Idle means every queued transcription has finished, which makes
             // it the point at which the whole dictation is known.
             self.flush_pending().await;
 
-            if rewriting {
+            if self.settings.lock().await.value().show_flow_bar_always {
+                self.send_to_overlay("idle", "insert", "hold").await;
+            } else {
                 self.hide_overlay();
             }
         }

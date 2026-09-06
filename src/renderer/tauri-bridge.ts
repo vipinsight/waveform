@@ -12,6 +12,7 @@ import type {
   DictationCommand,
   DictationUpdate,
   HotkeyStatus,
+  MicrophoneDevice,
   MicrophonePermissionResult,
   ModelEvent,
   ResourceUsage,
@@ -86,6 +87,8 @@ const api: DesktopApi = {
   getSettings: () => invoke<AppSettings>("get_settings"),
   updateSettings: (patch) =>
     invoke<AppSettings>("update_settings", { patch }),
+  setAvailableMicrophones: (devices) =>
+    invoke<void>("set_available_microphones", { devices }),
   onSettingsChanged: (listener) =>
     subscribe<AppSettings>("settings-changed", listener),
 
@@ -127,6 +130,8 @@ const api: DesktopApi = {
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>("resource-usage", listener),
   onOpenSettings: (listener) => subscribe<void>("open-settings", listener),
+  onOpenMicrophoneSettings: (listener) =>
+    subscribe<void>("open-microphone-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),
 };
 

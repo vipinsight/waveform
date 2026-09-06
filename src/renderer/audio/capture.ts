@@ -9,6 +9,7 @@ export interface CaptureHandlers {
   onError(message: string): void;
   transcribe(wavBytes: Uint8Array): Promise<{ text: string }>;
   requestMicrophoneAccess(): Promise<{ granted: boolean; status: string }>;
+  getMicrophoneDeviceId(): string;
 }
 
 /**
@@ -49,11 +50,13 @@ export class AudioCapture {
     const permission = await this.handlers.requestMicrophoneAccess();
     if (!permission.granted) throw new Error(microphoneMessage(permission.status));
 
+    const deviceId = this.handlers.getMicrophoneDeviceId();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         autoGainControl: true,
         echoCancellation: true,
         noiseSuppression: true,
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
     });
 

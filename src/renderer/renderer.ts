@@ -4,6 +4,7 @@ import type {
   SavedDictation,
   DictationUpdate,
   HotkeyStatus,
+  MicrophoneDevice,
   ModelEvent,
   ResourceUsage,
   UiStage,
@@ -31,6 +32,7 @@ const element = {
   resourceSummary: requireElement<HTMLElement>("resource-summary"),
   resourceRow: requireElement<HTMLElement>("resource-row"),
   history: requireElement<HTMLElement>("history"),
+  dictationDeck: requireElement<HTMLElement>("dictation-deck"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
   shortcutHint: requireElement<HTMLElement>("shortcut-hint"),
@@ -44,19 +46,24 @@ const element = {
   versionLine: requireElement<HTMLElement>("version-line"),
   modelSelect: requireElement<HTMLSelectElement>("model-select"),
   modelNote: requireElement<HTMLElement>("model-note"),
+  microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
   menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
+  launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
+  flowBarToggle: requireElement<HTMLInputElement>("flow-bar-toggle"),
   dockToggle: requireElement<HTMLInputElement>("dock-toggle"),
-  dockNote: requireElement<HTMLElement>("dock-note"),
-  previewButton: requireElement<HTMLButtonElement>("preview-button"),
-  resetPositionButton: requireElement<HTMLButtonElement>("reset-position-button"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   emptyHeadline: requireElement<HTMLElement>("empty-headline"),
   emptyHint: requireElement<HTMLElement>("empty-hint"),
   starter: requireElement<HTMLElement>("starter"),
   starterKey: document.querySelector<HTMLElement>(".starter-key")!,
+  deckStatus: requireElement<HTMLElement>("deck-status"),
+  deckTitle: requireElement<HTMLElement>("deck-title"),
+  deckDescription: requireElement<HTMLElement>("deck-description"),
+  deckKey: requireElement<HTMLElement>("deck-key"),
+  deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
   gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
@@ -98,6 +105,7 @@ let freshId: string | null = null;
 let lifetimeSessions = 0;
 let searchOpen = false;
 let query = "";
+let microphones: MicrophoneDevice[] = [];
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -109,6 +117,7 @@ async function bootstrap(): Promise<void> {
   wireEvents();
 
   applySettings(await host().getSettings());
+  void refreshMicrophones();
   renderStats(await host().getStats());
   entries = await host().getHistory();
   renderHistory();
@@ -133,8 +142,10 @@ function wireEvents(): void {
     renderHotkeyStatus();
   });
   host().onDictationUpdate(handleDictationUpdate);
+  navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
+  host().onOpenMicrophoneSettings(() => toggleSettings(true));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
@@ -174,8 +185,10 @@ function wireEvents(): void {
   element.scrim.addEventListener("click", () => toggleSettings(false));
   element.settingsClose.addEventListener("click", () => toggleSettings(false));
   element.bannerAction.addEventListener("click", () => {
-    toggleSettings(true);
-    showSettingsPage("setup");
+    toggleSettings(true, "setup");
+  });
+  element.deckSettings.addEventListener("click", () => {
+    toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "shortcut");
   });
 
   for (const button of Array.from(
@@ -190,6 +203,14 @@ function wireEvents(): void {
   element.modelSelect.addEventListener("change", () => {
     if (!isSpeechModelId(element.modelSelect.value)) return;
     void host().selectModel(element.modelSelect.value);
+  });
+  element.microphoneSelect.addEventListener("change", () => {
+    const id = element.microphoneSelect.value;
+    const device = microphones.find((candidate) => candidate.id === id);
+    void patchSettings({
+      microphoneDeviceId: id,
+      microphoneDeviceName: device?.label ?? "",
+    });
   });
   element.hotkeySelect.addEventListener("change", () => {
     const value = element.hotkeySelect.value;
@@ -245,14 +266,14 @@ function wireEvents(): void {
   element.menubarToggle.addEventListener("change", () => {
     void patchSettings({ menuBarIcon: element.menubarToggle.checked });
   });
+  element.launchAtLoginToggle.addEventListener("change", () => {
+    void patchSettings({ launchAtLogin: element.launchAtLoginToggle.checked });
+  });
+  element.flowBarToggle.addEventListener("change", () => {
+    void patchSettings({ showFlowBarAlways: element.flowBarToggle.checked });
+  });
   element.dockToggle.addEventListener("change", () => {
-    void patchSettings({ hideDockWhenClosed: element.dockToggle.checked });
-  });
-  element.previewButton.addEventListener("click", () => {
-    void host().previewIndicator();
-  });
-  element.resetPositionButton.addEventListener("click", () => {
-    void patchSettings({ overlayX: null, overlayY: null });
+    void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
   });
 
 }
@@ -290,6 +311,7 @@ function showSettingsPage(page: string): void {
   )) {
     section.hidden = section.dataset.page !== page;
   }
+  if (page === "general") void refreshMicrophones(true);
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
@@ -302,15 +324,15 @@ function applySettings(next: AppSettings): void {
   else document.documentElement.dataset.theme = next.theme;
 
   element.modelSelect.value = next.modelId;
+  renderMicrophoneSelect();
   element.hotkeySelect.value = next.hotkeyId;
   element.insertToggle.checked = next.insertIntoFocusedApp;
   element.menubarToggle.checked = next.menuBarIcon;
-  element.dockToggle.checked = next.hideDockWhenClosed;
+  element.launchAtLoginToggle.checked = next.launchAtLogin;
+  element.flowBarToggle.checked = next.showFlowBarAlways;
+  element.dockToggle.checked = !next.hideDockWhenClosed;
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
-  element.dockNote.textContent = next.menuBarIcon
-    ? "Runs from the menu bar alone. Closing the window never quits Waveform."
-    : "Needs the menu bar icon, so there is a way back to the window.";
   element.aiModel.value = next.openRouterModel;
   element.transformToggle.checked = next.transformOnDictate;
   element.transformPrompt.value = next.transformPrompt;
@@ -325,6 +347,7 @@ function applySettings(next: AppSettings): void {
 
   renderHotkeyLabels();
   renderHotkeyStatus();
+  renderDictationDeck();
 }
 
 function populateSelects(): void {
@@ -344,6 +367,48 @@ function populateSelects(): void {
   for (const model of SUGGESTED_MODELS) {
     element.modelSuggestions.append(new Option(model, model));
   }
+}
+
+/** Browser media APIs own device enumeration; Rust receives this list for tray controls. */
+async function refreshMicrophones(requestLabels = false): Promise<void> {
+  try {
+    if (requestLabels) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    microphones = devices
+      .filter((device) => device.kind === "audioinput" && device.deviceId !== "default")
+      .map((device, index) => ({
+        id: device.deviceId,
+        label: device.label || `Microphone ${index + 1}`,
+      }));
+    renderMicrophoneSelect();
+    await host().setAvailableMicrophones(microphones);
+  } catch {
+    // Device enumeration is unavailable until WebKit can access media devices.
+    // The system-default option remains usable and capture will request access.
+  }
+}
+
+function renderMicrophoneSelect(): void {
+  const selected = settings.microphoneDeviceId;
+  element.microphoneSelect.replaceChildren(new Option("System default", ""));
+  const ordered = [...microphones].sort((first, second) => {
+    const firstRecommended = /macbook/i.test(first.label);
+    const secondRecommended = /macbook/i.test(second.label);
+    return Number(secondRecommended) - Number(firstRecommended) || first.label.localeCompare(second.label);
+  });
+  for (const device of ordered) {
+    const label = /macbook/i.test(device.label) ? `${device.label} (Recommended)` : device.label;
+    element.microphoneSelect.append(new Option(label, device.id));
+  }
+  if (selected && !microphones.some((device) => device.id === selected)) {
+    element.microphoneSelect.append(
+      new Option(`Unavailable: ${settings.microphoneDeviceName || "microphone"}`, selected),
+    );
+  }
+  element.microphoneSelect.value = selected;
 }
 
 /** Renders an Electron accelerator the way macOS writes it. */
@@ -488,7 +553,9 @@ function renderSetup(): void {
   // The banner names what is missing rather than saying "setup incomplete",
   // so the next action is obvious without opening anything.
   renderEmptyState();
-  element.setupBanner.hidden = outstanding.length === 0;
+  // Dictation deck is the single source of next action. Repeating the same
+  // warning below it pushed actual history out of the window.
+  element.setupBanner.hidden = true;
   if (outstanding.length > 0) {
     element.bannerTitle.textContent =
       outstanding.length === 1 ? "One thing left" : `${outstanding.length} things left`;
@@ -548,6 +615,7 @@ function renderHotkeyStatus(): void {
   // rather than from anything that could describe a different one.
   renderShortcutCard();
   renderSetup();
+  renderDictationDeck();
 }
 
 function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
@@ -587,6 +655,47 @@ function renderEmptyState(): void {
 
   element.emptyHeadline.textContent = "Your words will land here.";
   element.emptyHint.textContent = `Hold ${glyph} anywhere in macOS and speak. Release to transcribe, or tap twice to keep listening.`;
+}
+
+/** The first thing on Dictation is a live instruction, not a static welcome. */
+function renderDictationDeck(): void {
+  const outstanding = setupSteps().filter((step) => !step.done);
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  const key = binding?.glyph ?? "—";
+
+  element.deckKey.textContent = key;
+  if (outstanding.length > 0) {
+    element.deckStatus.textContent = "Setup needed";
+    element.deckTitle.textContent = "Finish setup, then dictate anywhere";
+    element.deckDescription.textContent = `Waveform still needs ${listPhrase(
+      outstanding.map((step) => step.label),
+    )}.`;
+    element.deckSettings.textContent = "Finish setup";
+    return;
+  }
+
+  if (!binding) {
+    element.deckStatus.textContent = "Shortcut off";
+    element.deckTitle.textContent = "Choose a key to start dictating";
+    element.deckDescription.textContent = "Pick a modifier key that will not type into the app you are using.";
+    element.deckSettings.textContent = "Choose shortcut";
+    return;
+  }
+
+  if (modelLoading) {
+    element.deckStatus.textContent = "Preparing speech model";
+    element.deckTitle.textContent = "Your words are about to be ready";
+    element.deckDescription.textContent = `${getSpeechModel(settings.modelId).shortLabel} is loading on this Mac.`;
+    element.deckSettings.textContent = "Shortcut settings";
+    return;
+  }
+
+  element.deckStatus.textContent = modelReady ? "Ready anywhere" : "Ready on demand";
+  element.deckTitle.textContent = `Hold ${key}, say it, release`;
+  element.deckDescription.textContent = modelReady
+    ? "Words will land at your cursor, then stay here for easy copying."
+    : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
+  element.deckSettings.textContent = "Shortcut settings";
 }
 
 function renderStats(stats: AppStats): void {
@@ -632,6 +741,7 @@ function handleModelEvent(event: ModelEvent): void {
   }
 
   setStatus(event.message, event.stage);
+  renderDictationDeck();
 }
 
 function handleDictationUpdate(update: DictationUpdate): void {
@@ -682,7 +792,7 @@ function renderHistory(): void {
       ? entries
       : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
 
-  element.history.replaceChildren();
+  element.history.replaceChildren(element.dictationDeck);
   element.history.classList.toggle("is-empty", matches.length === 0);
 
   if (matches.length === 0 && query !== "") {
@@ -840,11 +950,12 @@ function formatDay(timestamp: number): string {
 }
 
 
-function toggleSettings(open: boolean): void {
+function toggleSettings(open: boolean, page = "general"): void {
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
   element.scrim.hidden = !open;
   if (!open) return;
+  showSettingsPage(page);
   void host().getHotkeyStatus().then((status) => {
     hotkeyStatus = status;
     renderHotkeyStatus();

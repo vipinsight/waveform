@@ -30,6 +30,10 @@ pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
     pub model_id: String,
+    /// Empty means follow macOS's current default input device.
+    pub microphone_device_id: String,
+    /// Human-readable label shown in the tray while the main window is hidden.
+    pub microphone_device_name: String,
     pub hotkey_id: String,
     pub insert_into_focused_app: bool,
     pub hold_ms: u64,
@@ -46,6 +50,10 @@ pub struct AppSettings {
     /// Show a menu bar icon, which is the only way back to a closed window
     /// when the Dock icon is hidden.
     pub menu_bar_icon: bool,
+    /// Register Waveform as a login item for the current macOS user.
+    pub launch_at_login: bool,
+    /// Keep the compact listening indicator visible while not dictating.
+    pub show_flow_bar_always: bool,
     /// Drop out of the Dock while the window is closed, leaving only the menu
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
@@ -56,6 +64,8 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             model_id: MODEL_IDS[0].to_string(),
+            microphone_device_id: String::new(),
+            microphone_device_name: String::new(),
             hotkey_id: "fn".to_string(),
             insert_into_focused_app: true,
             hold_ms: 300,
@@ -70,6 +80,8 @@ impl Default for AppSettings {
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
             polish_shortcut: "Alt+1".to_string(),
             menu_bar_icon: true,
+            launch_at_login: false,
+            show_flow_bar_always: false,
             hide_dock_when_closed: false,
         }
     }
@@ -84,6 +96,8 @@ impl AppSettings {
         if !MODEL_IDS.contains(&self.model_id.as_str()) {
             self.model_id = base.model_id.clone();
         }
+        self.microphone_device_id = bounded_text(&self.microphone_device_id, 1_024);
+        self.microphone_device_name = bounded_text(&self.microphone_device_name, 200);
         if !HOTKEY_IDS.contains(&self.hotkey_id.as_str()) {
             self.hotkey_id = base.hotkey_id.clone();
         }
@@ -119,6 +133,11 @@ fn non_empty(value: &str, fallback: &str, max_len: usize) -> String {
         return fallback.to_string();
     }
     trimmed.chars().take(max_len).collect()
+}
+
+/// Empty is valid for a microphone id: it means system default.
+fn bounded_text(value: &str, max_len: usize) -> String {
+    value.trim().chars().take(max_len).collect()
 }
 
 pub struct SettingsStore {
@@ -171,6 +190,22 @@ mod tests {
     }
 
     #[test]
+    fn keeps_an_optional_microphone_selection() {
+        let base = AppSettings::default();
+        let mut selected = base.clone();
+        selected.microphone_device_id = "built-in-mic-id".into();
+        selected.microphone_device_name = "MacBook Pro Microphone".into();
+        let selected = selected.normalize(&base);
+        assert_eq!(selected.microphone_device_id, "built-in-mic-id");
+
+        let mut defaulted = selected.clone();
+        defaulted.microphone_device_id.clear();
+        defaulted.microphone_device_name.clear();
+        let defaulted = defaulted.normalize(&selected);
+        assert!(defaulted.microphone_device_id.is_empty());
+    }
+
+    #[test]
     fn only_accepts_offered_polish_shortcuts() {
         let base = AppSettings::default();
         let mut input = base.clone();
@@ -220,6 +255,8 @@ mod tests {
         let body = serde_json::to_string(&AppSettings::default()).expect("serializes");
         assert!(body.contains("\"modelId\""));
         assert!(body.contains("\"insertIntoFocusedApp\""));
+        assert!(body.contains("\"launchAtLogin\""));
+        assert!(body.contains("\"showFlowBarAlways\""));
         assert!(!body.contains("model_id"));
     }
 

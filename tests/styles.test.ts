@@ -36,6 +36,12 @@ describe("stylesheet covers the markup", () => {
     );
     expect(unstyled).toEqual([]);
   });
+
+  it("restores the listening meter after the idle Wave Bar", () => {
+    expect(overlayCss).toContain(
+      '.hud[data-state]:not([data-state="idle"]) .wave {\n  display: block;\n}',
+    );
+  });
 });
 
 describe("markup provides what the renderer requires", () => {

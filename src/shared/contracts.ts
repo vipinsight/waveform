@@ -34,6 +34,11 @@ export interface MicrophonePermissionResult {
   status: MicrophonePermissionStatus;
 }
 
+export interface MicrophoneDevice {
+  id: string;
+  label: string;
+}
+
 /** Where a dictation session's text should end up. */
 export type DictationSink = "insert" | "transcript";
 
@@ -51,7 +56,7 @@ export type DictationState =
 export interface DictationCommand {
   /** "preview" shows the HUD with synthetic levels, so it can be checked
       without a microphone, a loaded model, or granted permissions. */
-  action: "start" | "stop" | "cancel" | "preview" | "busy" | "fail";
+  action: "start" | "stop" | "cancel" | "preview" | "idle" | "busy" | "fail";
   sink: DictationSink;
   mode: DictationMode;
 }
@@ -128,6 +133,8 @@ export interface DesktopApi {
 
   getSettings(): Promise<AppSettings>;
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** Device labels come from the WebView; Rust uses them to populate the tray menu. */
+  setAvailableMicrophones(devices: MicrophoneDevice[]): Promise<void>;
   onSettingsChanged(listener: (settings: AppSettings) => void): () => void;
 
   getHotkeyStatus(): Promise<HotkeyStatus>;
@@ -149,6 +156,8 @@ export interface DesktopApi {
   polishSelection(): Promise<void>;
   /** The application menu asking for the settings dialog. */
   onOpenSettings(listener: () => void): () => void;
+  /** The tray's microphone submenu opens directly to its matching control. */
+  onOpenMicrophoneSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
   getHistory(): Promise<SavedDictation[]>;
   deleteDictation(id: string): Promise<SavedDictation[]>;
