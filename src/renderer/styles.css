@@ -179,7 +179,7 @@ kbd {
   /* Wide enough for the rail's contents at the insets they already have. The
      width is the only thing that changes, so every icon stays exactly where it
      was and the panel edge is the only thing in motion. */
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 70px minmax(0, 1fr);
 }
 
 /* The only place the window can be picked up.
@@ -194,7 +194,7 @@ kbd {
   /* The bottom inset belongs to the title bar rather than to the panels below,
      so the empty band above the content is draggable too. Left padding clears
      the traffic lights. */
-  padding: 0 12px var(--inset) 96px;
+  padding: 0 12px var(--inset) 112px;
   grid-column: 1 / -1;
 }
 
@@ -221,6 +221,16 @@ kbd {
 .app[data-sidebar="collapsed"] .nav-item span,
 .app[data-sidebar="collapsed"] .shortcut-card {
   display: none;
+}
+
+/*
+ * With the label gone the button still stretched the width of the rail, so its
+ * fill ran on past the icon and the icon sat at one end of its own highlight.
+ * Shrinking it to its contents leaves the icon where it was -- the padding is
+ * untouched -- and closes the fill around it evenly.
+ */
+.app[data-sidebar="collapsed"] .nav-item {
+  align-self: flex-start;
 }
 
 /* Above the rail it names, rather than across the top of the window: the strip
