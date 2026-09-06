@@ -235,6 +235,13 @@
               <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
             <span>Dictation</span></button>
+        <button class="nav-item" type="button" data-page="models">
+            <svg data-icon="box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+              <path d="m3.3 7 8.7 5 8.7-5" />
+              <path d="M12 22V12" />
+            </svg>
+            <span>Models</span></button>
         <button class="nav-item" type="button" data-page="ai">
             <svg data-icon="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 18V5" />
@@ -311,10 +318,6 @@
           <h1 class="display">General</h1>
           <div class="card">
             <div class="row">
-              <span class="row-label">Speech model</span>
-              <span class="row-actions"><select id="model-select" aria-label="Speech model"></select></span>
-            </div>
-            <div class="row">
               <span class="row-label">Theme</span>
               <span class="row-actions">
                 <div class="segmented" id="theme-toggle" role="radiogroup" aria-label="Theme">
@@ -368,6 +371,15 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
+        </section>
+
+        <section class="settings-page" data-page="models" hidden>
+          <h1 class="display">Models</h1>
+          <p class="note">
+            Speech happens on this Mac. A model needs its runtime installed and its
+            weights downloaded before it can be used.
+          </p>
+          <div class="model-list" id="model-list" role="radiogroup" aria-label="Speech model"></div>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>

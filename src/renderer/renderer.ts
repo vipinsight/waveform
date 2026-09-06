@@ -14,7 +14,6 @@ import {
   isHotkeyBindingId,
 } from "../shared/hotkeys";
 import {
-  SPEECH_MODELS,
   getSpeechModel,
   isSpeechModelId,
   type SpeechEngine,
@@ -44,7 +43,7 @@ const element = {
   sidebarToggle: requireElement<HTMLButtonElement>("sidebar-toggle"),
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
-  modelSelect: requireElement<HTMLSelectElement>("model-select"),
+  modelList: requireElement<HTMLElement>("model-list"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
@@ -205,9 +204,11 @@ function wireEvents(): void {
     if (event.key === "Escape" && settingsOpen) toggleSettings(false);
   });
 
-  element.modelSelect.addEventListener("change", () => {
-    if (!isSpeechModelId(element.modelSelect.value)) return;
-    void host().selectModel(element.modelSelect.value);
+  element.modelList.addEventListener("click", (event) => {
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
+    const id = row?.dataset.model;
+    if (!id || !isSpeechModelId(id) || row.getAttribute("aria-disabled") === "true") return;
+    void host().selectModel(id);
   });
   element.microphoneSelect.addEventListener("change", () => {
     const id = element.microphoneSelect.value;
@@ -311,6 +312,9 @@ function showSettingsPage(page: string): void {
     section.hidden = section.dataset.page !== page;
   }
   if (page === "dictation") void refreshMicrophones(true);
+  // Runtimes and weights arrive from a terminal, not from here, so the list is
+  // re-read each time the page is opened rather than trusted from startup.
+  if (page === "models") void renderModels();
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
@@ -322,7 +326,7 @@ function applySettings(next: AppSettings): void {
   if (next.theme === "system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = next.theme;
 
-  element.modelSelect.value = next.modelId;
+  void renderModels();
   renderMicrophoneSelect();
   element.hotkeySelect.value = next.hotkeyId;
   element.menubarToggle.checked = next.menuBarIcon;
@@ -349,9 +353,6 @@ function applySettings(next: AppSettings): void {
 }
 
 function populateSelects(): void {
-  for (const model of SPEECH_MODELS) {
-    element.modelSelect.append(new Option(model.shortLabel, model.id));
-  }
   element.hotkeySelect.append(new Option("Off", "none"));
   for (const binding of HOTKEY_BINDINGS) {
     element.hotkeySelect.append(new Option(binding.label, binding.id));
@@ -520,7 +521,7 @@ function renderSetup(): void {
       // the same thing a second time, and looks like something to press.
       button.hidden = step.done;
       if (!step.done) {
-        button.textContent = step.id === "engine" ? "Copy command" : "Grant";
+        button.textContent = step.id === "engine" ? "Choose model" : "Grant";
       }
     }
   }
@@ -580,6 +581,50 @@ function renderSidebarCollapsed(): void {
   }
 }
 
+/**
+ * The models, and what is on this machine for each.
+ *
+ * A model that cannot run is still listed rather than hidden: the point of the
+ * page is to say what is available, and what it would take to have it.
+ */
+async function renderModels(): Promise<void> {
+  const catalog = await host().getModelCatalog().catch(() => []);
+  element.modelList.replaceChildren(
+    ...catalog.map((model) => {
+      const ready = model.runtimeInstalled && model.weightsInstalled;
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "model-row";
+      row.dataset.model = model.id;
+      row.setAttribute("role", "radio");
+      row.setAttribute("aria-checked", String(model.selected));
+      if (!ready) row.setAttribute("aria-disabled", "true");
+
+      const name = document.createElement("strong");
+      name.textContent = model.label;
+
+      const state = document.createElement("small");
+      state.textContent = ready
+        ? "Downloaded"
+        : !model.runtimeInstalled
+          ? `Not installed — run ${model.setupCommand}`
+          : `Runtime ready, weights missing — run ${model.setupCommand}`;
+
+      const body = document.createElement("span");
+      body.className = "model-body";
+      body.append(name, state);
+
+      const tag = document.createElement("span");
+      tag.className = "model-tag";
+      tag.dataset.ready = String(ready);
+      tag.textContent = ready ? (model.selected ? "In use" : "Ready") : "Available";
+
+      row.append(body, tag);
+      return row;
+    }),
+  );
+}
+
 /** The command that installs the runtime for the selected model. */
 const ENGINE_SETUP_COMMANDS: Record<SpeechEngine, string> = {
   nemo: "pnpm setup:model",
@@ -599,12 +644,10 @@ function listPhrase(items: string[]): string {
 
 function resolveSetupStep(id: string): void {
   if (id === "engine") {
-    // The app cannot install a runtime for itself, so the useful thing it can
-    // do is hand over the exact command rather than send the user to a page
-    // that does not explain anything.
-    void navigator.clipboard.writeText(engineSetupCommand());
-    const button = element.checklist.querySelector<HTMLButtonElement>('[data-fix="engine"]');
-    if (button) flash(button, "Copied");
+    // Setup asks only whether a model is ready; which models exist and what
+    // each still needs is the Models page's subject, and it names the command
+    // for the one being asked about.
+    showSettingsPage("models");
     return;
   }
   if (id === "microphone") {

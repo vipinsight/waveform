@@ -14,6 +14,12 @@ const BAR_COUNT = 7;
 const BAR_GAP = 2.5;
 const BAR_WIDTH = 2.5;
 const MIN_BAR = 4;
+/**
+ * Kept off the meter's full height so a loud phrase does not run right up to
+ * the capsule. The canvas is as tall as the space it was given, and a bar that
+ * uses all of it reads as touching the edge even when it is a pixel short.
+ */
+const BAR_HEADROOM = 4;
 /** Bar colours from the design, in sRGB. */
 const BAR_INK = "246, 245, 242";
 const ACCENT = "50, 132, 208";
@@ -502,7 +508,9 @@ function draw(): void {
 
   for (let index = 0; index < BAR_COUNT; index += 1) {
     const value = levels[index] ?? 0;
-    const barHeight = rewriting ? MIN_BAR : Math.max(MIN_BAR, value * height);
+    const barHeight = rewriting
+      ? MIN_BAR
+      : Math.max(MIN_BAR, value * (height - BAR_HEADROOM));
     const x = left + index * (BAR_WIDTH + BAR_GAP);
 
     context.fillStyle = rewriting

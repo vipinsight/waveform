@@ -15,6 +15,7 @@ import type {
   MicrophoneDevice,
   MicrophonePermissionResult,
   ModelEvent,
+  ModelStatus,
   OverlayPoint,
   ResourceUsage,
   SavedDictation,
@@ -119,6 +120,7 @@ const api: DesktopApi = {
   polishDictation: () => invoke<void>("polish_dictation"),
   cancelDictation: () => invoke<void>("cancel_dictation"),
   previewIndicator: () => invoke<void>("preview_indicator"),
+  getModelCatalog: () => invoke<ModelStatus[]>("model_catalog"),
   onDictationCommand: (listener) =>
     subscribe<DictationCommand>("dictation-command", listener),
   onOverlayCursor: (listener) =>

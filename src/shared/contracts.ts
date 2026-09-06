@@ -62,6 +62,22 @@ export interface DictationCommand {
   mode: DictationMode;
 }
 
+/**
+ * What a model needs before it can be used, reported separately.
+ *
+ * A runtime without weights and weights without a runtime are both half
+ * installed, and they are fixed by different halves of the same command, so
+ * saying only "not ready" would not tell anyone what to do.
+ */
+export interface ModelStatus {
+  id: string;
+  label: string;
+  selected: boolean;
+  runtimeInstalled: boolean;
+  weightsInstalled: boolean;
+  setupCommand: string;
+}
+
 /** A pointer position in the HUD's own coordinates. */
 export interface OverlayPoint {
   x: number;
@@ -181,6 +197,8 @@ export interface DesktopApi {
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
+  /** Every model, and what is on this machine for each. */
+  getModelCatalog(): Promise<ModelStatus[]>;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;
   /** Where the pointer is over the HUD, in its own coordinates, or null when
       it is elsewhere. The HUD cannot work this out itself: it is never the key

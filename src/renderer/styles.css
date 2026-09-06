@@ -1059,6 +1059,75 @@ kbd {
   background: var(--surface-sunken);
 }
 
+/* ----------------------------------------------------------------- models */
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 130ms ease, background 130ms ease;
+}
+
+/* Still listed, because the page's subject is what exists and what it would
+   take to have it -- but not selectable until it can actually run. */
+.model-row[aria-disabled="true"] {
+  cursor: default;
+}
+
+.model-row[aria-checked="true"] {
+  border-color: var(--accent);
+}
+
+.model-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.model-body strong {
+  font-size: 13.5px;
+  font-weight: 560;
+}
+
+.model-body small {
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.model-tag {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.model-tag[data-ready="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .row {
   display: flex;
   min-height: 62px;
