@@ -19,20 +19,22 @@
   --ink-label: #4e4a42;
   --hairline: rgb(28 27 24 / 9%);
   --hairline-strong: rgb(28 27 24 / 16%);
-  --accent: #15544f;
-  --accent-hover: #0f423e;
-  --accent-soft: #dfeae7;
+  /* The blue of the mark's middle bar, so the accent and the logo are one
+     colour rather than two that happen to sit near each other. */
+  --mark-accent: #3284d0;
+  --accent: #3284d0;
+  --accent-hover: #2a6fb0;
+  --accent-soft: #e6f0fb;
   --accent-ink: #ffffff;
   --danger: #a8443f;
   --danger-soft: #f6e6e3;
   --positive: #2f7d5a;
   --shadow-modal: 0 24px 70px rgb(28 27 24 / 22%);
-  --hint-surface: #fbf2ff;
-  --hint-ink: #5b4470;
-  --hint-hairline: rgb(91 68 112 / 18%);
-  --hint-key: rgb(255 255 255 / 55%);
-  --hint-border: rgb(213 188 237 / 30%);
-  --hint-border: rgb(122 74 176 / 30%);
+  --hint-surface: #eef5fd;
+  --hint-ink: #24557f;
+  --hint-hairline: rgb(36 85 127 / 18%);
+  --hint-key: rgb(255 255 255 / 65%);
+  --hint-border: rgb(50 132 208 / 30%);
   /* One gap all round the content panel. */
   --inset: 14px;
   --titlebar: 58px;
@@ -54,23 +56,23 @@
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
-  --ink-label: #b3aea3;
     --ink-label: #b3aea3;
     --hairline: rgb(255 255 255 / 10%);
     --hairline-strong: rgb(255 255 255 / 18%);
-    --accent: #6cbdb2;
-    --accent-hover: #86cec4;
-    --accent-soft: rgb(108 189 178 / 16%);
-    --accent-ink: #10201e;
+    --mark-accent: #6aa9e4;
+    --accent: #6aa9e4;
+    --accent-hover: #8bbfee;
+    --accent-soft: rgb(106 169 228 / 16%);
+    --accent-ink: #0d2136;
     --danger: #e08a83;
     --danger-soft: rgb(224 138 131 / 14%);
     --positive: #6cc194;
     --shadow-modal: 0 24px 70px rgb(0 0 0 / 56%);
-    --hint-surface: rgb(178 130 224 / 13%);
-    --hint-ink: #d5bced;
-    --hint-hairline: rgb(213 188 237 / 24%);
+    --hint-surface: rgb(50 132 208 / 16%);
+    --hint-ink: #a9cdf2;
+    --hint-hairline: rgb(169 205 242 / 24%);
     --hint-key: rgb(255 255 255 / 9%);
-    --hint-border: rgb(213 188 237 / 30%);
+    --hint-border: rgb(169 205 242 / 30%);
     color-scheme: dark;
   }
 }
@@ -86,17 +88,18 @@
   --ink-label: #b3aea3;
   --hairline: rgb(255 255 255 / 10%);
   --hairline-strong: rgb(255 255 255 / 18%);
-  --accent: #6cbdb2;
-  --accent-hover: #86cec4;
-  --accent-soft: rgb(108 189 178 / 16%);
-  --accent-ink: #10201e;
+  --mark-accent: #6aa9e4;
+  --accent: #6aa9e4;
+  --accent-hover: #8bbfee;
+  --accent-soft: rgb(106 169 228 / 16%);
+  --accent-ink: #0d2136;
   --danger: #e08a83;
   --danger-soft: rgb(224 138 131 / 14%);
   --positive: #6cc194;
   --shadow-modal: 0 24px 70px rgb(0 0 0 / 56%);
-  --hint-surface: rgb(178 130 224 / 13%);
-  --hint-ink: #d5bced;
-  --hint-hairline: rgb(213 188 237 / 24%);
+  --hint-surface: rgb(50 132 208 / 16%);
+  --hint-ink: #a9cdf2;
+  --hint-hairline: rgb(169 205 242 / 24%);
   --hint-key: rgb(255 255 255 / 9%);
   color-scheme: dark;
 }
@@ -225,6 +228,24 @@ kbd {
 .app[data-sidebar="collapsed"] .nav-item span,
 .app[data-sidebar="collapsed"] .shortcut-card {
   display: none;
+}
+
+/*
+ * The card is the one thing in the rail with a width of its own, so while the
+ * panel was still opening it re-wrapped at every width on the way and appeared
+ * to shrink into place. It waits instead: `backwards` holds it at the start of
+ * this animation through the delay, so it is not drawn at all until the panel
+ * has finished, and then rises in.
+ */
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.app:not([data-sidebar="collapsed"]) .shortcut-card {
+  animation: card-rise 320ms cubic-bezier(0.34, 1.56, 0.64, 1) 210ms backwards;
 }
 
 /*
@@ -866,13 +887,6 @@ kbd {
   color: var(--ink-faint);
   font-size: 11.5px;
   line-height: 1.45;
-}
-
-.check[data-done="true"] .pill-button {
-  background: transparent;
-  color: var(--positive);
-  cursor: default;
-  font-weight: 550;
 }
 
 .nav-badge {

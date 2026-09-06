@@ -516,11 +516,12 @@ function renderSetup(): void {
     row.dataset.done = String(step.done);
     const button = row.querySelector("button");
     if (button) {
-      button.textContent = step.done
-        ? "Done"
-        : step.id === "engine"
-          ? "Copy command"
-          : "Grant";
+      // A granted step already carries its tick. A button reading "Done" says
+      // the same thing a second time, and looks like something to press.
+      button.hidden = step.done;
+      if (!step.done) {
+        button.textContent = step.id === "engine" ? "Copy command" : "Grant";
+      }
     }
   }
 
