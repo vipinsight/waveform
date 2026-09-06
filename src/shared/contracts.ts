@@ -62,6 +62,12 @@ export interface DictationCommand {
   mode: DictationMode;
 }
 
+/** A pointer position in the HUD's own coordinates. */
+export interface OverlayPoint {
+  x: number;
+  y: number;
+}
+
 export interface DictationStatus {
   state: DictationState;
   sink: DictationSink;
@@ -169,9 +175,10 @@ export interface DesktopApi {
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   onDictationCommand(listener: (command: DictationCommand) => void): () => void;
-  /** Whether the pointer is over the HUD. The HUD cannot detect this itself:
-      it is never the key window, so WebKit sends it no pointer-enter. */
-  onOverlayHover(listener: (over: boolean) => void): () => void;
+  /** Where the pointer is over the HUD, in its own coordinates, or null when
+      it is elsewhere. The HUD cannot work this out itself: it is never the key
+      window, so WebKit sends it no pointer events and matches no `:hover`. */
+  onOverlayCursor(listener: (point: OverlayPoint | null) => void): () => void;
   onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
   reportDictationState(status: DictationStatus): void;
   reportDictationPhrase(phrase: DictationPhrase): void;

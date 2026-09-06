@@ -15,6 +15,7 @@ import type {
   MicrophoneDevice,
   MicrophonePermissionResult,
   ModelEvent,
+  OverlayPoint,
   ResourceUsage,
   SavedDictation,
   TranscriptionResult,
@@ -120,7 +121,8 @@ const api: DesktopApi = {
   previewIndicator: () => invoke<void>("preview_indicator"),
   onDictationCommand: (listener) =>
     subscribe<DictationCommand>("dictation-command", listener),
-  onOverlayHover: (listener) => subscribe<boolean>("overlay-hover", listener),
+  onOverlayCursor: (listener) =>
+    subscribe<OverlayPoint | null>("overlay-cursor", listener),
   onDictationUpdate: (listener) =>
     subscribe<DictationUpdate>("dictation-update", listener),
   reportDictationState: (status) => void invoke("report_dictation_state", { status }),

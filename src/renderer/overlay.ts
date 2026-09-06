@@ -6,6 +6,7 @@ import type {
   DictationMode,
   DictationSink,
   DictationState,
+  OverlayPoint,
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -44,6 +45,7 @@ const canvas = requireElement<HTMLCanvasElement>("wave");
 const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
 const micButton = requireElement<HTMLButtonElement>("hud-mic");
 const acceptButton = requireElement<HTMLButtonElement>("hud-accept");
+const hintKey = requireElement<HTMLElement>("hud-hint-key");
 const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
@@ -80,18 +82,29 @@ installTauriBridge();
 void host().getSettings().then((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
   showFlowBarAlways = settings.showFlowBarAlways;
-  micButton.title = dictationTooltip(settings.hotkeyId);
+  applyShortcutHint(settings.hotkeyId);
   if (showFlowBarAlways) showIdle();
 });
 host().onSettingsChanged((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
   showFlowBarAlways = settings.showFlowBarAlways;
-  micButton.title = dictationTooltip(settings.hotkeyId);
+  applyShortcutHint(settings.hotkeyId);
 });
 
-function dictationTooltip(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): string {
+/**
+ * Puts the dictation shortcut in the tooltip the pill raises when hovered, so
+ * it is learned from the control it belongs to rather than from Settings. A
+ * native `title` cannot do this job: tooltips need the key window, which the
+ * HUD is built never to be.
+ */
+function applyShortcutHint(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): void {
   const binding = getHotkeyBinding(hotkeyId);
-  return binding ? `Dictate · ${binding.label}` : "Dictate";
+  hintKey.textContent = binding?.glyph ?? "";
+  hud.dataset.shortcut = binding ? "true" : "false";
+  micButton.setAttribute(
+    "aria-label",
+    binding ? `Start dictation, or hold ${binding.label}` : "Start dictation",
+  );
 }
 
 resizeCanvasForDisplay();
@@ -102,21 +115,31 @@ enableDragging();
 /*
  * Hover is reported by the host, not observed here. The HUD is built
  * non-focusable so it can never steal focus from the app being dictated into,
- * which also means WebKit never sends it a pointer-enter: its tracking area
- * only fires for the key window. Listening for `pointerenter` left the pill
- * inert until a click had been delivered.
+ * which also means WebKit sends it no pointer events and matches no `:hover`:
+ * its tracking area only fires for the key window. Listening for
+ * `pointerenter` left the pill inert until a click had been delivered, and
+ * every `:hover` rule in the stylesheet was dead.
  *
- * `pointerleave` is still worth keeping. It fires reliably once the pointer
- * has been inside, and it beats the next poll, so leaving stays crisp.
+ * So the host sends a position and the HUD does its own hit testing. Nothing
+ * here listens for `pointerleave`: it would fight the poll, which is the only
+ * thing that actually knows where the pointer is.
  */
-host().onOverlayHover((over) => {
-  pointerOver = over;
-  if (state === "idle") hud.dataset.expanded = over ? "true" : "false";
+host().onOverlayCursor((point) => {
+  pointerOver = point !== null;
+  if (state === "idle") hud.dataset.expanded = pointerOver ? "true" : "false";
+  hud.dataset.hover = point ? controlAt(point) : "";
 });
-hud.addEventListener("pointerleave", () => {
-  pointerOver = false;
-  hud.dataset.expanded = "false";
-});
+
+/** Which control the pointer is over, as a `data-hover` value. */
+function controlAt(point: OverlayPoint): string {
+  const node = document.elementFromPoint(point.x, point.y);
+  const button = node instanceof Element ? node.closest("button") : null;
+  if (button === micButton) return "mic";
+  if (button === cancelButton) return "cancel";
+  if (button === acceptButton) return "accept";
+  return "";
+}
+
 hud.addEventListener("focusin", (event) => {
   if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {
     hud.dataset.expanded = "true";
@@ -301,6 +324,7 @@ function finish(): void {
 function syncIdleHover(): void {
   const hovered = pointerOver && hud.dataset.visible === "true";
   hud.dataset.expanded = hovered ? "true" : "false";
+  hud.dataset.hover = "";
 }
 
 /** Renders the persistent Wave Bar without starting capture or reporting a session. */

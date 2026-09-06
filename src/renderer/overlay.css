@@ -4,14 +4,19 @@
  * One capsule with four shapes, which it springs between:
  *
  *   rest      44x6    a quiet mark, the idle Wave Bar
- *   offer     64x32   hovered: the microphone, inviting a click
- *   hold      64x32   key held down: the meter alone, nothing to decide
- *   latched  110x32   double-tap or mic: the meter between cancel and accept
+ *   offer     60x28   hovered: the microphone, inviting a click
+ *   hold      60x28   key held down: the meter alone, nothing to decide
+ *   latched  100x28   double-tap or mic: the meter between cancel and accept
  *
  * Which of the two session shapes appears is decided by `data-mode`, written
  * from the gesture that opened the session. Holding the shortcut is already a
  * decision -- letting go commits -- so offering buttons there is noise; a
  * latched session runs until told otherwise, so it must offer both.
+ *
+ * Nothing here uses `:hover`. The HUD is never the key window, so WebKit
+ * matches no hover rule and sends no pointer event; the host reports a cursor
+ * position instead and the script writes `data-hover`. See `watch_overlay_hover`
+ * in src-tauri/src/lib.rs.
  *
  * The window is transparent, so the page background must stay fully clear and
  * the capsule draws all of its own chrome.
@@ -41,20 +46,21 @@ body {
 }
 
 /*
- * Sizes are the design's, scaled down by a fifth. At 40pt the pill sat over
- * other apps like a panel rather than an indicator; the proportions between
- * the buttons, the meter and the capsule are unchanged.
+ * Pinned to the centre of the window rather than laid out in flow, so the
+ * capsule grows about a fixed point. It used to animate `height` against a
+ * matching `margin-top`, and keeping two properties in step through a spring
+ * left the microphone shivering by a fraction of a pixel a frame.
  *
- * The window in src-tauri must stay a little larger than this: it is
- * transparent but not click-through, so surplus area would swallow clicks
- * meant for whatever is underneath.
+ * The window in src-tauri must stay larger than the widest tooltip: it is
+ * transparent but not click-through, so surplus area swallows clicks meant for
+ * whatever is underneath.
  */
 .hud {
-  position: relative;
-  display: block;
-  width: 110px;
-  height: 32px;
-  margin: 8px auto 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100px;
+  height: 28px;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 999px;
   background: #080808;
@@ -64,14 +70,15 @@ body {
   opacity: 0;
   /* Rises into place rather than only fading, which is what makes it read as
      a system control instead of a web element. */
-  transform: translateY(6px) scale(0.9);
-  /* Overshoots on the way out and settles back. A capsule that changes size
-     without any spring in it reads as a box being resized; with one it reads
-     as a control opening. */
+  transform: translate(-50%, -50%) translateY(6px) scale(0.9);
+  /*
+   * Width springs; height does not. An overshoot on width reads as a control
+   * opening, while the same overshoot on height makes everything centred
+   * inside the capsule bob.
+   */
   transition:
     width 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    height 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    margin 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 240ms cubic-bezier(0.22, 0.9, 0.3, 1),
     border-color 200ms ease,
     background 200ms ease,
     box-shadow 200ms ease,
@@ -82,7 +89,7 @@ body {
 
 .hud[data-visible="true"] {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translate(-50%, -50%);
 }
 
 /* Leaving is quicker than arriving, so dismissing never feels sticky. */
@@ -94,19 +101,18 @@ body {
 
 /* ------------------------------------------------------------------- rest */
 
-/* When always visible, Wave Bar rests as a quiet status mark: half the pill's
-   width and roughly one sixth its height. */
+/* When always visible, Wave Bar rests as a quiet status mark: under half the
+   pill's width and roughly a fifth its height. */
 .hud[data-state="idle"][data-visible="true"] {
   width: 44px;
   height: 6px;
-  margin-top: 21px;
   border-color: rgb(255 255 255 / 16%);
   background: rgb(17 20 26 / 82%);
   box-shadow: 0 4px 11px rgb(0 0 0 / 22%);
 }
 
-/* The transparent hit area keeps the six-pixel mark easy to hover. Expanding
-   within the existing native window avoids stealing clicks from nearby apps. */
+/* A transparent skirt around the six-pixel mark, so it can be grabbed and
+   dragged without hunting for it. */
 .hud[data-state="idle"]::before {
   content: "";
   position: absolute;
@@ -117,14 +123,12 @@ body {
 /* ------------------------------------------------------------------ offer */
 
 .hud[data-state="idle"][data-visible="true"][data-expanded="true"] {
-  width: 64px;
-  height: 32px;
-  margin-top: 8px;
-  border-color: rgb(255 255 255 / 30%);
-  background: #303030;
+  width: 60px;
+  height: 28px;
+  border-color: rgb(255 255 255 / 22%);
   box-shadow:
-    0 10px 22px rgb(0 0 0 / 38%),
-    inset 0 1px 0 rgb(255 255 255 / 14%);
+    0 10px 22px rgb(0 0 0 / 40%),
+    inset 0 1px 0 rgb(255 255 255 / 10%);
 }
 
 /* --------------------------------------------------------------- sessions */
@@ -135,18 +139,18 @@ body {
  * control appearing. Only a latched session widens to make room for a choice.
  */
 .hud[data-state]:not([data-state="idle"])[data-mode="hold"] {
-  width: 64px;
+  width: 60px;
 }
 
 .hud[data-state]:not([data-state="idle"])[data-mode="latched"] {
-  width: 110px;
+  width: 100px;
   /* A locked session runs until dismissed, so it carries a brighter rim. */
   border-color: rgb(255 255 255 / 34%);
 }
 
 .hud[data-dragging="true"] {
   cursor: grabbing;
-  transform: translateY(0) scale(1.04);
+  transform: translate(-50%, -50%) scale(1.04);
   transition: transform 90ms ease-out;
 }
 
@@ -155,9 +159,12 @@ body {
 /*
  * The microphone and the session controls occupy the same spot and cross-fade,
  * so the capsule only ever animates its own width. They are taken out of flow
- * on purpose: a 24px button inside the 6px resting bar would otherwise prop it
+ * on purpose: a 22px button inside the 6px resting bar would otherwise prop it
  * open, and toggling `display` to avoid that cannot be transitioned -- the
  * icons snapped in and out, which is what made the pill feel abrupt.
+ *
+ * They rise and fade but never scale. Scaling resamples the glyphs every frame,
+ * and at this size that reads as a shimmer rather than as motion.
  */
 .hud-mic,
 .hud-session {
@@ -165,15 +172,12 @@ body {
   top: 50%;
   right: 0;
   left: 0;
-  height: 32px;
+  height: 28px;
   opacity: 0;
-  /* Shrunk towards the capsule's centre and dropped slightly, so a reveal
-     reads as the controls rising out of the bar rather than appearing on
-     top of it. */
-  transform: translateY(-50%) translateY(5px) scale(0.5);
+  transform: translateY(-50%) translateY(4px);
   transition:
     opacity 130ms linear,
-    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 200ms cubic-bezier(0.22, 0.9, 0.3, 1);
   pointer-events: none;
 }
 
@@ -181,7 +185,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0 3px;
 }
 
 /* Hovering the resting bar offers the microphone; a live session replaces it
@@ -189,25 +193,29 @@ body {
 .hud[data-state="idle"][data-visible="true"][data-expanded="true"] .hud-mic,
 .hud[data-state]:not([data-state="idle"]) .hud-session {
   opacity: 1;
-  transform: translateY(-50%) scale(1);
+  transform: translateY(-50%);
   /* Lets the capsule take up its new width first, so the controls land in
      place instead of racing the edges outwards. */
   transition-delay: 70ms;
   pointer-events: auto;
 }
 
-/* ------------------------------------------------------------------ cancel */
+/* ------------------------------------------------------- cancel and accept */
 
 /*
- * Cancel and accept carry their own gaps rather than the row carrying a `gap`,
- * so collapsing them for a held session takes the spacing with them and leaves
- * the meter centred with nothing to show for their absence.
+ * Inset equally on all four sides -- 3px against a 28px capsule and a 22px
+ * button -- so each button's curve is concentric with the capsule's end. At an
+ * uneven inset the two radii disagree and the end of the pill looks bent.
+ *
+ * They carry their own margins rather than the row carrying a `gap`, so
+ * collapsing them for a held session takes the spacing with them and leaves the
+ * meter centred with nothing to show for their absence.
  */
 .hud-cancel,
 .hud-accept {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
@@ -220,7 +228,6 @@ body {
     margin 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
     opacity 140ms linear,
     background 120ms ease,
-    color 120ms ease,
     transform 120ms ease;
 }
 
@@ -237,11 +244,11 @@ body {
   pointer-events: none;
 }
 
-.hud-cancel svg { width: 13px; height: 13px; }
-.hud-accept svg { width: 16px; height: 16px; }
+.hud-cancel svg { width: 12px; height: 12px; }
+.hud-accept svg { width: 15px; height: 15px; }
 
-.hud-cancel:hover { background: rgb(255 255 255 / 26%); }
-.hud-accept:hover { background: #fff; }
+.hud[data-hover="cancel"] .hud-cancel { background: #5d5b53; }
+.hud[data-hover="accept"] .hud-accept { background: #fff; }
 .hud-cancel:active,
 .hud-accept:active { transform: scale(0.9); }
 .hud-accept:disabled { opacity: 0.4; cursor: default; }
@@ -266,16 +273,74 @@ body {
   cursor: pointer;
 }
 
-/* The press lands on the icon, not the layer: the layer's transform is what
-   animates the reveal, and overriding it here would cancel that mid-flight. */
-.hud-mic svg {
-  width: 22px;
-  height: 22px;
-  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
+.hud-mic svg { width: 20px; height: 20px; }
 .hud-mic:active svg { transform: scale(0.86); }
 .hud-mic:disabled { opacity: 0.5; cursor: wait; }
+
+/* --------------------------------------------------------------- tooltips */
+
+/*
+ * Raised above the capsule rather than shown as native tooltips, which need
+ * the key window the HUD is built never to be. The shortcut sits here so it is
+ * learned from the control it belongs to.
+ */
+.hud-hint,
+.hud-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  display: flex;
+  height: 18px;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 6px;
+  background: #080808;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 40%);
+  color: #e8e6e1;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  /* The horizontal half-step is what centres each tooltip on what it names, so
+     it has to survive the vertical one it animates. */
+  --tip-shift: -50%;
+  transform: translate(var(--tip-shift), 3px);
+  transition:
+    opacity 110ms linear,
+    transform 160ms cubic-bezier(0.22, 0.9, 0.3, 1);
+  pointer-events: none;
+}
+
+.hud-hint {
+  left: 50%;
+  gap: 5px;
+}
+
+/* Centred on the button each one names, which sits a fixed distance from its
+   end of the capsule whatever width the capsule currently has. */
+.hud-tip-cancel { left: 14px; }
+.hud-tip-accept { right: 14px; --tip-shift: 50%; }
+
+.hud-hint-mic { width: 11px; height: 11px; opacity: 0.75; }
+
+.hud-hint-key {
+  padding: 0 4px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+/* The microphone fills the offered capsule, so being expanded is being
+   hovered; the buttons need the pointer placed on one of them. */
+.hud[data-shortcut="true"][data-state="idle"][data-visible="true"][data-expanded="true"] .hud-hint,
+.hud[data-hover="cancel"] .hud-tip-cancel,
+.hud[data-hover="accept"] .hud-tip-accept {
+  opacity: 1;
+  transform: translate(var(--tip-shift), 0);
+  transition-delay: 90ms;
+}
 
 .hud button:focus-visible {
   outline: 2px solid #fff;
@@ -285,10 +350,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hud,
   .hud-mic,
-  .hud-mic svg,
   .hud-session,
   .hud-cancel,
-  .hud-accept {
+  .hud-accept,
+  .hud-hint,
+  .hud-tip {
     transition-duration: 0.01ms;
     transition-delay: 0ms;
   }

@@ -37,8 +37,17 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_WIDTH: f64 = 122.0;
-const OVERLAY_HEIGHT: f64 = 48.0;
+/// Large enough for the pill and the tooltips it raises above itself. The
+/// window is transparent but not click-through, so it is kept only as big as
+/// the widest tooltip actually needs.
+const OVERLAY_WIDTH: f64 = 192.0;
+const OVERLAY_HEIGHT: f64 = 78.0;
+/// The size saved positions were recorded against before the HUD grew to make
+/// room for tooltips. A stored frame stays a frame of its own era until the
+/// user drags the HUD again, so it is corrected when read rather than
+/// rewritten -- which keeps the correction idempotent across launches.
+const LEGACY_OVERLAY_WIDTH: f64 = 122.0;
+const LEGACY_OVERLAY_HEIGHT: f64 = 48.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
@@ -438,6 +447,8 @@ async fn end_overlay_drag(
         let mut settings = store.value();
         settings.overlay_x = Some(position.x);
         settings.overlay_y = Some(position.y);
+        settings.overlay_w = Some(OVERLAY_WIDTH);
+        settings.overlay_h = Some(OVERLAY_HEIGHT);
         store.update(settings)
     };
     let _ = app.emit("settings-changed", &next);
@@ -447,7 +458,16 @@ async fn end_overlay_drag(
 /// Positions the overlay from saved coordinates, or centres it on a screen edge.
 pub fn place_overlay(overlay: &tauri::WebviewWindow, settings: &AppSettings) {
     if let (Some(x), Some(y)) = (settings.overlay_x, settings.overlay_y) {
-        let _ = overlay.set_position(tauri::PhysicalPosition::new(x, y));
+        // The pill sits at the centre of its window, so a window that has
+        // changed size since the position was saved would put the pill
+        // somewhere else. Shift the frame by half the difference to leave the
+        // pill exactly where the user last dragged it.
+        let scale = overlay.scale_factor().unwrap_or(1.0);
+        let saved_width = settings.overlay_w.unwrap_or(LEGACY_OVERLAY_WIDTH);
+        let saved_height = settings.overlay_h.unwrap_or(LEGACY_OVERLAY_HEIGHT);
+        let dx = ((OVERLAY_WIDTH - saved_width) / 2.0 * scale).round() as i32;
+        let dy = ((OVERLAY_HEIGHT - saved_height) / 2.0 * scale).round() as i32;
+        let _ = overlay.set_position(tauri::PhysicalPosition::new(x - dx, y - dy));
         return;
     }
     position_on_active_display(overlay, &settings.overlay_placement);
@@ -945,63 +965,80 @@ fn set_launch_at_login(app: &tauri::AppHandle, enabled: bool) {
 /// that the pill reacts as a hover should, slow enough to be free.
 const OVERLAY_HOVER_POLL_MS: u64 = 60;
 
+/// Where the pointer is over the HUD, in the webview's own coordinates.
+#[derive(Clone, Copy, Serialize)]
+struct OverlayCursor {
+    x: f64,
+    y: f64,
+}
+
 /**
- * Reports whether the pointer is over the HUD, because the HUD cannot see it.
+ * Reports where the pointer is over the HUD, because the HUD cannot see it.
  *
- * WebKit raises `mouseenter` from an `NSTrackingArea` that only fires for the
- * key window, or at most the active application. The HUD is neither by
- * construction: it is built non-focusable so it can never steal focus from the
- * app being dictated into, and it is on screen precisely when some other app is
- * frontmost. So no `pointerenter` ever arrives, and the pill only expanded once
- * a click had been delivered -- clicks reach the window under the cursor
- * whatever app owns it, and WebKit synthesises the enter it never sent.
+ * WebKit raises `mouseenter` and matches `:hover` from an `NSTrackingArea`
+ * that only fires for the key window, or at most the active application. The
+ * HUD is neither by construction: it is built non-focusable so it can never
+ * steal focus from the app being dictated into, and it is on screen precisely
+ * when some other app is frontmost. So no pointer event ever arrives and no
+ * `:hover` rule ever matches -- the pill only expanded once a click had been
+ * delivered, because clicks do reach the window under the cursor whatever app
+ * owns it, and WebKit then synthesises the enter it never sent.
  *
- * Sampling the cursor from the host sidesteps the whole question. The event is
- * emitted only when the answer changes, so the webview is idle while nothing
- * is happening.
+ * A position rather than a yes/no, so the HUD can work out which control the
+ * pointer is over and light it up. Emitted only when it changes.
  */
 fn watch_overlay_hover(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut inside = false;
+        let mut last: Option<(i32, i32)> = None;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(OVERLAY_HOVER_POLL_MS)).await;
 
             let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) else {
                 continue;
             };
+
             // A hidden HUD cannot be hovered, and asking a hidden window for
             // its bounds is wasted work on every tick it stays hidden.
-            if !matches!(overlay.is_visible(), Ok(true)) {
-                if inside {
-                    inside = false;
-                    app.state::<AppState>()
-                        .overlay_hovered
-                        .store(false, Ordering::Relaxed);
-                    let _ = overlay.emit_to(OVERLAY_LABEL, "overlay-hover", false);
+            let visible = matches!(overlay.is_visible(), Ok(true));
+            let next = if visible {
+                match (
+                    app.cursor_position(),
+                    overlay.outer_position(),
+                    overlay.outer_size(),
+                    overlay.scale_factor(),
+                ) {
+                    (Ok(cursor), Ok(origin), Ok(size), Ok(scale)) => {
+                        let x = cursor.x - origin.x as f64;
+                        let y = cursor.y - origin.y as f64;
+                        let inside = x >= 0.0
+                            && y >= 0.0
+                            && x < size.width as f64
+                            && y < size.height as f64;
+                        inside.then(|| {
+                            ((x / scale).round() as i32, (y / scale).round() as i32)
+                        })
+                    }
+                    _ => continue,
                 }
-                continue;
-            }
-
-            let (Ok(cursor), Ok(origin), Ok(size)) = (
-                app.cursor_position(),
-                overlay.outer_position(),
-                overlay.outer_size(),
-            ) else {
-                continue;
+            } else {
+                None
             };
 
-            let over = cursor.x >= origin.x as f64
-                && cursor.x < (origin.x + size.width as i32) as f64
-                && cursor.y >= origin.y as f64
-                && cursor.y < (origin.y + size.height as i32) as f64;
-
-            if over != inside {
-                inside = over;
-                app.state::<AppState>()
-                    .overlay_hovered
-                    .store(over, Ordering::Relaxed);
-                let _ = overlay.emit_to(OVERLAY_LABEL, "overlay-hover", over);
+            if next == last {
+                continue;
             }
+            last = next;
+            app.state::<AppState>()
+                .overlay_hovered
+                .store(next.is_some(), Ordering::Relaxed);
+            let _ = overlay.emit_to(
+                OVERLAY_LABEL,
+                "overlay-cursor",
+                next.map(|(x, y)| OverlayCursor {
+                    x: x as f64,
+                    y: y as f64,
+                }),
+            );
         }
     });
 }

@@ -7,12 +7,23 @@
   </head>
   <body>
     <div id="hud" class="hud" data-state="idle" tabindex="0" role="group" aria-label="Dictation controls">
-      <button id="hud-mic" class="hud-mic" type="button" aria-label="Start dictation" title="Dictate">
+      <div id="hud-hint" class="hud-hint" aria-hidden="true">
+        <svg class="hud-hint-mic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
+          <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span id="hud-hint-key" class="hud-hint-key">fn</span>
+      </div>
+
+      <button id="hud-mic" class="hud-mic" type="button" aria-label="Start dictation">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
           <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
+
+      <div class="hud-tip hud-tip-cancel" aria-hidden="true">Discard</div>
+      <div class="hud-tip hud-tip-accept" aria-hidden="true">Finish and Paste</div>
 
       <div class="hud-session">
         <button id="hud-cancel" class="hud-cancel" type="button" aria-label="Cancel">
@@ -23,7 +34,7 @@
 
         <canvas id="wave" class="wave" width="240" height="80"></canvas>
 
-        <button id="hud-accept" class="hud-accept" type="button" aria-label="Accept dictation" title="Accept dictation">
+        <button id="hud-accept" class="hud-accept" type="button" aria-label="Accept dictation">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="m4 8 2.5 2.5L12 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
