@@ -913,6 +913,22 @@ fn select_microphone_from_menu(app: &tauri::AppHandle, device_id: String, device
     });
 }
 
+/// One line of a dictation, for a menu that has one line to give it.
+///
+/// Line breaks become spaces before anything is measured: a menu item draws a
+/// single line whatever it is handed, so a newline would only make the width
+/// unpredictable. The cut is by character rather than by byte, because a
+/// dictation is text and slicing UTF-8 mid-character panics.
+fn menu_preview(text: &str) -> String {
+    const MAX_CHARS: usize = 44;
+    let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flattened.chars().count() <= MAX_CHARS {
+        return flattened;
+    }
+    let kept: String = flattened.chars().take(MAX_CHARS).collect();
+    format!("{}…", kept.trim_end())
+}
+
 /// Writes an accelerator the way a menu does, so the menu bar reads like one.
 fn accelerator_label(accelerator: &str) -> String {
     if accelerator == "none" {
@@ -968,18 +984,24 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     // Disabled rather than hidden when there is nothing to paste, so the item
     // does not appear and disappear as history comes and goes.
-    let has_history = state
+    let last_dictation = state
         .history
         .try_lock()
-        .map(|history| !history.entries().is_empty())
-        .unwrap_or(false);
+        .ok()
+        .and_then(|history| history.entries().first().map(|entry| entry.text.clone()));
     let paste_last = MenuItem::with_id(
         app,
         "paste-last",
-        "Paste last dictation",
-        has_history,
+        "Paste last transcription",
+        last_dictation.is_some(),
         None::<&str>,
     )?;
+    // What will be pasted, said once and quietly. A disabled item is how a menu
+    // renders text that is there to be read rather than chosen.
+    let paste_preview = last_dictation.as_deref().map(menu_preview);
+    let paste_preview = paste_preview
+        .map(|line| MenuItem::with_id(app, "paste-last-preview", line, false, None::<&str>))
+        .transpose()?;
     let devices = state
         .microphones
         .lock()
@@ -1034,20 +1056,26 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     )?;
     microphone_menu.append(&PredefinedMenuItem::separator(app)?)?;
     microphone_menu.append(&microphone_settings)?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &open,
-            &PredefinedMenuItem::separator(app)?,
-            &microphone_menu,
-            &shortcut_menu,
-            &PredefinedMenuItem::separator(app)?,
-            &paste_last,
-            &polish,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
+    // Assembled rather than declared, because the preview line is only there
+    // when there is a dictation for it to preview.
+    let separator = PredefinedMenuItem::separator(app)?;
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+        &open,
+        &separator,
+        &microphone_menu,
+        &shortcut_menu,
+        &separator,
+        &paste_last,
+    ];
+    if let Some(preview) = paste_preview.as_ref() {
+        items.push(preview);
+    }
+    items.extend([
+        &polish as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
+        &separator,
+        &quit,
+    ]);
+    let menu = Menu::with_items(app, &items)?;
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png"))?;
 
@@ -1311,6 +1339,33 @@ mod tests {
             theme: "light".into(),
             ..AppSettings::default()
         }
+    }
+
+    #[test]
+    fn a_short_dictation_previews_whole() {
+        assert_eq!(menu_preview("Hello there"), "Hello there");
+    }
+
+    #[test]
+    fn a_preview_is_one_line() {
+        assert_eq!(menu_preview("first line\nsecond  line"), "first line second line");
+    }
+
+    #[test]
+    fn a_long_dictation_is_cut_and_marked() {
+        let preview = menu_preview(&"word ".repeat(40));
+        assert!(preview.ends_with('…'), "{preview}");
+        assert!(preview.chars().count() <= 45, "{preview}");
+    }
+
+    /// Cutting by byte would split a multi-byte character and panic; a
+    /// dictation is text, so this is the ordinary case rather than a corner.
+    #[test]
+    fn a_preview_cuts_between_characters() {
+        assert_eq!(menu_preview(&"é".repeat(10)), "é".repeat(10));
+        let preview = menu_preview(&"é".repeat(80));
+        assert!(preview.ends_with('…'));
+        assert!(preview.chars().count() <= 45);
     }
 
     /// The interface sends only what changed. Every other choice must survive.
