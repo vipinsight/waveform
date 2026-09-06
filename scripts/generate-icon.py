@@ -47,8 +47,8 @@ TRAY_FILL = 0.735
 # share of the tile as it shrinks so they survive the downsample.
 LADDER = [
     # (applies at or above this pixel size, bar width, gap, bar heights)
-    (128, 0.0781, 0.0664, (0.289, 0.516, 0.203, 0.516, 0.289)),
-    (32, 0.0938, 0.0625, (0.297, 0.531, 0.203, 0.531, 0.297)),
+    (128, 0.0781, 0.0664, (0.289, 0.516, 0.289, 0.516, 0.289)),
+    (32, 0.0938, 0.0625, (0.297, 0.531, 0.297, 0.531, 0.297)),
     # At 16pt the accent bar is dropped: four bars read where five blur.
     (0, 0.1250, 0.0938, (0.375, 0.5625, 0.5625, 0.375)),
 ]
