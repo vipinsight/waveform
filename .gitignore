@@ -3,6 +3,7 @@ dist/
 release/
 .venv-qwen/
 .venv-whisper/
+.venv-dmg/
 __pycache__/
 .DS_Store
 *.log

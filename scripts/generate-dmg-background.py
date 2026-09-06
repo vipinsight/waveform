@@ -43,14 +43,16 @@ def background() -> Image.Image:
             fill=tuple(round(TOP[i] + (BOTTOM[i] - TOP[i]) * ratio) for i in range(3)),
         )
 
-    # A rounded slot behind each icon, so the two positions read as a pair of
-    # places rather than as two loose icons.
+    # A rounded slot behind each icon and its Finder name. The name sits
+    # under the 128pt icon, and a slot that only wraps the icon cuts
+    # "Waveform" and "Applications" in half.
     pad = 18 * SCALE
+    label = 28 * SCALE
     for cx, cy in ((APP_X, APP_Y), (FOLDER_X, FOLDER_Y)):
         left = (cx - ICON // 2) * SCALE - pad
         top = (cy - ICON // 2) * SCALE - pad
         draw.rounded_rectangle(
-            [left, top, left + ICON * SCALE + pad * 2, top + ICON * SCALE + pad * 2],
+            [left, top, left + ICON * SCALE + pad * 2, top + ICON * SCALE + pad * 2 + label],
             radius=22 * SCALE,
             fill=SLOT,
         )
