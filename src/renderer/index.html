@@ -211,7 +211,7 @@
             <span>General</span></button>
         <button class="nav-item" type="button" data-page="shortcut">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.6" y="5.2" width="14.8" height="9.6" rx="2.6" stroke="currentColor" stroke-width="1.5"/><path d="M5.8 8.6h.01M8.6 8.6h.01M11.4 8.6h.01M14.2 8.6h.01M7 11.6h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            <span>Shortcut</span></button>
+            <span>Dictation</span></button>
         <button class="nav-item" type="button" data-page="ai">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7.7 3 8.85 6.35 12.2 7.5 8.85 8.65 7.7 12 6.55 8.65 3.2 7.5 6.55 6.35Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.9 11.6 14.5 13.4 16.3 14 14.5 14.6 13.9 16.4 13.3 14.6 11.5 14 13.3 13.4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
             <span>AI Polish</span></button>
@@ -232,9 +232,7 @@
         <section class="settings-page" data-page="setup">
           <h1 class="display">Setup</h1>
           <p class="lede" id="setup-lede">
-            Waveform needs these before it can listen anywhere and type for you.
-            Three are permissions macOS has to grant; one is the model that does the
-            transcribing.
+            Enable macOS permissions and install a speech model to dictate in any app.
           </p>
 
           <ol class="checklist" id="checklist">
@@ -242,7 +240,7 @@
               <span class="check-mark" aria-hidden="true"></span>
               <span class="check-body">
                 <strong>Microphone</strong>
-                <small>To hear you. Audio is transcribed on this Mac and never uploaded.</small>
+                <small>Audio stays on this Mac.</small>
               </span>
               <button class="pill-button is-primary" type="button" data-fix="microphone">Grant</button>
             </li>
@@ -258,7 +256,7 @@
               <span class="check-mark" aria-hidden="true"></span>
               <span class="check-body">
                 <strong>Input Monitoring</strong>
-                <small>To notice your shortcut while another app is in front.</small>
+                <small>Detects your dictation shortcut in other apps.</small>
               </span>
               <button class="pill-button is-primary" type="button" data-fix="input-monitoring">Grant</button>
             </li>
@@ -266,7 +264,7 @@
               <span class="check-mark" aria-hidden="true"></span>
               <span class="check-body">
                 <strong>Accessibility</strong>
-                <small>To insert text where your cursor is. Without it, words land here only.</small>
+                <small>Allows Waveform to insert text in other apps.</small>
               </span>
               <button class="pill-button is-primary" type="button" data-fix="accessibility">Grant</button>
             </li>
@@ -281,59 +279,56 @@
         <section class="settings-page" data-page="general" hidden>
           <h1 class="display">General</h1>
           <div class="card">
-  <div class="row">
-    <span class="row-label">Microphone<small>Choose MacBook microphone when available (recommended). System default follows macOS.</small></span>
-    <span class="row-actions">
-      <select id="microphone-select" aria-label="Microphone"></select>
-    </span>
-  </div>
             <div class="row">
-              <span class="row-label">Speech model<small id="model-note">Runs entirely on this Mac.</small></span>
+              <span class="row-label">Microphone</span>
+              <span class="row-actions">
+                <select id="microphone-select" aria-label="Microphone"></select>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-label">Speech model</span>
               <span class="row-actions"><select id="model-select" aria-label="Speech model"></select></span>
             </div>
             <div class="row">
-              <span class="row-label">Theme<small>Match the system, or pick one.</small></span>
+              <span class="row-label">Theme</span>
               <span class="row-actions">
                 <div class="segmented" id="theme-toggle" role="radiogroup" aria-label="Theme">
-                  <button type="button" role="radio" data-theme-value="system" aria-checked="true">Auto</button>
+                  <button type="button" role="radio" data-theme-value="system" aria-checked="true">System</button>
                   <button type="button" role="radio" data-theme-value="light" aria-checked="false">Light</button>
                   <button type="button" role="radio" data-theme-value="dark" aria-checked="false">Dark</button>
                 </div>
               </span>
             </div>
-            <div class="row">
-              <span class="row-label">
-                Menu bar icon
-                <small>Keeps a way back to the window when it is closed.</small>
-              </span>
-              <span class="row-actions"><input id="menubar-toggle" type="checkbox" class="switch" /></span>
-            </div>
             <label class="row">
-              <span class="row-label">Launch app at login</span>
+              <span class="row-label">Show menu bar icon</span>
+              <span class="row-actions"><input id="menubar-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <label class="row">
+              <span class="row-label">Launch at login</span>
               <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
-              <span class="row-label">Show Wave Bar at all times</span>
+              <span class="row-label">Always show Wave Bar</span>
               <span class="row-actions"><input id="flow-bar-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
-              <span class="row-label">Show app in Dock</span>
+              <span class="row-label">Keep in Dock when window closes</span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
         </section>
 
         <section class="settings-page" data-page="shortcut" hidden>
-          <h1 class="display">Shortcut</h1>
+          <h1 class="display">Dictation</h1>
           <div class="card">
             <div class="row">
-              <span class="row-label">Trigger key<small>Held down while you speak, so it must type nothing itself.</small></span>
-              <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut key"></select></span>
+              <span class="row-label">Dictation shortcut</span>
+              <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
             </div>
-            <div class="row">
-              <span class="row-label">Insert into focused app<small>Pastes each phrase where your cursor is.</small></span>
+            <label class="row">
+              <span class="row-label">Insert text at cursor</span>
               <span class="row-actions"><input id="insert-toggle" type="checkbox" class="switch" /></span>
-            </div>
+            </label>
           </div>
 
           <ul class="gesture-list">
@@ -369,7 +364,7 @@
               </span>
             </div>
             <div class="row">
-              <span class="row-label">Model<small>Any OpenRouter model id.</small></span>
+              <label class="row-label" for="ai-model">OpenRouter model ID</label>
               <span class="row-actions">
                 <input
                   id="ai-model"
@@ -381,25 +376,24 @@
               </span>
             </div>
             <div class="row">
-              <span class="row-label">
-                Clean up dictation
-                <small>Rewrite every dictated phrase before inserting it. Adds a
-                  round trip, so insertion is slower.</small>
-              </span>
+              <label class="row-label" for="transform-toggle">
+                Polish dictation before inserting
+                <small>AI processing delays insertion.</small>
+              </label>
               <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
             </div>
             <div class="row">
-              <span class="row-label">Polish shortcut<small>Rewrites the selected text in place.</small></span>
+              <span class="row-label">Polish selected text</span>
               <span class="row-actions">
-                <select id="polish-shortcut" aria-label="Polish shortcut"></select>
-                <button id="polish-now" class="pill-button" type="button">Run</button>
+                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
+                <button id="polish-now" class="pill-button" type="button">Polish now</button>
               </span>
             </div>
           </div>
 
           <div class="prompt-block">
             <div class="prompt-head">
-              <span class="row-label">Dictation prompt</span>
+              <label class="row-label" for="transform-prompt">Dictation polish instructions</label>
               <button class="pill-button" type="button" data-reset="transform">Reset</button>
             </div>
             <textarea id="transform-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
@@ -407,7 +401,7 @@
 
           <div class="prompt-block">
             <div class="prompt-head">
-              <span class="row-label">Polish prompt</span>
+              <label class="row-label" for="polish-prompt">Selected text polish instructions</label>
               <button class="pill-button" type="button" data-reset="polish">Reset</button>
             </div>
             <textarea id="polish-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>

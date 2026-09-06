@@ -15,6 +15,7 @@ import {
   isHotkeyBindingId,
 } from "../shared/hotkeys";
 import { SPEECH_MODELS, getSpeechModel, isSpeechModelId } from "../shared/models";
+import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import {
   DEFAULT_POLISH_PROMPT,
@@ -45,7 +46,6 @@ const element = {
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
   modelSelect: requireElement<HTMLSelectElement>("model-select"),
-  modelNote: requireElement<HTMLElement>("model-note"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   insertToggle: requireElement<HTMLInputElement>("insert-toggle"),
@@ -341,7 +341,6 @@ function applySettings(next: AppSettings): void {
   renderThemeToggle(next.theme);
 
   const model = getSpeechModel(next.modelId);
-  element.modelNote.textContent = `${model.modelId} · runs on this Mac`;
   element.overviewModel.textContent = model.label;
 
 
@@ -377,12 +376,7 @@ async function refreshMicrophones(requestLabels = false): Promise<void> {
       stream.getTracks().forEach((track) => track.stop());
     }
     const devices = await navigator.mediaDevices.enumerateDevices();
-    microphones = devices
-      .filter((device) => device.kind === "audioinput" && device.deviceId !== "default")
-      .map((device, index) => ({
-        id: device.deviceId,
-        label: device.label || `Microphone ${index + 1}`,
-      }));
+    microphones = microphoneDevices(devices);
     renderMicrophoneSelect();
     await host().setAvailableMicrophones(microphones);
   } catch {
@@ -394,14 +388,8 @@ async function refreshMicrophones(requestLabels = false): Promise<void> {
 function renderMicrophoneSelect(): void {
   const selected = settings.microphoneDeviceId;
   element.microphoneSelect.replaceChildren(new Option("System default", ""));
-  const ordered = [...microphones].sort((first, second) => {
-    const firstRecommended = /macbook/i.test(first.label);
-    const secondRecommended = /macbook/i.test(second.label);
-    return Number(secondRecommended) - Number(firstRecommended) || first.label.localeCompare(second.label);
-  });
-  for (const device of ordered) {
-    const label = /macbook/i.test(device.label) ? `${device.label} (Recommended)` : device.label;
-    element.microphoneSelect.append(new Option(label, device.id));
+  for (const device of microphones) {
+    element.microphoneSelect.append(new Option(device.displayLabel, device.id));
   }
   if (selected && !microphones.some((device) => device.id === selected)) {
     element.microphoneSelect.append(
@@ -542,7 +530,7 @@ function renderSetup(): void {
   element.setupLede.textContent =
     outstanding.length === 0
       ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Three of these are permissions macOS has to grant. The fourth is the model that does the transcribing, which runs on this Mac.";
+      : "Enable macOS permissions and install a speech model to dictate in any app.";
 
   const model = getSpeechModel(settings.modelId);
   const engineInstalled = hotkeyStatus?.engineInstalled === true;

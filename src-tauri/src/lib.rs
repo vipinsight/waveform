@@ -67,6 +67,7 @@ pub struct AppState {
 struct MicrophoneDevice {
     id: String,
     label: String,
+    display_label: String,
 }
 
 #[derive(Serialize)]
@@ -118,7 +119,12 @@ async fn set_available_microphones(
         .filter_map(|device| {
             let id: String = device.id.trim().chars().take(1_024).collect();
             let label: String = device.label.trim().chars().take(200).collect();
-            (!id.is_empty() && !label.is_empty()).then_some(MicrophoneDevice { id, label })
+            let display_label: String = device.display_label.trim().chars().take(220).collect();
+            (!id.is_empty() && !label.is_empty()).then_some(MicrophoneDevice {
+                id,
+                label,
+                display_label,
+            })
         })
         .take(32)
         .collect();
@@ -802,12 +808,32 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         let item = CheckMenuItem::with_id(
             app,
             format!("microphone-device-{index}"),
-            &device.label,
+            &device.display_label,
             true,
             device.id == settings.microphone_device_id,
             None::<&str>,
         )?;
         microphone_menu.append(&item)?;
+    }
+    if !settings.microphone_device_id.is_empty()
+        && !devices
+            .iter()
+            .any(|device| device.id == settings.microphone_device_id)
+    {
+        let name = if settings.microphone_device_name.is_empty() {
+            "microphone"
+        } else {
+            &settings.microphone_device_name
+        };
+        let unavailable = CheckMenuItem::with_id(
+            app,
+            "microphone-unavailable",
+            format!("Unavailable: {name}"),
+            false,
+            true,
+            None::<&str>,
+        )?;
+        microphone_menu.append(&unavailable)?;
     }
     let microphone_settings = MenuItem::with_id(
         app,

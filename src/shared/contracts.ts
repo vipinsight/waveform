@@ -37,6 +37,7 @@ export interface MicrophonePermissionResult {
 export interface MicrophoneDevice {
   id: string;
   label: string;
+  displayLabel: string;
 }
 
 /** Where a dictation session's text should end up. */

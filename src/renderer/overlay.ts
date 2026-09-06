@@ -1,4 +1,5 @@
 import { AudioCapture } from "./audio/capture";
+import { microphoneDevices } from "../shared/microphones";
 import type {
   DictationCommand,
   DictationMode,
@@ -171,14 +172,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
 async function syncAvailableMicrophones(): Promise<void> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    await host().setAvailableMicrophones(
-      devices
-        .filter((device) => device.kind === "audioinput" && device.deviceId !== "default")
-        .map((device, index) => ({
-          id: device.deviceId,
-          label: device.label || `Microphone ${index + 1}`,
-        })),
-    );
+    await host().setAvailableMicrophones(microphoneDevices(devices));
   } catch {
     // Capture itself succeeded; a missing tray refresh must not interrupt it.
   }
