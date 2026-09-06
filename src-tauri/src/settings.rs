@@ -64,6 +64,9 @@ pub struct AppSettings {
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
     pub hide_dock_when_closed: bool,
+    /// Whether the sidebar is folded away. A window preference rather than a
+    /// dictation one, but it belongs with the rest so it survives a restart.
+    pub sidebar_collapsed: bool,
 }
 
 impl Default for AppSettings {
@@ -91,6 +94,7 @@ impl Default for AppSettings {
             launch_at_login: false,
             show_flow_bar_always: false,
             hide_dock_when_closed: false,
+            sidebar_collapsed: false,
         }
     }
 }

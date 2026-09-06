@@ -60,6 +60,8 @@ export interface AppSettings {
   showFlowBarAlways: boolean;
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
+  /** Fold the sidebar away. Kept here so it survives a restart. */
+  sidebarCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -85,6 +87,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   showFlowBarAlways: false,
   hideDockWhenClosed: false,
+  sidebarCollapsed: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -142,6 +145,10 @@ export function normalizeSettings(
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed
         : base.hideDockWhenClosed,
+    sidebarCollapsed:
+      typeof input.sidebarCollapsed === "boolean"
+        ? input.sidebarCollapsed
+        : base.sidebarCollapsed,
   };
 }
 

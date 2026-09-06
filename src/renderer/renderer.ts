@@ -40,6 +40,8 @@ const element = {
   searchField: requireElement<HTMLInputElement>("search-field"),
   settingsButton: requireElement<HTMLButtonElement>("settings-button"),
   settingsPanel: requireElement<HTMLElement>("settings-panel"),
+  app: requireElement<HTMLElement>("app-shell"),
+  sidebarToggle: requireElement<HTMLButtonElement>("sidebar-toggle"),
   settingsClose: requireElement<HTMLButtonElement>("settings-close"),
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
@@ -181,6 +183,14 @@ function wireEvents(): void {
   });
 
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
+  element.sidebarToggle.addEventListener("click", () => {
+    // Written straight to the grid as well as saved, so the rail folds now
+    // rather than after the host has been round-tripped.
+    const collapsed = !settings.sidebarCollapsed;
+    settings = { ...settings, sidebarCollapsed: collapsed };
+    renderSidebarCollapsed();
+    void patchSettings({ sidebarCollapsed: collapsed });
+  });
   element.scrim.addEventListener("click", () => toggleSettings(false));
   element.settingsClose.addEventListener("click", () => toggleSettings(false));
   element.bannerAction.addEventListener("click", () => {
@@ -330,6 +340,7 @@ function applySettings(next: AppSettings): void {
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
   element.dockToggle.checked = !next.hideDockWhenClosed;
+  renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
   element.aiModel.value = next.openRouterModel;
@@ -550,6 +561,23 @@ function renderSetup(): void {
       outstanding.map((step) => step.label),
     )}.`;
   }
+}
+
+/**
+ * Folds the sidebar away, and tells the button what it will do next.
+ *
+ * The label is the state it moves to rather than the state it is in: a control
+ * that reads "sidebar hidden" while the sidebar is showing is a description,
+ * and this is a button.
+ */
+function renderSidebarCollapsed(): void {
+  const collapsed = settings.sidebarCollapsed;
+  element.app.dataset.sidebar = collapsed ? "collapsed" : "expanded";
+  element.sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+  element.sidebarToggle.setAttribute(
+    "aria-label",
+    collapsed ? "Show sidebar" : "Hide sidebar",
+  );
 }
 
 /** The command that installs the runtime for the selected model. */
