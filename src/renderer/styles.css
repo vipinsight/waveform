@@ -13,7 +13,7 @@
   --surface: #fffefb;
   --surface-sunken: #efece3;
   --surface-hover: #e9e6dc;
-  --ink: #1c1b18;
+  --ink: #1a1a1a;
   --ink-soft: #6b685f;
   --ink-faint: #97938a;
   --hairline: rgb(28 27 24 / 9%);
@@ -243,7 +243,7 @@ kbd {
   min-width: 0;
   height: 40px;
   padding: 0 11px;
-  margin-bottom: 6px;
+  margin-bottom: 18px;
 }
 
 .brand-name,
@@ -292,8 +292,8 @@ kbd {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: var(--ink-soft);
-  font-size: 13.5px;
+  color: var(--ink);
+  font-size: 14.5px;
   font-weight: 520;
   text-align: left;
   cursor: pointer;
@@ -301,13 +301,15 @@ kbd {
 }
 
 .nav-item svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
+  /* Lucide's own stroke lands near 1.4px at this size, lighter than the label
+     beside it. This carries about the same weight as the text. */
+  stroke-width: 2.25;
 }
 
 .nav-item:hover {
-  color: var(--ink);
   background: var(--surface-hover);
 }
 
@@ -316,7 +318,6 @@ kbd {
    are; the weight and the darker ink carry it. */
 .nav-item[aria-current="page"],
 .nav-item[aria-current="page"]:hover {
-  color: var(--ink);
   background: var(--surface-hover);
   font-weight: 580;
 }
