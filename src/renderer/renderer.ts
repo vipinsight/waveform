@@ -899,7 +899,9 @@ function iconButton(
   button.className = `entry-action ${modifier}`.trim();
   button.title = label;
   button.setAttribute("aria-label", label);
-  button.innerHTML = `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">${path}</svg>`;
+  button.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
   button.addEventListener("click", () => {
     onClick();
     if (label === "Copy") {
@@ -910,12 +912,10 @@ function iconButton(
   return button;
 }
 
-const COPY_ICON =
-  '<rect x="7" y="7" width="9.5" height="9.5" rx="2.2" stroke="currentColor" stroke-width="1.4"/>' +
-  '<path d="M13 7V5.5A2.2 2.2 0 0 0 10.8 3.3H5.5A2.2 2.2 0 0 0 3.3 5.5v5.3A2.2 2.2 0 0 0 5.5 13H7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>';
+/* Lucide, like the rest; see the note in index.html. */
+const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />';
 
-const TRASH_ICON =
-  '<path d="M4.6 6.2h10.8M8.2 6.2V4.9c0-.6.5-1.1 1.1-1.1h1.4c.6 0 1.1.5 1.1 1.1v1.3M6.1 6.2l.6 8.6c.05.7.6 1.2 1.3 1.2h4c.7 0 1.25-.5 1.3-1.2l.6-8.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>';
+const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />';
 
 function toggleSearch(open: boolean): void {
   searchOpen = open;
