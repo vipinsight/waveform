@@ -9,8 +9,8 @@
  * than a parallel set of rules.
  */
 :root {
-  --paper: #f6f4ef;
-  --surface: #fffefb;
+  --paper: #f5f4f1;
+  --surface: #fcfcfb;
   --surface-sunken: #efece3;
   --surface-hover: #e9e6dc;
   --ink: #1a1a1a;
@@ -973,7 +973,7 @@ kbd {
   width: min(860px, 94vw);
   height: min(600px, 88vh);
   border-radius: 18px;
-  background: var(--surface);
+  background: var(--paper);
   isolation: isolate;
   box-shadow: var(--shadow-modal);
   grid-template-columns: 188px minmax(0, 1fr);
@@ -1045,7 +1045,7 @@ kbd {
 .modal-body {
   position: relative;
   padding: 30px 34px;
-  background: var(--surface);
+  background: var(--paper);
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1061,10 +1061,13 @@ kbd {
 
 /* One flat rhythm for every setting: label and description left, control
    right, hairline between. */
+/* Raised, now that the pages beneath them are the window's own ground rather
+   than a white panel. Sunken against a sunken page left them barely there. */
 .card {
   padding: 4px 18px;
   border-radius: 14px;
-  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
 }
 
 .row {
