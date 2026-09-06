@@ -23,6 +23,12 @@ const MODEL_IDS: [&str; 2] = ["parakeet-tdt-0.6b-v3", "qwen3-asr-0.6b"];
 pub const DEFAULT_TRANSFORM_PROMPT: &str = include_str!("prompts/transform.txt");
 pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
 
+/// Kept in step with src/shared/prompts.ts, which is where the list the
+/// interface offers lives and why these particular ids were chosen.
+pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4.1-mini";
+/// Defaults that turned out not to name a model OpenRouter serves.
+pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
+
 /// Serialized as camelCase so one settings.json serves both hosts and the
 /// shape matches what the shared frontend expects.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,7 +88,7 @@ impl Default for AppSettings {
             overlay_cx: None,
             overlay_cy: None,
             theme: "system".to_string(),
-            open_router_model: "anthropic/claude-3.5-haiku".to_string(),
+            open_router_model: DEFAULT_OPENROUTER_MODEL.to_string(),
             transform_on_dictate: false,
             transform_prompt: DEFAULT_TRANSFORM_PROMPT.trim().to_string(),
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
@@ -124,6 +130,12 @@ impl AppSettings {
         self.hold_ms = self.hold_ms.clamp(120, 900);
         self.double_tap_ms = self.double_tap_ms.clamp(180, 900);
         self.open_router_model = non_empty(&self.open_router_model, &base.open_router_model, 200);
+        // The old default is not a model OpenRouter serves, so every rewrite
+        // request made with it failed and fell back to the raw transcript. It
+        // is replaced rather than kept, because keeping it preserves nothing.
+        if RETIRED_OPENROUTER_MODELS.contains(&self.open_router_model.as_str()) {
+            self.open_router_model = DEFAULT_OPENROUTER_MODEL.to_string();
+        }
         self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
         self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
         // Leaving the Dock with no menu bar icon would strand the app with no
@@ -188,6 +200,25 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
+    /// The old default never named a real model, so every rewrite failed and
+    /// fell back to the raw transcript. Loading must not preserve it.
+    #[test]
+    fn a_retired_model_is_replaced_on_load() {
+        let mut stored = AppSettings::default();
+        stored.open_router_model = "anthropic/claude-3.5-haiku".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.open_router_model, DEFAULT_OPENROUTER_MODEL);
+    }
+
+    /// A model the user chose themselves is theirs to keep.
+    #[test]
+    fn a_chosen_model_survives_load() {
+        let mut stored = AppSettings::default();
+        stored.open_router_model = "google/gemini-2.5-flash".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.open_router_model, "google/gemini-2.5-flash");
+    }
+
     use super::*;
 
     #[test]

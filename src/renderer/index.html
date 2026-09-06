@@ -398,19 +398,14 @@
                   autocomplete="off"
                   spellcheck="false"
                 />
-                <button id="key-save" class="pill-button is-primary" type="button">Save</button>
+                <button id="key-save" class="pill-button is-primary" type="button" disabled>Save</button>
+                <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
               </span>
             </div>
             <div class="row">
               <label class="row-label" for="ai-model">OpenRouter model ID</label>
               <span class="row-actions">
-                <input
-                  id="ai-model"
-                  class="text-input is-wide"
-                  list="model-suggestions"
-                  spellcheck="false"
-                />
-                <datalist id="model-suggestions"></datalist>
+                <select id="ai-model" aria-label="OpenRouter model"></select>
               </span>
             </div>
             <div class="row">

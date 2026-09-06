@@ -1230,6 +1230,14 @@ select {
   transition: background 130ms ease;
 }
 
+/* Save is disabled until there is an edit to save, so it has to look it --
+   otherwise the only difference between "nothing to do" and "did nothing" is
+   that neither of them does anything. */
+.pill-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .pill-button:hover {
   background: var(--hairline-strong);
 }

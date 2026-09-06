@@ -82,9 +82,9 @@ const element = {
   overviewEngineMemory: requireElement<HTMLElement>("overview-engine-memory"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
+  keyRemove: requireElement<HTMLButtonElement>("key-remove"),
   keyState: requireElement<HTMLElement>("key-state"),
-  aiModel: requireElement<HTMLInputElement>("ai-model"),
-  modelSuggestions: requireElement<HTMLElement>("model-suggestions"),
+  aiModel: requireElement<HTMLSelectElement>("ai-model"),
   transformToggle: requireElement<HTMLInputElement>("transform-toggle"),
   transformPrompt: requireElement<HTMLTextAreaElement>("transform-prompt"),
   polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
@@ -232,10 +232,12 @@ function wireEvents(): void {
   // Typing anything means the field no longer holds the placeholder mask.
   element.keyInput.addEventListener("input", () => {
     element.keyInput.dataset.pristine = "false";
+    syncKeyButtons();
   });
   // Save is the only way the key changes. Typing edits the field and nothing
   // more, so a half-pasted key cannot be committed by a stray keystroke.
   element.keySave.addEventListener("click", saveApiKey);
+  element.keyRemove.addEventListener("click", removeApiKey);
   element.aiModel.addEventListener("change", () => {
     void patchSettings({ openRouterModel: element.aiModel.value });
   });
@@ -336,6 +338,11 @@ function applySettings(next: AppSettings): void {
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
+  // A model chosen before this list existed is still a valid choice, so it is
+  // added rather than silently swapped for the first option.
+  if (!SUGGESTED_MODELS.some((model) => model === next.openRouterModel)) {
+    element.aiModel.append(new Option(next.openRouterModel, next.openRouterModel));
+  }
   element.aiModel.value = next.openRouterModel;
   element.transformToggle.checked = next.transformOnDictate;
   element.transformPrompt.value = next.transformPrompt;
@@ -364,7 +371,7 @@ function populateSelects(): void {
     );
   }
   for (const model of SUGGESTED_MODELS) {
-    element.modelSuggestions.append(new Option(model, model));
+    element.aiModel.append(new Option(model, model));
   }
 }
 
@@ -434,24 +441,49 @@ function renderAiStatus(status: AiStatus): void {
     element.keyState.textContent =
       "Saved for this session only: the keychain was unavailable.";
   } else {
-    element.keyState.textContent =
-      "Saved to your login keychain. Clear the field and save to remove it.";
+    element.keyState.textContent = "Saved to your login keychain.";
   }
+
+  element.keyRemove.hidden = !status.hasApiKey;
+  syncKeyButtons();
 
   element.transformToggle.disabled = !status.hasApiKey;
 }
 
 /** Saves, replaces or removes the key depending on what the field holds. */
 function saveApiKey(): void {
-  if (element.keyInput.dataset.pristine === "true") return;
-
   const value = element.keyInput.value.trim();
-  const request = value ? host().setOpenRouterKey(value) : host().clearOpenRouterKey();
+  if (element.keyInput.dataset.pristine === "true" || !value) return;
 
-  void request.then((status) => {
-    renderAiStatus(status);
-    flash(element.keySave, value ? "Saved" : "Removed");
-  });
+  void host()
+    .setOpenRouterKey(value)
+    .then((status) => {
+      element.keyInput.dataset.pristine = "true";
+      renderAiStatus(status);
+      flash(element.keySave, "Saved");
+    });
+}
+
+/**
+ * Removing is its own button rather than a mode of saving.
+ *
+ * Saving an empty field used to delete the key, which is a destructive action
+ * hidden inside a button that says Save -- and the only sign of which was the
+ * word the button flashed afterwards.
+ */
+function removeApiKey(): void {
+  void host()
+    .clearOpenRouterKey()
+    .then((status) => {
+      element.keyInput.dataset.pristine = "true";
+      renderAiStatus(status);
+    });
+}
+
+/** Save is only offered when there is an edit worth saving. */
+function syncKeyButtons(): void {
+  const edited = element.keyInput.dataset.pristine === "false";
+  element.keySave.disabled = !edited || element.keyInput.value.trim().length === 0;
 }
 
 /** Briefly confirms an action on the button that triggered it. */
