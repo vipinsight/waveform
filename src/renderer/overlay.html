@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <title>Waveform listening</title>
+        <!--
+      Icons are Lucide (ISC), inlined rather than loaded so the window has
+      nothing to fetch. Each carries `data-icon` with its name at
+      https://lucide.dev/icons, and the exact source is pinned by the
+      lucide-static devDependency.
+    -->
     <link rel="stylesheet" href="./overlay.css" />
   </head>
   <body>
@@ -14,9 +20,10 @@
       </div>
 
       <button id="hud-mic" class="hud-mic" type="button" aria-label="Start dictation">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
-          <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19v3" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <rect x="9" y="2" width="6" height="13" rx="3" />
         </svg>
       </button>
 
@@ -25,16 +32,17 @@
 
       <div class="hud-session">
         <button id="hud-cancel" class="hud-cancel" type="button" aria-label="Cancel">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <svg data-icon="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
           </svg>
         </button>
 
         <canvas id="wave" class="wave" width="240" height="80"></canvas>
 
         <button id="hud-accept" class="hud-accept" type="button" aria-label="Accept dictation">
-          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="m4 8 2.5 2.5L12 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg data-icon="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5" />
           </svg>
         </button>
       </div>
