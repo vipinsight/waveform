@@ -41,11 +41,12 @@ pub struct AppSettings {
     pub overlay_placement: String,
     pub overlay_x: Option<i32>,
     pub overlay_y: Option<i32>,
-    /// The HUD's logical size when `overlay_x`/`overlay_y` were recorded. The
-    /// HUD is centred in its window, so a saved frame only means the same spot
-    /// on screen if the size it was saved against is known.
-    pub overlay_w: Option<f64>,
-    pub overlay_h: Option<f64>,
+    /// Where the pill's centre sat inside the window when `overlay_x`/
+    /// `overlay_y` were recorded. A saved frame only points at the same spot on
+    /// screen if this is known, because the window has to grow around the pill
+    /// to make room for its tooltips.
+    pub overlay_cx: Option<f64>,
+    pub overlay_cy: Option<f64>,
     pub theme: String,
     pub open_router_model: String,
     pub transform_on_dictate: bool,
@@ -78,8 +79,8 @@ impl Default for AppSettings {
             overlay_placement: "bottom".to_string(),
             overlay_x: None,
             overlay_y: None,
-            overlay_w: None,
-            overlay_h: None,
+            overlay_cx: None,
+            overlay_cy: None,
             theme: "system".to_string(),
             open_router_model: "anthropic/claude-3.5-haiku".to_string(),
             transform_on_dictate: false,

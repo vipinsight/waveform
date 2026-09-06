@@ -8,11 +8,9 @@
   <body>
     <div id="hud" class="hud" data-state="idle" tabindex="0" role="group" aria-label="Dictation controls">
       <div id="hud-hint" class="hud-hint" aria-hidden="true">
-        <svg class="hud-hint-mic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
-          <path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <span id="hud-hint-key" class="hud-hint-key">fn</span>
+        <span>Dictate</span>
+        <b id="hud-hint-key" class="hud-hint-key">Fn</b>
+        <span class="hud-hint-arrow">→</span>
       </div>
 
       <button id="hud-mic" class="hud-mic" type="button" aria-label="Start dictation">
@@ -22,7 +20,7 @@
         </svg>
       </button>
 
-      <div class="hud-tip hud-tip-cancel" aria-hidden="true">Discard</div>
+      <div class="hud-tip hud-tip-cancel" aria-hidden="true">Cancel</div>
       <div class="hud-tip hud-tip-accept" aria-hidden="true">Finish and Paste</div>
 
       <div class="hud-session">

@@ -6,13 +6,13 @@
  * from `Carbon/HIToolbox/Events.h`; Fn is 63.
  */
 export const HOTKEY_BINDINGS = [
-  { id: "fn", label: "Fn", glyph: "fn", keyCode: 63 },
-  { id: "right-command", label: "Right Command", glyph: "⌘", keyCode: 54 },
-  { id: "left-command", label: "Left Command", glyph: "⌘", keyCode: 55 },
-  { id: "right-option", label: "Right Option", glyph: "⌥", keyCode: 61 },
-  { id: "left-option", label: "Left Option", glyph: "⌥", keyCode: 58 },
-  { id: "right-control", label: "Right Control", glyph: "⌃", keyCode: 62 },
-  { id: "right-shift", label: "Right Shift", glyph: "⇧", keyCode: 60 },
+  { id: "fn", label: "Fn", glyph: "fn", short: "Fn", keyCode: 63 },
+  { id: "right-command", label: "Right Command", glyph: "⌘", short: "Cmd", keyCode: 54 },
+  { id: "left-command", label: "Left Command", glyph: "⌘", short: "Cmd", keyCode: 55 },
+  { id: "right-option", label: "Right Option", glyph: "⌥", short: "Opt", keyCode: 61 },
+  { id: "left-option", label: "Left Option", glyph: "⌥", short: "Opt", keyCode: 58 },
+  { id: "right-control", label: "Right Control", glyph: "⌃", short: "Ctrl", keyCode: 62 },
+  { id: "right-shift", label: "Right Shift", glyph: "⇧", short: "Shift", keyCode: 60 },
 ] as const;
 
 export type HotkeyBinding = (typeof HOTKEY_BINDINGS)[number];
@@ -26,6 +26,14 @@ export function isHotkeyBindingId(value: unknown): value is HotkeyBindingId {
 
 export function getHotkeyBinding(id: HotkeyBindingId): HotkeyBinding | null {
   return HOTKEY_BINDINGS.find((binding) => binding.id === id) ?? null;
+}
+
+/**
+ * The shortcut as the HUD's tooltip writes it: the glyph, then the name it is
+ * usually spoken as -- "⌥ Opt". Fn is its own glyph, so it is not said twice.
+ */
+export function hotkeyCaption(binding: HotkeyBinding): string {
+  return binding.glyph === binding.short.toLowerCase() ? binding.short : `${binding.glyph} ${binding.short}`;
 }
 
 export function hotkeyKeyCode(id: HotkeyBindingId): number | null {

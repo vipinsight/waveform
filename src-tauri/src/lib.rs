@@ -40,14 +40,22 @@ const OVERLAY_LABEL: &str = "overlay";
 /// Large enough for the pill and the tooltips it raises above itself. The
 /// window is transparent but not click-through, so it is kept only as big as
 /// the widest tooltip actually needs.
-const OVERLAY_WIDTH: f64 = 192.0;
-const OVERLAY_HEIGHT: f64 = 78.0;
-/// The size saved positions were recorded against before the HUD grew to make
-/// room for tooltips. A stored frame stays a frame of its own era until the
-/// user drags the HUD again, so it is corrected when read rather than
-/// rewritten -- which keeps the correction idempotent across launches.
-const LEGACY_OVERLAY_WIDTH: f64 = 122.0;
-const LEGACY_OVERLAY_HEIGHT: f64 = 48.0;
+const OVERLAY_WIDTH: f64 = 208.0;
+const OVERLAY_HEIGHT: f64 = 66.0;
+/// Where the pill's centre sits inside that window. The tooltips live above the
+/// pill, so the space is not shared evenly and the pill cannot simply be
+/// centred -- centring it would mean matching the tooltip band with dead
+/// transparent window below, which swallows clicks meant for other apps.
+///
+/// `overlay.css` positions the pill at this offset. The two have to agree.
+const OVERLAY_PILL_CX: f64 = 104.0;
+const OVERLAY_PILL_CY: f64 = 48.0;
+/// Where the pill's centre sat before it had tooltips to make room for. A
+/// position saved back then still refers to that layout, so it is corrected
+/// when read rather than rewritten -- which keeps the correction idempotent
+/// however many times the app starts.
+const LEGACY_PILL_CX: f64 = 61.0;
+const LEGACY_PILL_CY: f64 = 24.0;
 const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
@@ -447,8 +455,8 @@ async fn end_overlay_drag(
         let mut settings = store.value();
         settings.overlay_x = Some(position.x);
         settings.overlay_y = Some(position.y);
-        settings.overlay_w = Some(OVERLAY_WIDTH);
-        settings.overlay_h = Some(OVERLAY_HEIGHT);
+        settings.overlay_cx = Some(OVERLAY_PILL_CX);
+        settings.overlay_cy = Some(OVERLAY_PILL_CY);
         store.update(settings)
     };
     let _ = app.emit("settings-changed", &next);
@@ -458,15 +466,15 @@ async fn end_overlay_drag(
 /// Positions the overlay from saved coordinates, or centres it on a screen edge.
 pub fn place_overlay(overlay: &tauri::WebviewWindow, settings: &AppSettings) {
     if let (Some(x), Some(y)) = (settings.overlay_x, settings.overlay_y) {
-        // The pill sits at the centre of its window, so a window that has
-        // changed size since the position was saved would put the pill
-        // somewhere else. Shift the frame by half the difference to leave the
-        // pill exactly where the user last dragged it.
+        // What the user dragged into place is the pill, not the window around
+        // it. Saved is the window's corner, so moving the pill within the
+        // window has to be undone here or the pill drifts each time the layout
+        // changes.
         let scale = overlay.scale_factor().unwrap_or(1.0);
-        let saved_width = settings.overlay_w.unwrap_or(LEGACY_OVERLAY_WIDTH);
-        let saved_height = settings.overlay_h.unwrap_or(LEGACY_OVERLAY_HEIGHT);
-        let dx = ((OVERLAY_WIDTH - saved_width) / 2.0 * scale).round() as i32;
-        let dy = ((OVERLAY_HEIGHT - saved_height) / 2.0 * scale).round() as i32;
+        let saved_cx = settings.overlay_cx.unwrap_or(LEGACY_PILL_CX);
+        let saved_cy = settings.overlay_cy.unwrap_or(LEGACY_PILL_CY);
+        let dx = ((OVERLAY_PILL_CX - saved_cx) * scale).round() as i32;
+        let dy = ((OVERLAY_PILL_CY - saved_cy) * scale).round() as i32;
         let _ = overlay.set_position(tauri::PhysicalPosition::new(x - dx, y - dy));
         return;
     }

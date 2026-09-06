@@ -36,6 +36,10 @@ export interface AppSettings {
       `overlayPlacement` on whichever display the pointer is on. */
   overlayX: number | null;
   overlayY: number | null;
+  /** Where the pill's centre sat inside its window when the position above was
+      recorded, so the window can grow around the pill without moving it. */
+  overlayCx: number | null;
+  overlayCy: number | null;
   theme: ThemePreference;
 
   /** OpenRouter model id used for both rewrite paths. */
@@ -69,6 +73,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlayPlacement: "bottom",
   overlayX: null,
   overlayY: null,
+  overlayCx: null,
+  overlayCy: null,
   theme: "system",
   openRouterModel: DEFAULT_OPENROUTER_MODEL,
   transformOnDictate: false,
@@ -111,6 +117,8 @@ export function normalizeSettings(
         : base.overlayPlacement,
     overlayX: coordinate(input.overlayX, base.overlayX),
     overlayY: coordinate(input.overlayY, base.overlayY),
+    overlayCx: coordinate(input.overlayCx, base.overlayCx),
+    overlayCy: coordinate(input.overlayCy, base.overlayCy),
     theme: isThemePreference(input.theme) ? input.theme : base.theme,
     openRouterModel: text(input.openRouterModel, base.openRouterModel, 200),
     transformOnDictate:

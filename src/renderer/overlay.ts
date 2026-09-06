@@ -1,6 +1,6 @@
 import { AudioCapture } from "./audio/capture";
 import { microphoneDevices } from "../shared/microphones";
-import { getHotkeyBinding } from "../shared/hotkeys";
+import { getHotkeyBinding, hotkeyCaption } from "../shared/hotkeys";
 import type {
   DictationCommand,
   DictationMode,
@@ -99,7 +99,7 @@ host().onSettingsChanged((settings) => {
  */
 function applyShortcutHint(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): void {
   const binding = getHotkeyBinding(hotkeyId);
-  hintKey.textContent = binding?.glyph ?? "";
+  hintKey.textContent = binding ? hotkeyCaption(binding) : "";
   hud.dataset.shortcut = binding ? "true" : "false";
   micButton.setAttribute(
     "aria-label",

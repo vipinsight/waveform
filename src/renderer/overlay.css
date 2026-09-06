@@ -57,8 +57,12 @@ body {
  */
 .hud {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  /* OVERLAY_PILL_CY / OVERLAY_PILL_CX in src-tauri/src/lib.rs. The pill is not
+     centred in its window: the tooltips sit above it, and matching that band
+     with dead space below would only add transparent window that swallows
+     clicks meant for other apps. */
+  top: 48px;
+  left: 104px;
   width: 100px;
   height: 28px;
   border: 1px solid rgb(255 255 255 / 10%);
@@ -283,22 +287,25 @@ body {
  * Raised above the capsule rather than shown as native tooltips, which need
  * the key window the HUD is built never to be. The shortcut sits here so it is
  * learned from the control it belongs to.
+ *
+ * Capsules themselves, matching the control they label.
  */
 .hud-hint,
 .hud-tip {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 7px);
   display: flex;
-  height: 18px;
+  height: 24px;
   align-items: center;
-  padding: 0 7px;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 999px;
   background: #080808;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 40%);
-  color: #e8e6e1;
-  font-size: 10px;
-  font-weight: 500;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 45%);
+  color: #f4f3f0;
+  font-size: 12px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   opacity: 0;
   /* The horizontal half-step is what centres each tooltip on what it names, so
@@ -313,7 +320,6 @@ body {
 
 .hud-hint {
   left: 50%;
-  gap: 5px;
 }
 
 /* Centred on the button each one names, which sits a fixed distance from its
@@ -321,15 +327,15 @@ body {
 .hud-tip-cancel { left: 14px; }
 .hud-tip-accept { right: 14px; --tip-shift: 50%; }
 
-.hud-hint-mic { width: 11px; height: 11px; opacity: 0.75; }
-
+/* The key is the part worth remembering, so it is the part that is set solid. */
 .hud-hint-key {
-  padding: 0 4px;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 4px;
   color: #fff;
-  font-size: 9px;
-  line-height: 13px;
+  font-weight: 660;
+}
+
+.hud-hint-arrow {
+  color: rgb(255 255 255 / 62%);
+  font-size: 13px;
 }
 
 /* The microphone fills the offered capsule, so being expanded is being
