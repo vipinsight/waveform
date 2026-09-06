@@ -51,13 +51,21 @@ const OVERLAY_HEIGHT: f64 = 66.0;
 /// The pill is anchored by its bottom edge so that unfolding raises its top and
 /// leaves the bottom still. These have to agree with the stylesheet.
 const OVERLAY_PILL_CX: f64 = 104.0;
-const OVERLAY_PILL_BOTTOM: f64 = 4.0;
+const OVERLAY_PILL_BOTTOM: f64 = 2.0;
 /// The resting bar's height, also from `overlay.css`.
 const OVERLAY_REST_HEIGHT: f64 = 6.0;
 /// A saved position refers to the resting bar's centre: that mark is what the
 /// user sees and drags, whatever the capsule does when it opens.
 const OVERLAY_PILL_CY: f64 =
     OVERLAY_HEIGHT - OVERLAY_PILL_BOTTOM - OVERLAY_REST_HEIGHT / 2.0;
+/// A deliberate one-off drop, asked for once the capsule began opening upward:
+/// the resting mark can sit nearer the screen edge when nothing grows below it.
+///
+/// It applies only while no centre has been recorded, which is what makes it
+/// happen once. Reading it back gives the same answer every launch, and the
+/// moment the HUD is dragged the new position is saved with a centre beside it
+/// and the nudge stops applying -- so it can never accumulate.
+const OVERLAY_PILL_NUDGE: f64 = 6.0;
 /// Where the pill's centre sat before it had tooltips to make room for. A
 /// position saved back then still refers to that layout, so it is corrected
 /// when read rather than rewritten -- which keeps the correction idempotent
@@ -500,8 +508,13 @@ pub fn place_overlay(overlay: &tauri::WebviewWindow, settings: &AppSettings) {
         let scale = overlay.scale_factor().unwrap_or(1.0);
         let saved_cx = settings.overlay_cx.unwrap_or(LEGACY_PILL_CX);
         let saved_cy = settings.overlay_cy.unwrap_or(LEGACY_PILL_CY);
+        let nudge = if settings.overlay_cy.is_none() {
+            OVERLAY_PILL_NUDGE
+        } else {
+            0.0
+        };
         let dx = ((OVERLAY_PILL_CX - saved_cx) * scale).round() as i32;
-        let dy = ((OVERLAY_PILL_CY - saved_cy) * scale).round() as i32;
+        let dy = ((OVERLAY_PILL_CY - saved_cy - nudge) * scale).round() as i32;
         let _ = overlay.set_position(tauri::PhysicalPosition::new(x - dx, y - dy));
         return;
     }
