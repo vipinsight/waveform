@@ -578,6 +578,17 @@ function renderSidebarCollapsed(): void {
     "aria-label",
     collapsed ? "Show sidebar" : "Hide sidebar",
   );
+
+  // Collapsed, the icon is all there is to go on, so each one names itself on
+  // hover. Expanded, the label is already beside it and a tooltip repeating it
+  // is just something else to wait for.
+  for (const item of Array.from(
+    document.querySelectorAll<HTMLElement>(".sidebar .nav-item"),
+  )) {
+    const label = item.querySelector("span")?.textContent?.trim();
+    if (collapsed && label) item.title = label;
+    else item.removeAttribute("title");
+  }
 }
 
 /** The command that installs the runtime for the selected model. */

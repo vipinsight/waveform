@@ -173,10 +173,10 @@ kbd {
   transition: grid-template-columns 200ms cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
-/* The rail folds away rather than disappearing, so it is clear where it went
-   and that the button by the traffic lights brings it back. */
+/* Collapsed to the icons rather than to nothing: every destination stays one
+   click away, and the rail still shows which one you are on. */
 .app[data-sidebar="collapsed"] {
-  grid-template-columns: 0 minmax(0, 1fr);
+  grid-template-columns: 60px minmax(0, 1fr);
 }
 
 /* The only place the window can be picked up.
@@ -207,8 +207,24 @@ kbd {
 }
 
 .app[data-sidebar="collapsed"] .sidebar {
-  padding-right: 0;
-  padding-left: 0;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+/*
+ * Only the words go. The labels are what the rail cannot afford at this width,
+ * and hiding them rather than the buttons keeps every destination reachable.
+ */
+.app[data-sidebar="collapsed"] .brand-name,
+.app[data-sidebar="collapsed"] .nav-item span,
+.app[data-sidebar="collapsed"] .shortcut-card {
+  display: none;
+}
+
+.app[data-sidebar="collapsed"] .brand,
+.app[data-sidebar="collapsed"] .nav-item {
+  justify-content: center;
+  padding: 0;
 }
 
 /* Above the rail it names, rather than across the top of the window: the strip
@@ -231,9 +247,11 @@ kbd {
 
 /* The mark carries its own accent bar, so it is an <img> rather than a mask;
    the four outer bars use currentColor and follow the interface's ink. */
+/* Sized for the bars, not the box: the artwork sits inside about two thirds of
+   its own viewBox, so a nominal 30px reads as roughly 20. */
 .mark {
-  width: 19px;
-  height: 19px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   color: var(--ink);
 }
