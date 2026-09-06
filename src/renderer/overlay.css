@@ -57,11 +57,12 @@ body {
  */
 .hud {
   position: absolute;
-  /* OVERLAY_PILL_CY / OVERLAY_PILL_CX in src-tauri/src/lib.rs. The pill is not
-     centred in its window: the tooltips sit above it, and matching that band
-     with dead space below would only add transparent window that swallows
-     clicks meant for other apps. */
-  top: 48px;
+  /* OVERLAY_PILL_BOTTOM / OVERLAY_PILL_CX in src-tauri/src/lib.rs.
+     Anchored by its bottom edge, not its centre, so unfolding raises the top of
+     the capsule and leaves the bottom where it was. Growing about the centre
+     pushed the pill down as it opened, towards the edge of the screen it
+     usually sits against. */
+  bottom: 4px;
   left: 104px;
   width: 100px;
   height: 28px;
@@ -74,7 +75,7 @@ body {
   opacity: 0;
   /* Rises into place rather than only fading, which is what makes it read as
      a system control instead of a web element. */
-  transform: translate(-50%, -50%) translateY(6px) scale(0.9);
+  transform: translate(-50%, 0) translateY(6px) scale(0.9);
   /*
    * Width springs; height does not. An overshoot on width reads as a control
    * opening, while the same overshoot on height makes everything centred
@@ -93,7 +94,7 @@ body {
 
 .hud[data-visible="true"] {
   opacity: 1;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, 0);
 }
 
 /* Leaving is quicker than arriving, so dismissing never feels sticky. */
@@ -155,7 +156,7 @@ body {
 
 .hud[data-dragging="true"] {
   cursor: grabbing;
-  transform: translate(-50%, -50%) scale(1.04);
+  transform: translate(-50%, 0) scale(1.04);
   transition: transform 90ms ease-out;
 }
 

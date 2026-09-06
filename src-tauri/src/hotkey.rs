@@ -79,6 +79,21 @@ pub fn key_code_for(hotkey_id: &str) -> Option<i64> {
     })
 }
 
+/// The binding as the interface names it, for the menu bar. Kept next to
+/// `key_code_for` so the two tables are edited together.
+pub fn label_for(hotkey_id: &str) -> Option<&'static str> {
+    Some(match hotkey_id {
+        "fn" => "Fn",
+        "right-command" => "Right Command",
+        "left-command" => "Left Command",
+        "right-option" => "Right Option",
+        "left-option" => "Left Option",
+        "right-control" => "Right Control",
+        "right-shift" => "Right Shift",
+        _ => return None,
+    })
+}
+
 pub struct HotkeyHelper {
     stdin: Mutex<Option<ChildStdin>>,
     /// Only one selection read may be outstanding: the helper drives the system

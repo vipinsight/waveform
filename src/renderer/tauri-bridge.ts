@@ -123,6 +123,7 @@ const api: DesktopApi = {
     subscribe<DictationCommand>("dictation-command", listener),
   onOverlayCursor: (listener) =>
     subscribe<OverlayPoint | null>("overlay-cursor", listener),
+  setOverlayHitRegion: (region) => void invoke("set_overlay_hit_region", { ...region }),
   onDictationUpdate: (listener) =>
     subscribe<DictationUpdate>("dictation-update", listener),
   reportDictationState: (status) => void invoke("report_dictation_state", { status }),
@@ -137,6 +138,8 @@ const api: DesktopApi = {
   onOpenSettings: (listener) => subscribe<void>("open-settings", listener),
   onOpenMicrophoneSettings: (listener) =>
     subscribe<void>("open-microphone-settings", listener),
+  onOpenShortcutSettings: (listener) =>
+    subscribe<void>("open-shortcut-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),
 };
 

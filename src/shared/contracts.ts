@@ -68,6 +68,12 @@ export interface OverlayPoint {
   y: number;
 }
 
+/** A rectangle in the HUD's own coordinates. */
+export interface OverlayRect extends OverlayPoint {
+  width: number;
+  height: number;
+}
+
 export interface DictationStatus {
   state: DictationState;
   sink: DictationSink;
@@ -167,6 +173,7 @@ export interface DesktopApi {
   onOpenSettings(listener: () => void): () => void;
   /** The tray's microphone submenu opens directly to its matching control. */
   onOpenMicrophoneSettings(listener: () => void): () => void;
+  onOpenShortcutSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
   getHistory(): Promise<SavedDictation[]>;
   deleteDictation(id: string): Promise<SavedDictation[]>;
@@ -179,6 +186,10 @@ export interface DesktopApi {
       it is elsewhere. The HUD cannot work this out itself: it is never the key
       window, so WebKit sends it no pointer events and matches no `:hover`. */
   onOverlayCursor(listener: (point: OverlayPoint | null) => void): () => void;
+  /** Which part of the HUD's window is the pill. Everything outside it is made
+      click-through, so the window's transparent margin stops swallowing clicks
+      meant for the app underneath. */
+  setOverlayHitRegion(region: OverlayRect): void;
   onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
   reportDictationState(status: DictationStatus): void;
   reportDictationPhrase(phrase: DictationPhrase): void;

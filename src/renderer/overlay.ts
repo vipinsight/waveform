@@ -1,6 +1,6 @@
 import { AudioCapture } from "./audio/capture";
 import { microphoneDevices } from "../shared/microphones";
-import { getHotkeyBinding, hotkeyCaption } from "../shared/hotkeys";
+import { getHotkeyBinding, hotkeyArrow, hotkeyCaption } from "../shared/hotkeys";
 import type {
   DictationCommand,
   DictationMode,
@@ -45,6 +45,7 @@ const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
 const micButton = requireElement<HTMLButtonElement>("hud-mic");
 const acceptButton = requireElement<HTMLButtonElement>("hud-accept");
 const hintKey = requireElement<HTMLElement>("hud-hint-key");
+const hintArrow = requireElement<HTMLElement>("hud-hint-arrow");
 const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
@@ -99,6 +100,7 @@ host().onSettingsChanged((settings) => {
 function applyShortcutHint(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): void {
   const binding = getHotkeyBinding(hotkeyId);
   hintKey.textContent = binding ? hotkeyCaption(binding) : "";
+  hintArrow.textContent = binding ? hotkeyArrow(binding) : "";
   hud.dataset.shortcut = binding ? "true" : "false";
   micButton.setAttribute(
     "aria-label",
@@ -123,6 +125,37 @@ enableDragging();
  * here listens for `pointerleave`: it would fight the poll, which is the only
  * thing that actually knows where the pointer is.
  */
+/*
+ * The window has to be much larger than the pill, because it holds the
+ * tooltips -- and a transparent window still swallows clicks. So the host is
+ * told which part of it is really the control, and hands the rest back to
+ * whatever is underneath. The shape is decided here because it is decided in
+ * CSS; the host only knows the window.
+ */
+let reportedRegion = "";
+
+function reportHitRegion(): void {
+  const rect = hud.getBoundingClientRect();
+  // The skirt that makes a six-pixel bar catchable is part of the target.
+  const padX = state === "idle" ? 4 : 0;
+  const padY = state === "idle" ? 7 : 0;
+  const region = {
+    x: Math.round(rect.left - padX),
+    y: Math.round(rect.top - padY),
+    width: Math.round(rect.width + padX * 2),
+    height: Math.round(rect.height + padY * 2),
+  };
+  const key = `${region.x},${region.y},${region.width},${region.height}`;
+  if (key === reportedRegion) return;
+  reportedRegion = key;
+  host().setOverlayHitRegion(region);
+}
+
+// The capsule settles into its new size after the state has already changed,
+// so the final measurement comes from the transition rather than the switch.
+hud.addEventListener("transitionend", reportHitRegion);
+reportHitRegion();
+
 host().onOverlayCursor((point) => {
   const node = point ? document.elementFromPoint(point.x, point.y) : null;
   // The window is much larger than the pill -- it has to hold the tooltips --
@@ -132,6 +165,7 @@ host().onOverlayCursor((point) => {
   pointerOver = target !== null;
   if (state === "idle") hud.dataset.expanded = pointerOver ? "true" : "false";
   hud.dataset.hover = pointerOver ? controlAt(node) : "";
+  reportHitRegion();
 });
 
 /** Which control the pointer is over, as a `data-hover` value. */
@@ -316,6 +350,7 @@ function finish(): void {
   hud.dataset.visible = showFlowBarAlways ? "true" : "false";
   srLabel.textContent = STATE_LABEL.idle;
   syncIdleHover();
+  reportHitRegion();
   host().reportDictationState({ state: "idle", sink, mode });
 }
 
@@ -343,6 +378,7 @@ function showIdle(): void {
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL.idle;
   syncIdleHover();
+  reportHitRegion();
 }
 
 function setState(next: DictationState): void {
@@ -353,6 +389,7 @@ function setState(next: DictationState): void {
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL[next];
   if (next === "rewriting" || next === "error") acceptButton.disabled = true;
+  reportHitRegion();
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {

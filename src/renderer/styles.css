@@ -31,11 +31,7 @@
   --hint-hairline: rgb(91 68 112 / 18%);
   --hint-key: rgb(255 255 255 / 55%);
   --hint-border: rgb(213 188 237 / 30%);
-  --nav-active: rgb(255 255 255 / 13%);
-  --nav-active-ink: #f7f4ee;
   --hint-border: rgb(122 74 176 / 30%);
-  --nav-active: #1f1e1b;
-  --nav-active-ink: #faf8f3;
   /* One gap all round the content panel. */
   --inset: 14px;
   --titlebar: 58px;
@@ -72,8 +68,6 @@
     --hint-hairline: rgb(213 188 237 / 24%);
     --hint-key: rgb(255 255 255 / 9%);
     --hint-border: rgb(213 188 237 / 30%);
-    --nav-active: rgb(255 255 255 / 13%);
-    --nav-active-ink: #f7f4ee;
     color-scheme: dark;
   }
 }
@@ -242,7 +236,7 @@ kbd {
   font-size: 13.5px;
   font-weight: 520;
   text-align: left;
-  cursor: default;
+  cursor: pointer;
   transition: background 130ms ease, color 130ms ease;
 }
 
@@ -257,17 +251,14 @@ kbd {
   background: var(--surface-hover);
 }
 
-/* Near black, in both navs. The selected item used to be a shade of the
-   sidebar itself, which read as a hover state rather than as where you are. */
-.nav-item[aria-current="page"] {
-  color: var(--nav-active-ink);
-  background: var(--nav-active);
-  font-weight: 580;
-}
-
+/* The selected item wears the hover fill. A near-black slab was emphatic
+   enough to read as a button that had been pressed rather than as where you
+   are; the weight and the darker ink carry it. */
+.nav-item[aria-current="page"],
 .nav-item[aria-current="page"]:hover {
-  color: var(--nav-active-ink);
-  background: var(--nav-active);
+  color: var(--ink);
+  background: var(--surface-hover);
+  font-weight: 580;
 }
 
 .sidebar-spacer {

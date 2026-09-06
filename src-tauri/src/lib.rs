@@ -43,14 +43,21 @@ const OVERLAY_LABEL: &str = "overlay";
 /// the widest tooltip actually needs.
 const OVERLAY_WIDTH: f64 = 208.0;
 const OVERLAY_HEIGHT: f64 = 66.0;
-/// Where the pill's centre sits inside that window. The tooltips live above the
-/// pill, so the space is not shared evenly and the pill cannot simply be
-/// centred -- centring it would mean matching the tooltip band with dead
+/// Where the pill sits inside that window, matching `overlay.css`. The tooltips
+/// live above it, so the space is not shared evenly and the pill cannot simply
+/// be centred -- centring would mean matching the tooltip band with dead
 /// transparent window below, which swallows clicks meant for other apps.
 ///
-/// `overlay.css` positions the pill at this offset. The two have to agree.
+/// The pill is anchored by its bottom edge so that unfolding raises its top and
+/// leaves the bottom still. These have to agree with the stylesheet.
 const OVERLAY_PILL_CX: f64 = 104.0;
-const OVERLAY_PILL_CY: f64 = 48.0;
+const OVERLAY_PILL_BOTTOM: f64 = 4.0;
+/// The resting bar's height, also from `overlay.css`.
+const OVERLAY_REST_HEIGHT: f64 = 6.0;
+/// A saved position refers to the resting bar's centre: that mark is what the
+/// user sees and drags, whatever the capsule does when it opens.
+const OVERLAY_PILL_CY: f64 =
+    OVERLAY_HEIGHT - OVERLAY_PILL_BOTTOM - OVERLAY_REST_HEIGHT / 2.0;
 /// Where the pill's centre sat before it had tooltips to make room for. A
 /// position saved back then still refers to that layout, so it is corrected
 /// when read rather than rewritten -- which keeps the correction idempotent
@@ -81,6 +88,10 @@ pub struct AppState {
     /// Whether the pointer is over the HUD, from `watch_overlay_hover`. Read
     /// on the main thread while handling reopen, so it cannot be a lock.
     overlay_hovered: AtomicBool,
+    /// The part of the HUD's window that is actually the pill, reported by the
+    /// HUD itself because the shape is decided in CSS. Everything outside it is
+    /// made click-through.
+    overlay_hit_region: StdMutex<Option<(f64, f64, f64, f64)>>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -410,6 +421,21 @@ async fn polish_selection(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// The HUD reports which part of its window is the pill; see `watch_overlay_hover`.
+#[tauri::command]
+async fn set_overlay_hit_region(
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if let Ok(mut region) = state.overlay_hit_region.lock() {
+        *region = Some((x, y, width, height));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn begin_overlay_drag(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
@@ -562,6 +588,7 @@ pub fn run() {
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
                 overlay_hovered: AtomicBool::new(false),
+                overlay_hit_region: StdMutex::new(None),
             });
 
             build_overlay_window(app.handle())?;
@@ -665,6 +692,7 @@ pub fn run() {
             set_openrouter_key,
             clear_openrouter_key,
             polish_selection,
+            set_overlay_hit_region,
             begin_overlay_drag,
             drag_overlay,
             end_overlay_drag,
@@ -813,6 +841,14 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.toggle_from_app().await });
         }
+        "shortcut-settings" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-shortcut-settings", ());
+        }
+        "paste-last" => {
+            let dictation = app.state::<AppState>().dictation.clone();
+            tauri::async_runtime::spawn(async move { dictation.paste_last().await });
+        }
         "polish" => {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
@@ -842,6 +878,19 @@ fn select_microphone_from_menu(app: &tauri::AppHandle, device_id: String, device
     });
 }
 
+/// Writes an accelerator the way a menu does, so the menu bar reads like one.
+fn accelerator_label(accelerator: &str) -> String {
+    if accelerator == "none" {
+        return "Off".into();
+    }
+    accelerator
+        .replace("CommandOrControl+", "⌘")
+        .replace("Command+", "⌘")
+        .replace("Control+", "⌃")
+        .replace("Alt+", "⌥")
+        .replace("Shift+", "⇧")
+}
+
 /// Builds the menu bar icon.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
@@ -854,6 +903,48 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .try_lock()
         .map(|settings| settings.value())
         .unwrap_or_default();
+
+    // Naming the keys here is the point: the menu bar is where someone looks
+    // when they have forgotten them, and it is reachable without the window.
+    let shortcut_menu = Submenu::new(app, "Shortcuts", true)?;
+    let dictate_key = hotkey::label_for(&settings.hotkey_id).unwrap_or("Off");
+    shortcut_menu.append(&MenuItem::with_id(
+        app,
+        "shortcut-dictate",
+        format!("Dictate — {dictate_key}"),
+        false,
+        None::<&str>,
+    )?)?;
+    shortcut_menu.append(&MenuItem::with_id(
+        app,
+        "shortcut-polish",
+        format!("Polish selection — {}", accelerator_label(&settings.polish_shortcut)),
+        false,
+        None::<&str>,
+    )?)?;
+    shortcut_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    shortcut_menu.append(&MenuItem::with_id(
+        app,
+        "shortcut-settings",
+        "Change shortcuts…",
+        true,
+        None::<&str>,
+    )?)?;
+
+    // Disabled rather than hidden when there is nothing to paste, so the item
+    // does not appear and disappear as history comes and goes.
+    let has_history = state
+        .history
+        .try_lock()
+        .map(|history| !history.entries().is_empty())
+        .unwrap_or(false);
+    let paste_last = MenuItem::with_id(
+        app,
+        "paste-last",
+        "Paste last dictation",
+        has_history,
+        None::<&str>,
+    )?;
     let devices = state
         .microphones
         .lock()
@@ -914,7 +1005,9 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             &open,
             &PredefinedMenuItem::separator(app)?,
             &microphone_menu,
+            &shortcut_menu,
             &PredefinedMenuItem::separator(app)?,
+            &paste_last,
             &polish,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -999,6 +1092,8 @@ struct OverlayCursor {
 fn watch_overlay_hover(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last: Option<(i32, i32)> = None;
+        // The window is born clickable, which is what a fresh HUD needs.
+        let mut clickable = true;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(OVERLAY_HOVER_POLL_MS)).await;
 
@@ -1032,6 +1127,31 @@ fn watch_overlay_hover(app: tauri::AppHandle) {
             } else {
                 None
             };
+
+            // The window is far bigger than the pill, to hold the tooltips,
+            // and a transparent window still swallows clicks. Anything outside
+            // the pill is handed back to whatever is underneath.
+            let over_pill = next.is_some_and(|(x, y)| {
+                match app
+                    .state::<AppState>()
+                    .overlay_hit_region
+                    .lock()
+                    .ok()
+                    .and_then(|region| *region)
+                {
+                    Some((rx, ry, rw, rh)) => {
+                        let (x, y) = (f64::from(x), f64::from(y));
+                        x >= rx && y >= ry && x < rx + rw && y < ry + rh
+                    }
+                    // Nothing measured yet. Stay clickable rather than let
+                    // clicks fall through a HUD that is really there.
+                    None => true,
+                }
+            });
+            if over_pill != clickable {
+                clickable = over_pill;
+                let _ = overlay.set_ignore_cursor_events(!over_pill);
+            }
 
             // Quiet while the pointer is away, but every tick while it is
             // near: the HUD decides what counts as "on the pill" by measuring

@@ -374,6 +374,19 @@ impl Dictation {
         self.end_session("stop").await;
     }
 
+    /// Pastes the most recent dictation into whatever is frontmost.
+    ///
+    /// A dictation that went to the wrong place, or that the user wants twice,
+    /// otherwise means opening the window and copying it out of the history.
+    pub async fn paste_last(self: &Arc<Self>) {
+        let text = {
+            let history = self.history.lock().await;
+            history.entries().first().map(|entry| entry.text.clone())
+        };
+        let Some(text) = text else { return };
+        self.helper.paste(&text).await;
+    }
+
     /// Ends a running session and rewrites what was said before inserting it.
     pub async fn stop_and_polish(self: &Arc<Self>) {
         if self.session.lock().await.is_none() {

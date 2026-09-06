@@ -147,6 +147,7 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true));
+  host().onOpenShortcutSettings(() => toggleSettings(true, "shortcut"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
