@@ -18,42 +18,24 @@
 
       <aside class="sidebar">
         <nav class="nav" aria-label="Sections">
-          <button class="nav-item" type="button" data-view="dictate" aria-current="page">
-            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <rect x="7.4" y="2.4" width="5.2" height="9.4" rx="2.6" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M4.6 9.2a5.4 5.4 0 0 0 10.8 0M10 14.6v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-<span>Dictation</span>
-          </button>
           <button class="nav-item" type="button" data-view="overview">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M3.4 12.6V16M7.8 8v8M12.2 4.4V16M16.6 10.2V16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <span>Overview</span>
           </button>
+          <button class="nav-item" type="button" data-view="dictate" aria-current="page">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="7.4" y="2.4" width="5.2" height="9.4" rx="2.6" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M4.6 9.2a5.4 5.4 0 0 0 10.8 0M10 14.6v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span>Dictation</span>
+          </button>
         </nav>
 
         <div class="sidebar-spacer"></div>
 
         <p class="shortcut-card" id="shortcut-hint"></p>
-
-        <div class="sidebar-status">
-          <div class="sidebar-status-row">
-            <span class="dot" id="model-dot" data-stage="loading" aria-hidden="true"></span>
-            <span id="status-text" aria-live="polite">Starting local model…</span>
-          </div>
-          <div class="sidebar-status-row">
-            <span class="dot" id="hotkey-dot" data-armed="false" aria-hidden="true"></span>
-            <span id="hotkey-summary">Shortcut off</span>
-          </div>
-          <div class="sidebar-status-row" id="resource-row" hidden>
-            <span class="dot" style="background: transparent" aria-hidden="true"></span>
-            <span class="resource-split" title="CPU and memory across Waveform and the speech engine">
-              <span class="resource-metric">CPU<b id="resource-cpu">—</b></span>
-              <span class="resource-metric">Memory<b id="resource-memory">—</b></span>
-            </span>
-          </div>
-        </div>
 
         <nav class="nav" aria-label="Settings">
           <button class="nav-item" type="button" id="settings-button" aria-haspopup="dialog">

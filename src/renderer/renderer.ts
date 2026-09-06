@@ -7,7 +7,6 @@ import type {
   MicrophoneDevice,
   ModelEvent,
   ResourceUsage,
-  UiStage,
 } from "../shared/contracts";
 import {
   HOTKEY_BINDINGS,
@@ -31,13 +30,6 @@ import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
-  statusText: requireElement<HTMLElement>("status-text"),
-  modelDot: requireElement<HTMLElement>("model-dot"),
-  hotkeyDot: requireElement<HTMLElement>("hotkey-dot"),
-  hotkeySummary: requireElement<HTMLElement>("hotkey-summary"),
-  resourceCpu: requireElement<HTMLElement>("resource-cpu"),
-  resourceMemory: requireElement<HTMLElement>("resource-memory"),
-  resourceRow: requireElement<HTMLElement>("resource-row"),
   history: requireElement<HTMLElement>("history"),
   dictationDeck: requireElement<HTMLElement>("dictation-deck"),
   emptyState: requireElement<HTMLElement>("empty-state"),
@@ -598,20 +590,8 @@ function resolveSetupStep(id: string): void {
 }
 
 function renderHotkeyStatus(): void {
-  const status = hotkeyStatus;
-  const binding = getHotkeyBinding(settings.hotkeyId);
-
-  const armed =
-    status?.supported === true && status.running && status.inputMonitoring && !!binding;
-  element.hotkeyDot.dataset.armed = String(armed);
-
-  // The sidebar states the binding; anything wrong with it is the banner's
-  // job. Saying it in three places at once made the window look alarmed.
-  element.hotkeySummary.textContent = binding
-    ? `${binding.glyph} ${binding.label}`
-    : "Shortcut off";
-  // The sidebar card names the same binding, so it is rendered from here
-  // rather than from anything that could describe a different one.
+  // The shortcut card names the binding, and it is rendered from here rather
+  // than from anything that could describe a different one.
   renderShortcutCard();
   renderSetup();
   renderDictationDeck();
@@ -707,9 +687,6 @@ function renderStats(stats: AppStats): void {
 
 function renderResourceUsage(usage: ResourceUsage): void {
   const memory = formatMemory(usage.memoryMb);
-  element.resourceRow.hidden = false;
-  element.resourceCpu.textContent = `${usage.cpuPercent}%`;
-  element.resourceMemory.textContent = memory;
   element.overviewCpu.textContent = `${usage.cpuPercent}%`;
   element.overviewMemory.textContent = memory;
   element.overviewEngineMemory.textContent =
@@ -740,7 +717,7 @@ function handleModelEvent(event: ModelEvent): void {
     modelLoading = true;
   }
 
-  setStatus(event.message, event.stage);
+  setStatus(event.message);
   renderDictationDeck();
 }
 
@@ -751,8 +728,8 @@ function handleDictationUpdate(update: DictationUpdate): void {
   // carries only the engine: which model, ready or not, and anything that
   // went wrong.
   const { status } = update;
-  if (status.state === "error" && status.message) setStatus(status.message, "error");
-  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`, "ready");
+  if (status.state === "error" && status.message) setStatus(status.message);
+  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`);
 }
 
 /** The shortcut is the way in, so the sidebar says which one to hold. */
@@ -963,9 +940,7 @@ function toggleSettings(open: boolean, page = "general"): void {
   void host().getAiStatus().then(renderAiStatus);
 }
 
-function setStatus(message: string, stage: UiStage): void {
-  element.statusText.textContent = message;
-  element.modelDot.dataset.stage = stage;
+function setStatus(message: string): void {
   element.overviewModelState.textContent = message;
 }
 

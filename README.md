@@ -157,8 +157,10 @@ press the shortcut. Your clipboard is restored afterwards.
 
 ## Living in the menu bar
 
-Waveform starts with its main window hidden. Open it from the Dock or menu bar
-when needed; dictation shortcuts remain available in the background.
+With **Start with login** enabled, Waveform starts in the background after you
+log in, including after a restart. Its main window stays hidden; dictation
+shortcuts remain available. Open it from the Dock or menu bar when needed.
+Launching Waveform manually opens the main window.
 
 Closing the window does not quit Waveform: the shortcut keeps working with
 nothing on screen, and the Dock icon or the menu bar icon brings the window

@@ -291,92 +291,6 @@ kbd {
   font-weight: 600;
 }
 
-.sidebar-status {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 12px;
-  border-radius: 11px;
-  margin-bottom: 8px;
-  background: var(--surface-sunken);
-}
-
-.sidebar-status-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 520;
-}
-
-/*
- * Two halves of fixed width, rather than one sentence. The readings refresh
- * every second, and on a shared line a CPU figure growing a digit shoved the
- * memory figure sideways with it. Tabular figures stop the digits themselves
- * changing width as they tick.
- */
-.resource-split {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.resource-metric {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 5px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.resource-metric b {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-  font-weight: 560;
-}
-
-.sidebar-status-row span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-status-row[hidden] {
-  display: none;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--ink-faint);
-}
-
-.dot[data-stage="ready"] {
-  background: var(--positive);
-}
-
-.dot[data-stage="starting"],
-.dot[data-stage="downloading"],
-.dot[data-stage="loading"],
-.dot[data-stage="transcribing"] {
-  background: var(--accent);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.dot[data-stage="error"] {
-  background: var(--danger);
-}
-
-.dot[data-armed="true"] {
-  background: var(--positive);
-}
-
 /* ----------------------------------------------------------------- views */
 
 .content {
@@ -1338,11 +1252,6 @@ select {
 
 /* --------------------------------------------------------------- motion */
 
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
 
 @keyframes phrase-in {
   from {

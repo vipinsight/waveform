@@ -38,6 +38,7 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
+const AUTOSTART_ARG: &str = "--autostart";
 /// Large enough for the pill and the tooltips it raises above itself. The
 /// window is transparent but not click-through, so it is kept only as big as
 /// the widest tooltip actually needs.
@@ -545,14 +546,18 @@ fn position_on_active_display(overlay: &tauri::WebviewWindow, placement: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let started_at_login = std::env::args_os().any(|arg| arg == AUTOSTART_ARG);
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         // Remembers the main window's size and position, but never restores
-        // visibility: every launch starts with the main window hidden. The overlay is
-        // excluded: it is placed deliberately and its position is already
-        // persisted in settings.
+        // visibility: setup decides whether to show it based on the launch source.
+        // The overlay is excluded: it is placed deliberately and its position
+        // is already persisted in settings.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -564,7 +569,7 @@ pub fn run() {
         )
         .menu(build_app_menu)
         .on_menu_event(|app, event| handle_menu_action(app.app_handle(), event.id().as_ref()))
-        .setup(|app| {
+        .setup(move |app| {
             let user_data = user_data_dir(app.handle());
             std::fs::create_dir_all(&user_data).ok();
 
@@ -677,6 +682,12 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let _ = models.select(&selected).await;
             });
+
+            if !started_at_login {
+                present_main_window(app.handle());
+            } else if initial.hide_dock_when_closed && initial.menu_bar_icon {
+                app.set_activation_policy(ActivationPolicy::Accessory);
+            }
 
             Ok(())
         })
