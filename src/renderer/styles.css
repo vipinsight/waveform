@@ -11,7 +11,7 @@
 :root {
   --paper: #f5f4f1;
   --surface: #fcfcfb;
-  --surface-sunken: #efece3;
+  --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --ink: #1a1a1a;
   --ink-soft: #6b685f;
@@ -1023,7 +1023,7 @@ kbd {
 .modal-body {
   position: relative;
   padding: 30px 34px;
-  background: var(--paper);
+  background: var(--surface);
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1039,13 +1039,10 @@ kbd {
 
 /* One flat rhythm for every setting: label and description left, control
    right, hairline between. */
-/* Raised, now that the pages beneath them are the window's own ground rather
-   than a white panel. Sunken against a sunken page left them barely there. */
 .card {
   padding: 4px 18px;
   border-radius: 14px;
-  border: 1px solid var(--hairline);
-  background: var(--surface);
+  background: var(--surface-sunken);
 }
 
 .row {
