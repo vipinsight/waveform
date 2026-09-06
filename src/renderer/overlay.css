@@ -145,7 +145,7 @@ body {
 }
 
 .hud[data-state]:not([data-state="idle"])[data-mode="latched"] {
-  width: 100px;
+  width: 98px;
   /* A locked session runs until dismissed, so it carries a brighter rim. */
   border-color: rgb(255 255 255 / 34%);
 }
@@ -204,7 +204,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 2px;
+  padding: 0 3px;
 }
 
 /* Hovering the resting bar offers the microphone; a live session replaces it
@@ -232,8 +232,8 @@ body {
 .hud-cancel,
 .hud-accept {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
@@ -267,8 +267,8 @@ body {
  * out to a single pixel and reads as faint beside the capsule. The strokes are
  * scaled back up to the weight the buttons were drawn with.
  */
-.hud-cancel svg { width: 12px; height: 12px; stroke-width: 2.4; }
-.hud-accept svg { width: 15px; height: 15px; stroke-width: 2.6; }
+.hud-cancel svg { width: 11px; height: 11px; stroke-width: 2.5; }
+.hud-accept svg { width: 13px; height: 13px; stroke-width: 2.7; }
 
 .hud[data-hover="cancel"] .hud-cancel { background: #5d5b53; }
 .hud[data-hover="accept"] .hud-accept { background: #fff; }
