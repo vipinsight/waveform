@@ -4699,6 +4699,7 @@ name = "waveform"
 version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
+ "objc2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

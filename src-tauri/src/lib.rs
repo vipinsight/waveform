@@ -9,6 +9,7 @@ mod history;
 mod hotkey;
 mod dictation;
 mod model_server;
+mod panel;
 mod resources;
 mod rewrite;
 mod settings;
@@ -1073,11 +1074,24 @@ fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     // Load-bearing: a focusable HUD would steal focus from the app being
-    // dictated into, and the synthetic paste would land in Waveform.
+    // dictated into, and the synthetic paste would land in Waveform. See
+    // `panel::make_non_activating`, which closes the other half of this.
     .focusable(false)
     .focused(false)
+    // A click on an inactive window is normally spent bringing that window
+    // forward. The HUD is never coming forward, so without this its buttons
+    // would need pressing twice.
+    .accept_first_mouse(true)
     .visible(false)
     .build()?;
+
+    // Load-bearing, not a nicety: without it, clicking cancel or accept brings
+    // Waveform forward and the paste that follows lands in the wrong app.
+    if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
+        if let Err(reason) = panel::make_non_activating(&overlay) {
+            eprintln!("HUD stayed an ordinary window, so clicking it will focus Waveform: {reason}");
+        }
+    }
     Ok(())
 }
 
