@@ -39,8 +39,13 @@
       "icons/icon.icns"
     ],
     "macOS": {
+      "signingIdentity": "Apple Development: Vipin Yadav (4P7A8ZUNS9)",
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist"
+    },
+    "resources": {
+      "../dist/native/waveform-hotkey": "waveform-hotkey",
+      "../scripts/qwen-worker.py": "qwen-worker.py"
     }
   }
 }

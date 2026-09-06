@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Merged into the generated Info.plist by the bundler. WKWebView refuses
+    microphone access to a bundle without this key, so dictation cannot work at
+    all without it -- the same reason scripts/run-tauri.sh writes it by hand.
+  -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Waveform uses your microphone to transcribe speech locally.</string>
+</dict>
+</plist>
