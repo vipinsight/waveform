@@ -10,4 +10,6 @@ disagree, the code is right.
 
 Anything that describes how Waveform works today belongs in `docs/`, not here.
 
-Nothing is planned right now.
+- [microphone-ducking.md](microphone-ducking.md) — macOS quietens other apps
+  while the microphone is open. One attempt made and reverted; what a real fix
+  would take.
