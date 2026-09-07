@@ -97,23 +97,24 @@ export class AudioCapture {
     const deviceId = this.handlers.getMicrophoneDeviceId();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        // All three off, which in WebKit is one decision rather than three:
+        // All three on, which in WebKit is one decision rather than three:
         // they come from the same voice-processing audio unit, and it is only
-        // reached for when echoCancellation is asked for. Asking for none of
-        // them gets a plain input, which is what this wants.
+        // reached for when echoCancellation is asked for.
         //
-        // Two reasons. macOS ducks every other app's output for as long as
-        // that unit holds the microphone, and dictation is not a call -- there
-        // is no far-end echo to cancel, so the ducking bought nothing. And the
-        // processing is not free: it is gain-controlled, suppressed audio that
-        // the engines then have to read.
+        // Asking for none of them has now been tried twice. It gets a plain
+        // input and stops macOS ducking other apps -- and on this Mac's built
+        // in microphone it also drops the level about twenty-five fold: a
+        // measured peak of 0.0036 against 0.088 for the same voice through the
+        // voice-processing unit. That is not a threshold that can be tuned
+        // around, because speech then sits level with a muted microphone's own
+        // noise. The gain control is doing real work here, not just ducking.
         //
-        // This was tried once before and reverted, because the segmenter
-        // judged speech against a threshold tuned for a suppressed stream. It
-        // measures the room now, which is what makes this possible.
-        autoGainControl: false,
-        echoCancellation: false,
-        noiseSuppression: false,
+        // The ducking is still unsolved, and the remaining route is capturing
+        // outside the webview where the gain is ours to set. See
+        // docs/plans/microphone-ducking.md.
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
     });
