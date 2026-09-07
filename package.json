@@ -10,6 +10,7 @@
     "app": "./scripts/run-tauri.sh",
     "package:mac": "WAVEFORM_PROFILE=release ./scripts/run-tauri.sh",
     "dmg": "tauri build --bundles dmg && scripts/finish-dmg.sh",
+    "bump": "scripts/bump.sh",
     "release": "./scripts/release.sh",
     "test": "vitest run && cd src-tauri && cargo test",
     "test:ui": "vitest run",
