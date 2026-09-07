@@ -41,3 +41,4 @@ tokio = { version = "1", features = ["fs", "process", "io-util", "time", "sync",
 # also embeds the GGML Metal library into the binary, so a bundled .app has no
 # shader file to lose.
 whisper-rs = { version = "0.16", default-features = false, features = ["metal"] }
+tauri-plugin-updater = "2"

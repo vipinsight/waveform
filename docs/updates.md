@@ -1,0 +1,129 @@
+# Updates
+
+Waveform is not in the App Store, so nothing tells anyone that a release
+happened. It checks for itself, and can install what it finds.
+
+## Two signatures, and why both
+
+They are unrelated, and confusing them is the usual way this goes wrong.
+
+- **Apple's.** A Developer ID signature, plus notarisation. macOS refuses to run
+  the app without it. It says the app came from a known developer.
+- **minisign's.** A keypair made by `tauri signer generate`. The public half is
+  compiled into the app through `plugins.updater.pubkey`; the private half signs
+  each release's tarball. The app refuses to unpack an update the key does not
+  vouch for. It says the update came from us.
+
+The private key lives at `~/.tauri/waveform.key`, outside this repository, and
+must be backed up somewhere that is not this Mac. **Lose it and no existing
+install can ever be updated again** — a build signed with a new key is rejected
+by every copy already out there, and the only route left is asking people to
+download the app by hand.
+
+## What the app does
+
+`plugins.updater.endpoints` names one URL:
+
+```
+https://github.com/vipiny35/waveform/releases/latest/download/latest.json
+```
+
+`releases/latest/download/…` always resolves to the newest release, so the
+manifest has to be attached to each one. It looks like this:
+
+```json
+{
+  "version": "0.2.0",
+  "notes": "…",
+  "pub_date": "2026-09-07T00:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "…",
+      "url": "https://github.com/vipiny35/waveform/releases/download/v0.2.0/Waveform_0.2.0.app.tar.gz"
+    }
+  }
+}
+```
+
+Only `darwin-aarch64`. Waveform needs an Apple Silicon Mac, and a platform key
+here is a promise that an update exists for it.
+
+[`updates.rs`](../src-tauri/src/updates.rs) wraps the plugin in two functions and
+a background task:
+
+- `check` reports through the `update-event` Tauri event and returns the release
+  if there is one. A failed check is an error, not "up to date" — saying the
+  latter to a request that never arrived is a lie.
+- `install` checks again, downloads with progress, and returns. The
+  `install_update` command then stops the speech engine and calls `app.restart()`
+  — the engine is a separate process of several hundred megabytes that would not
+  notice its parent being replaced, the same reason the signal handler stops it
+  before exiting.
+- `spawn_checks` waits 20 seconds after launch, then checks once a day for as
+  long as the app runs. Waveform can start at login and sit there for weeks with
+  nothing on screen, so a check at launch alone would fire once and never again.
+
+The setting is read on each pass rather than captured, so switching it off stops
+the next check rather than the one after a restart.
+
+## The switch, and why it exists
+
+Waveform's promise is that audio stays on this Mac. Today the only outbound
+traffic is AI Polish and a model download, and both happen because something was
+pressed. An update check is the first request the app makes that nobody asked
+for, so **Settings → General → Check for updates automatically** turns it off.
+
+**Check now** still checks with the switch off. The switch is about unprompted
+requests; pressing the button is the prompt.
+
+## Cutting a release
+
+`pnpm release` ([scripts/release.sh](../scripts/release.sh)) does the whole
+thing, and refuses rather than half-doing it. In order: a clean working tree, the
+three version numbers agreeing, no existing tag, a signing key, `gh`, and the
+notarisation credentials.
+
+`src-tauri/tauri.conf.json` holds the version the updater compares, so it is the
+one to bump; `package.json` and `Cargo.toml` only have to agree, and the script
+stops if they do not.
+
+Releasing from this Mac rather than from CI is deliberate. Signing and
+notarising in CI means putting a Developer ID certificate and an app-specific
+password into repository secrets; for one person on one machine that is more
+places for a secret to be, not fewer. CI earns its place when there is a second
+person or a second machine.
+
+## Traps
+
+**`--bundles dmg` produces no updater artifact.** The tarball comes from the
+`app` target, and Tauri says so and carries on:
+
+> The bundler was configured to create updater artifacts but no updater-enabled
+> targets were built. Please enable one of these targets: app, appimage, msi,
+> nsis
+
+`pnpm dmg` is still dmg-only, which is right for a local build. `pnpm release`
+builds `app,dmg`.
+
+**The Tauri CLI does not read `.env` files.** `TAURI_SIGNING_PRIVATE_KEY` and
+its password have to be in the environment. `release.sh` sources
+`.env.notarization` itself for the same reason.
+
+**`pnpm app` never touches the bundler.** `run-tauri.sh` assembles
+`release/Waveform.app` by hand, because WKWebView refuses microphone access to a
+bare binary. Updater artifacts come only from a real `tauri build`, so the
+release path and the everyday path diverge here.
+
+## Not verified yet
+
+An update has never been installed, because nothing has been released. Before
+trusting the first one, publish `0.1.0`, install it from the disk image, grant
+Input Monitoring and Accessibility, then publish `0.2.0` and update into it. The
+thing to watch is **whether both permissions survive**. macOS ties them to the
+code signature, which is why builds are signed with a real certificate rather
+than ad-hoc; an update keeping the same Developer ID and bundle identifier
+should keep both grants. A self-inflicted permission reset on every release
+would be worse than not updating at all.
+
+Also worth doing once: corrupt the signature in `latest.json` and confirm the
+update is refused. Rejecting something is the only proof the check is wired up.

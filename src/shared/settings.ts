@@ -66,6 +66,13 @@ export interface AppSettings {
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
   /** Fold the sidebar away. Kept here so it survives a restart. */
+  /**
+   * Look for a new version on launch, and once a day after that.
+   *
+   * The only request Waveform makes that nobody asked for. Pressing Check now
+   * still checks.
+   */
+  automaticUpdateCheck: boolean;
   sidebarCollapsed: boolean;
 }
 
@@ -92,6 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   showFlowBarAlways: false,
   hideDockWhenClosed: false,
+  automaticUpdateCheck: true,
   sidebarCollapsed: false,
 };
 
@@ -149,6 +157,10 @@ export function normalizeSettings(
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed
         : base.hideDockWhenClosed,
+    automaticUpdateCheck:
+      typeof input.automaticUpdateCheck === "boolean"
+        ? input.automaticUpdateCheck
+        : base.automaticUpdateCheck,
     sidebarCollapsed:
       typeof input.sidebarCollapsed === "boolean"
         ? input.sidebarCollapsed

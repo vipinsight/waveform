@@ -335,6 +335,25 @@
               <span class="row-label">Keep in Dock when window closes</span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
+            <label class="row">
+              <span class="row-label">
+                Check for updates automatically
+                <small>The only request Waveform makes that you did not ask for.</small>
+              </span>
+              <span class="row-actions"><input id="update-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <div class="row">
+              <span class="row-label">
+                Version
+                <small id="update-state">Waveform</small>
+              </span>
+              <span class="row-actions">
+                <button id="update-check" class="pill-button" type="button">Check now</button>
+                <button id="update-install" class="pill-button is-primary" type="button" hidden>
+                  Install and restart
+                </button>
+              </span>
+            </div>
           </div>
         </section>
 

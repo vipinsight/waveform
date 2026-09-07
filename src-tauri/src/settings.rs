@@ -92,6 +92,11 @@ pub struct AppSettings {
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
     pub hide_dock_when_closed: bool,
+    /// Look for a new version on launch, and once a day after that.
+    ///
+    /// The only request Waveform makes that nobody asked for, which is the
+    /// reason it can be turned off. Pressing Check now still checks.
+    pub automatic_update_check: bool,
     /// Whether the sidebar is folded away. A window preference rather than a
     /// dictation one, but it belongs with the rest so it survives a restart.
     pub sidebar_collapsed: bool,
@@ -122,6 +127,7 @@ impl Default for AppSettings {
             launch_at_login: false,
             show_flow_bar_always: false,
             hide_dock_when_closed: false,
+            automatic_update_check: true,
             sidebar_collapsed: false,
         }
     }
@@ -285,6 +291,16 @@ mod tests {
             let loaded = stored.normalize(&AppSettings::default());
             assert_eq!(loaded.model_id, model.id);
         }
+    }
+
+    /// Off must survive a reload, or the switch is decorative. On is the
+    /// default because an app nobody can update is worse than one that asks.
+    #[test]
+    fn the_update_check_can_be_turned_off_for_good() {
+        assert!(AppSettings::default().automatic_update_check);
+        let mut stored = AppSettings::default();
+        stored.automatic_update_check = false;
+        assert!(!stored.normalize(&AppSettings::default()).automatic_update_check);
     }
 
     #[test]

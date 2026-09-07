@@ -7,6 +7,7 @@ import type {
   MicrophoneDevice,
   ModelEvent,
   ResourceUsage,
+  UpdateEvent,
 } from "../shared/contracts";
 import {
   HOTKEY_BINDINGS,
@@ -55,6 +56,10 @@ const element = {
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
   flowBarToggle: requireElement<HTMLInputElement>("flow-bar-toggle"),
   dockToggle: requireElement<HTMLInputElement>("dock-toggle"),
+  updateToggle: requireElement<HTMLInputElement>("update-toggle"),
+  updateState: requireElement<HTMLElement>("update-state"),
+  updateCheck: requireElement<HTMLButtonElement>("update-check"),
+  updateInstall: requireElement<HTMLButtonElement>("update-install"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   emptyHeadline: requireElement<HTMLElement>("empty-headline"),
   emptyHint: requireElement<HTMLElement>("empty-hint"),
@@ -100,6 +105,8 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
+/** The version the app is running, for the line that reports updates. */
+let appVersion = "";
 let settingsOpen = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
@@ -124,8 +131,9 @@ async function bootstrap(): Promise<void> {
   renderHistory();
   // Falls back to the bare name: a version that failed to load should not be
   // rendered as "Waveform null".
-  const version = await host().getAppVersion().catch(() => "");
-  element.versionLine.textContent = version ? `Waveform ${version}` : "Waveform";
+  appVersion = await host().getAppVersion().catch(() => "");
+  element.versionLine.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
+  element.updateState.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -137,6 +145,7 @@ async function bootstrap(): Promise<void> {
 
 function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
+  host().onUpdateEvent(handleUpdateEvent);
   host().onSettingsChanged(applySettings);
   host().onHotkeyStatusChanged((next) => {
     hotkeyStatus = next;
@@ -290,6 +299,15 @@ function wireEvents(): void {
   element.flowBarToggle.addEventListener("change", () => {
     void patchSettings({ showFlowBarAlways: element.flowBarToggle.checked });
   });
+  element.updateToggle.addEventListener("change", () => {
+    void patchSettings({ automaticUpdateCheck: element.updateToggle.checked });
+  });
+  element.updateCheck.addEventListener("click", () => {
+    void checkForUpdate();
+  });
+  element.updateInstall.addEventListener("click", () => {
+    void installUpdate();
+  });
   element.dockToggle.addEventListener("change", () => {
     void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
   });
@@ -351,6 +369,7 @@ function applySettings(next: AppSettings): void {
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
+  element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
@@ -713,6 +732,52 @@ function showDownloadProgress(event: ModelEvent): void {
   const tag = row.querySelector<HTMLElement>(".model-tag");
   if (tag) {
     tag.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  }
+}
+
+/**
+ * Asks whether there is a newer version, and says so either way.
+ *
+ * A check with no visible outcome reads as broken, which is why "up to date" is
+ * a result rather than silence.
+ */
+async function checkForUpdate(): Promise<void> {
+  element.updateCheck.disabled = true;
+  try {
+    const update = await host().checkForUpdate();
+    element.updateInstall.hidden = update === null;
+    // The event carried the message already; this only has to leave the button
+    // in a state that matches it.
+  } catch {
+    // Reported as an error event, which is what says why.
+  } finally {
+    element.updateCheck.disabled = false;
+  }
+}
+
+/**
+ * Installs the newer version. Does not return: the app relaunches into it.
+ */
+async function installUpdate(): Promise<void> {
+  element.updateInstall.disabled = true;
+  element.updateCheck.disabled = true;
+  try {
+    await host().installUpdate();
+  } catch {
+    element.updateInstall.disabled = false;
+    element.updateCheck.disabled = false;
+  }
+}
+
+/** Every stage of an update lands in the one line under Version. */
+function handleUpdateEvent(event: UpdateEvent): void {
+  element.updateState.textContent =
+    event.stage === "downloading" && event.progress !== undefined
+      ? `${event.message} ${Math.round(event.progress * 100)}%`
+      : event.message;
+  if (event.stage === "available") element.updateInstall.hidden = false;
+  if (event.stage === "current" || event.stage === "error") {
+    element.updateInstall.hidden = true;
   }
 }
 

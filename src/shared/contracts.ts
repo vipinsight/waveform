@@ -20,6 +20,27 @@ export interface ModelEvent {
   progress?: number;
 }
 
+/** A release newer than the running one. */
+export interface UpdateInfo {
+  version: string;
+  notes: string;
+}
+
+export type UpdateStage =
+  | "checking"
+  | "available"
+  | "current"
+  | "downloading"
+  | "installed"
+  | "error";
+
+export interface UpdateEvent {
+  stage: UpdateStage;
+  message: string;
+  /** How much of the download is done, 0 to 1. Only sent while downloading. */
+  progress?: number;
+}
+
 export interface TranscriptionResult {
   text: string;
 }
@@ -165,6 +186,11 @@ export interface DesktopApi {
   selectModel(modelId: SpeechModelId): Promise<void>;
   /** Resolves when the download has finished, or rejects with why it did not. */
   downloadModel(modelId: SpeechModelId): Promise<void>;
+  /** `null` means this is already the newest version. */
+  checkForUpdate(): Promise<UpdateInfo | null>;
+  /** Installs the newer version and relaunches, so this never resolves. */
+  installUpdate(): Promise<void>;
+  onUpdateEvent(listener: (event: UpdateEvent) => void): () => void;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;

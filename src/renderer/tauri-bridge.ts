@@ -20,6 +20,8 @@ import type {
   ResourceUsage,
   SavedDictation,
   TranscriptionResult,
+  UpdateEvent,
+  UpdateInfo,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -75,6 +77,9 @@ const api: DesktopApi = {
   startModel: () => invoke<void>("start_model"),
   selectModel: (modelId) => invoke<void>("select_model", { modelId }),
   downloadModel: (modelId) => invoke<void>("download_model", { modelId }),
+  checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
+  installUpdate: () => invoke<void>("install_update"),
+  onUpdateEvent: (listener) => subscribe<UpdateEvent>("update-event", listener),
   requestMicrophoneAccess: () =>
     invoke<MicrophonePermissionResult>("request_microphone"),
   transcribe: async (wavBytes) => {

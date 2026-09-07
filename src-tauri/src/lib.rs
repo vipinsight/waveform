@@ -14,6 +14,7 @@ mod resources;
 mod rewrite;
 mod settings;
 mod stats;
+mod updates;
 mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
@@ -325,6 +326,27 @@ async fn download_model(state: State<'_, AppState>, model_id: String) -> Result<
     state.models.download_weights(&model_id).await
 }
 
+/// Asks whether there is a newer version. `None` means this is the newest.
+///
+/// Always checks, even with the automatic check switched off: the switch is
+/// about requests the user did not ask for, and pressing the button is asking.
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<Option<updates::UpdateInfo>, String> {
+    updates::check(&app).await
+}
+
+/// Installs the newer version and relaunches into it.
+///
+/// The engine is stopped first. It is a separate process of several hundred
+/// megabytes that would not notice its parent being replaced, and the same
+/// reason the signal handler stops it before exiting.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    updates::install(&app).await?;
+    state.models.stop().await;
+    app.restart();
+}
+
 #[tauri::command]
 async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
     Ok(state.models.catalog().await)
@@ -573,6 +595,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![AUTOSTART_ARG]),
@@ -699,6 +722,7 @@ pub fn run() {
             });
 
             resources::spawn_monitor(app.handle().clone(), models.clone());
+            updates::spawn_checks(app.handle().clone());
 
             // Load the engine at launch so the first dictation is not the thing
             // that waits for it.
@@ -732,6 +756,8 @@ pub fn run() {
             toggle_dictation,
             model_catalog,
             download_model,
+            check_for_update,
+            install_update,
             start_overlay_dictation,
             accept_dictation,
             polish_dictation,

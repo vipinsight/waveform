@@ -196,6 +196,20 @@ hundred.
 The status bar shows live CPU and memory for Waveform and the speech engine
 combined, since the engine is the larger consumer of both.
 
+## Updates
+
+Waveform checks for a new version twenty seconds after launch, and once a day
+after that. **Settings -> General** has the switch and a **Check now** button;
+an update downloads with progress and restarts the app into itself.
+
+The check is the only request Waveform makes that you did not ask for, so it can
+be turned off -- **Check now** still works with it off. Everything else that
+leaves this Mac happens because something was pressed.
+
+Releases are cut with `pnpm release`, which builds, signs, notarises and
+publishes both the disk image and what the updater needs. See `docs/updates.md`
+for the two signatures involved and why losing the update key is unrecoverable.
+
 ## The Dictation list
 
 Every dictation is kept, newest first, with when it was said and how long it
@@ -241,8 +255,8 @@ newline-delimited JSON over stdio, which is why it survived the move from
 Electron untouched.
 
 The speech engines are the least obvious part of this. `docs/models.md`
-traces how a model id becomes a running engine, where each one's weights are
-looked for, and what a user who installed from the disk image is still missing.
+traces how a model id becomes a running engine and where each one's weights are
+looked for. `docs/updates.md` covers how a release reaches an installed copy.
 
 ## Commands
 
@@ -257,6 +271,7 @@ pnpm setup:qwen  # install and download Qwen3-ASR 0.6B
 pnpm setup:whisper  # install and download OpenAI Whisper small
 pnpm setup:whisper-cpp  # download GGML weights for the whisper.cpp engine
 pnpm icon        # regenerate the app icon and .icns
+pnpm release     # build, sign, notarise and publish a release
 ```
 
 `pnpm build` also compiles `src/native/HotkeyHelper.swift` into

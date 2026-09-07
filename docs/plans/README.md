@@ -10,5 +10,4 @@ disagree, the code is right.
 
 Anything that describes how Waveform works today belongs in `docs/`, not here.
 
-- [app-updates.md](app-updates.md) — how Waveform would learn that a new version
-  exists, and what solo developers use to ship one.
+Nothing is planned right now.
