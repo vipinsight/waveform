@@ -18,6 +18,7 @@ import type {
   ModelStatus,
   OverlayPoint,
   ResourceUsage,
+  LogLine,
   SavedDictation,
   TranscriptionResult,
   UpdateEvent,
@@ -80,6 +81,10 @@ const api: DesktopApi = {
   checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
   installUpdate: () => invoke<void>("install_update"),
   onUpdateEvent: (listener) => subscribe<UpdateEvent>("update-event", listener),
+  getLogs: () => invoke<LogLine[]>("get_logs"),
+  clearLogs: () => invoke<void>("clear_logs"),
+  onLogLine: (listener) => subscribe<LogLine>("log-line", listener),
+  log: (level, source, message) => invoke<void>("append_log", { level, source, message }),
   requestMicrophoneAccess: () =>
     invoke<MicrophonePermissionResult>("request_microphone"),
   transcribe: async (wavBytes) => {

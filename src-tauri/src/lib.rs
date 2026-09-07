@@ -6,6 +6,7 @@
 
 mod gestures;
 mod history;
+mod logs;
 mod hotkey;
 mod dictation;
 mod model_server;
@@ -79,6 +80,7 @@ const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
     settings: Arc<Mutex<SettingsStore>>,
+    logs: Arc<logs::Logs>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
     models: Arc<ModelServer>,
@@ -353,10 +355,71 @@ async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, S
 }
 
 #[tauri::command]
-async fn transcribe(state: State<'_, AppState>, wav_bytes: Vec<u8>) -> Result<String, String> {
-    let language = state.settings.lock().await.value().speech_language;
+async fn transcribe(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    wav_bytes: Vec<u8>,
+) -> Result<String, String> {
+    let (model_id, language) = {
+        let settings = state.settings.lock().await.value();
+        (settings.model_id, settings.speech_language)
+    };
     dump_audio(&wav_bytes);
-    state.models.transcribe(wav_bytes, &language).await
+
+    // 44 bytes of header, then 16-bit mono. Reported in seconds because that
+    // is the number worth comparing against what was actually said.
+    let seconds = wav_bytes.len().saturating_sub(44) as f64 / 2.0 / 48_000.0;
+    let started = std::time::Instant::now();
+    let outcome = state.models.transcribe(wav_bytes, &language).await;
+    let took = started.elapsed().as_millis();
+
+    match &outcome {
+        Ok(text) if text.is_empty() => state.logs.info(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s in {took}ms, no words found"),
+        ),
+        Ok(text) => state.logs.info(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s in {took}ms — {text:?}"),
+        ),
+        Err(error) => state.logs.error(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s failed after {took}ms — {error}"),
+        ),
+    }
+    outcome
+}
+
+/// The lines held, for a page that has just opened.
+#[tauri::command]
+async fn get_logs(state: State<'_, AppState>) -> Result<Vec<logs::LogLine>, String> {
+    Ok(state.logs.all())
+}
+
+#[tauri::command]
+async fn clear_logs(state: State<'_, AppState>) -> Result<(), String> {
+    state.logs.clear();
+    Ok(())
+}
+
+/// Lets a window write into the same log.
+///
+/// The microphone lives in the overlay, so the numbers that explain a silent
+/// dictation -- how many blocks arrived, how loud, against what threshold --
+/// are only known there.
+#[tauri::command]
+async fn append_log(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    level: String,
+    source: String,
+    message: String,
+) -> Result<(), String> {
+    state.logs.push(&app, &level, &source, message);
+    Ok(())
 }
 
 /// Writes each phrase to disk when `WAVEFORM_DUMP_AUDIO` names a directory.
@@ -650,13 +713,32 @@ pub fn run() {
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
 
+            let logs = Arc::new(logs::Logs::new());
+            logs.info(
+                app.handle(),
+                "app",
+                format!("Waveform {} starting, model {selected}", app.package_info().version),
+            );
+
             let handle = app.handle().clone();
+            let recorder = logs.clone();
             let models = Arc::new(ModelServer::new(
                 user_data,
                 project_root(),
                 app.path().resource_dir().ok(),
                 selected.clone(),
                 Box::new(move |event: ModelEvent| {
+                    // Every stage the engine reports, said once where it can be
+                    // read afterwards. Downloading is skipped: it arrives four
+                    // times a second and would bury everything else.
+                    if event.stage != "downloading" {
+                        recorder.push(
+                            &handle,
+                            if event.stage == "error" { "error" } else { "info" },
+                            "engine",
+                            format!("{} — {}", event.stage, event.message),
+                        );
+                    }
                     let _ = handle.emit("model-event", event);
                 }),
             ));
@@ -673,6 +755,7 @@ pub fn run() {
 
             app.manage(AppState {
                 settings,
+                logs,
                 stats,
                 history,
                 models: models.clone(),
@@ -787,6 +870,9 @@ pub fn run() {
             toggle_dictation,
             model_catalog,
             download_model,
+            get_logs,
+            clear_logs,
+            append_log,
             check_for_update,
             install_update,
             start_overlay_dictation,

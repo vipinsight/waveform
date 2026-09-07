@@ -41,6 +41,16 @@ export interface UpdateEvent {
   progress?: number;
 }
 
+/** One line of what the app is doing. */
+export interface LogLine {
+  /** Milliseconds since the epoch. */
+  at: number;
+  level: "info" | "warn" | "error";
+  /** Which part is speaking: engine, capture, dictation, update. */
+  source: string;
+  message: string;
+}
+
 export interface TranscriptionResult {
   text: string;
 }
@@ -191,6 +201,11 @@ export interface DesktopApi {
   /** Installs the newer version and relaunches, so this never resolves. */
   installUpdate(): Promise<void>;
   onUpdateEvent(listener: (event: UpdateEvent) => void): () => void;
+  getLogs(): Promise<LogLine[]>;
+  clearLogs(): Promise<void>;
+  onLogLine(listener: (line: LogLine) => void): () => void;
+  /** Writes into the same log from a window, which knows things Rust does not. */
+  log(level: LogLine["level"], source: string, message: string): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;

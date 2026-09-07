@@ -7,6 +7,8 @@ export interface CaptureHandlers {
   /** Fired when transcription work starts and finishes, to drive the HUD state. */
   onPendingChange(pending: number): void;
   onError(message: string): void;
+  /** Writes into the app's log. Nowhere else knows these numbers. */
+  log(message: string): void;
   transcribe(wavBytes: Uint8Array): Promise<{ text: string }>;
   requestMicrophoneAccess(): Promise<{ granted: boolean; status: string }>;
   getMicrophoneDeviceId(): string;
@@ -128,6 +130,10 @@ export class AudioCapture {
     this.analyser.smoothingTimeConstant = 0.25;
     this.spectrum = new Uint8Array(this.analyser.frequencyBinCount);
     const reader = await this.openReader(context);
+    this.handlers.log(
+      `session open at ${context.sampleRate}Hz, ` +
+        `reader ${this.worklet ? "worklet" : "script processor"}`,
+    );
 
     this.source.connect(this.analyser);
     this.source.connect(reader);
@@ -197,8 +203,13 @@ export class AudioCapture {
     const tail = this.segmenter?.flush();
     const sampleRate = this.context?.sampleRate;
     const { blocks, peak, phrases } = this;
+    const threshold = this.segmenter?.threshold() ?? 0;
     this.release();
     if (tail && sampleRate) this.queue(tail, sampleRate);
+    this.handlers.log(
+      `session closed: ${blocks} blocks, peak ${peak.toFixed(4)}, ` +
+        `threshold ${threshold.toFixed(4)}, ${phrases} phrase(s)`,
+    );
     if (phrases === 0 && !tail) {
       this.handlers.onError(
         blocks === 0
@@ -275,6 +286,9 @@ export class AudioCapture {
     this.pending += 1;
     this.lastSeconds = samples.length / sampleRate;
     this.lastPeak = rootMeanSquare(samples);
+    this.handlers.log(
+      `phrase ${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}`,
+    );
     this.handlers.onPendingChange(this.pending);
 
     void this.handlers

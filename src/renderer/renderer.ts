@@ -5,6 +5,7 @@ import type {
   DictationUpdate,
   HotkeyStatus,
   MicrophoneDevice,
+  LogLine,
   ModelEvent,
   ResourceUsage,
   UpdateEvent,
@@ -56,6 +57,10 @@ const element = {
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
   flowBarToggle: requireElement<HTMLInputElement>("flow-bar-toggle"),
   dockToggle: requireElement<HTMLInputElement>("dock-toggle"),
+  logView: requireElement<HTMLElement>("log-view"),
+  logFollow: requireElement<HTMLInputElement>("log-follow"),
+  logCopy: requireElement<HTMLButtonElement>("log-copy"),
+  logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
   updateState: requireElement<HTMLElement>("update-state"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
@@ -107,6 +112,8 @@ let modelLoading = false;
 let downloading: SpeechModelId | null = null;
 /** The version the app is running, for the line that reports updates. */
 let appVersion = "";
+/** Everything the log has said this session, oldest first. */
+let logLines: LogLine[] = [];
 let settingsOpen = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
@@ -146,6 +153,7 @@ async function bootstrap(): Promise<void> {
 function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
   host().onUpdateEvent(handleUpdateEvent);
+  host().onLogLine(handleLogLine);
   host().onSettingsChanged(applySettings);
   host().onHotkeyStatusChanged((next) => {
     hotkeyStatus = next;
@@ -299,6 +307,17 @@ function wireEvents(): void {
   element.flowBarToggle.addEventListener("change", () => {
     void patchSettings({ showFlowBarAlways: element.flowBarToggle.checked });
   });
+  element.logCopy.addEventListener("click", () => {
+    const text = logLines
+      .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
+      .join("\n");
+    void navigator.clipboard.writeText(text);
+  });
+  element.logClear.addEventListener("click", () => {
+    void host().clearLogs();
+    logLines = [];
+    renderLogs();
+  });
   element.updateToggle.addEventListener("change", () => {
     void patchSettings({ automaticUpdateCheck: element.updateToggle.checked });
   });
@@ -351,6 +370,52 @@ function showSettingsPage(page: string): void {
   // Runtimes and weights arrive from a terminal, not from here, so the list is
   // re-read each time the page is opened rather than trusted from startup.
   if (page === "models") void renderModels();
+  // Lines pushed while the page was closed are in the buffer, not on screen.
+  if (page === "logs") void loadLogs();
+}
+
+/**
+ * Fills the log page from the buffer Rust holds.
+ *
+ * Pulled rather than accumulated from events alone: this window can open long
+ * after the interesting part, and the engine says most of what matters while
+ * it is starting.
+ */
+async function loadLogs(): Promise<void> {
+  logLines = await host().getLogs().catch(() => []);
+  renderLogs();
+}
+
+function renderLogs(): void {
+  const view = element.logView;
+  // Measured before the write, because appending changes both numbers.
+  const pinned = element.logFollow.checked;
+  view.replaceChildren(
+    ...logLines.map((line) => {
+      const row = document.createElement("div");
+      const time = document.createElement("b");
+      time.textContent = new Date(line.at).toLocaleTimeString([], { hour12: false });
+      const source = document.createElement("i");
+      source.textContent = ` ${line.source} `;
+      const message =
+        line.level === "error"
+          ? document.createElement("s")
+          : document.createElement("span");
+      message.textContent = line.message;
+      row.append(time, source, message);
+      return row;
+    }),
+  );
+  if (pinned) view.scrollTop = view.scrollHeight;
+}
+
+function handleLogLine(line: LogLine): void {
+  logLines.push(line);
+  // The same cap Rust keeps, so a long session does not grow this window's
+  // copy without bound.
+  if (logLines.length > 400) logLines.shift();
+  const page = element.logView.closest<HTMLElement>(".settings-page");
+  if (page && !page.hidden) renderLogs();
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
