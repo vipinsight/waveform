@@ -95,19 +95,23 @@ export class AudioCapture {
     const deviceId = this.handlers.getMicrophoneDeviceId();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        // These three are one decision, not three. WebKit provides all of
-        // them from the same voice-processing audio unit, and it only reaches
-        // for that unit when echoCancellation is asked for -- so turning that
-        // one off takes gain control and noise suppression with it, and
-        // dictation stopped producing anything at all. It was tried, in the
-        // hope of stopping macOS ducking other apps' output while the
-        // microphone is open, and reverted the same day.
+        // All three off, which in WebKit is one decision rather than three:
+        // they come from the same voice-processing audio unit, and it is only
+        // reached for when echoCancellation is asked for. Asking for none of
+        // them gets a plain input, which is what this wants.
         //
-        // The ducking is real and still unsolved. See
-        // docs/plans/microphone-ducking.md before trying this again.
-        autoGainControl: true,
-        echoCancellation: true,
-        noiseSuppression: true,
+        // Two reasons. macOS ducks every other app's output for as long as
+        // that unit holds the microphone, and dictation is not a call -- there
+        // is no far-end echo to cancel, so the ducking bought nothing. And the
+        // processing is not free: it is gain-controlled, suppressed audio that
+        // the engines then have to read.
+        //
+        // This was tried once before and reverted, because the segmenter
+        // judged speech against a threshold tuned for a suppressed stream. It
+        // measures the room now, which is what makes this possible.
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
     });
