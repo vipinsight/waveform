@@ -315,6 +315,16 @@ async fn select_model(
     state.models.select(&next.model_id).await
 }
 
+/// Fetches a model's weights.
+///
+/// Slow enough that the interface watches `model-event` for progress rather
+/// than this reply, but still awaited: the row cannot say what it is until the
+/// download has actually finished one way or the other.
+#[tauri::command]
+async fn download_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    state.models.download_weights(&model_id).await
+}
+
 #[tauri::command]
 async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
     Ok(state.models.catalog().await)
@@ -721,6 +731,7 @@ pub fn run() {
             request_microphone,
             toggle_dictation,
             model_catalog,
+            download_model,
             start_overlay_dictation,
             accept_dictation,
             polish_dictation,

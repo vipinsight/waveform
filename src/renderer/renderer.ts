@@ -18,6 +18,7 @@ import {
 import {
   getSpeechModel,
   isSpeechModelId,
+  type SpeechModelId,
 } from "../shared/models";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
@@ -97,6 +98,8 @@ let settings: AppSettings = DEFAULT_SETTINGS;
 let hotkeyStatus: HotkeyStatus | null = null;
 let modelReady = false;
 let modelLoading = false;
+/** The model whose weights are being fetched, so a second press does nothing. */
+let downloading: SpeechModelId | null = null;
 let settingsOpen = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
@@ -209,7 +212,14 @@ function wireEvents(): void {
   element.modelList.addEventListener("click", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
     const id = row?.dataset.model;
-    if (!id || !isSpeechModelId(id) || row.getAttribute("aria-disabled") === "true") return;
+    if (!id || !isSpeechModelId(id)) return;
+    // A row whose weights the app can fetch is a download button until it has
+    // them, and only then the radio it looks like.
+    if (row?.dataset.download === "true") {
+      void downloadModel(id);
+      return;
+    }
+    if (row?.getAttribute("aria-disabled") === "true") return;
     void host().selectModel(id);
   });
   element.speechLanguage.addEventListener("change", () => {
@@ -623,13 +633,17 @@ async function renderModels(): Promise<void> {
   element.modelList.replaceChildren(
     ...catalog.map((model) => {
       const ready = model.runtimeInstalled && model.weightsInstalled;
+      const fetchable = !ready && model.downloadBytes !== null;
       const row = document.createElement("button");
       row.type = "button";
       row.className = "model-row";
       row.dataset.model = model.id;
       row.setAttribute("role", "radio");
       row.setAttribute("aria-checked", String(model.selected));
-      if (!ready) row.setAttribute("aria-disabled", "true");
+      if (fetchable) row.dataset.download = "true";
+      // Disabled only when there is nothing the button could do. A model the
+      // app can fetch is not disabled: pressing it is how the weights arrive.
+      if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
 
       const name = document.createElement("strong");
       name.textContent = model.label;
@@ -637,9 +651,11 @@ async function renderModels(): Promise<void> {
       const state = document.createElement("small");
       state.textContent = ready
         ? "Downloaded"
-        : !model.runtimeInstalled
-          ? `Not installed — run ${model.setupCommand}`
-          : `Runtime ready, weights missing — run ${model.setupCommand}`;
+        : fetchable
+          ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
+          : !model.runtimeInstalled
+            ? `Not installed — run ${model.setupCommand}`
+            : `Runtime ready, weights missing — run ${model.setupCommand}`;
 
       const body = document.createElement("span");
       body.className = "model-body";
@@ -648,12 +664,60 @@ async function renderModels(): Promise<void> {
       const tag = document.createElement("span");
       tag.className = "model-tag";
       tag.dataset.ready = String(ready);
-      tag.textContent = ready ? (model.selected ? "In use" : "Ready") : "Available";
+      tag.textContent = ready
+        ? model.selected
+          ? "In use"
+          : "Ready"
+        : fetchable
+          ? "Download"
+          : "Available";
 
       row.append(body, tag);
       return row;
     }),
   );
+}
+
+/**
+ * Fetches a model's weights, with the row saying how far it has got.
+ *
+ * One at a time, and the list is rebuilt afterwards either way: the row's whole
+ * text depends on whether the file is there now.
+ */
+async function downloadModel(id: SpeechModelId): Promise<void> {
+  if (downloading) return;
+  downloading = id;
+  try {
+    await host().downloadModel(id);
+  } catch {
+    // The failure already arrived as an error event, which is what says why.
+  } finally {
+    downloading = null;
+    await renderModels();
+  }
+}
+
+/**
+ * Writes progress into the row itself rather than rebuilding the list.
+ *
+ * A rebuild four times a second would ask the host for the whole catalogue
+ * each time, and replace the button under the pointer that started it.
+ */
+function showDownloadProgress(event: ModelEvent): void {
+  const row = element.modelList.querySelector<HTMLElement>(
+    `[data-model="${event.modelId}"]`,
+  );
+  if (!row) return;
+  const state = row.querySelector("small");
+  if (state) state.textContent = event.message;
+  const tag = row.querySelector<HTMLElement>(".model-tag");
+  if (tag) {
+    tag.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / 1_000_000)} MB`;
 }
 
 function renderLanguageSelect(): void {
@@ -794,7 +858,19 @@ function formatMemory(megabytes: number): string {
 }
 
 function handleModelEvent(event: ModelEvent): void {
-  if (event.modelId !== settings.modelId) return;
+  // A download runs for whichever row was pressed, which is not necessarily
+  // the selected model, so this cannot be filtered by selection: the progress
+  // would go on the floor for every model but one.
+  if (event.stage === "downloading") {
+    showDownloadProgress(event);
+    return;
+  }
+  if (event.modelId !== settings.modelId) {
+    // Nothing about the running engine changed, but a download that failed is
+    // still worth saying out loud.
+    if (event.stage === "error") setStatus(event.message);
+    return;
+  }
 
   if (event.stage === "ready") {
     modelReady = true;

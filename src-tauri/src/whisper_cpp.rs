@@ -16,7 +16,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// What whisper.cpp wants, and the only rate it is trained on.
 const WHISPER_RATE: u32 = 16_000;
 
-/// Where `setup:whisper-cpp` leaves the GGML weights.
+/// Where the GGML weights live, whether the app fetched them or the script did.
 pub fn weights_dir() -> Option<PathBuf> {
     std::env::var_os("WAVEFORM_WHISPER_CPP_DIR")
         .map(PathBuf::from)
@@ -35,7 +35,7 @@ pub fn load(file: &str) -> Result<WhisperContext, String> {
     let path = weights_path(file).ok_or("Could not work out where Whisper's weights live.")?;
     if !path.is_file() {
         return Err(format!(
-            "{} is missing. Run `pnpm setup:whisper-cpp`, then try again.",
+            "{} is missing. Download it from Settings -> Model, then try again.",
             path.display()
         ));
     }

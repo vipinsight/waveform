@@ -24,8 +24,9 @@ one, but no test compares them. Adding a model means editing both.
 
 The default is positional in both places:
 `DEFAULT_SPEECH_MODEL_ID = SPEECH_MODELS[0].id`, and `default_model_id()`
-reading `MODELS[0].id` ([settings.rs:36](../src-tauri/src/settings.rs)). Parakeet
-is the default because it is first, not because anything names it.
+reading `MODELS[0].id` ([settings.rs:36](../src-tauri/src/settings.rs)). Nothing
+names a default; `whisper-cpp-small` is one because it is first, which is
+deliberate — it is the only model a fresh install can get on its own.
 
 There used to be a third copy of the id list, in the settings validator, and the
 comment it left behind is worth reading before adding a fourth
@@ -59,7 +60,7 @@ guards the other side of it. The TypeScript equivalent is `isSpeechModelId`.
 Two things about this are easy to miss:
 
 - `model(id)` ([model_server.rs:178](../src-tauri/src/model_server.rs)) resolves
-  an unknown id to `MODELS[0]` rather than failing.
+  an unknown id to `MODELS[0]` — whichever model is first — rather than failing.
 - `select_model` is not the only entry point. Changing `modelId` through
   `update_settings` reselects too ([lib.rs:211](../src-tauri/src/lib.rs)).
 
@@ -81,10 +82,10 @@ appears in `runtime_installed`, `catalog`, `start` and `transcribe`.
 
 | id | engine | runtime | weights |
 | --- | --- | --- | --- |
+| `whisper-cpp-small` | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/ggml-small.bin` |
 | `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `~/Library/Caches/NeMoSpeech/models/<remote_id>` |
 | `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `~/.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots` |
 | `whisper-small` | `Whisper` | `Worker` — Python over NDJSON | `~/.cache/whisper/small.pt` |
-| `whisper-cpp-small` | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/ggml-small.bin` |
 
 Note that the two Whisper entries are not interchangeable. whisper.cpp takes
 GGML `.bin` weights and the Python package takes `.pt`; neither can read the
@@ -178,18 +179,21 @@ other. Saying only "not ready" would not tell anyone what to do.
 
 `ModelEvent` is `{ stage, message, modelId }`, with `ModelStage` declared as
 `idle | starting | downloading | loading | ready | error`
-([contracts.ts:5](../src/shared/contracts.ts)). The renderer's handler drops
-events for any model that is not the selected one.
+([contracts.ts:5](../src/shared/contracts.ts)). `progress` is present only on
+`downloading`. The renderer's handler drops events for any model that is not the
+selected one, except downloads — those run for whichever row was pressed.
 
 One inconsistency worth knowing: `ModelStatus.label` carries Rust's
 `short_label`, so the Models page says "Parakeet 0.6B", while the Overview row
 uses the TypeScript `label` and says "NVIDIA Parakeet TDT 0.6B v3". The same
 model is named two ways in one app.
 
-## What a new user actually gets
+## How weights arrive
 
-**There is no in-app downloader.** The app detects weights and prints a shell
-command; acquiring them is always something the user does in a terminal.
+Two ways, and every model uses exactly one of them. `setup_command(definition)`
+and `downloadable(definition)` are the pair that decides which, and
+`every_model_says_exactly_one_way_to_get_its_weights` holds them to it — a model
+in neither state would render as a row with nothing to say.
 
 Detection is `weights_present()`
 ([model_server.rs:730](../src-tauri/src/model_server.rs)), one arm per `Weights`
@@ -197,55 +201,69 @@ variant. For the two cache-directory layouts, a directory that exists but is
 empty counts as absent (`has_contents`) — that is a download that did not
 finish.
 
-A row that is not ready reads "Not installed — run `<command>`" or "Runtime
-ready, weights missing — run `<command>`"
-([renderer.ts:641](../src/renderer/renderer.ts)), where the command comes from
-`catalog()`:
+### The app fetches them
+
+Only `whisper-cpp-small`. `Weights::GgmlFile` carries a `Download` — file name,
+URL, byte length and SHA-256 — because whisper.cpp is linked into the binary, so
+a model there is nothing but one file. Every other engine needs an installer or
+a virtual environment wrapped around its weights, which is not something to run
+on a user's behalf.
+
+`download_weights` refuses a second concurrent download, streams the body in
+chunks with `Response::chunk()`, hashes as it writes, and writes to
+`<file>.partial` — renaming into place only once the length and the hash both
+match. A rename within one directory is atomic, so the file is either absent or
+complete, and `weights_present` looks for the final name, so an interrupted
+transfer reads as absent.
+
+Progress rides on the `downloading` stage, throttled by `PROGRESS_INTERVAL` to
+one event every 250 ms: an event per chunk would be tens of thousands of
+messages across the IPC bridge for one file. `ModelEvent.progress` carries the
+fraction. On success the stage is `idle`, not `ready` — downloaded is not
+loaded, and the engine still waits for a first session.
+
+The row is the button. A model whose weights the app can fetch is not
+`aria-disabled`; pressing it starts the download and the row reports the
+percentage in place, rather than the list rebuilding four times a second and
+replacing the button under the pointer.
+
+### A terminal fetches them
+
+Everything else, with `catalog()` naming the command:
 
 | runtime | setup command |
 | --- | --- |
 | `Http` | `pnpm setup:model` |
 | `Worker` | `pnpm setup:qwen` / `pnpm setup:whisper` |
-| `InProcess` | `pnpm setup:whisper-cpp` |
-
-The scripts themselves:
 
 - `setup-model.sh` curls NVIDIA's `install.sh` for a pinned version, then
   `nemo-speech pull nvidia/parakeet-tdt-0.6b-v3`.
 - `setup-qwen.sh` and `setup-whisper.sh` build separate virtual environments,
   pip install, and pre-fetch the weights — "rather than on the first phrase,
   which would otherwise stall behind a download with no way to say so".
-- `setup-whisper-cpp.sh` is the outlier: it installs nothing, and just curls one
-  GGML file. It downloads to `<file>.partial` and `mv`s it into place, so an
-  interrupted download cannot leave a truncated file that looks installed.
+- `setup-whisper-cpp.sh` still exists, and still works. It is how a checkout
+  fetches other sizes through `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the
+  URL the Rust side hard-codes. The app no longer tells anyone to run it.
 
 ## Known gaps
 
-### A disk-image install cannot install any model
+### Parakeet and Qwen still need a checkout
 
 `resources` in [tauri.conf.json](../src-tauri/tauri.conf.json) bundles
 `waveform-hotkey`, `qwen-worker.py` and `whisper-worker.py`. It does not bundle
 the `setup-*.sh` scripts, and it could not usefully do so: a user who installed
-from the DMG has no checkout and no pnpm, so every command the Models page names
-is one that cannot exist on their machine.
+from the disk image has no checkout and no pnpm, so `pnpm setup:model` and
+`pnpm setup:qwen` name commands that cannot exist on their machine.
 
-`whisper-cpp-small` makes this much easier to fix than it was, because that
-engine's entire installation is one HTTPS GET of one file — `setup-whisper-cpp.sh`
-is twenty lines of `curl` and `mv`, all of which Rust can do. See
-[docs/plans/whisper-cpp-in-app-download.md](plans/whisper-cpp-in-app-download.md).
+That install can now reach a working model — `whisper-cpp-small` downloads
+itself — so this is no longer a dead end. It is a limit on choice rather than on
+use. Closing it properly would mean running NVIDIA's installer and building a
+2.5 GB virtual environment from inside the app, neither of which reduces to a
+download.
 
-### The `downloading` stage is never emitted
+### Nothing checks that the two registries agree
 
-`ModelStage` declares it, and `UiStage` inherits it, but no
-`emit_stage("downloading", …)` call exists anywhere — the stages that actually
-fire are `idle`, `starting`, `loading`, `ready` and `error`. Any interface
-branch on `downloading` is unreachable today. It is the stage an in-app download
-would need, and `ModelEvent` has no numeric field to carry progress in.
-
-### `pnpm setup:whisper-cpp` is named from inside Rust
-
-`whisper_cpp::load` tells the user to run `pnpm setup:whisper-cpp`
-([whisper_cpp.rs:38](../src-tauri/src/whisper_cpp.rs)), and `catalog()` returns
-the same string. Both are correct for someone with a checkout and wrong for
-everyone else; both would need to change if the app learned to fetch the file
-itself.
+`SPEECH_MODELS` and `MODELS` are still hand-kept duplicates. The TypeScript side
+now also carries `downloadBytes` through `ModelStatus`, which comes from the Rust
+table — so a model added to one and not the other fails at runtime rather than
+at build time.

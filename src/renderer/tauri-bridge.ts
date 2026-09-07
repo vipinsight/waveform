@@ -74,6 +74,7 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
 const api: DesktopApi = {
   startModel: () => invoke<void>("start_model"),
   selectModel: (modelId) => invoke<void>("select_model", { modelId }),
+  downloadModel: (modelId) => invoke<void>("download_model", { modelId }),
   requestMicrophoneAccess: () =>
     invoke<MicrophonePermissionResult>("request_microphone"),
   transcribe: async (wavBytes) => {

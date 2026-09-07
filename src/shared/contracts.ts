@@ -16,6 +16,8 @@ export interface ModelEvent {
   stage: ModelStage;
   message: string;
   modelId: SpeechModelId;
+  /** How much of a download is done, 0 to 1. Only sent while downloading. */
+  progress?: number;
 }
 
 export interface TranscriptionResult {
@@ -75,7 +77,13 @@ export interface ModelStatus {
   selected: boolean;
   runtimeInstalled: boolean;
   weightsInstalled: boolean;
+  /** Empty when the app fetches these weights itself. */
   setupCommand: string;
+  /**
+   * Size of the download, when the app can perform it. `null` means the
+   * weights arrive some other way and only a terminal can bring them.
+   */
+  downloadBytes: number | null;
 }
 
 /** A pointer position in the HUD's own coordinates. */
@@ -155,6 +163,8 @@ export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone";
 export interface DesktopApi {
   startModel(): Promise<void>;
   selectModel(modelId: SpeechModelId): Promise<void>;
+  /** Resolves when the download has finished, or rejects with why it did not. */
+  downloadModel(modelId: SpeechModelId): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;

@@ -10,8 +10,5 @@ disagree, the code is right.
 
 Anything that describes how Waveform works today belongs in `docs/`, not here.
 
-- [whisper-cpp-in-app-download.md](whisper-cpp-in-app-download.md) — let the app
-  fetch the whisper.cpp weights itself, so a disk-image install can reach a
-  working model without a terminal.
 - [app-updates.md](app-updates.md) — how Waveform would learn that a new version
   exists, and what solo developers use to ship one.

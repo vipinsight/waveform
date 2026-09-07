@@ -27,15 +27,22 @@ typing into. Audio stays on this Mac.
 
 ```bash
 pnpm install
-pnpm setup:whisper-cpp
-pnpm setup:model     # optional
-pnpm setup:qwen      # optional
-pnpm setup:whisper   # optional
 pnpm app
 ```
 
-`setup:whisper-cpp` is the only one needed to dictate, because whisper.cpp is
-the default engine and the only one already inside the app.
+Nothing else is needed to dictate. whisper.cpp is the default engine and the
+only one already inside the app, so its weights are the only missing piece, and
+**Settings -> Model** downloads them itself -- no terminal, which is what an
+install from the disk image has to work with. The optional engines still need a
+checkout:
+
+```bash
+pnpm setup:model        # optional: Parakeet
+pnpm setup:qwen         # optional: Qwen3-ASR
+pnpm setup:whisper      # optional: Whisper through Python
+pnpm setup:whisper-cpp  # the same weights the app fetches, for a checkout
+```
+
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
 `setup:qwen` creates an isolated runtime in `~/Library/Application Support/Waveform/qwen`,
 installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B.
@@ -52,8 +59,9 @@ environment -- and keeps its weights loaded between phrases. On an M1 Pro it
 transcribes eleven seconds of speech in under half a second.
 Model weights remain in local Hugging Face, NeMo and Whisper caches.
 
-Install only the engines you intend to use. Waveform names the missing command
-when a model is selected whose runtime is not present.
+Install only the engines you intend to use. The Models page says what each one
+is missing: a Download button where the app can fetch the weights, and the
+command to run where it cannot.
 
 Grant microphone permission when macOS asks.
 

@@ -7,6 +7,7 @@
 //! differ only in which interpreter and script are launched.
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -18,6 +19,9 @@ use tokio::time::{sleep, Duration, Instant};
 const DEFAULT_PORT: u16 = 8178;
 const START_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
+/// How often a download reports itself. An event per chunk would be tens of
+/// thousands of messages across the IPC bridge for one file.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// What the interface needs to say whether a model can be used, and what to run
 /// if it cannot.
@@ -29,7 +33,13 @@ pub struct ModelStatus {
     pub selected: bool,
     pub runtime_installed: bool,
     pub weights_installed: bool,
+    /// Empty when there is nothing to type, because the app fetches this
+    /// model's weights itself.
     pub setup_command: String,
+    /// Size of the download, when the app can perform it. `None` means the
+    /// weights arrive some other way -- an installer, or a virtual
+    /// environment -- and only a terminal can bring them.
+    pub download_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +48,10 @@ pub struct ModelEvent {
     pub stage: String,
     pub message: String,
     pub model_id: String,
+    /// How much of a download is done, from 0.0 to 1.0. Absent for every
+    /// other stage, which is why it is optional rather than zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f32>,
 }
 
 pub struct ModelDefinition {
@@ -56,9 +70,9 @@ pub struct ModelDefinition {
 /// something useful about a model that is not ready.
 #[derive(Clone, Copy)]
 pub enum Weights {
-    /// A GGML `.bin` beside the app's own data, downloaded by
-    /// `setup:whisper-cpp`. Unrelated to the Python package's `.pt` files.
-    GgmlFile(&'static str),
+    /// A GGML `.bin` beside the app's own data. Unrelated to the Python
+    /// package's `.pt` files, and the only weights the app fetches itself.
+    GgmlFile(&'static Download),
     /// nemo-speech caches by repository under the platform cache directory.
     NemoCache,
     /// The Hugging Face hub layout, `models--<org>--<name>`.
@@ -67,6 +81,31 @@ pub enum Weights {
     /// the model id, so it is spelled out.
     WhisperFile(&'static str),
 }
+
+/// A weight file the app can fetch without a terminal.
+///
+/// whisper.cpp is linked into the binary, so a model there is nothing but one
+/// file -- which is what makes this possible at all. Every other engine needs
+/// an installer or a virtual environment around its weights.
+///
+/// The length and the hash are checked before the file is moved into place: it
+/// is loaded and executed as model weights, and a truncated download that read
+/// as installed would fail much later and much less clearly.
+pub struct Download {
+    pub file: &'static str,
+    pub url: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+}
+
+/// Kept in step with scripts/setup-whisper-cpp.sh, which fetches the same file
+/// for a checkout and can fetch the other sizes.
+const GGML_SMALL: Download = Download {
+    file: "ggml-small.bin",
+    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+    bytes: 487_601_967,
+    sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
@@ -105,7 +144,7 @@ pub const MODELS: [ModelDefinition; 4] = [
         // The GGML weight file's own name, which is all this engine needs.
         remote_id: "ggml-small.bin",
         engine: Engine::WhisperCpp,
-        weights: Weights::GgmlFile("ggml-small.bin"),
+        weights: Weights::GgmlFile(&GGML_SMALL),
     },
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
@@ -175,6 +214,32 @@ fn runtime(engine: Engine) -> Runtime {
     }
 }
 
+/// The download a model's weights come from, if the app can fetch them.
+///
+/// A property of the weights rather than of the engine: whether something can
+/// be downloaded is about what it is, not about how it is run.
+fn downloadable(definition: &ModelDefinition) -> Option<&'static Download> {
+    match definition.weights {
+        Weights::GgmlFile(spec) => Some(spec),
+        Weights::NemoCache | Weights::HuggingFace | Weights::WhisperFile(_) => None,
+    }
+}
+
+/// What the user would have to run to get a model's weights.
+///
+/// Empty when the app fetches them itself: pressing the row is enough, which is
+/// the only way a disk-image install can get to a working model at all.
+fn setup_command(definition: &ModelDefinition) -> &'static str {
+    if downloadable(definition).is_some() {
+        return "";
+    }
+    match runtime(definition.engine) {
+        Runtime::Http => "pnpm setup:model",
+        Runtime::Worker(spec) => spec.setup_command,
+        Runtime::InProcess => "pnpm setup:whisper-cpp",
+    }
+}
+
 pub fn model(id: &str) -> &'static ModelDefinition {
     MODELS.iter().find(|m| m.id == id).unwrap_or(&MODELS[0])
 }
@@ -207,6 +272,10 @@ pub struct ModelServer {
     /// transcribing. Held behind an `Arc` so a phrase in flight keeps the
     /// model alive even if the selection changes underneath it.
     whisper_cpp: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
+    /// Which model's weights are being fetched, if any. One at a time: two
+    /// writers at one partial file would interleave into something that only
+    /// fails its checksum after the whole transfer.
+    downloading: Mutex<Option<String>>,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
     user_data: PathBuf,
@@ -226,6 +295,7 @@ impl ModelServer {
             stage: "idle".into(),
             message: "Loads when you start listening".into(),
             model_id: selected.clone(),
+            progress: None,
         };
         Self {
             selected: Mutex::new(selected),
@@ -235,6 +305,7 @@ impl ModelServer {
             worker: Mutex::new(None),
             parakeet: Mutex::new(None),
             whisper_cpp: Mutex::new(None),
+            downloading: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
             user_data,
@@ -286,11 +357,8 @@ impl ModelServer {
                 selected: definition.id == selected,
                 runtime_installed: self.runtime_installed(definition),
                 weights_installed: weights_present(definition),
-                setup_command: match runtime(definition.engine) {
-                    Runtime::Http => "pnpm setup:model".into(),
-                    Runtime::Worker(spec) => spec.setup_command.into(),
-                    Runtime::InProcess => "pnpm setup:whisper-cpp".into(),
-                },
+                setup_command: setup_command(definition).into(),
+                download_bytes: downloadable(definition).map(|spec| spec.bytes),
             })
             .collect()
     }
@@ -712,11 +780,172 @@ impl ModelServer {
         }
     }
 
+    /// Fetches a model's weights, if they are the kind the app can fetch.
+    ///
+    /// The one path to a working model that does not need a terminal, which is
+    /// the whole point: an app installed from the disk image has no checkout
+    /// and no pnpm, so every `setup:` command it could be told to run is one
+    /// that cannot exist on that machine.
+    pub async fn download_weights(&self, id: &str) -> Result<(), String> {
+        let definition = model(id);
+        let Some(spec) = downloadable(definition) else {
+            return Err(format!(
+                "{} does not download on its own.",
+                definition.short_label
+            ));
+        };
+
+        {
+            let mut running = self.downloading.lock().await;
+            if running.is_some() {
+                return Err("A download is already running.".into());
+            }
+            *running = Some(id.to_string());
+        }
+
+        let outcome = self.fetch(spec, definition, id).await;
+        *self.downloading.lock().await = None;
+
+        match &outcome {
+            Ok(()) => {
+                self.emit_stage(
+                    // Downloaded is not loaded: the engine still waits for a
+                    // first session, so this must not read as ready.
+                    "idle",
+                    &format!("{} downloaded", definition.short_label),
+                    id,
+                )
+                .await
+            }
+            Err(error) => self.emit_stage("error", error, id).await,
+        }
+        outcome
+    }
+
+    async fn fetch(
+        &self,
+        spec: &Download,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        let path = crate::whisper_cpp::weights_path(spec.file)
+            .ok_or("Could not work out where Whisper's weights live.")?;
+        if path.is_file() {
+            return Ok(());
+        }
+        let dir = path
+            .parent()
+            .ok_or_else(|| format!("{} has nowhere to live.", spec.file))?;
+        tokio::fs::create_dir_all(dir)
+            .await
+            .map_err(|error| format!("Could not make {}: {error}", dir.display()))?;
+
+        // Written beside the target and moved into place at the end, so an
+        // interrupted download cannot leave a truncated file that looks
+        // installed. A rename within one directory is atomic.
+        let partial = dir.join(format!("{}.partial", spec.file));
+        let outcome = self.stream(spec, definition, id, &partial).await;
+        if outcome.is_err() {
+            let _ = tokio::fs::remove_file(&partial).await;
+            return outcome;
+        }
+
+        tokio::fs::rename(&partial, &path)
+            .await
+            .map_err(|error| format!("Could not put {} in place: {error}", spec.file))
+    }
+
+    async fn stream(
+        &self,
+        spec: &Download,
+        definition: &ModelDefinition,
+        id: &str,
+        partial: &Path,
+    ) -> Result<(), String> {
+        self.emit_event(
+            "downloading",
+            &format!("Downloading {}…", definition.short_label),
+            id,
+            Some(0.0),
+        )
+        .await;
+
+        let mut response = reqwest::Client::new()
+            .get(spec.url)
+            .send()
+            .await
+            .map_err(|error| format!("Could not reach the download: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("The download was refused: {error}"))?;
+
+        // Its own answer where it gives one, since a redirect or a mirror can
+        // serve a different length than the one recorded here.
+        let total = response.content_length().unwrap_or(spec.bytes).max(1);
+        let mut file = tokio::fs::File::create(partial)
+            .await
+            .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
+        let mut hasher = Sha256::new();
+        let mut written: u64 = 0;
+        let mut reported = Instant::now();
+
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| format!("The download stopped: {error}"))?
+        {
+            hasher.update(&chunk);
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
+            written += chunk.len() as u64;
+
+            if reported.elapsed() >= PROGRESS_INTERVAL {
+                reported = Instant::now();
+                let fraction = (written as f32 / total as f32).min(1.0);
+                self.emit_event(
+                    "downloading",
+                    &format!(
+                        "Downloading {} — {}%",
+                        definition.short_label,
+                        (fraction * 100.0).round() as u32
+                    ),
+                    id,
+                    Some(fraction),
+                )
+                .await;
+            }
+        }
+
+        file.flush()
+            .await
+            .map_err(|error| format!("Could not finish {}: {error}", partial.display()))?;
+        drop(file);
+
+        if written != spec.bytes {
+            return Err(format!(
+                "{} should be {} bytes and arrived as {written}.",
+                spec.file, spec.bytes
+            ));
+        }
+        if format!("{:x}", hasher.finalize()) != spec.sha256 {
+            return Err(format!(
+                "{} did not match its checksum and has been discarded.",
+                spec.file
+            ));
+        }
+        Ok(())
+    }
+
     async fn emit_stage(&self, stage: &str, message: &str, id: &str) {
+        self.emit_event(stage, message, id, None).await;
+    }
+
+    async fn emit_event(&self, stage: &str, message: &str, id: &str, progress: Option<f32>) {
         let event = ModelEvent {
             stage: stage.to_string(),
             message: message.to_string(),
             model_id: id.to_string(),
+            progress,
         };
         *self.last_event.lock().await = event.clone();
         (self.emit)(event);
@@ -746,7 +975,9 @@ fn weights_present(definition: &ModelDefinition) -> bool {
             has_contents(&cache.join(folder).join("snapshots"))
         }
         Weights::WhisperFile(name) => home.join(".cache/whisper").join(name).is_file(),
-        Weights::GgmlFile(name) => crate::whisper_cpp::weights_path(name)
+        // The partial file a download writes to is a different name, so an
+        // interrupted transfer reads as absent rather than as installed.
+        Weights::GgmlFile(spec) => crate::whisper_cpp::weights_path(spec.file)
             .map(|path| path.is_file())
             .unwrap_or(false),
     }
@@ -780,4 +1011,108 @@ fn is_executable(path: &Path) -> bool {
     std::fs::metadata(path)
         .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The point of the whole download path: exactly one model can be had
+    /// without a terminal, and it is the one whose weights are a single file.
+    #[test]
+    fn only_the_ggml_weights_download_themselves() {
+        let fetchable: Vec<&str> = MODELS
+            .iter()
+            .filter(|definition| downloadable(definition).is_some())
+            .map(|definition| definition.id)
+            .collect();
+        assert_eq!(fetchable, vec!["whisper-cpp-small"]);
+    }
+
+    /// A download is a URL, a length and a hash that all describe one file. A
+    /// URL pointing at something else would only be found out by a user.
+    #[test]
+    fn the_download_describes_the_file_it_names() {
+        let spec = downloadable(model("whisper-cpp-small")).expect("downloadable");
+        assert!(spec.url.ends_with(spec.file), "{} vs {}", spec.url, spec.file);
+        assert!(spec.url.starts_with("https://"));
+        assert_eq!(spec.sha256.len(), 64);
+        assert!(spec.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(spec.bytes > 0);
+    }
+
+    /// Exercises the download for real: stream, hash, and the move into place.
+    ///
+    /// Ignored by default because it needs the network. The file is a small one
+    /// from the same host as the weights, so what is being tested is the code
+    /// rather than anybody's bandwidth. Run with:
+    /// `cargo test fetches -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn fetches_verifies_and_moves_a_file_into_place() {
+        const SMALL: Download = Download {
+            file: "README.md",
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/README.md",
+            bytes: 3196,
+            sha256: "21fd967098804f33fc84e803fb0e5ab7666d71801f4027cf28a65e7af09c1758",
+        };
+
+        let dir = std::env::temp_dir().join(format!("waveform-fetch-{}", std::process::id()));
+        std::env::set_var("WAVEFORM_WHISPER_CPP_DIR", &dir);
+        let server = ModelServer::new(
+            dir.clone(),
+            dir.clone(),
+            None,
+            "whisper-cpp-small".into(),
+            Box::new(|_| {}),
+        );
+        let definition = model("whisper-cpp-small");
+
+        server
+            .fetch(&SMALL, definition, definition.id)
+            .await
+            .expect("the download should succeed");
+        assert!(dir.join("README.md").is_file());
+        // Nothing left behind: the partial file is renamed, not copied.
+        assert!(!dir.join("README.md.partial").exists());
+
+        // A wrong checksum must leave nothing at all, or the next launch would
+        // load whatever arrived.
+        std::fs::remove_file(dir.join("README.md")).expect("clear the file");
+        const WRONG: Download = Download {
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            ..SMALL
+        };
+        let error = server
+            .fetch(&WRONG, definition, definition.id)
+            .await
+            .expect_err("a wrong checksum should fail");
+        assert!(error.contains("checksum"), "{error}");
+        assert!(!dir.join("README.md").exists());
+        assert!(!dir.join("README.md.partial").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A model the app fetches must not also tell the user to run something,
+    /// and one it cannot fetch must always say what to run. The interface picks
+    /// between those two states, so a model in neither would render as nothing.
+    #[test]
+    fn every_model_says_exactly_one_way_to_get_its_weights() {
+        for definition in MODELS.iter() {
+            let command = setup_command(definition);
+            match downloadable(definition) {
+                Some(_) => assert!(
+                    command.is_empty(),
+                    "{} both downloads itself and names {command}",
+                    definition.id
+                ),
+                None => assert!(
+                    !command.is_empty(),
+                    "{} neither downloads itself nor says what to run",
+                    definition.id
+                ),
+            }
+        }
+    }
 }
