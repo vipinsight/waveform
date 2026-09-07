@@ -16,6 +16,39 @@ export interface ModelEvent {
   stage: ModelStage;
   message: string;
   modelId: SpeechModelId;
+  /** How much of a download is done, 0 to 1. Only sent while downloading. */
+  progress?: number;
+}
+
+/** A release newer than the running one. */
+export interface UpdateInfo {
+  version: string;
+  notes: string;
+}
+
+export type UpdateStage =
+  | "checking"
+  | "available"
+  | "current"
+  | "downloading"
+  | "installed"
+  | "error";
+
+export interface UpdateEvent {
+  stage: UpdateStage;
+  message: string;
+  /** How much of the download is done, 0 to 1. Only sent while downloading. */
+  progress?: number;
+}
+
+/** One line of what the app is doing. */
+export interface LogLine {
+  /** Milliseconds since the epoch. */
+  at: number;
+  level: "info" | "warn" | "error";
+  /** Which part is speaking: engine, capture, dictation, update. */
+  source: string;
+  message: string;
 }
 
 export interface TranscriptionResult {
@@ -75,7 +108,13 @@ export interface ModelStatus {
   selected: boolean;
   runtimeInstalled: boolean;
   weightsInstalled: boolean;
+  /** Empty when the app fetches these weights itself. */
   setupCommand: string;
+  /**
+   * Size of the download, when the app can perform it. `null` means the
+   * weights arrive some other way and only a terminal can bring them.
+   */
+  downloadBytes: number | null;
 }
 
 /** A pointer position in the HUD's own coordinates. */
@@ -155,6 +194,18 @@ export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone";
 export interface DesktopApi {
   startModel(): Promise<void>;
   selectModel(modelId: SpeechModelId): Promise<void>;
+  /** Resolves when the download has finished, or rejects with why it did not. */
+  downloadModel(modelId: SpeechModelId): Promise<void>;
+  /** `null` means this is already the newest version. */
+  checkForUpdate(): Promise<UpdateInfo | null>;
+  /** Installs the newer version and relaunches, so this never resolves. */
+  installUpdate(): Promise<void>;
+  onUpdateEvent(listener: (event: UpdateEvent) => void): () => void;
+  getLogs(): Promise<LogLine[]>;
+  clearLogs(): Promise<void>;
+  onLogLine(listener: (line: LogLine) => void): () => void;
+  /** Writes into the same log from a window, which knows things Rust does not. */
+  log(level: LogLine["level"], source: string, message: string): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;

@@ -1067,6 +1067,13 @@ kbd {
   gap: 8px;
 }
 
+/* Nothing else would separate the two: .card carries no margin of its own,
+   because everywhere else on these pages it is the first thing under the
+   heading. 16px is the gap .prompt-block uses for the same job. */
+.model-list + .card {
+  margin-top: 16px;
+}
+
 .model-row {
   display: flex;
   align-items: center;
@@ -1126,6 +1133,56 @@ kbd {
 .model-tag[data-ready="true"] {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* ------------------------------------------------------------------- logs */
+
+.log-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 2px 8px;
+}
+
+.log-follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 480;
+}
+
+/* Monospace and scrollable in its own right: lines are long, and wrapping
+   them would lose the column the timestamps make. */
+.log-view {
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 14px;
+  margin: 0;
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.log-view b {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.log-view i {
+  color: var(--accent);
+  font-style: normal;
+}
+
+.log-view s {
+  color: #d2544a;
+  text-decoration: none;
 }
 
 .row {

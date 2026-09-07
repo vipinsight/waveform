@@ -5,8 +5,10 @@ import type {
   DictationUpdate,
   HotkeyStatus,
   MicrophoneDevice,
+  LogLine,
   ModelEvent,
   ResourceUsage,
+  UpdateEvent,
 } from "../shared/contracts";
 import {
   HOTKEY_BINDINGS,
@@ -18,7 +20,9 @@ import {
 import {
   getSpeechModel,
   isSpeechModelId,
+  type SpeechModelId,
 } from "../shared/models";
+import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import {
@@ -45,6 +49,7 @@ const element = {
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
   modelList: requireElement<HTMLElement>("model-list"),
+  speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
@@ -52,6 +57,14 @@ const element = {
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
   flowBarToggle: requireElement<HTMLInputElement>("flow-bar-toggle"),
   dockToggle: requireElement<HTMLInputElement>("dock-toggle"),
+  logView: requireElement<HTMLElement>("log-view"),
+  logFollow: requireElement<HTMLInputElement>("log-follow"),
+  logCopy: requireElement<HTMLButtonElement>("log-copy"),
+  logClear: requireElement<HTMLButtonElement>("log-clear"),
+  updateToggle: requireElement<HTMLInputElement>("update-toggle"),
+  updateState: requireElement<HTMLElement>("update-state"),
+  updateCheck: requireElement<HTMLButtonElement>("update-check"),
+  updateInstall: requireElement<HTMLButtonElement>("update-install"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   emptyHeadline: requireElement<HTMLElement>("empty-headline"),
   emptyHint: requireElement<HTMLElement>("empty-hint"),
@@ -95,6 +108,12 @@ let settings: AppSettings = DEFAULT_SETTINGS;
 let hotkeyStatus: HotkeyStatus | null = null;
 let modelReady = false;
 let modelLoading = false;
+/** The model whose weights are being fetched, so a second press does nothing. */
+let downloading: SpeechModelId | null = null;
+/** The version the app is running, for the line that reports updates. */
+let appVersion = "";
+/** Everything the log has said this session, oldest first. */
+let logLines: LogLine[] = [];
 let settingsOpen = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
@@ -119,8 +138,9 @@ async function bootstrap(): Promise<void> {
   renderHistory();
   // Falls back to the bare name: a version that failed to load should not be
   // rendered as "Waveform null".
-  const version = await host().getAppVersion().catch(() => "");
-  element.versionLine.textContent = version ? `Waveform ${version}` : "Waveform";
+  appVersion = await host().getAppVersion().catch(() => "");
+  element.versionLine.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
+  element.updateState.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -132,6 +152,8 @@ async function bootstrap(): Promise<void> {
 
 function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
+  host().onUpdateEvent(handleUpdateEvent);
+  host().onLogLine(handleLogLine);
   host().onSettingsChanged(applySettings);
   host().onHotkeyStatusChanged((next) => {
     hotkeyStatus = next;
@@ -207,8 +229,19 @@ function wireEvents(): void {
   element.modelList.addEventListener("click", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
     const id = row?.dataset.model;
-    if (!id || !isSpeechModelId(id) || row.getAttribute("aria-disabled") === "true") return;
+    if (!id || !isSpeechModelId(id)) return;
+    // A row whose weights the app can fetch is a download button until it has
+    // them, and only then the radio it looks like.
+    if (row?.dataset.download === "true") {
+      void downloadModel(id);
+      return;
+    }
+    if (row?.getAttribute("aria-disabled") === "true") return;
     void host().selectModel(id);
+  });
+  element.speechLanguage.addEventListener("change", () => {
+    const value = element.speechLanguage.value;
+    if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
   });
   element.microphoneSelect.addEventListener("change", () => {
     const id = element.microphoneSelect.value;
@@ -274,6 +307,26 @@ function wireEvents(): void {
   element.flowBarToggle.addEventListener("change", () => {
     void patchSettings({ showFlowBarAlways: element.flowBarToggle.checked });
   });
+  element.logCopy.addEventListener("click", () => {
+    const text = logLines
+      .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
+      .join("\n");
+    void navigator.clipboard.writeText(text);
+  });
+  element.logClear.addEventListener("click", () => {
+    void host().clearLogs();
+    logLines = [];
+    renderLogs();
+  });
+  element.updateToggle.addEventListener("change", () => {
+    void patchSettings({ automaticUpdateCheck: element.updateToggle.checked });
+  });
+  element.updateCheck.addEventListener("click", () => {
+    void checkForUpdate();
+  });
+  element.updateInstall.addEventListener("click", () => {
+    void installUpdate();
+  });
   element.dockToggle.addEventListener("change", () => {
     void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
   });
@@ -317,6 +370,52 @@ function showSettingsPage(page: string): void {
   // Runtimes and weights arrive from a terminal, not from here, so the list is
   // re-read each time the page is opened rather than trusted from startup.
   if (page === "models") void renderModels();
+  // Lines pushed while the page was closed are in the buffer, not on screen.
+  if (page === "logs") void loadLogs();
+}
+
+/**
+ * Fills the log page from the buffer Rust holds.
+ *
+ * Pulled rather than accumulated from events alone: this window can open long
+ * after the interesting part, and the engine says most of what matters while
+ * it is starting.
+ */
+async function loadLogs(): Promise<void> {
+  logLines = await host().getLogs().catch(() => []);
+  renderLogs();
+}
+
+function renderLogs(): void {
+  const view = element.logView;
+  // Measured before the write, because appending changes both numbers.
+  const pinned = element.logFollow.checked;
+  view.replaceChildren(
+    ...logLines.map((line) => {
+      const row = document.createElement("div");
+      const time = document.createElement("b");
+      time.textContent = new Date(line.at).toLocaleTimeString([], { hour12: false });
+      const source = document.createElement("i");
+      source.textContent = ` ${line.source} `;
+      const message =
+        line.level === "error"
+          ? document.createElement("s")
+          : document.createElement("span");
+      message.textContent = line.message;
+      row.append(time, source, message);
+      return row;
+    }),
+  );
+  if (pinned) view.scrollTop = view.scrollHeight;
+}
+
+function handleLogLine(line: LogLine): void {
+  logLines.push(line);
+  // The same cap Rust keeps, so a long session does not grow this window's
+  // copy without bound.
+  if (logLines.length > 400) logLines.shift();
+  const page = element.logView.closest<HTMLElement>(".settings-page");
+  if (page && !page.hidden) renderLogs();
 }
 
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
@@ -329,11 +428,13 @@ function applySettings(next: AppSettings): void {
   else document.documentElement.dataset.theme = next.theme;
 
   void renderModels();
+  renderLanguageSelect();
   renderMicrophoneSelect();
   element.hotkeySelect.value = next.hotkeyId;
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
+  element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
@@ -616,13 +717,17 @@ async function renderModels(): Promise<void> {
   element.modelList.replaceChildren(
     ...catalog.map((model) => {
       const ready = model.runtimeInstalled && model.weightsInstalled;
+      const fetchable = !ready && model.downloadBytes !== null;
       const row = document.createElement("button");
       row.type = "button";
       row.className = "model-row";
       row.dataset.model = model.id;
       row.setAttribute("role", "radio");
       row.setAttribute("aria-checked", String(model.selected));
-      if (!ready) row.setAttribute("aria-disabled", "true");
+      if (fetchable) row.dataset.download = "true";
+      // Disabled only when there is nothing the button could do. A model the
+      // app can fetch is not disabled: pressing it is how the weights arrive.
+      if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
 
       const name = document.createElement("strong");
       name.textContent = model.label;
@@ -630,9 +735,11 @@ async function renderModels(): Promise<void> {
       const state = document.createElement("small");
       state.textContent = ready
         ? "Downloaded"
-        : !model.runtimeInstalled
-          ? `Not installed — run ${model.setupCommand}`
-          : `Runtime ready, weights missing — run ${model.setupCommand}`;
+        : fetchable
+          ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
+          : !model.runtimeInstalled
+            ? `Not installed — run ${model.setupCommand}`
+            : `Runtime ready, weights missing — run ${model.setupCommand}`;
 
       const body = document.createElement("span");
       body.className = "model-body";
@@ -641,12 +748,115 @@ async function renderModels(): Promise<void> {
       const tag = document.createElement("span");
       tag.className = "model-tag";
       tag.dataset.ready = String(ready);
-      tag.textContent = ready ? (model.selected ? "In use" : "Ready") : "Available";
+      tag.textContent = ready
+        ? model.selected
+          ? "In use"
+          : "Ready"
+        : fetchable
+          ? "Download"
+          : "Available";
 
       row.append(body, tag);
       return row;
     }),
   );
+}
+
+/**
+ * Fetches a model's weights, with the row saying how far it has got.
+ *
+ * One at a time, and the list is rebuilt afterwards either way: the row's whole
+ * text depends on whether the file is there now.
+ */
+async function downloadModel(id: SpeechModelId): Promise<void> {
+  if (downloading) return;
+  downloading = id;
+  try {
+    await host().downloadModel(id);
+  } catch {
+    // The failure already arrived as an error event, which is what says why.
+  } finally {
+    downloading = null;
+    await renderModels();
+  }
+}
+
+/**
+ * Writes progress into the row itself rather than rebuilding the list.
+ *
+ * A rebuild four times a second would ask the host for the whole catalogue
+ * each time, and replace the button under the pointer that started it.
+ */
+function showDownloadProgress(event: ModelEvent): void {
+  const row = element.modelList.querySelector<HTMLElement>(
+    `[data-model="${event.modelId}"]`,
+  );
+  if (!row) return;
+  const state = row.querySelector("small");
+  if (state) state.textContent = event.message;
+  const tag = row.querySelector<HTMLElement>(".model-tag");
+  if (tag) {
+    tag.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  }
+}
+
+/**
+ * Asks whether there is a newer version, and says so either way.
+ *
+ * A check with no visible outcome reads as broken, which is why "up to date" is
+ * a result rather than silence.
+ */
+async function checkForUpdate(): Promise<void> {
+  element.updateCheck.disabled = true;
+  try {
+    const update = await host().checkForUpdate();
+    element.updateInstall.hidden = update === null;
+    // The event carried the message already; this only has to leave the button
+    // in a state that matches it.
+  } catch {
+    // Reported as an error event, which is what says why.
+  } finally {
+    element.updateCheck.disabled = false;
+  }
+}
+
+/**
+ * Installs the newer version. Does not return: the app relaunches into it.
+ */
+async function installUpdate(): Promise<void> {
+  element.updateInstall.disabled = true;
+  element.updateCheck.disabled = true;
+  try {
+    await host().installUpdate();
+  } catch {
+    element.updateInstall.disabled = false;
+    element.updateCheck.disabled = false;
+  }
+}
+
+/** Every stage of an update lands in the one line under Version. */
+function handleUpdateEvent(event: UpdateEvent): void {
+  element.updateState.textContent =
+    event.stage === "downloading" && event.progress !== undefined
+      ? `${event.message} ${Math.round(event.progress * 100)}%`
+      : event.message;
+  if (event.stage === "available") element.updateInstall.hidden = false;
+  if (event.stage === "current" || event.stage === "error") {
+    element.updateInstall.hidden = true;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / 1_000_000)} MB`;
+}
+
+function renderLanguageSelect(): void {
+  if (element.speechLanguage.options.length === 0) {
+    element.speechLanguage.append(
+      ...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)),
+    );
+  }
+  element.speechLanguage.value = settings.speechLanguage;
 }
 
 /** Joins labels the way a sentence would: "a, b and c". */
@@ -778,7 +988,19 @@ function formatMemory(megabytes: number): string {
 }
 
 function handleModelEvent(event: ModelEvent): void {
-  if (event.modelId !== settings.modelId) return;
+  // A download runs for whichever row was pressed, which is not necessarily
+  // the selected model, so this cannot be filtered by selection: the progress
+  // would go on the floor for every model but one.
+  if (event.stage === "downloading") {
+    showDownloadProgress(event);
+    return;
+  }
+  if (event.modelId !== settings.modelId) {
+    // Nothing about the running engine changed, but a download that failed is
+    // still worth saying out loud.
+    if (event.stage === "error") setStatus(event.message);
+    return;
+  }
 
   if (event.stage === "ready") {
     modelReady = true;

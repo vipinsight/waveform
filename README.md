@@ -2,9 +2,10 @@
 
 Waveform is a small macOS app for private, local voice transcription. Choose between:
 
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) running Whisper
+  `small`, linked into the app. The default.
 - [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B)
-- [OpenAI Whisper](https://github.com/openai/whisper) `turbo` (large-v3-turbo)
 
 Hold a key anywhere in macOS, speak, and the text lands in whatever you were
 typing into. Audio stays on this Mac.
@@ -14,32 +15,51 @@ typing into. Audio stays on this Mac.
 - Apple Silicon Mac
 - macOS 13 or newer
 - Rust and Cargo
+- CMake, which Cargo uses to build whisper.cpp (`brew install cmake`)
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
 - Node.js 20 or newer
-- Python 3.9 or newer for Qwen3-ASR and Whisper
+- Python 3.9 or newer for Qwen3-ASR
 - Internet access for initial runtime and model downloads
 
 ## Setup
 
 ```bash
 pnpm install
-pnpm setup:model
-pnpm setup:qwen      # optional
-pnpm setup:whisper   # optional
 pnpm app
+```
+
+Nothing else is needed to dictate. whisper.cpp is the default engine and the
+only one already inside the app, so its weights are the only missing piece, and
+**Settings -> Model** downloads them itself -- no terminal, which is what an
+install from the disk image has to work with. The optional engines still need a
+checkout:
+
+```bash
+pnpm setup:model        # optional: Parakeet
+pnpm setup:qwen         # optional: Qwen3-ASR
+pnpm setup:whisper-cpp  # the same weights the app fetches, for a checkout
 ```
 
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
 `setup:qwen` creates an isolated runtime in `~/Library/Application Support/Waveform/qwen`,
 installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B.
-`setup:whisper` does the same for OpenAI's own `openai-whisper` package under
-`~/Library/Application Support/Waveform/whisper`, and downloads the `turbo`
-weights. Each engine keeps its own environment, because they pin different
-torch versions and one failing to resolve should not take the others with it.
-Model weights remain in local Hugging Face, NeMo and Whisper caches.
+`setup:whisper-cpp` downloads GGML weights to
+`~/Library/Application Support/Waveform/whisper.cpp` and installs nothing else:
+whisper.cpp is linked into the app, so that engine has no interpreter, no
+virtual environment and no separate process, and it keeps its weights loaded
+between phrases. On an M1 Pro it transcribes eleven seconds of speech in under
+half a second.
 
-Install only the engines you intend to use. Waveform names the missing command
-when a model is selected whose runtime is not present.
+OpenAI's own `openai-whisper` package used to be a fourth entry, running the
+same Whisper `small`. It wanted a 2.5GB virtual environment to be slower at it,
+so it was removed. If you installed it, the environment it left behind is
+`~/Library/Application Support/Waveform/whisper` and nothing needs it now.
+
+Model weights remain in local Hugging Face and NeMo caches.
+
+Install only the engines you intend to use. The Models page says what each one
+is missing: a Download button where the app can fetch the weights, and the
+command to run where it cannot.
 
 Grant microphone permission when macOS asks.
 
@@ -174,6 +194,20 @@ hundred.
 The status bar shows live CPU and memory for Waveform and the speech engine
 combined, since the engine is the larger consumer of both.
 
+## Updates
+
+Waveform checks for a new version twenty seconds after launch, and once a day
+after that. **Settings -> General** has the switch and a **Check now** button;
+an update downloads with progress and restarts the app into itself.
+
+The check is the only request Waveform makes that you did not ask for, so it can
+be turned off -- **Check now** still works with it off. Everything else that
+leaves this Mac happens because something was pressed.
+
+Releases are cut with `pnpm release`, which builds, signs, notarises and
+publishes both the disk image and what the updater needs. See `docs/updates.md`
+for the two signatures involved and why losing the update key is unrecoverable.
+
 ## The Dictation list
 
 Every dictation is kept, newest first, with when it was said and how long it
@@ -218,6 +252,10 @@ pressed while another app is frontmost, or type into one — that needs a
 newline-delimited JSON over stdio, which is why it survived the move from
 Electron untouched.
 
+The speech engines are the least obvious part of this. `docs/models.md`
+traces how a model id becomes a running engine and where each one's weights are
+looked for. `docs/updates.md` covers how a release reaches an installed copy.
+
 ## Commands
 
 ```bash
@@ -228,8 +266,9 @@ pnpm test:rust   # Rust only
 pnpm typecheck   # check TypeScript
 pnpm build       # build the frontend and the native helper into dist/
 pnpm setup:qwen  # install and download Qwen3-ASR 0.6B
-pnpm setup:whisper  # install and download OpenAI Whisper turbo
+pnpm setup:whisper-cpp  # download GGML weights for the whisper.cpp engine
 pnpm icon        # regenerate the app icon and .icns
+pnpm release     # build, sign, notarise and publish a release
 ```
 
 `pnpm build` also compiles `src/native/HotkeyHelper.swift` into

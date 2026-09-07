@@ -20,6 +20,16 @@ describe("normalizeSettings", () => {
     expect(result.showFlowBarAlways).toBe(true);
   });
 
+  it("checks for updates unless told not to", () => {
+    // On by default, because an app nobody can update is worse than one that
+    // asks. Off has to survive a reload, or the switch does nothing.
+    expect(DEFAULT_SETTINGS.automaticUpdateCheck).toBe(true);
+    expect(normalizeSettings({}).automaticUpdateCheck).toBe(true);
+    expect(normalizeSettings({ automaticUpdateCheck: false }).automaticUpdateCheck).toBe(false);
+    // Not a boolean is a corrupt file, not a decision.
+    expect(normalizeSettings({ automaticUpdateCheck: "no" }).automaticUpdateCheck).toBe(true);
+  });
+
   it("keeps a selected microphone, or an explicit system default", () => {
     const selected = normalizeSettings({
       microphoneDeviceId: "built-in-mic-id",

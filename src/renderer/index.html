@@ -262,6 +262,14 @@
             </svg>
           <span>Setup</span><span class="nav-badge" id="setup-badge" hidden></span>
         </button>
+        <button class="nav-item" type="button" data-page="logs">
+            <svg data-icon="scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 12h-5" />
+              <path d="M15 8h-5" />
+              <path d="M19 17V5a2 2 0 0 0-2-2H4" />
+              <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" />
+            </svg>
+            <span>Logs</span></button>
         <div class="sidebar-spacer"></div>
         <div class="modal-foot" id="version-line">Waveform</div>
       </nav>
@@ -306,6 +314,26 @@
           </p>
         </section>
 
+        <section class="settings-page" data-page="logs" hidden>
+          <h1 class="display">Logs</h1>
+          <p class="note">
+            What the app is doing, newest last. Held in memory only and cleared
+            when Waveform quits: the dictation list is the one thing written
+            down, and a log of what was said would be a second one.
+          </p>
+          <div class="log-actions">
+            <label class="log-follow">
+              <input id="log-follow" type="checkbox" class="switch" checked />
+              <span>Follow</span>
+            </label>
+            <span class="row-actions">
+              <button id="log-copy" class="pill-button" type="button">Copy</button>
+              <button id="log-clear" class="pill-button" type="button">Clear</button>
+            </span>
+          </div>
+          <pre class="log-view" id="log-view" aria-live="polite" aria-label="Log"></pre>
+        </section>
+
         <section class="settings-page" data-page="general" hidden>
           <h1 class="display">General</h1>
           <div class="card">
@@ -335,6 +363,25 @@
               <span class="row-label">Keep in Dock when window closes</span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
+            <label class="row">
+              <span class="row-label">
+                Check for updates automatically
+                <small>The only request Waveform makes that you did not ask for.</small>
+              </span>
+              <span class="row-actions"><input id="update-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <div class="row">
+              <span class="row-label">
+                Version
+                <small id="update-state">Waveform</small>
+              </span>
+              <span class="row-actions">
+                <button id="update-check" class="pill-button" type="button">Check now</button>
+                <button id="update-install" class="pill-button is-primary" type="button" hidden>
+                  Install and restart
+                </button>
+              </span>
+            </div>
           </div>
         </section>
 
@@ -372,6 +419,15 @@
             weights downloaded before it can be used.
           </p>
           <div class="model-list" id="model-list" role="radiogroup" aria-label="Speech model"></div>
+
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="speech-language">Language<small>Naming it beats letting the model guess from the first second of audio</small></label>
+              <span class="row-actions">
+                <select id="speech-language" aria-label="Dictation language"></select>
+              </span>
+            </div>
+          </div>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>

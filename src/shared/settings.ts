@@ -4,6 +4,11 @@ import {
   type HotkeyBindingId,
 } from "./hotkeys";
 import {
+  DEFAULT_SPEECH_LANGUAGE,
+  isSpeechLanguage,
+  type SpeechLanguageCode,
+} from "./languages";
+import {
   DEFAULT_SPEECH_MODEL_ID,
   isSpeechModelId,
   type SpeechModelId,
@@ -19,6 +24,8 @@ export type OverlayPlacement = "bottom" | "top";
 
 export interface AppSettings {
   modelId: SpeechModelId;
+  /** Language handed to the speech model. Empty asks it to detect. */
+  speechLanguage: SpeechLanguageCode;
   /** Empty means let macOS choose its current default input. */
   microphoneDeviceId: string;
   /** Last readable device label, used by the menu bar while the window is hidden. */
@@ -59,11 +66,19 @@ export interface AppSettings {
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
   /** Fold the sidebar away. Kept here so it survives a restart. */
+  /**
+   * Look for a new version on launch, and once a day after that.
+   *
+   * The only request Waveform makes that nobody asked for. Pressing Check now
+   * still checks.
+   */
+  automaticUpdateCheck: boolean;
   sidebarCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelId: DEFAULT_SPEECH_MODEL_ID,
+  speechLanguage: DEFAULT_SPEECH_LANGUAGE,
   microphoneDeviceId: "",
   microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
@@ -84,6 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   showFlowBarAlways: false,
   hideDockWhenClosed: false,
+  automaticUpdateCheck: true,
   sidebarCollapsed: false,
 };
 
@@ -102,6 +118,9 @@ export function normalizeSettings(
   const input = isRecord(value) ? value : {};
   return {
     modelId: isSpeechModelId(input.modelId) ? input.modelId : base.modelId,
+    speechLanguage: isSpeechLanguage(input.speechLanguage)
+      ? input.speechLanguage
+      : base.speechLanguage,
     microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
     microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,
@@ -138,6 +157,10 @@ export function normalizeSettings(
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed
         : base.hideDockWhenClosed,
+    automaticUpdateCheck:
+      typeof input.automaticUpdateCheck === "boolean"
+        ? input.automaticUpdateCheck
+        : base.automaticUpdateCheck,
     sidebarCollapsed:
       typeof input.sidebarCollapsed === "boolean"
         ? input.sidebarCollapsed

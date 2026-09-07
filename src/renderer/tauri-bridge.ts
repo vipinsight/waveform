@@ -18,8 +18,11 @@ import type {
   ModelStatus,
   OverlayPoint,
   ResourceUsage,
+  LogLine,
   SavedDictation,
   TranscriptionResult,
+  UpdateEvent,
+  UpdateInfo,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -74,6 +77,14 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
 const api: DesktopApi = {
   startModel: () => invoke<void>("start_model"),
   selectModel: (modelId) => invoke<void>("select_model", { modelId }),
+  downloadModel: (modelId) => invoke<void>("download_model", { modelId }),
+  checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
+  installUpdate: () => invoke<void>("install_update"),
+  onUpdateEvent: (listener) => subscribe<UpdateEvent>("update-event", listener),
+  getLogs: () => invoke<LogLine[]>("get_logs"),
+  clearLogs: () => invoke<void>("clear_logs"),
+  onLogLine: (listener) => subscribe<LogLine>("log-line", listener),
+  log: (level, source, message) => invoke<void>("append_log", { level, source, message }),
   requestMicrophoneAccess: () =>
     invoke<MicrophonePermissionResult>("request_microphone"),
   transcribe: async (wavBytes) => {

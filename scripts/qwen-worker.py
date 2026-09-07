@@ -8,6 +8,40 @@ import traceback
 
 PROTOCOL_PREFIX = "WAVEFORM:"
 
+# Qwen names languages in full and validates against that list, so the ISO
+# 639-1 codes the app speaks have to be translated here. Passing "en" straight
+# through normalises to "En", which is not a supported language, and every
+# phrase then fails with a ValueError instead of being transcribed.
+#
+# Kept in step with src/shared/languages.ts.
+LANGUAGE_NAMES = {
+    "en": "English",
+    "hi": "Hindi",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "ru": "Russian",
+    "ar": "Arabic",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+}
+
+
+def language_name(code):
+    """Qwen's name for a language code, or None to let it detect.
+
+    An unknown code falls back to detection rather than raising: a language
+    this build cannot name is a reason to transcribe slightly worse, not a
+    reason to lose the phrase.
+    """
+    if not code:
+        return None
+    return LANGUAGE_NAMES.get(code.lower())
+
 
 def send(payload):
     print(PROTOCOL_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
@@ -56,7 +90,10 @@ def main():
             request_id = request["id"]
             audio = base64.b64decode(request["audio"])
             audio_url = "data:audio/wav;base64," + base64.b64encode(audio).decode("ascii")
-            result = model.transcribe(audio=audio_url, language=None)[0]
+            # None asks Qwen to detect, which on a single phrase it does
+            # unreliably, so the caller names a language when it can.
+            language = language_name(request.get("language"))
+            result = model.transcribe(audio=audio_url, language=language)[0]
             send(
                 {
                     "type": "result",

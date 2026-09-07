@@ -18,7 +18,24 @@ const HOTKEY_IDS: [&str; 7] = [
     "left-option",
     "right-shift",
 ];
-const MODEL_IDS: [&str; 2] = ["parakeet-tdt-0.6b-v3", "qwen3-asr-0.6b"];
+/// The models the engine actually knows about.
+///
+/// Read from the engine's own table rather than repeated here: a hand-kept
+/// copy that fell behind is what silently reverted every attempt to choose
+/// Whisper, because `normalize` treated a real model id as corrupt input.
+fn is_known_model(id: &str) -> bool {
+    crate::model_server::MODELS.iter().any(|model| model.id == id)
+}
+
+/// Kept in step with src/shared/languages.ts. ISO 639-1, which is what all
+/// three engines take; empty asks the engine to detect.
+const SPEECH_LANGUAGES: [&str; 14] = [
+    "", "en", "hi", "es", "fr", "de", "it", "pt", "nl", "ru", "ar", "ja", "ko", "zh",
+];
+
+fn default_model_id() -> &'static str {
+    crate::model_server::MODELS[0].id
+}
 
 pub const DEFAULT_TRANSFORM_PROMPT: &str = include_str!("prompts/transform.txt");
 pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
@@ -39,6 +56,9 @@ pub const RETIRED_TRANSFORM_PROMPT: &str = include_str!("prompts/transform-retir
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
     pub model_id: String,
+    /// Language handed to the speech model. Empty asks it to detect, which on a
+    /// single dictated phrase it does unreliably.
+    pub speech_language: String,
     /// Empty means follow macOS's current default input device.
     pub microphone_device_id: String,
     /// Human-readable label shown in the tray while the main window is hidden.
@@ -72,6 +92,11 @@ pub struct AppSettings {
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
     pub hide_dock_when_closed: bool,
+    /// Look for a new version on launch, and once a day after that.
+    ///
+    /// The only request Waveform makes that nobody asked for, which is the
+    /// reason it can be turned off. Pressing Check now still checks.
+    pub automatic_update_check: bool,
     /// Whether the sidebar is folded away. A window preference rather than a
     /// dictation one, but it belongs with the rest so it survives a restart.
     pub sidebar_collapsed: bool,
@@ -80,7 +105,8 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            model_id: MODEL_IDS[0].to_string(),
+            model_id: default_model_id().to_string(),
+            speech_language: "en".to_string(),
             microphone_device_id: String::new(),
             microphone_device_name: String::new(),
             hotkey_id: "fn".to_string(),
@@ -101,6 +127,7 @@ impl Default for AppSettings {
             launch_at_login: false,
             show_flow_bar_always: false,
             hide_dock_when_closed: false,
+            automatic_update_check: true,
             sidebar_collapsed: false,
         }
     }
@@ -112,8 +139,11 @@ impl AppSettings {
     /// Applies to both the file on disk and patches from the frontend, so a
     /// corrupt file or a stale window can never put the app in a broken state.
     pub fn normalize(mut self, base: &AppSettings) -> Self {
-        if !MODEL_IDS.contains(&self.model_id.as_str()) {
+        if !is_known_model(&self.model_id) {
             self.model_id = base.model_id.clone();
+        }
+        if !SPEECH_LANGUAGES.contains(&self.speech_language.as_str()) {
+            self.speech_language = base.speech_language.clone();
         }
         self.microphone_device_id = bounded_text(&self.microphone_device_id, 1_024);
         self.microphone_device_name = bounded_text(&self.microphone_device_name, 200);
@@ -246,6 +276,57 @@ mod tests {
     }
 
     use super::*;
+
+    /// Every speech model the engine can run must survive being saved.
+    ///
+    /// This list used to be a hand-kept copy that had fallen behind, so
+    /// choosing Whisper was written to disk, read back as corrupt, and
+    /// silently replaced -- which looked exactly like a picker that would not
+    /// take the click.
+    #[test]
+    fn every_engine_model_survives_load() {
+        for model in crate::model_server::MODELS.iter() {
+            let mut stored = AppSettings::default();
+            stored.model_id = model.id.into();
+            let loaded = stored.normalize(&AppSettings::default());
+            assert_eq!(loaded.model_id, model.id);
+        }
+    }
+
+    /// Off must survive a reload, or the switch is decorative. On is the
+    /// default because an app nobody can update is worse than one that asks.
+    #[test]
+    fn the_update_check_can_be_turned_off_for_good() {
+        assert!(AppSettings::default().automatic_update_check);
+        let mut stored = AppSettings::default();
+        stored.automatic_update_check = false;
+        assert!(!stored.normalize(&AppSettings::default()).automatic_update_check);
+    }
+
+    #[test]
+    fn rejects_an_unknown_speech_model() {
+        let base = AppSettings::default();
+        let mut input = base.clone();
+        input.model_id = "whisper-enormous".into();
+        assert_eq!(input.normalize(&base).model_id, base.model_id);
+    }
+
+    #[test]
+    fn an_unoffered_language_falls_back() {
+        let base = AppSettings::default();
+        let mut input = base.clone();
+        input.speech_language = "elvish".into();
+        assert_eq!(input.normalize(&base).speech_language, base.speech_language);
+    }
+
+    /// Empty is a real choice: it asks the engine to detect the language.
+    #[test]
+    fn detection_is_a_keepable_language_choice() {
+        let base = AppSettings::default();
+        let mut input = base.clone();
+        input.speech_language = String::new();
+        assert_eq!(input.normalize(&base).speech_language, "");
+    }
 
     #[test]
     fn rejects_an_unknown_hotkey() {

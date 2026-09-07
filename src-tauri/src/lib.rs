@@ -6,6 +6,7 @@
 
 mod gestures;
 mod history;
+mod logs;
 mod hotkey;
 mod dictation;
 mod model_server;
@@ -14,6 +15,8 @@ mod resources;
 mod rewrite;
 mod settings;
 mod stats;
+mod updates;
+mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
@@ -77,6 +80,7 @@ const EDGE_MARGIN: f64 = 88.0;
 
 pub struct AppState {
     settings: Arc<Mutex<SettingsStore>>,
+    logs: Arc<logs::Logs>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
     models: Arc<ModelServer>,
@@ -103,7 +107,7 @@ pub struct AppState {
     overlay_hit_region: StdMutex<Option<(f64, f64, f64, f64)>>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct MicrophoneDevice {
     id: String,
@@ -168,12 +172,18 @@ async fn set_available_microphones(
             })
         })
         .take(32)
-        .collect();
-    *state.microphones.lock().map_err(|_| "Microphone list unavailable")? = devices;
+        .collect::<Vec<_>>();
+    {
+        let mut microphones = state.microphones.lock().map_err(|_| "Microphone list unavailable")?;
+        if *microphones == devices {
+            return Ok(());
+        }
+        *microphones = devices;
+    }
 
     let settings = state.settings.lock().await.value();
     if settings.menu_bar_icon {
-        rebuild_tray(&app);
+        refresh_tray_menu(&app);
     }
     Ok(())
 }
@@ -225,7 +235,7 @@ async fn update_settings(
         || next.microphone_device_name != previous.microphone_device_name
     {
         if next.menu_bar_icon {
-            rebuild_tray(&app);
+            refresh_tray_menu(&app);
         }
     }
     state
@@ -308,14 +318,132 @@ async fn select_model(
     state.models.select(&next.model_id).await
 }
 
+/// Fetches a model's weights.
+///
+/// Slow enough that the interface watches `model-event` for progress rather
+/// than this reply, but still awaited: the row cannot say what it is until the
+/// download has actually finished one way or the other.
+#[tauri::command]
+async fn download_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    state.models.download_weights(&model_id).await
+}
+
+/// Asks whether there is a newer version. `None` means this is the newest.
+///
+/// Always checks, even with the automatic check switched off: the switch is
+/// about requests the user did not ask for, and pressing the button is asking.
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<Option<updates::UpdateInfo>, String> {
+    updates::check(&app).await
+}
+
+/// Installs the newer version and relaunches into it.
+///
+/// The engine is stopped first. It is a separate process of several hundred
+/// megabytes that would not notice its parent being replaced, and the same
+/// reason the signal handler stops it before exiting.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    updates::install(&app).await?;
+    state.models.stop().await;
+    app.restart();
+}
+
 #[tauri::command]
 async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
     Ok(state.models.catalog().await)
 }
 
 #[tauri::command]
-async fn transcribe(state: State<'_, AppState>, wav_bytes: Vec<u8>) -> Result<String, String> {
-    state.models.transcribe(wav_bytes).await
+async fn transcribe(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    wav_bytes: Vec<u8>,
+) -> Result<String, String> {
+    let (model_id, language) = {
+        let settings = state.settings.lock().await.value();
+        (settings.model_id, settings.speech_language)
+    };
+    dump_audio(&wav_bytes);
+
+    // 44 bytes of header, then 16-bit mono. Reported in seconds because that
+    // is the number worth comparing against what was actually said.
+    let seconds = wav_bytes.len().saturating_sub(44) as f64 / 2.0 / 48_000.0;
+    let started = std::time::Instant::now();
+    let outcome = state.models.transcribe(wav_bytes, &language).await;
+    let took = started.elapsed().as_millis();
+
+    match &outcome {
+        Ok(text) if text.is_empty() => state.logs.info(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s in {took}ms, no words found"),
+        ),
+        Ok(text) => state.logs.info(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s in {took}ms — {text:?}"),
+        ),
+        Err(error) => state.logs.error(
+            &app,
+            "engine",
+            format!("{model_id}: {seconds:.1}s failed after {took}ms — {error}"),
+        ),
+    }
+    outcome
+}
+
+/// The lines held, for a page that has just opened.
+#[tauri::command]
+async fn get_logs(state: State<'_, AppState>) -> Result<Vec<logs::LogLine>, String> {
+    Ok(state.logs.all())
+}
+
+#[tauri::command]
+async fn clear_logs(state: State<'_, AppState>) -> Result<(), String> {
+    state.logs.clear();
+    Ok(())
+}
+
+/// Lets a window write into the same log.
+///
+/// The microphone lives in the overlay, so the numbers that explain a silent
+/// dictation -- how many blocks arrived, how loud, against what threshold --
+/// are only known there.
+#[tauri::command]
+async fn append_log(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    level: String,
+    source: String,
+    message: String,
+) -> Result<(), String> {
+    state.logs.push(&app, &level, &source, message);
+    Ok(())
+}
+
+/// Writes each phrase to disk when `WAVEFORM_DUMP_AUDIO` names a directory.
+///
+/// For when an engine reports silence and the meter says otherwise: those two
+/// read the microphone through different nodes, so only the bytes actually sent
+/// settle which one is lying. Off unless asked for, and audio is never
+/// otherwise written anywhere.
+fn dump_audio(wav: &[u8]) {
+    let Some(dir) = std::env::var_os("WAVEFORM_DUMP_AUDIO") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("phrase-{stamp}.wav"));
+    if std::fs::write(&path, wav).is_ok() {
+        eprintln!("waveform: wrote {} bytes to {}", wav.len(), path.display());
+    }
 }
 
 /// WKWebView drives its own microphone prompt from the bundle's usage
@@ -555,6 +683,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![AUTOSTART_ARG]),
@@ -584,13 +713,32 @@ pub fn run() {
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
 
+            let logs = Arc::new(logs::Logs::new());
+            logs.info(
+                app.handle(),
+                "app",
+                format!("Waveform {} starting, model {selected}", app.package_info().version),
+            );
+
             let handle = app.handle().clone();
+            let recorder = logs.clone();
             let models = Arc::new(ModelServer::new(
                 user_data,
                 project_root(),
                 app.path().resource_dir().ok(),
                 selected.clone(),
                 Box::new(move |event: ModelEvent| {
+                    // Every stage the engine reports, said once where it can be
+                    // read afterwards. Downloading is skipped: it arrives four
+                    // times a second and would bury everything else.
+                    if event.stage != "downloading" {
+                        recorder.push(
+                            &handle,
+                            if event.stage == "error" { "error" } else { "info" },
+                            "engine",
+                            format!("{} — {}", event.stage, event.message),
+                        );
+                    }
                     let _ = handle.emit("model-event", event);
                 }),
             ));
@@ -607,6 +755,7 @@ pub fn run() {
 
             app.manage(AppState {
                 settings,
+                logs,
                 stats,
                 history,
                 models: models.clone(),
@@ -676,11 +825,18 @@ pub fn run() {
                     _ = terminate.recv() => {}
                     _ = interrupt.recv() => {}
                 }
-                engine.stop().await;
+                // Bounded, and then leave regardless. stop() takes the same
+                // locks as a dictation in flight, so a phrase mid-transcription
+                // can hold it long enough to look like a hang -- and an app
+                // that ignores SIGTERM is one that pnpm app cannot replace,
+                // which is how a rebuilt bundle ends up watching the old
+                // process keep running.
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(3), engine.stop()).await;
                 std::process::exit(0);
             });
 
             resources::spawn_monitor(app.handle().clone(), models.clone());
+            updates::spawn_checks(app.handle().clone());
 
             // Load the engine at launch so the first dictation is not the thing
             // that waits for it.
@@ -713,6 +869,12 @@ pub fn run() {
             request_microphone,
             toggle_dictation,
             model_catalog,
+            download_model,
+            get_logs,
+            clear_logs,
+            append_log,
+            check_for_update,
+            install_update,
             start_overlay_dictation,
             accept_dictation,
             polish_dictation,
@@ -757,9 +919,17 @@ pub fn run() {
             // The engine is a separate process of several hundred megabytes and
             // does not exit on its own, so it has to be shut down explicitly or
             // it outlives the app.
+            //
+            // Bounded, because this runs on the AppKit thread: waiting here is
+            // waiting with the window still on screen, which is a quit that
+            // looks like a freeze. stop() signals the child before it awaits
+            // anything, so giving up on the wait still leaves it dying.
             RunEvent::Exit => {
                 let models = app.state::<AppState>().models.clone();
-                tauri::async_runtime::block_on(async move { models.stop().await });
+                let stopping = tauri::async_runtime::spawn(async move { models.stop().await });
+                let _ = tauri::async_runtime::block_on(async {
+                    tokio::time::timeout(std::time::Duration::from_millis(1500), stopping).await
+                });
             }
             _ => {}
         });
@@ -908,7 +1078,7 @@ fn select_microphone_from_menu(app: &tauri::AppHandle, device_id: String, device
         };
         let _ = app.emit("settings-changed", &next);
         if next.menu_bar_icon {
-            rebuild_tray(&app);
+            refresh_tray_menu(&app);
         }
     });
 }
@@ -942,8 +1112,8 @@ fn accelerator_label(accelerator: &str) -> String {
         .replace("Shift+", "⇧")
 }
 
-/// Builds the menu bar icon.
-fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+/// Builds menu contents independently of the persistent menu bar icon.
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Waveform", true, None::<&str>)?;
@@ -1086,8 +1256,12 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         &separator,
         &quit,
     ]);
-    let menu = Menu::with_items(app, &items)?;
+    Menu::with_items(app, &items)
+}
 
+/// Creates the menu bar icon when first shown.
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let menu = build_tray_menu(app)?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png"))?;
 
     TrayIconBuilder::with_id("waveform")
@@ -1107,11 +1281,16 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 /// WebView commands run off the AppKit thread. Tray mutation must return to it
 /// or macOS aborts with a BoardServices threading violation.
-fn rebuild_tray(app: &tauri::AppHandle) {
+fn refresh_tray_menu(app: &tauri::AppHandle) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        app.remove_tray_by_id("waveform");
-        let _ = build_tray(&app);
+        // Recreating the status item makes macOS remove and reinsert it,
+        // shifting menu bar icons whenever dictation discovers microphones.
+        if let Some(tray) = app.tray_by_id("waveform") {
+            if let Ok(menu) = build_tray_menu(&app) {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
     });
 }
 
@@ -1121,7 +1300,9 @@ fn set_tray_visibility(app: &tauri::AppHandle, visible: bool) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         if visible {
-            let _ = build_tray(&app);
+            if app.tray_by_id("waveform").is_none() {
+                let _ = build_tray(&app);
+            }
         } else {
             app.remove_tray_by_id("waveform");
         }

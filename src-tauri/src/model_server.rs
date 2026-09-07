@@ -1,12 +1,16 @@
 //! Runs the local speech engine and turns WAV bytes into text.
 //!
-//! Two shapes sit behind one interface. Parakeet serves an OpenAI-compatible
-//! HTTP endpoint. Qwen and Whisper are Python workers spoken to over
-//! newline-delimited JSON on stdin/stdout -- the same protocol, so they share
-//! one reader loop, one pending-job table and one readiness handshake, and
-//! differ only in which interpreter and script are launched.
+//! Three shapes sit behind one interface. Whisper is whisper.cpp, linked into
+//! this process. Parakeet serves an OpenAI-compatible HTTP endpoint. Qwen is a
+//! Python worker spoken to over newline-delimited JSON on stdin/stdout.
+//!
+//! The worker plumbing is still written for more than one of its kind -- one
+//! reader loop, one pending-job table, one readiness handshake, and a
+//! `WorkerSpec` saying which interpreter and script to launch. Qwen is the only
+//! engine using it today, and OpenAI's own Whisper package was the other.
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -18,6 +22,9 @@ use tokio::time::{sleep, Duration, Instant};
 const DEFAULT_PORT: u16 = 8178;
 const START_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
+/// How often a download reports itself. An event per chunk would be tens of
+/// thousands of messages across the IPC bridge for one file.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// What the interface needs to say whether a model can be used, and what to run
 /// if it cannot.
@@ -29,7 +36,13 @@ pub struct ModelStatus {
     pub selected: bool,
     pub runtime_installed: bool,
     pub weights_installed: bool,
+    /// Empty when there is nothing to type, because the app fetches this
+    /// model's weights itself.
     pub setup_command: String,
+    /// Size of the download, when the app can perform it. `None` means the
+    /// weights arrive some other way -- an installer, or a virtual
+    /// environment -- and only a terminal can bring them.
+    pub download_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +51,10 @@ pub struct ModelEvent {
     pub stage: String,
     pub message: String,
     pub model_id: String,
+    /// How much of a download is done, from 0.0 to 1.0. Absent for every
+    /// other stage, which is why it is optional rather than zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f32>,
 }
 
 pub struct ModelDefinition {
@@ -56,23 +73,78 @@ pub struct ModelDefinition {
 /// something useful about a model that is not ready.
 #[derive(Clone, Copy)]
 pub enum Weights {
+    /// A GGML `.bin` beside the app's own data. Unrelated to the Python
+    /// package's `.pt` files, and the only weights the app fetches itself.
+    GgmlFile(&'static Download),
     /// nemo-speech caches by repository under the platform cache directory.
     NemoCache,
     /// The Hugging Face hub layout, `models--<org>--<name>`.
     HuggingFace,
-    /// Whisper names its own file under `~/.cache/whisper`; the name is not
-    /// the model id, so it is spelled out.
-    WhisperFile(&'static str),
 }
+
+/// A weight file the app can fetch without a terminal.
+///
+/// whisper.cpp is linked into the binary, so a model there is nothing but one
+/// file -- which is what makes this possible at all. Every other engine needs
+/// an installer or a virtual environment around its weights.
+///
+/// The length and the hash are checked before the file is moved into place: it
+/// is loaded and executed as model weights, and a truncated download that read
+/// as installed would fail much later and much less clearly.
+pub struct Download {
+    pub file: &'static str,
+    pub url: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+}
+
+/// Kept in step with scripts/setup-whisper-cpp.sh, which fetches the same file
+/// for a checkout and can fetch the other sizes.
+const GGML_SMALL: Download = Download {
+    file: "ggml-small.bin",
+    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+    bytes: 487_601_967,
+    sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     Nemo,
     Qwen,
-    Whisper,
+    /// whisper.cpp, linked into this process rather than run beside it.
+    WhisperCpp,
 }
 
+/// How an engine is reached, which is what every "is it installed?" and "how
+/// do I talk to it?" question actually turns on.
+///
+/// Kept apart from `Engine` so adding an engine cannot quietly land in the
+/// wrong branch: this used to be `Option<&WorkerSpec>`, where `None` silently
+/// meant Parakeet.
+enum Runtime {
+    /// Serves an OpenAI-compatible endpoint over HTTP.
+    Http,
+    /// A Python process spoken to over stdin/stdout.
+    Worker(&'static WorkerSpec),
+    /// Compiled in. Nothing to install, nothing to launch.
+    InProcess,
+}
+
+/// The first entry is the default for a fresh install, and the fallback for a
+/// stored id that no longer names anything.
+///
+/// whisper.cpp leads because it is the only engine that needs nothing
+/// installed alongside the app: no interpreter, no virtual environment, no
+/// second process. A new Mac can dictate as soon as the weights land.
 pub const MODELS: [ModelDefinition; 3] = [
+    ModelDefinition {
+        id: "whisper-cpp-small",
+        short_label: "Whisper Small (whisper.cpp)",
+        // The GGML weight file's own name, which is all this engine needs.
+        remote_id: "ggml-small.bin",
+        engine: Engine::WhisperCpp,
+        weights: Weights::GgmlFile(&GGML_SMALL),
+    },
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
         short_label: "Parakeet 0.6B",
@@ -86,15 +158,6 @@ pub const MODELS: [ModelDefinition; 3] = [
         remote_id: "Qwen/Qwen3-ASR-0.6B",
         engine: Engine::Qwen,
         weights: Weights::HuggingFace,
-    },
-    ModelDefinition {
-        id: "whisper-turbo",
-        short_label: "Whisper Turbo",
-        // What `whisper.load_model` takes, not a Hugging Face path: the
-        // official package names its own weights.
-        remote_id: "turbo",
-        engine: Engine::Whisper,
-        weights: Weights::WhisperFile("large-v3-turbo.pt"),
     },
 ];
 
@@ -123,21 +186,37 @@ const QWEN_WORKER: WorkerSpec = WorkerSpec {
     setup_command: "pnpm setup:qwen",
 };
 
-const WHISPER_WORKER: WorkerSpec = WorkerSpec {
-    label: "Whisper",
-    venv: "whisper",
-    project_venv: ".venv-whisper",
-    env_var: "WAVEFORM_WHISPER_PYTHON",
-    script: "whisper-worker.py",
-    setup_command: "pnpm setup:whisper",
-};
-
-/// The worker behind an engine, or none for Parakeet, which is not one.
-fn worker_spec(engine: Engine) -> Option<&'static WorkerSpec> {
+fn runtime(engine: Engine) -> Runtime {
     match engine {
-        Engine::Nemo => None,
-        Engine::Qwen => Some(&QWEN_WORKER),
-        Engine::Whisper => Some(&WHISPER_WORKER),
+        Engine::Nemo => Runtime::Http,
+        Engine::Qwen => Runtime::Worker(&QWEN_WORKER),
+        Engine::WhisperCpp => Runtime::InProcess,
+    }
+}
+
+/// The download a model's weights come from, if the app can fetch them.
+///
+/// A property of the weights rather than of the engine: whether something can
+/// be downloaded is about what it is, not about how it is run.
+fn downloadable(definition: &ModelDefinition) -> Option<&'static Download> {
+    match definition.weights {
+        Weights::GgmlFile(spec) => Some(spec),
+        Weights::NemoCache | Weights::HuggingFace => None,
+    }
+}
+
+/// What the user would have to run to get a model's weights.
+///
+/// Empty when the app fetches them itself: pressing the row is enough, which is
+/// the only way a disk-image install can get to a working model at all.
+fn setup_command(definition: &ModelDefinition) -> &'static str {
+    if downloadable(definition).is_some() {
+        return "";
+    }
+    match runtime(definition.engine) {
+        Runtime::Http => "pnpm setup:model",
+        Runtime::Worker(spec) => spec.setup_command,
+        Runtime::InProcess => "pnpm setup:whisper-cpp",
     }
 }
 
@@ -169,6 +248,14 @@ pub struct ModelServer {
     /// not exit on its own, so dropping this handle would leave a process of
     /// several hundred megabytes running after the app quits.
     parakeet: Mutex<Option<Child>>,
+    /// Loaded whisper.cpp weights, shared with whichever blocking thread is
+    /// transcribing. Held behind an `Arc` so a phrase in flight keeps the
+    /// model alive even if the selection changes underneath it.
+    whisper_cpp: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
+    /// Which model's weights are being fetched, if any. One at a time: two
+    /// writers at one partial file would interleave into something that only
+    /// fails its checksum after the whole transfer.
+    downloading: Mutex<Option<String>>,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
     user_data: PathBuf,
@@ -188,6 +275,7 @@ impl ModelServer {
             stage: "idle".into(),
             message: "Loads when you start listening".into(),
             model_id: selected.clone(),
+            progress: None,
         };
         Self {
             selected: Mutex::new(selected),
@@ -196,6 +284,8 @@ impl ModelServer {
             last_event: Mutex::new(initial),
             worker: Mutex::new(None),
             parakeet: Mutex::new(None),
+            whisper_cpp: Mutex::new(None),
+            downloading: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
             user_data,
@@ -221,11 +311,18 @@ impl ModelServer {
     /// user discovering it when their first phrase fails.
     pub async fn is_installed(&self) -> bool {
         let id = self.selected.lock().await.clone();
-        match worker_spec(model(&id).engine) {
-            None => find_nemo_runtime().is_some(),
-            Some(spec) => {
+        self.runtime_installed(model(&id))
+    }
+
+    /// Whether a model's engine could run at all, weights aside.
+    fn runtime_installed(&self, definition: &ModelDefinition) -> bool {
+        match runtime(definition.engine) {
+            Runtime::Http => find_nemo_runtime().is_some(),
+            Runtime::Worker(spec) => {
                 self.find_worker_runtime(spec).is_some() && self.worker_script(spec).is_file()
             }
+            // Linked into this binary, so it is installed wherever the app is.
+            Runtime::InProcess => true,
         }
     }
 
@@ -238,18 +335,10 @@ impl ModelServer {
                 id: definition.id.into(),
                 label: definition.short_label.into(),
                 selected: definition.id == selected,
-                runtime_installed: match worker_spec(definition.engine) {
-                    None => find_nemo_runtime().is_some(),
-                    Some(spec) => {
-                        self.find_worker_runtime(spec).is_some()
-                            && self.worker_script(spec).is_file()
-                    }
-                },
+                runtime_installed: self.runtime_installed(definition),
                 weights_installed: weights_present(definition),
-                setup_command: match worker_spec(definition.engine) {
-                    None => "pnpm setup:model".into(),
-                    Some(spec) => spec.setup_command.into(),
-                },
+                setup_command: setup_command(definition).into(),
+                download_bytes: downloadable(definition).map(|spec| spec.bytes),
             })
             .collect()
     }
@@ -273,15 +362,16 @@ impl ModelServer {
         let id = self.selected.lock().await.clone();
         let definition = model(&id);
 
-        let ready = match worker_spec(definition.engine) {
-            None => self.parakeet_ready().await,
-            Some(_) => self
+        let ready = match runtime(definition.engine) {
+            Runtime::Http => self.parakeet_ready().await,
+            Runtime::Worker(_) => self
                 .worker
                 .lock()
                 .await
                 .as_ref()
                 .map(|state| state.ready && state.engine == definition.engine)
                 .unwrap_or(false),
+            Runtime::InProcess => self.whisper_cpp.lock().await.is_some(),
         };
         if ready {
             self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
@@ -296,9 +386,9 @@ impl ModelServer {
         )
         .await;
 
-        match worker_spec(definition.engine) {
-            None => self.start_parakeet(definition, &id).await?,
-            Some(spec) => {
+        match runtime(definition.engine) {
+            Runtime::Http => self.start_parakeet(definition, &id).await?,
+            Runtime::Worker(spec) => {
                 // Whichever engine was running, it is not this one, and both
                 // are hundreds of megabytes of Python.
                 if let Some(mut previous) = self.worker.lock().await.take() {
@@ -306,6 +396,7 @@ impl ModelServer {
                 }
                 self.start_worker(spec, definition, &id).await?
             }
+            Runtime::InProcess => self.start_whisper_cpp(definition, &id).await?,
         }
 
         self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
@@ -314,30 +405,92 @@ impl ModelServer {
     }
 
     /// Shuts the engine down. Called when the app exits.
+    /// Stops the engine and waits for it to be gone.
+    ///
+    /// The signal is sent before anything is awaited, so a caller that gives
+    /// up waiting has still killed the child. That matters at shutdown: the
+    /// alternative is an orphaned engine of several hundred megabytes.
     pub async fn stop(&self) {
         if let Some(mut state) = self.worker.lock().await.take() {
-            let _ = state.child.kill().await;
+            let _ = state.child.start_kill();
+            let _ = state.child.wait().await;
         }
         if let Some(mut child) = self.parakeet.lock().await.take() {
-            let _ = child.kill().await;
+            let _ = child.start_kill();
+            let _ = child.wait().await;
         }
+        // Dropping the last handle frees the weights, which for Whisper Small
+        // is most of a gigabyte of this process's own memory.
+        self.whisper_cpp.lock().await.take();
         *self.engine_pid.lock().await = None;
         for (_, sender) in self.pending.lock().await.drain(..) {
             let _ = sender.send(Err("Speech model changed.".into()));
         }
     }
 
-    pub async fn transcribe(&self, wav: Vec<u8>) -> Result<String, String> {
+    /// `language` is an ISO 639-1 code, or empty to let the engine detect one.
+    ///
+    /// Passed per phrase rather than fixed when the engine starts, so changing
+    /// it takes effect on the next phrase instead of after a reload.
+    pub async fn transcribe(&self, wav: Vec<u8>, language: &str) -> Result<String, String> {
         // One request at a time: both engines are single-threaded, and
         // overlapping calls only queue behind each other anyway.
         let _guard = self.transcribe_lock.lock().await;
         self.start().await?;
 
         let id = self.selected.lock().await.clone();
-        match worker_spec(model(&id).engine) {
-            None => self.transcribe_parakeet(wav).await,
-            Some(spec) => self.transcribe_worker(spec, wav).await,
+        match runtime(model(&id).engine) {
+            Runtime::Http => self.transcribe_parakeet(wav, language).await,
+            Runtime::Worker(spec) => self.transcribe_worker(spec, wav, language).await,
+            Runtime::InProcess => self.transcribe_whisper_cpp(wav, language).await,
         }
+    }
+
+    /// Loads whisper.cpp's weights into this process.
+    ///
+    /// The load is the slow part and it holds a lock, so it runs on a blocking
+    /// thread: doing it on the async runtime would stall the HUD's animation
+    /// and the hotkey listener for as long as it took.
+    async fn start_whisper_cpp(
+        &self,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        // A Python worker left running would otherwise sit on a gigabyte of
+        // memory that nothing is going to ask for again.
+        if let Some(mut previous) = self.worker.lock().await.take() {
+            let _ = previous.child.kill().await;
+        }
+        self.emit_stage("loading", "Loading Whisper on Metal…", id).await;
+
+        let file = definition.remote_id;
+        let context = tokio::task::spawn_blocking(move || crate::whisper_cpp::load(file))
+            .await
+            .map_err(|error| format!("Loading Whisper panicked: {error}"))??;
+        *self.whisper_cpp.lock().await = Some(Arc::new(context));
+        // In this process, so there is no separate engine to report on.
+        *self.engine_pid.lock().await = None;
+        Ok(())
+    }
+
+    async fn transcribe_whisper_cpp(
+        &self,
+        wav: Vec<u8>,
+        language: &str,
+    ) -> Result<String, String> {
+        let context = self
+            .whisper_cpp
+            .lock()
+            .await
+            .clone()
+            .ok_or("Whisper is not loaded.")?;
+        let language = language.to_string();
+        tokio::task::spawn_blocking(move || {
+            let audio = crate::whisper_cpp::decode_wav(&wav)?;
+            crate::whisper_cpp::transcribe(&context, &audio, &language)
+        })
+        .await
+        .map_err(|error| format!("Transcription panicked: {error}"))?
     }
 
     async fn start_parakeet(&self, definition: &ModelDefinition, id: &str) -> Result<(), String> {
@@ -516,15 +669,20 @@ impl ModelServer {
         }
     }
 
-    async fn transcribe_parakeet(&self, wav: Vec<u8>) -> Result<String, String> {
+    async fn transcribe_parakeet(&self, wav: Vec<u8>, language: &str) -> Result<String, String> {
         let part = reqwest::multipart::Part::bytes(wav)
             .file_name("speech.wav")
             .mime_str("audio/wav")
             .map_err(|error| error.to_string())?;
-        let form = reqwest::multipart::Form::new()
+        let mut form = reqwest::multipart::Form::new()
             .part("file", part)
             .text("model", "default")
             .text("response_format", "json");
+        // Omitted rather than sent empty: the field's absence is what asks for
+        // detection, and an empty string is not a language.
+        if !language.is_empty() {
+            form = form.text("language", language.to_string());
+        }
 
         let response = reqwest::Client::new()
             .post(format!(
@@ -558,6 +716,7 @@ impl ModelServer {
         &self,
         spec: &WorkerSpec,
         wav: Vec<u8>,
+        language: &str,
     ) -> Result<String, String> {
         let job_id;
         let request;
@@ -565,7 +724,8 @@ impl ModelServer {
             let mut guard = self.worker.lock().await;
             let not_ready = || format!("{} is not ready.", spec.label);
             let state = guard.as_mut().ok_or_else(not_ready)?;
-            if !state.ready || worker_spec(state.engine).map(|s| s.script) != Some(spec.script) {
+            if !state.ready || !matches!(runtime(state.engine), Runtime::Worker(s) if s.script == spec.script)
+            {
                 return Err(not_ready());
             }
             state.next_job += 1;
@@ -575,6 +735,9 @@ impl ModelServer {
             request = serde_json::json!({
                 "id": job_id,
                 "audio": base64::engine::general_purpose::STANDARD.encode(&wav),
+                // Null, not "", so the worker can pass it straight through to
+                // an engine that reads null as "detect".
+                "language": (!language.is_empty()).then(|| language.to_string()),
             })
             .to_string();
 
@@ -604,11 +767,172 @@ impl ModelServer {
         }
     }
 
+    /// Fetches a model's weights, if they are the kind the app can fetch.
+    ///
+    /// The one path to a working model that does not need a terminal, which is
+    /// the whole point: an app installed from the disk image has no checkout
+    /// and no pnpm, so every `setup:` command it could be told to run is one
+    /// that cannot exist on that machine.
+    pub async fn download_weights(&self, id: &str) -> Result<(), String> {
+        let definition = model(id);
+        let Some(spec) = downloadable(definition) else {
+            return Err(format!(
+                "{} does not download on its own.",
+                definition.short_label
+            ));
+        };
+
+        {
+            let mut running = self.downloading.lock().await;
+            if running.is_some() {
+                return Err("A download is already running.".into());
+            }
+            *running = Some(id.to_string());
+        }
+
+        let outcome = self.fetch(spec, definition, id).await;
+        *self.downloading.lock().await = None;
+
+        match &outcome {
+            Ok(()) => {
+                self.emit_stage(
+                    // Downloaded is not loaded: the engine still waits for a
+                    // first session, so this must not read as ready.
+                    "idle",
+                    &format!("{} downloaded", definition.short_label),
+                    id,
+                )
+                .await
+            }
+            Err(error) => self.emit_stage("error", error, id).await,
+        }
+        outcome
+    }
+
+    async fn fetch(
+        &self,
+        spec: &Download,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        let path = crate::whisper_cpp::weights_path(spec.file)
+            .ok_or("Could not work out where Whisper's weights live.")?;
+        if path.is_file() {
+            return Ok(());
+        }
+        let dir = path
+            .parent()
+            .ok_or_else(|| format!("{} has nowhere to live.", spec.file))?;
+        tokio::fs::create_dir_all(dir)
+            .await
+            .map_err(|error| format!("Could not make {}: {error}", dir.display()))?;
+
+        // Written beside the target and moved into place at the end, so an
+        // interrupted download cannot leave a truncated file that looks
+        // installed. A rename within one directory is atomic.
+        let partial = dir.join(format!("{}.partial", spec.file));
+        let outcome = self.stream(spec, definition, id, &partial).await;
+        if outcome.is_err() {
+            let _ = tokio::fs::remove_file(&partial).await;
+            return outcome;
+        }
+
+        tokio::fs::rename(&partial, &path)
+            .await
+            .map_err(|error| format!("Could not put {} in place: {error}", spec.file))
+    }
+
+    async fn stream(
+        &self,
+        spec: &Download,
+        definition: &ModelDefinition,
+        id: &str,
+        partial: &Path,
+    ) -> Result<(), String> {
+        self.emit_event(
+            "downloading",
+            &format!("Downloading {}…", definition.short_label),
+            id,
+            Some(0.0),
+        )
+        .await;
+
+        let mut response = reqwest::Client::new()
+            .get(spec.url)
+            .send()
+            .await
+            .map_err(|error| format!("Could not reach the download: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("The download was refused: {error}"))?;
+
+        // Its own answer where it gives one, since a redirect or a mirror can
+        // serve a different length than the one recorded here.
+        let total = response.content_length().unwrap_or(spec.bytes).max(1);
+        let mut file = tokio::fs::File::create(partial)
+            .await
+            .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
+        let mut hasher = Sha256::new();
+        let mut written: u64 = 0;
+        let mut reported = Instant::now();
+
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| format!("The download stopped: {error}"))?
+        {
+            hasher.update(&chunk);
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
+            written += chunk.len() as u64;
+
+            if reported.elapsed() >= PROGRESS_INTERVAL {
+                reported = Instant::now();
+                let fraction = (written as f32 / total as f32).min(1.0);
+                self.emit_event(
+                    "downloading",
+                    &format!(
+                        "Downloading {} — {}%",
+                        definition.short_label,
+                        (fraction * 100.0).round() as u32
+                    ),
+                    id,
+                    Some(fraction),
+                )
+                .await;
+            }
+        }
+
+        file.flush()
+            .await
+            .map_err(|error| format!("Could not finish {}: {error}", partial.display()))?;
+        drop(file);
+
+        if written != spec.bytes {
+            return Err(format!(
+                "{} should be {} bytes and arrived as {written}.",
+                spec.file, spec.bytes
+            ));
+        }
+        if format!("{:x}", hasher.finalize()) != spec.sha256 {
+            return Err(format!(
+                "{} did not match its checksum and has been discarded.",
+                spec.file
+            ));
+        }
+        Ok(())
+    }
+
     async fn emit_stage(&self, stage: &str, message: &str, id: &str) {
+        self.emit_event(stage, message, id, None).await;
+    }
+
+    async fn emit_event(&self, stage: &str, message: &str, id: &str, progress: Option<f32>) {
         let event = ModelEvent {
             stage: stage.to_string(),
             message: message.to_string(),
             model_id: id.to_string(),
+            progress,
         };
         *self.last_event.lock().await = event.clone();
         (self.emit)(event);
@@ -637,7 +961,11 @@ fn weights_present(definition: &ModelDefinition) -> bool {
             let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
             has_contents(&cache.join(folder).join("snapshots"))
         }
-        Weights::WhisperFile(name) => home.join(".cache/whisper").join(name).is_file(),
+        // The partial file a download writes to is a different name, so an
+        // interrupted transfer reads as absent rather than as installed.
+        Weights::GgmlFile(spec) => crate::whisper_cpp::weights_path(spec.file)
+            .map(|path| path.is_file())
+            .unwrap_or(false),
     }
 }
 
@@ -669,4 +997,108 @@ fn is_executable(path: &Path) -> bool {
     std::fs::metadata(path)
         .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The point of the whole download path: exactly one model can be had
+    /// without a terminal, and it is the one whose weights are a single file.
+    #[test]
+    fn only_the_ggml_weights_download_themselves() {
+        let fetchable: Vec<&str> = MODELS
+            .iter()
+            .filter(|definition| downloadable(definition).is_some())
+            .map(|definition| definition.id)
+            .collect();
+        assert_eq!(fetchable, vec!["whisper-cpp-small"]);
+    }
+
+    /// A download is a URL, a length and a hash that all describe one file. A
+    /// URL pointing at something else would only be found out by a user.
+    #[test]
+    fn the_download_describes_the_file_it_names() {
+        let spec = downloadable(model("whisper-cpp-small")).expect("downloadable");
+        assert!(spec.url.ends_with(spec.file), "{} vs {}", spec.url, spec.file);
+        assert!(spec.url.starts_with("https://"));
+        assert_eq!(spec.sha256.len(), 64);
+        assert!(spec.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(spec.bytes > 0);
+    }
+
+    /// Exercises the download for real: stream, hash, and the move into place.
+    ///
+    /// Ignored by default because it needs the network. The file is a small one
+    /// from the same host as the weights, so what is being tested is the code
+    /// rather than anybody's bandwidth. Run with:
+    /// `cargo test fetches -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn fetches_verifies_and_moves_a_file_into_place() {
+        const SMALL: Download = Download {
+            file: "README.md",
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/README.md",
+            bytes: 3196,
+            sha256: "21fd967098804f33fc84e803fb0e5ab7666d71801f4027cf28a65e7af09c1758",
+        };
+
+        let dir = std::env::temp_dir().join(format!("waveform-fetch-{}", std::process::id()));
+        std::env::set_var("WAVEFORM_WHISPER_CPP_DIR", &dir);
+        let server = ModelServer::new(
+            dir.clone(),
+            dir.clone(),
+            None,
+            "whisper-cpp-small".into(),
+            Box::new(|_| {}),
+        );
+        let definition = model("whisper-cpp-small");
+
+        server
+            .fetch(&SMALL, definition, definition.id)
+            .await
+            .expect("the download should succeed");
+        assert!(dir.join("README.md").is_file());
+        // Nothing left behind: the partial file is renamed, not copied.
+        assert!(!dir.join("README.md.partial").exists());
+
+        // A wrong checksum must leave nothing at all, or the next launch would
+        // load whatever arrived.
+        std::fs::remove_file(dir.join("README.md")).expect("clear the file");
+        const WRONG: Download = Download {
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            ..SMALL
+        };
+        let error = server
+            .fetch(&WRONG, definition, definition.id)
+            .await
+            .expect_err("a wrong checksum should fail");
+        assert!(error.contains("checksum"), "{error}");
+        assert!(!dir.join("README.md").exists());
+        assert!(!dir.join("README.md.partial").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A model the app fetches must not also tell the user to run something,
+    /// and one it cannot fetch must always say what to run. The interface picks
+    /// between those two states, so a model in neither would render as nothing.
+    #[test]
+    fn every_model_says_exactly_one_way_to_get_its_weights() {
+        for definition in MODELS.iter() {
+            let command = setup_command(definition);
+            match downloadable(definition) {
+                Some(_) => assert!(
+                    command.is_empty(),
+                    "{} both downloads itself and names {command}",
+                    definition.id
+                ),
+                None => assert!(
+                    !command.is_empty(),
+                    "{} neither downloads itself nor says what to run",
+                    definition.id
+                ),
+            }
+        }
+    }
 }

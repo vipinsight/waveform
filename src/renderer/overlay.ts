@@ -24,6 +24,20 @@ const BAR_HEADROOM = 4;
 const BAR_INK = "246, 245, 242";
 const ACCENT = "50, 132, 208";
 const LEVEL_GAIN = 7;
+/**
+ * The loudest bin seen lately, which is what the bars are drawn against.
+ *
+ * A fixed gain only suits one input level, and the microphone is now taken
+ * plain -- no automatic gain control between the room and here -- so a normal
+ * voice can sit ten times quieter than it did and barely move a bar. Scaling
+ * against what this microphone actually delivers makes the meter read the same
+ * on a quiet laptop mic as on a loud interface.
+ */
+let loudest = 0;
+/** Floor for that reference, so silence does not amplify into a full meter. */
+const QUIETEST_REFERENCE = 12;
+/** How fast the reference forgets a shout, per frame. */
+const REFERENCE_DECAY = 0.995;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;
 /** Errors stay up longer: they carry information the user has to notice. */
@@ -73,8 +87,11 @@ let pointerOver = false;
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
   onPendingChange: () => syncDerivedState(),
-  onError: () => {
-    setState("error");
+  log: (message) => {
+    void host().log("info", "capture", message);
+  },
+  onError: (message) => {
+    setState("error", message);
     scheduleIdle();
   },
   transcribe: (bytes) => host().transcribe(bytes),
@@ -84,6 +101,10 @@ const capture = new AudioCapture({
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+
+// Build the audio graph's slow half now rather than between the key and the
+// meter. Nothing here opens the microphone.
+capture.prepare();
 
 void host().getSettings().then((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
@@ -387,7 +408,14 @@ function showIdle(): void {
   reportHitRegion();
 }
 
-function setState(next: DictationState): void {
+/**
+ * `message` says what went wrong, for the states where anything did.
+ *
+ * The pill has nowhere to put a sentence, but the window does: this is what
+ * carries a failure to the sidebar. Without it an error is a red pill and no
+ * explanation anywhere, which reads as the shortcut doing nothing.
+ */
+function setState(next: DictationState, message?: string): void {
   hud.dataset.expanded = "false";
   const changed = next !== state;
   state = next;
@@ -399,7 +427,7 @@ function setState(next: DictationState): void {
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {
-    host().reportDictationState({ state: next, sink, mode });
+    host().reportDictationState({ state: next, sink, mode, message });
   }
 }
 
@@ -467,6 +495,7 @@ function fillTargets(): void {
   const spectrum = capture.isRunning ? capture.sampleSpectrum() : null;
   if (!spectrum) {
     targets.fill(0);
+    loudest = 0;
     return;
   }
 
@@ -474,6 +503,14 @@ function fillTargets(): void {
   // spreading across all of them would leave most bars permanently flat.
   const usableBins = Math.floor(spectrum.length * SPECTRUM_SPAN);
   const half = Math.ceil(BAR_COUNT / 2);
+
+  let frameLoudest = 0;
+  for (let bin = 0; bin < usableBins; bin += 1) {
+    frameLoudest = Math.max(frameLoudest, spectrum[bin] ?? 0);
+  }
+  // Rises at once and forgets slowly, so one loud word does not leave the
+  // meter deaf for the rest of the sentence.
+  loudest = Math.max(frameLoudest, loudest * REFERENCE_DECAY, QUIETEST_REFERENCE);
 
   for (let index = 0; index < half; index += 1) {
     const from = Math.floor((index / half) * usableBins);
@@ -484,7 +521,7 @@ function fillTargets(): void {
 
     // Lift the high bands, which carry far less energy than the low ones.
     const tilt = 1 + (index / half) * 1.5;
-    const value = Math.min(1, (peak / 255) * LEVEL_GAIN * 0.24 * tilt);
+    const value = Math.min(1, (peak / loudest) * LEVEL_GAIN * 0.12 * tilt);
 
     // Mirror around the centre so the meter reads as one symmetric shape.
     targets[half - 1 - index] = value;
