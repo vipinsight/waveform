@@ -115,6 +115,8 @@ release/Waveform.app/Contents/MacOS/Waveform
 
 ## Releasing
 
-`pnpm release` builds, signs, notarises and publishes both the disk image and
-what the updater needs. [updates.md](updates.md) covers the two signatures
-involved and why losing the update key is unrecoverable.
+**Actions → Bump version** sets the version in all four files and pushes; then
+`pnpm release` here builds, signs, notarises and publishes both the disk image
+and what the updater needs. [updates.md](updates.md) covers the two signatures
+involved, why losing the update key is unrecoverable, and why signing is not
+done in CI.

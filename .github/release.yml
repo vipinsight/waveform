@@ -1,0 +1,31 @@
+# Groups what `--generate-notes` writes, which release.sh passes on every
+# release. Without this the notes are one flat list of commit subjects.
+#
+# Labels decide the section, so a pull request with none lands in Other
+# changes. Direct commits to main carry no labels at all and always land there,
+# which is the cost of not going through a pull request.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+    authors:
+      - github-actions[bot]
+      - dependabot[bot]
+  categories:
+    - title: Fixed
+      labels:
+        - bug
+    - title: Added
+      labels:
+        - enhancement
+    - title: Accessibility
+      labels:
+        - accessibility
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Other changes
+      labels:
+        - "*"

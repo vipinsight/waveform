@@ -7,6 +7,8 @@ import type {
   MicrophoneDevice,
   LogLine,
   ModelEvent,
+  ModelFit,
+  ModelStatus,
   ResourceUsage,
   UpdateEvent,
 } from "../shared/contracts";
@@ -110,6 +112,8 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
+/** Whether the models page is listing every size, or only the useful few. */
+let showEveryModel = false;
 /** The version the app is running, for the line that reports updates. */
 let appVersion = "";
 /** Everything the log has said this session, oldest first. */
@@ -227,6 +231,12 @@ function wireEvents(): void {
   });
 
   element.modelList.addEventListener("click", (event) => {
+    const more = (event.target as HTMLElement).closest<HTMLElement>("[data-show-all]");
+    if (more) {
+      showEveryModel = more.dataset.showAll === "true";
+      void renderModels();
+      return;
+    }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
     const id = row?.dataset.model;
     if (!id || !isSpeechModelId(id)) return;
@@ -711,55 +721,141 @@ function renderSidebarCollapsed(): void {
  *
  * A model that cannot run is still listed rather than hidden: the point of the
  * page is to say what is available, and what it would take to have it.
+ *
+ * Sixteen of them is too many to read at once, though, so all but a handful
+ * start folded away. What stays out is what someone would actually act on: the
+ * one recommended for this Mac, the one in use, and anything already
+ * downloaded. `Show every size` brings out the rest.
  */
 async function renderModels(): Promise<void> {
   const catalog = await host().getModelCatalog().catch(() => []);
-  element.modelList.replaceChildren(
-    ...catalog.map((model) => {
-      const ready = model.runtimeInstalled && model.weightsInstalled;
-      const fetchable = !ready && model.downloadBytes !== null;
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "model-row";
-      row.dataset.model = model.id;
-      row.setAttribute("role", "radio");
-      row.setAttribute("aria-checked", String(model.selected));
-      if (fetchable) row.dataset.download = "true";
-      // Disabled only when there is nothing the button could do. A model the
-      // app can fetch is not disabled: pressing it is how the weights arrive.
-      if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
+  // What is folded away is the long tail of Whisper weight files, which is
+  // exactly the set the app can fetch itself. A model it cannot fetch is one of
+  // a small handful, and each is a different engine rather than another size of
+  // the same one, so those always show.
+  const featured = (model: ModelStatus): boolean =>
+    model.recommended ||
+    model.selected ||
+    model.weightsInstalled ||
+    model.downloadBytes === null;
+  const hidden = catalog.filter((model) => !featured(model)).length;
 
-      const name = document.createElement("strong");
-      name.textContent = model.label;
+  // Group headings come from the catalogue in its own order, so the interface
+  // does not hold a second opinion about which groups exist.
+  const groups = catalog.reduce<{ heading: string; models: ModelStatus[] }[]>((all, model) => {
+    const group = all.find((candidate) => candidate.heading === model.group);
+    if (group) group.models.push(model);
+    else all.push({ heading: model.group, models: [model] });
+    return all;
+  }, []);
 
-      const state = document.createElement("small");
-      state.textContent = ready
-        ? "Downloaded"
-        : fetchable
-          ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
-          : !model.runtimeInstalled
-            ? `Not installed — run ${model.setupCommand}`
-            : `Runtime ready, weights missing — run ${model.setupCommand}`;
+  const sections: HTMLElement[] = groups.flatMap(({ heading, models }) => {
+    const shown = models.filter((model) => showEveryModel || featured(model));
+    if (shown.length === 0) return [];
 
-      const body = document.createElement("span");
-      body.className = "model-body";
-      body.append(name, state);
+    const title = document.createElement("h2");
+    title.className = "model-group";
+    title.textContent = heading;
 
-      const tag = document.createElement("span");
-      tag.className = "model-tag";
-      tag.dataset.ready = String(ready);
-      tag.textContent = ready
-        ? model.selected
-          ? "In use"
-          : "Ready"
+    const rows = document.createElement("div");
+    rows.className = "model-list";
+    // One radio group per heading: arrow keys then move within a group rather
+    // than sweeping through fourteen Whisper sizes to reach Parakeet.
+    rows.setAttribute("role", "radiogroup");
+    rows.setAttribute("aria-label", heading);
+    rows.append(...shown.map(modelRow));
+    return [title, rows];
+  });
+
+  if (hidden > 0) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "model-more";
+    more.dataset.showAll = String(!showEveryModel);
+    more.textContent = showEveryModel
+      ? "Show fewer"
+      : `Show every size and quantization (${hidden} more)`;
+    sections.push(more);
+  }
+
+  element.modelList.replaceChildren(...sections);
+}
+
+/** One model: what it is, what it needs, and what it would take to have it. */
+function modelRow(model: ModelStatus): HTMLButtonElement {
+  const ready = model.runtimeInstalled && model.weightsInstalled;
+  const fetchable = !ready && model.downloadBytes !== null;
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "model-row";
+  row.dataset.model = model.id;
+  row.setAttribute("role", "radio");
+  row.setAttribute("aria-checked", String(model.selected));
+  if (fetchable) row.dataset.download = "true";
+  // Disabled only when there is nothing the button could do. A model the
+  // app can fetch is not disabled: pressing it is how the weights arrive.
+  if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
+
+  const name = document.createElement("strong");
+  name.textContent = model.label;
+
+  // What it is, before what state it is in: someone reading this list is
+  // choosing between models, not auditing an installation.
+  const detail = document.createElement("small");
+  detail.className = "model-detail";
+  detail.textContent = model.detail;
+
+  const state = document.createElement("small");
+  state.textContent = [
+    ready
+      ? "Downloaded"
+      : fetchable
+        ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
+        : !model.runtimeInstalled
+          ? `Not installed — run ${model.setupCommand}`
+          : `Runtime ready, weights missing — run ${model.setupCommand}`,
+    `about ${formatMemory(model.memoryMb)} of memory while loaded`,
+    fitPhrase(model.fit),
+  ]
+    .filter((part) => part !== "")
+    .join(" · ");
+
+  const body = document.createElement("span");
+  body.className = "model-body";
+  body.append(name, detail, state);
+
+  const tag = document.createElement("span");
+  tag.className = "model-tag";
+  tag.dataset.ready = String(ready);
+  // The recommendation is the more useful thing to say about a row that is
+  // neither in use nor downloaded, which is what every row starts as.
+  tag.textContent = model.selected
+    ? ready
+      ? "In use"
+      : "Selected"
+    : model.recommended
+      ? "Recommended"
+      : ready
+        ? "Ready"
         : fetchable
           ? "Download"
           : "Available";
+  if (model.recommended && !model.selected) tag.dataset.recommended = "true";
 
-      row.append(body, tag);
-      return row;
-    }),
-  );
+  row.append(body, tag);
+  return row;
+}
+
+/**
+ * What a model's memory means on this Mac.
+ *
+ * Comfortable is left unsaid: it is the ordinary case, and a list where every
+ * row carries a verdict is a list where none of them stand out.
+ */
+function fitPhrase(fit: ModelFit | null): string {
+  if (fit === "tight") return "tight on this Mac";
+  if (fit === "too-large") return "more memory than this Mac has to spare";
+  return "";
 }
 
 /**
@@ -952,7 +1048,7 @@ function renderDictationDeck(): void {
   if (modelLoading) {
     element.deckStatus.textContent = "Preparing speech model";
     element.deckTitle.textContent = "Your words are about to be ready";
-    element.deckDescription.textContent = `${getSpeechModel(settings.modelId).shortLabel} is loading on this Mac.`;
+    element.deckDescription.textContent = `${getSpeechModel(settings.modelId).label} is loading on this Mac.`;
     element.deckSettings.textContent = "Dictation settings";
     return;
   }
@@ -1029,7 +1125,7 @@ function handleDictationUpdate(update: DictationUpdate): void {
   // went wrong.
   const { status } = update;
   if (status.state === "error" && status.message) setStatus(status.message);
-  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).shortLabel} ready`);
+  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).label} ready`);
 }
 
 /** The shortcut is the way in, so the sidebar says which one to hold. */

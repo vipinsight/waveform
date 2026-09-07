@@ -1,8 +1,9 @@
 //! Runs the local speech engine and turns WAV bytes into text.
 //!
 //! Three shapes sit behind one interface. Whisper is whisper.cpp, linked into
-//! this process. Parakeet serves an OpenAI-compatible HTTP endpoint. Qwen is a
-//! Python worker spoken to over newline-delimited JSON on stdin/stdout.
+//! this process, and most of the catalogue is one size or quantization of it.
+//! Parakeet serves an OpenAI-compatible HTTP endpoint. Qwen is a Python worker
+//! spoken to over newline-delimited JSON on stdin/stdout.
 //!
 //! The worker plumbing is still written for more than one of its kind -- one
 //! reader loop, one pending-job table, one readiness handshake, and a
@@ -43,6 +44,18 @@ pub struct ModelStatus {
     /// weights arrive some other way -- an installer, or a virtual
     /// environment -- and only a terminal can bring them.
     pub download_bytes: Option<u64>,
+    /// The heading this model is listed under.
+    pub group: String,
+    /// One line of what choosing this model costs and buys.
+    pub detail: String,
+    /// Roughly what it adds to resident memory once loaded, in MB.
+    pub memory_mb: u32,
+    /// How that sits on this particular Mac. `None` when the installed memory
+    /// could not be read, in which case nothing is claimed about it.
+    pub fit: Option<Fit>,
+    /// Whether this is the model to suggest on this Mac. Exactly one entry
+    /// carries it, unless the installed memory is unknown.
+    pub recommended: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -63,6 +76,56 @@ pub struct ModelDefinition {
     pub remote_id: &'static str,
     pub engine: Engine,
     pub weights: Weights,
+    pub group: Group,
+    /// What this size or quantization is for, in the terms someone choosing
+    /// between them would care about: speed, accuracy, and which languages.
+    pub detail: &'static str,
+    /// Roughly what the model adds to resident memory once loaded, in MB.
+    ///
+    /// An estimate, not a measurement: the weight file plus the working state
+    /// whisper.cpp allocates around it. It exists to be compared against the
+    /// memory this Mac has, and to order the models by weight, so being a few
+    /// hundred megabytes out does not change what it is used for.
+    pub memory_mb: u32,
+}
+
+/// Which heading a model is listed under.
+///
+/// Whisper's English-only weights are kept apart rather than mixed in by size:
+/// they are more accurate than their multilingual counterparts and completely
+/// useless for anything but English, which is a choice to make deliberately
+/// rather than one to stumble into while looking for a size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Group {
+    Whisper,
+    WhisperEnglish,
+    Other,
+}
+
+impl Group {
+    fn heading(self) -> &'static str {
+        match self {
+            Group::Whisper => "Whisper",
+            Group::WhisperEnglish => "Whisper, English only",
+            Group::Other => "Other engines",
+        }
+    }
+}
+
+/// How a model's memory sits against what this Mac has.
+///
+/// Three tiers rather than a yes or no, because the interesting answer is
+/// usually neither: a model can load and still be the wrong choice if it means
+/// the rest of the machine starts swapping while dictation is idle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Fit {
+    /// An eighth of installed memory or less. Leave it loaded and forget it.
+    Comfortable,
+    /// Up to a quarter. It runs; it is also the largest thing on the machine.
+    Tight,
+    /// More than a quarter of the whole machine.
+    TooLarge,
 }
 
 /// Where an engine leaves the weights it has downloaded.
@@ -98,14 +161,44 @@ pub struct Download {
     pub sha256: &'static str,
 }
 
-/// Kept in step with scripts/setup-whisper-cpp.sh, which fetches the same file
-/// for a checkout and can fetch the other sizes.
-const GGML_SMALL: Download = Download {
-    file: "ggml-small.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-    bytes: 487_601_967,
-    sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
-};
+/// One Whisper entry.
+///
+/// whisper.cpp is linked into the app, so a Whisper model here is nothing but
+/// its weight file: a name, a length and a hash. Written as a macro because
+/// spelling out the engine, the URL and the `Weights` wrapper fourteen times is
+/// fourteen chances to put a hash against the wrong file.
+///
+/// `bytes` and `sha256` are Hugging Face's own figures for the file -- the size
+/// and the LFS object id, which is its SHA-256.
+macro_rules! whisper {
+    (
+        id: $id:literal,
+        label: $label:literal,
+        file: $file:literal,
+        bytes: $bytes:literal,
+        sha256: $sha256:literal,
+        group: $group:expr,
+        memory_mb: $memory_mb:literal,
+        detail: $detail:literal $(,)?
+    ) => {
+        ModelDefinition {
+            id: $id,
+            short_label: $label,
+            // The weight file's own name, which is all this engine needs.
+            remote_id: $file,
+            engine: Engine::WhisperCpp,
+            weights: Weights::GgmlFile(&Download {
+                file: $file,
+                url: concat!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/", $file),
+                bytes: $bytes,
+                sha256: $sha256,
+            }),
+            group: $group,
+            memory_mb: $memory_mb,
+            detail: $detail,
+        }
+    };
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
@@ -130,20 +223,161 @@ enum Runtime {
     InProcess,
 }
 
-/// The first entry is the default for a fresh install, and the fallback for a
-/// stored id that no longer names anything.
+/// Every model the app knows about, in the order the interface lists them:
+/// lightest first within each group.
 ///
-/// whisper.cpp leads because it is the only engine that needs nothing
-/// installed alongside the app: no interpreter, no virtual environment, no
-/// second process. A new Mac can dictate as soon as the weights land.
-pub const MODELS: [ModelDefinition; 3] = [
-    ModelDefinition {
+/// Whisper fills most of it because whisper.cpp is the only engine that needs
+/// nothing installed alongside the app -- no interpreter, no virtual
+/// environment, no second process -- so every size of it is a model a new Mac
+/// can have by pressing a row, and choosing between them is the only real
+/// choice most people have here.
+///
+/// Not every file in the whisper.cpp repository is listed. `large-v1` and
+/// `large-v2` are superseded by `large-v3` at the same size, the `q8_0`
+/// quantizations save little over the full weights, and quantized English-only
+/// weights combine two compromises for a model already small enough not to
+/// need either. `scripts/setup-whisper-cpp.sh` can still fetch any of them into
+/// a checkout by name.
+pub const MODELS: &[ModelDefinition] = &[
+    whisper! {
+        id: "whisper-cpp-tiny",
+        label: "Whisper Tiny",
+        file: "ggml-tiny.bin",
+        bytes: 77_691_713,
+        sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+        group: Group::Whisper,
+        memory_mb: 250,
+        detail: "Fastest and least accurate. Short, clearly spoken phrases only.",
+    },
+    whisper! {
+        id: "whisper-cpp-base",
+        label: "Whisper Base",
+        file: "ggml-base.bin",
+        bytes: 147_951_465,
+        sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        group: Group::Whisper,
+        memory_mb: 350,
+        detail: "Noticeably better than Tiny at punctuation and proper nouns.",
+    },
+    whisper! {
         id: "whisper-cpp-small",
-        short_label: "Whisper Small (whisper.cpp)",
-        // The GGML weight file's own name, which is all this engine needs.
-        remote_id: "ggml-small.bin",
-        engine: Engine::WhisperCpp,
-        weights: Weights::GgmlFile(&GGML_SMALL),
+        label: "Whisper Small",
+        file: "ggml-small.bin",
+        bytes: 487_601_967,
+        sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        group: Group::Whisper,
+        memory_mb: 800,
+        detail: "The accuracy floor for dictation you do not have to reread.",
+    },
+    whisper! {
+        id: "whisper-cpp-small-q5",
+        label: "Whisper Small · Q5",
+        file: "ggml-small-q5_1.bin",
+        bytes: 190_085_487,
+        sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+        group: Group::Whisper,
+        memory_mb: 440,
+        detail: "Small at five bits a weight: half the memory, a little less accurate.",
+    },
+    whisper! {
+        id: "whisper-cpp-medium",
+        label: "Whisper Medium",
+        file: "ggml-medium.bin",
+        bytes: 1_533_763_059,
+        sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+        group: Group::Whisper,
+        memory_mb: 2_100,
+        detail: "Handles accents and technical words Small guesses at. Slower than real time on older chips.",
+    },
+    whisper! {
+        id: "whisper-cpp-medium-q5",
+        label: "Whisper Medium · Q5",
+        file: "ggml-medium-q5_0.bin",
+        bytes: 539_212_467,
+        sha256: "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f",
+        group: Group::Whisper,
+        memory_mb: 1_050,
+        detail: "Medium's accuracy in a third of its memory. The cheapest way to leave Small behind.",
+    },
+    whisper! {
+        id: "whisper-cpp-large-v3-turbo",
+        label: "Whisper Large v3 Turbo",
+        file: "ggml-large-v3-turbo.bin",
+        bytes: 1_624_555_275,
+        sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        group: Group::Whisper,
+        memory_mb: 2_200,
+        detail: "Nearly Large v3's accuracy at several times the speed. The best model here if it fits.",
+    },
+    whisper! {
+        id: "whisper-cpp-large-v3-turbo-q5",
+        label: "Whisper Large v3 Turbo · Q5",
+        file: "ggml-large-v3-turbo-q5_0.bin",
+        bytes: 574_041_195,
+        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        group: Group::Whisper,
+        memory_mb: 1_150,
+        detail: "Turbo at five bits a weight, for a Mac that cannot spare two gigabytes.",
+    },
+    whisper! {
+        id: "whisper-cpp-large-v3-q5",
+        label: "Whisper Large v3 · Q5",
+        file: "ggml-large-v3-q5_0.bin",
+        bytes: 1_081_140_203,
+        sha256: "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+        group: Group::Whisper,
+        memory_mb: 1_800,
+        detail: "The most accurate weights that fit in under two gigabytes. Slower than Turbo.",
+    },
+    whisper! {
+        id: "whisper-cpp-large-v3",
+        label: "Whisper Large v3",
+        file: "ggml-large-v3.bin",
+        bytes: 3_095_033_483,
+        sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+        group: Group::Whisper,
+        memory_mb: 3_800,
+        detail: "The most accurate Whisper there is, and the slowest. Turbo is the better trade for dictation.",
+    },
+    whisper! {
+        id: "whisper-cpp-tiny-en",
+        label: "Whisper Tiny · English",
+        file: "ggml-tiny.en.bin",
+        bytes: 77_704_715,
+        sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+        group: Group::WhisperEnglish,
+        memory_mb: 250,
+        detail: "English alone, and better at it than multilingual Tiny.",
+    },
+    whisper! {
+        id: "whisper-cpp-base-en",
+        label: "Whisper Base · English",
+        file: "ggml-base.en.bin",
+        bytes: 147_964_211,
+        sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+        group: Group::WhisperEnglish,
+        memory_mb: 350,
+        detail: "English alone. Roughly multilingual Small's accuracy for a third of the memory.",
+    },
+    whisper! {
+        id: "whisper-cpp-small-en",
+        label: "Whisper Small · English",
+        file: "ggml-small.en.bin",
+        bytes: 487_614_201,
+        sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
+        group: Group::WhisperEnglish,
+        memory_mb: 800,
+        detail: "English alone. A good match for a Mac with 8 GB that only dictates English.",
+    },
+    whisper! {
+        id: "whisper-cpp-medium-en",
+        label: "Whisper Medium · English",
+        file: "ggml-medium.en.bin",
+        bytes: 1_533_774_781,
+        sha256: "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
+        group: Group::WhisperEnglish,
+        memory_mb: 2_100,
+        detail: "English alone, and the most accurate way to hear it short of Turbo.",
     },
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
@@ -151,6 +385,9 @@ pub const MODELS: [ModelDefinition; 3] = [
         remote_id: "nvidia/parakeet-tdt-0.6b-v3",
         engine: Engine::Nemo,
         weights: Weights::NemoCache,
+        group: Group::Other,
+        memory_mb: 2_600,
+        detail: "Faster than any Whisper of its accuracy, and 25 European languages. Needs a terminal and 2.5 GB of Python.",
     },
     ModelDefinition {
         id: "qwen3-asr-0.6b",
@@ -158,7 +395,42 @@ pub const MODELS: [ModelDefinition; 3] = [
         remote_id: "Qwen/Qwen3-ASR-0.6B",
         engine: Engine::Qwen,
         weights: Weights::HuggingFace,
+        group: Group::Other,
+        memory_mb: 2_800,
+        detail: "Strong on Chinese and code-switched speech. Slowest to load, and needs a terminal.",
     },
+];
+
+/// The model a fresh install starts on, and the fallback for a stored id that
+/// no longer names anything.
+///
+/// Named rather than positional -- it used to be `MODELS[0]` -- because the
+/// table is now ordered for the interface to read, lightest first, and the
+/// lightest Whisper is not a model anyone should be given without asking. Small
+/// is: it runs on every Apple Silicon Mac, and it is accurate enough that a
+/// first dictation is not a bad first impression.
+pub const DEFAULT_MODEL_ID: &str = "whisper-cpp-small";
+
+/// What to suggest, best first, with the machine's memory deciding how far down
+/// the list it gets: the first entry that sits comfortably wins.
+///
+/// Hand-ordered rather than derived from size, because size is not the same as
+/// desirability. Large v3 is the most accurate model here and is deliberately
+/// absent -- Turbo is within a hair of it and several times faster, which for
+/// dictation is the trade to take. The English-only weights are absent for a
+/// different reason: they are the better choice for someone who only ever
+/// dictates English, and silently wrong for anyone else, so they are never
+/// suggested.
+///
+/// The last entry is the answer when nothing fits, so this must not be empty.
+const SUGGESTION_ORDER: &[&str] = &[
+    "whisper-cpp-large-v3-turbo",
+    "whisper-cpp-large-v3-turbo-q5",
+    "whisper-cpp-medium-q5",
+    "whisper-cpp-small",
+    "whisper-cpp-small-q5",
+    "whisper-cpp-base",
+    "whisper-cpp-tiny",
 ];
 
 /// Everything that differs between the two Python engines.
@@ -221,7 +493,66 @@ fn setup_command(definition: &ModelDefinition) -> &'static str {
 }
 
 pub fn model(id: &str) -> &'static ModelDefinition {
-    MODELS.iter().find(|m| m.id == id).unwrap_or(&MODELS[0])
+    MODELS.iter().find(|m| m.id == id).unwrap_or_else(default_model)
+}
+
+/// `the_default_names_a_real_model` is what stops this falling back at all.
+fn default_model() -> &'static ModelDefinition {
+    MODELS
+        .iter()
+        .find(|m| m.id == DEFAULT_MODEL_ID)
+        .unwrap_or(&MODELS[0])
+}
+
+/// How much memory this Mac has, in MB.
+///
+/// Read once from the kernel and kept: it cannot change while the app is
+/// running, and it is asked for once per row of the models page.
+fn installed_memory_mb() -> Option<u32> {
+    static INSTALLED: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *INSTALLED.get_or_init(|| {
+        let output = std::process::Command::new("/usr/sbin/sysctl")
+            .args(["-n", "hw.memsize"])
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        let bytes: u64 = String::from_utf8_lossy(&output.stdout).trim().parse().ok()?;
+        Some((bytes / (1024 * 1024)) as u32)
+    })
+}
+
+/// Where a model's memory puts it on this machine.
+///
+/// The thresholds are fractions of installed memory rather than fixed sizes,
+/// because the question is not whether the model loads -- macOS will find the
+/// pages either way, by swapping something else out -- but whether leaving it
+/// loaded is something the rest of the machine notices.
+fn fit(memory_mb: u32, installed_mb: u32) -> Fit {
+    if memory_mb.saturating_mul(8) <= installed_mb {
+        Fit::Comfortable
+    } else if memory_mb.saturating_mul(4) <= installed_mb {
+        Fit::Tight
+    } else {
+        Fit::TooLarge
+    }
+}
+
+/// The model to suggest on this Mac: the first suggestion that fits
+/// comfortably, or the lightest one if none of them do.
+///
+/// `None` when the installed memory could not be read, which is the honest
+/// answer -- a suggestion made without knowing what the machine has would be a
+/// guess wearing the word "recommended".
+fn suggested_id() -> Option<&'static str> {
+    let installed = installed_memory_mb()?;
+    let fits = |id: &str| fit(model(id).memory_mb, installed) == Fit::Comfortable;
+    Some(
+        SUGGESTION_ORDER
+            .iter()
+            .copied()
+            .find(|id| fits(id))
+            .unwrap_or_else(|| SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1]),
+    )
 }
 
 struct WorkerState {
@@ -329,6 +660,8 @@ impl ModelServer {
     /// Every model, and what is on this machine for each of them.
     pub async fn catalog(&self) -> Vec<ModelStatus> {
         let selected = self.selected.lock().await.clone();
+        let installed = installed_memory_mb();
+        let suggested = suggested_id();
         MODELS
             .iter()
             .map(|definition| ModelStatus {
@@ -339,6 +672,11 @@ impl ModelServer {
                 weights_installed: weights_present(definition),
                 setup_command: setup_command(definition).into(),
                 download_bytes: downloadable(definition).map(|spec| spec.bytes),
+                group: definition.group.heading().into(),
+                detail: definition.detail.into(),
+                memory_mb: definition.memory_mb,
+                fit: installed.map(|total| fit(definition.memory_mb, total)),
+                recommended: Some(definition.id) == suggested,
             })
             .collect()
     }
@@ -419,8 +757,9 @@ impl ModelServer {
             let _ = child.start_kill();
             let _ = child.wait().await;
         }
-        // Dropping the last handle frees the weights, which for Whisper Small
-        // is most of a gigabyte of this process's own memory.
+        // Dropping the last handle frees the weights, which is anything from a
+        // couple of hundred megabytes to four gigabytes of this process's own
+        // memory, depending on which size is loaded.
         self.whisper_cpp.lock().await.take();
         *self.engine_pid.lock().await = None;
         for (_, sender) in self.pending.lock().await.drain(..) {
@@ -1003,28 +1342,113 @@ fn is_executable(path: &Path) -> bool {
 mod tests {
     use super::*;
 
-    /// The point of the whole download path: exactly one model can be had
-    /// without a terminal, and it is the one whose weights are a single file.
+    /// Where every weight file comes from, spelled out once here so that the
+    /// copy inside `whisper!` is checked rather than trusted. The file name is
+    /// the only part that differs between models.
+    ///
+    /// Kept in step with scripts/setup-whisper-cpp.sh, which fetches the same
+    /// files for a checkout.
+    const GGML_HOST: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
+
+    /// The point of the whole download path: a model can be had without a
+    /// terminal exactly when its weights are a single file, which is every
+    /// whisper.cpp model and nothing else.
     #[test]
     fn only_the_ggml_weights_download_themselves() {
-        let fetchable: Vec<&str> = MODELS
-            .iter()
-            .filter(|definition| downloadable(definition).is_some())
-            .map(|definition| definition.id)
-            .collect();
-        assert_eq!(fetchable, vec!["whisper-cpp-small"]);
+        for definition in MODELS.iter() {
+            let expected = definition.engine == Engine::WhisperCpp;
+            assert_eq!(
+                downloadable(definition).is_some(),
+                expected,
+                "{} downloads itself: {expected} expected",
+                definition.id
+            );
+        }
     }
 
     /// A download is a URL, a length and a hash that all describe one file. A
-    /// URL pointing at something else would only be found out by a user.
+    /// URL pointing at something else would only be found out by a user, and
+    /// the same hash against two files is the mistake a table of fourteen of
+    /// them invites.
     #[test]
-    fn the_download_describes_the_file_it_names() {
-        let spec = downloadable(model("whisper-cpp-small")).expect("downloadable");
-        assert!(spec.url.ends_with(spec.file), "{} vs {}", spec.url, spec.file);
-        assert!(spec.url.starts_with("https://"));
-        assert_eq!(spec.sha256.len(), 64);
-        assert!(spec.sha256.chars().all(|c| c.is_ascii_hexdigit()));
-        assert!(spec.bytes > 0);
+    fn every_download_describes_the_file_it_names() {
+        let mut seen: Vec<&str> = Vec::new();
+        for definition in MODELS.iter() {
+            let Some(spec) = downloadable(definition) else {
+                continue;
+            };
+            assert_eq!(spec.url, format!("{GGML_HOST}{}", spec.file));
+            assert_eq!(spec.file, definition.remote_id);
+            assert_eq!(spec.sha256.len(), 64, "{}", definition.id);
+            assert!(spec.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+            assert!(spec.bytes > 0);
+            assert!(
+                !seen.contains(&spec.sha256),
+                "{} repeats a hash from another model",
+                definition.id
+            );
+            seen.push(spec.sha256);
+        }
+        assert_eq!(seen.len(), 14, "every Whisper size should be downloadable");
+    }
+
+    /// Ids reach this table from disk and from the interface, and both resolve
+    /// through `model()`, which cannot report a miss.
+    #[test]
+    fn ids_are_unique_and_the_default_names_a_real_model() {
+        for definition in MODELS.iter() {
+            let matches = MODELS.iter().filter(|other| other.id == definition.id).count();
+            assert_eq!(matches, 1, "{} is listed more than once", definition.id);
+        }
+        assert_eq!(default_model().id, DEFAULT_MODEL_ID);
+        assert_eq!(model("no-such-model").id, DEFAULT_MODEL_ID);
+    }
+
+    /// A suggestion naming a model that is not in the table would be offered
+    /// as a row the interface cannot find.
+    #[test]
+    fn every_suggestion_is_a_model_the_app_can_fetch() {
+        assert!(!SUGGESTION_ORDER.is_empty(), "the last entry is the fallback");
+        for id in SUGGESTION_ORDER {
+            let definition = MODELS
+                .iter()
+                .find(|candidate| candidate.id == *id)
+                .unwrap_or_else(|| panic!("{id} is suggested but not listed"));
+            assert!(
+                downloadable(definition).is_some(),
+                "{id} is suggested but needs a terminal"
+            );
+            assert_eq!(definition.group, Group::Whisper, "{id}");
+        }
+    }
+
+    /// The suggestion is what the models page calls "recommended", so it has
+    /// to move with the machine rather than being the same answer everywhere.
+    #[test]
+    fn the_suggestion_follows_the_memory_the_machine_has() {
+        let suggest = |installed_mb: u32| {
+            SUGGESTION_ORDER
+                .iter()
+                .copied()
+                .find(|id| fit(model(id).memory_mb, installed_mb) == Fit::Comfortable)
+                .unwrap_or_else(|| SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1])
+        };
+        assert_eq!(suggest(8 * 1024), "whisper-cpp-small");
+        assert_eq!(suggest(16 * 1024), "whisper-cpp-large-v3-turbo-q5");
+        assert_eq!(suggest(32 * 1024), "whisper-cpp-large-v3-turbo");
+        // Nothing fits, so the lightest model is the answer rather than none.
+        assert_eq!(suggest(512), SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1]);
+    }
+
+    #[test]
+    fn memory_is_judged_as_a_fraction_of_the_machine() {
+        assert_eq!(fit(800, 16 * 1024), Fit::Comfortable);
+        assert_eq!(fit(2_200, 16 * 1024), Fit::Tight);
+        assert_eq!(fit(3_800, 8 * 1024), Fit::TooLarge);
+        // Every model claims some memory, or the fit of it would be meaningless.
+        for definition in MODELS.iter() {
+            assert!(definition.memory_mb > 0, "{}", definition.id);
+        }
     }
 
     /// Exercises the download for real: stream, hash, and the move into place.

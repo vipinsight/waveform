@@ -49,12 +49,13 @@ rather than audio, and it runs because you pressed something.
 
 - **It works in every app.** Mail, a browser, a terminal — anywhere there is a
   cursor.
-- **Three open models, switchable.**
-  [Whisper](https://github.com/ggml-org/whisper.cpp) runs inside the app and
-  needs nothing installed.
-  [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
-  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) are there if you want
-  them.
+- **Open models, switchable.** Every size of
+  [Whisper](https://github.com/ggml-org/whisper.cpp) — Tiny through Large v3,
+  quantized or not, multilingual or English-only — runs inside the app and needs
+  nothing installed; Settings → Models marks the one that fits the memory your
+  Mac has. [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
+  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) are there too, if you
+  want them.
 - **It waits until you finish.** Text arrives when you stop speaking, so a
   sentence never lands half-written somewhere.
 - **It lives in the menu bar.** Closing the window does not quit it, and

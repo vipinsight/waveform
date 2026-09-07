@@ -1,0 +1,102 @@
+# Bumps the version and pushes the commit, so a release starts with a button
+# rather than four hand edits.
+#
+# Signing stays off CI on purpose. Building here would mean the Developer ID
+# certificate and the update signing key living in repository secrets, where
+# every build script and every dependency's install hook can read them -- and a
+# leaked update key cannot be rotated without breaking every install already
+# out there. See docs/updates.md. So this job only moves the number; `pnpm
+# release` on a Mac does the rest.
+#
+# It deliberately does not tag. release.sh cuts the tag from the commit it
+# actually built and refuses when the tag already exists, so creating one here
+# would make the release it is meant to start impossible.
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: Which part to increment
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: Exact version instead, e.g. 0.2.0 (overrides the choice above)
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Inputs are read from the environment rather than substituted into the
+      # script: an exact version is free text, and free text pasted into a
+      # shell line is a command someone else chose to run.
+      - name: Work out the next version
+        id: next
+        env:
+          PART: ${{ inputs.part }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          set -eu
+          if [ -n "$EXACT" ]; then
+            echo "version=$EXACT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          current="$(python3 -c 'import json;print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
+          major="${current%%.*}"
+          rest="${current#*.}"
+          minor="${rest%%.*}"
+          patch="${rest##*.}"
+          case "$PART" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="$major.$((minor + 1)).0" ;;
+            *) next="$major.$minor.$((patch + 1))" ;;
+          esac
+          echo "$current -> $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      # bump.sh rejects anything that is not a three-part version, and refuses
+      # when the four files disagree already -- a typo in the exact-version box,
+      # or a half-done earlier bump, stops here rather than in a manifest.
+      - name: Bump
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: scripts/bump.sh "$VERSION"
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: version $VERSION"
+          git push
+
+      - name: What happens next
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          {
+            echo "### Version is now \`$VERSION\`"
+            echo
+            echo "Nothing is published yet. On an Apple Silicon Mac with the signing key:"
+            echo
+            echo '```sh'
+            echo "git pull"
+            echo "pnpm release"
+            echo '```'
+            echo
+            echo "That builds, signs, notarises, tags \`v$VERSION\`, and attaches the disk"
+            echo "image and \`latest.json\` with generated release notes."
+          } >> "$GITHUB_STEP_SUMMARY"

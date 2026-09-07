@@ -30,6 +30,21 @@ describe("stylesheet covers the markup", () => {
     expect(unstyled).toEqual([]);
   });
 
+  /*
+   * The check above reads the markup, and the models page is no longer in it:
+   * its rows, group headings and detail lines are built in the renderer, so a
+   * stylesheet edit could remove every rule for them and the markup scan would
+   * still pass. This reads the classes the renderer assigns instead.
+   */
+  it("styles every class the renderer assigns at runtime", () => {
+    const renderer = readFileSync("src/renderer/renderer.ts", "utf8");
+    const assigned = [...renderer.matchAll(/className = "([^"]+)"/g)].flatMap((match) =>
+      match[1]!.split(/\s+/),
+    );
+    expect(assigned.length).toBeGreaterThan(10);
+    expect(assigned.filter((name) => !css.includes(`.${name}`))).toEqual([]);
+  });
+
   it("styles every class the overlay uses", () => {
     const unstyled = classesIn(overlayHtml).filter(
       (name) => !overlayCss.includes(`.${name}`),

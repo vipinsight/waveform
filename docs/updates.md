@@ -87,11 +87,39 @@ notarisation credentials.
 one to bump; `package.json` and `Cargo.toml` only have to agree, and the script
 stops if they do not.
 
+The bump itself is a button. **Actions → Bump version → Run workflow**, pick
+patch, minor or major, and
+[bump-version.yml](../.github/workflows/bump-version.yml) sets all four files
+and pushes the commit. Then, here:
+
+```bash
+git pull
+pnpm release
+```
+
+The workflow does not tag. `release.sh` cuts the tag from the commit it built
+and refuses when the tag exists already, so a tag made in advance would block
+the release it was meant to start.
+
+Release notes come from `--generate-notes`, grouped by
+[.github/release.yml](../.github/release.yml) into Fixed, Added, Accessibility
+and Documentation by pull request label. Commits pushed straight to `main` carry
+no labels and land under Other changes, so their subject lines are the notes.
+The `notes` field in `latest.json` is not that text — it is a link to the
+release page, which is what the in-app updater shows.
+
 Releasing from this Mac rather than from CI is deliberate. Signing and
 notarising in CI means putting a Developer ID certificate and an app-specific
 password into repository secrets; for one person on one machine that is more
 places for a secret to be, not fewer. CI earns its place when there is a second
 person or a second machine.
+
+The update key is the stronger reason. Signing happens during the build, so
+every build script and every dependency's install hook runs with the key in its
+environment — one compromised package version is enough, with nobody's merge
+involved. A stolen Developer ID certificate can be revoked. A stolen update key
+signs a tarball every install already out there accepts, and replacing it breaks
+updates for all of them. Hence the button bumps the version and stops.
 
 ## Traps
 

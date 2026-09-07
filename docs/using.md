@@ -54,18 +54,76 @@ differently signed build, remove Waveform from both lists and add it again once.
 
 | Engine | How it runs |
 | --- | --- |
-| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) running Whisper `small` — **the default** | Linked into the app. No interpreter, no separate process, and the weights stay loaded between phrases. |
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) running any Whisper size — **the default** | Linked into the app. No interpreter, no separate process, and the weights stay loaded between phrases. |
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
 **Settings → Models** shows what each engine is missing: a Download button where
 the app can fetch the weights itself, and the command to run where it cannot.
 Only whisper.cpp can be set up without a terminal, which is why it is the
-default — an install from the disk image cannot assume one.
+default — an install from the disk image cannot assume one. Because it is linked
+in, every size and quantization of Whisper is one press away, and the models
+page marks the one **recommended** for the Mac it is running on.
 
 Qwen3-ASR takes roughly 20–40 seconds to load the first time. Parakeet is
-quicker once its runtime is warm. whisper.cpp transcribes eleven seconds of
-speech in under half a second on an M1 Pro.
+quicker once its runtime is warm.
+
+## Choosing a Whisper size
+
+The models page starts folded: it shows the recommended model, the one in use,
+and anything already downloaded. **Show every size** brings out the rest.
+
+Two things separate them. Bigger weights hear accents, proper nouns and
+technical words that smaller ones guess at. And a quantized model — the `Q5`
+rows — stores each weight in five bits instead of sixteen, which cuts memory by
+roughly half for a small loss of accuracy, so it is how a larger model fits in a
+smaller Mac.
+
+Speeds below are relative to Small, which transcribes eleven seconds of speech
+in under half a second on an M1 Pro. Memory is what the model adds to the app
+while it is loaded, and it is approximate.
+
+| Model | Download | Memory | Speed | Good for |
+| --- | --- | --- | --- | --- |
+| Tiny | 78 MB | ~250 MB | ~4× faster | Short commands where a wrong word is obvious |
+| Base | 148 MB | ~350 MB | ~2× faster | The smallest model worth dictating sentences to |
+| **Small** | 488 MB | ~800 MB | baseline | The accuracy floor for text you do not reread. The default |
+| Small · Q5 | 190 MB | ~440 MB | about the same | Small on a Mac that cannot spare 800 MB |
+| Medium | 1.5 GB | ~2.1 GB | ~3× slower | Accents and jargon Small gets wrong |
+| Medium · Q5 | 539 MB | ~1.1 GB | ~3× slower | Most of Medium's accuracy in half the memory |
+| **Large v3 Turbo** | 1.6 GB | ~2.2 GB | ~2× slower | The best trade here: near Large v3's accuracy, nowhere near its cost |
+| Large v3 Turbo · Q5 | 574 MB | ~1.2 GB | ~2× slower | Turbo on a 16 GB Mac |
+| Large v3 · Q5 | 1.1 GB | ~1.8 GB | ~5× slower | The most accurate weights under 2 GB |
+| Large v3 | 3.1 GB | ~3.8 GB | ~6× slower | When accuracy matters more than waiting |
+
+The **English only** group is the same sizes trained on English alone. Each is
+more accurate than its multilingual twin at the same memory — Base · English is
+close to multilingual Small — and useless for anything else, so it is never the
+recommended model. Pick one deliberately, and only if you never dictate in
+another language.
+
+### What to run on which Mac
+
+Waveform reads how much memory the Mac has and marks the most capable
+multilingual Whisper that fits in an eighth of it. That eighth is the point:
+these weights stay resident between phrases, so a model that merely *fits* is
+one that pushes everything else towards swap while you are not even dictating.
+A row saying **tight on this Mac** will still run, and will still be the largest
+thing on the machine.
+
+| This Mac | Recommended | If you want more |
+| --- | --- | --- |
+| 8 GB | Small | Medium · Q5, or Small · English if you only dictate English |
+| 16 GB | Large v3 Turbo · Q5 | Large v3 Turbo, at about 2.2 GB resident |
+| 24 GB or more | Large v3 Turbo | Large v3, if you would rather wait than reread |
+
+Large v3 is never the recommendation. Turbo comes within a hair of its accuracy
+at a fraction of the time, and for dictation — where the wait is in front of you
+— that is the better trade.
+
+Any Apple Silicon Mac runs any of these; the chip decides how long you wait, not
+whether it works. A model that has to be paged in from disk on every phrase is
+the one bad case, and it is what the memory advice above avoids.
 
 The engine is not loaded until your first dictation, so an idle Waveform costs
 about 140 MB rather than several hundred. The status bar shows live CPU and

@@ -34,7 +34,7 @@ const SPEECH_LANGUAGES: [&str; 14] = [
 ];
 
 fn default_model_id() -> &'static str {
-    crate::model_server::MODELS[0].id
+    crate::model_server::DEFAULT_MODEL_ID
 }
 
 pub const DEFAULT_TRANSFORM_PROMPT: &str = include_str!("prompts/transform.txt");

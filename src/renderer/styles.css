@@ -1061,6 +1061,7 @@ kbd {
 
 /* ----------------------------------------------------------------- models */
 
+.model-groups,
 .model-list {
   display: flex;
   flex-direction: column;
@@ -1070,8 +1071,38 @@ kbd {
 /* Nothing else would separate the two: .card carries no margin of its own,
    because everywhere else on these pages it is the first thing under the
    heading. 16px is the gap .prompt-block uses for the same job. */
-.model-list + .card {
+.model-groups + .card {
   margin-top: 16px;
+}
+
+/* Fourteen Whisper sizes and two other engines in one column read as one
+   undifferentiated list, when the choice is really "which Whisper" followed by
+   "or something else entirely". */
+.model-group {
+  margin: 10px 2px 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.model-group:first-child {
+  margin-top: 0;
+}
+
+/* Reads as a link rather than a button: pressing it reveals rows, which is
+   navigation, not a change to anything. */
+.model-more {
+  align-self: flex-start;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 520;
+  cursor: pointer;
 }
 
 .model-row {
@@ -1118,9 +1149,18 @@ kbd {
   line-height: 1.45;
 }
 
+/* What the model is, rather than what state it is in. Carried a shade brighter
+   because it is the line the choice is actually made on. */
+.model-detail {
+  color: var(--ink-soft);
+}
+
 .model-tag {
   flex: 0 0 auto;
-  padding: 3px 9px;
+  /* The transparent border keeps every tag one size, whether or not it is the
+     outlined one below. */
+  padding: 2px 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--surface-hover);
   color: var(--ink-soft);
@@ -1132,6 +1172,14 @@ kbd {
 
 .model-tag[data-ready="true"] {
   background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Outlined rather than filled: a recommendation is a suggestion, and it sits
+   beside rows whose filled tag means the model is actually there. */
+.model-tag[data-recommended="true"] {
+  border-color: var(--accent);
+  background: none;
   color: var(--accent);
 }
 

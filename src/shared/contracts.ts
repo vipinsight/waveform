@@ -115,7 +115,23 @@ export interface ModelStatus {
    * weights arrive some other way and only a terminal can bring them.
    */
   downloadBytes: number | null;
+  /** The heading this model is listed under. */
+  group: string;
+  /** One line of what choosing this model costs and buys. */
+  detail: string;
+  /** Roughly what it adds to resident memory once loaded, in MB. */
+  memoryMb: number;
+  /**
+   * How that memory sits on this Mac: an eighth of it or less is comfortable,
+   * up to a quarter is tight, more than that is too large. `null` when the
+   * installed memory could not be read, so nothing is claimed about it.
+   */
+  fit: ModelFit | null;
+  /** The one model to suggest on this Mac, given what it has to spare. */
+  recommended: boolean;
 }
+
+export type ModelFit = "comfortable" | "tight" | "too-large";
 
 /** A pointer position in the HUD's own coordinates. */
 export interface OverlayPoint {

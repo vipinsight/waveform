@@ -7,8 +7,9 @@
 //! memory, and runs its own Metal kernels.
 //!
 //! Weights are GGML `.bin` files, not the `.pt` files the Python package uses,
-//! so the two Whisper entries in the catalogue download separately and neither
-//! can stand in for the other.
+//! and neither can stand in for the other. Every Whisper entry in the
+//! catalogue is one of these files: the size and quantization a user picks is
+//! nothing more than which name is handed to `load`.
 
 use std::path::{Path, PathBuf};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -35,7 +36,7 @@ pub fn load(file: &str) -> Result<WhisperContext, String> {
     let path = weights_path(file).ok_or("Could not work out where Whisper's weights live.")?;
     if !path.is_file() {
         return Err(format!(
-            "{} is missing. Download it from Settings -> Model, then try again.",
+            "{} is missing. Download it from Settings -> Models, then try again.",
             path.display()
         ));
     }

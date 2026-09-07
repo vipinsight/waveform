@@ -17,14 +17,37 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+# Newest rather than first: the bundler does not clear the directory, and an
+# image left by an earlier version sorts ahead of the one just built.
 if [ -z "${1:-}" ]; then
-  set -- "$ROOT"/src-tauri/target/release/bundle/dmg/Waveform_*.dmg
+  set -- "$(ls -t "$ROOT"/src-tauri/target/release/bundle/dmg/Waveform_*.dmg 2>/dev/null | head -1)"
 fi
 DMG="${1:?usage: finish-dmg.sh <dmg>}"
 if [ ! -f "$DMG" ]; then
   echo "finish-dmg: no image at $DMG" >&2
   exit 1
 fi
+
+# The bundler names the image Waveform_0.1.1_aarch64.dmg, from the Rust target
+# triple. aarch64 and arm64 are two names for one instruction set; Apple's is
+# arm64, and that is the one somebody choosing a download recognises.
+#
+# Hyphens rather than underscores because webtiara.com serves the image from
+# its own public/ directory and its download link is written that way. The name
+# is the contract between the two repositories, so it is settled here instead of
+# at the point somebody copies the file across.
+#
+# Renamed before signing, so the signature and the notarisation ticket belong to
+# the file that ships rather than to a name that no longer exists.
+case "$DMG" in
+  *_aarch64.dmg)
+    dir="$(dirname "$DMG")"
+    base="$(basename "$DMG" _aarch64.dmg)"
+    renamed="$dir/Waveform-${base#Waveform_}-arm64.dmg"
+    mv "$DMG" "$renamed"
+    DMG="$renamed"
+    ;;
+esac
 
 BACKGROUND_NAME="dmg-background.png"
 # Must match bundle.macOS.dmg in src-tauri/tauri.conf.json.

@@ -79,13 +79,21 @@ pnpm exec tauri build --bundles app,dmg
 BUNDLE="src-tauri/target/release/bundle"
 TARBALL="$BUNDLE/macos/Waveform.app.tar.gz"
 SIGNATURE="$TARBALL.sig"
-DMG="$(ls "$BUNDLE"/dmg/Waveform_*.dmg | head -1)"
+# Scoped to this version: the bundler does not clear the directory, so an image
+# left by an earlier release sorts ahead of this one and would be published
+# under this version's tag.
+DMG="$(ls "$BUNDLE"/dmg/Waveform_"$VERSION"_*.dmg | head -1)"
 
 [ -f "$TARBALL" ] || fail "no updater tarball at $TARBALL"
 [ -f "$SIGNATURE" ] || fail "no signature at $SIGNATURE"
 [ -f "$DMG" ] || fail "no disk image in $BUNDLE/dmg"
 
 scripts/finish-dmg.sh "$DMG"
+
+# finish-dmg.sh renames the image to the name webtiara.com's download link
+# expects, so the file to publish is not the one found above.
+DMG="$BUNDLE/dmg/Waveform-${VERSION}-arm64.dmg"
+[ -f "$DMG" ] || fail "no disk image at $DMG after finish-dmg.sh"
 
 # ------------------------------------------------------------------- manifest
 

@@ -1,32 +1,47 @@
 # Models: how one is chosen, and how it runs
 
-Waveform ships four speech models over three genuinely different execution
-mechanisms. [building.md](building.md) covers this from the outside — which
-`pnpm setup:*` script installs what. This is the inside: how a model id becomes
-a running engine, where each engine's weights are looked for, and which parts of
-that story are still unfinished.
+Waveform ships sixteen speech models over three genuinely different execution
+mechanisms. Fourteen of them are Whisper, because whisper.cpp is linked into the
+binary and a Whisper model is therefore nothing but a weight file — so every
+size and quantization of it costs one table entry and a download, while the
+other two engines cost a Python runtime each.
+[building.md](building.md) covers this from the outside — which `pnpm setup:*`
+script installs what. This is the inside: how a model id becomes a running
+engine, where each engine's weights are looked for, how the interface decides
+what to recommend, and which parts of that story are still unfinished.
 
 Line references drift. Treat them as a starting point, not a promise.
 
-## Two registries, kept in step by hand
+## Two registries, compared by a test
 
 The catalogue exists twice. `SPEECH_MODELS` in
 [src/shared/models.ts](../src/shared/models.ts) is what the interface knows;
-`MODELS` in [src-tauri/src/model_server.rs:101](../src-tauri/src/model_server.rs)
-is what actually runs. The Rust table carries two things the TypeScript one does
-not — an `Engine` and a `Weights` variant — and the TypeScript table carries a
-long `label` the Rust one has no use for.
+`MODELS` in [src-tauri/src/model_server.rs:196](../src-tauri/src/model_server.rs)
+is what actually runs. The Rust table carries everything the TypeScript one has
+no use for: an `Engine`, a `Weights` variant, a `Download`, a `Group`, a line of
+`detail`, and the memory each model wants.
 
-Nothing checks that the two agree. `tests/model-registry.test.ts` pins the
-TypeScript list, and `every_engine_model_survives_load` in
-[src-tauri/src/settings.rs:281](../src-tauri/src/settings.rs) iterates the Rust
-one, but no test compares them. Adding a model means editing both.
+`holds the same ids, in the same order, as the Rust table`
+([tests/model-registry.test.ts](../tests/model-registry.test.ts)) reads the ids
+straight out of the Rust source and compares them, which is the one thing that
+was missing while the list was three entries long and became untenable at
+sixteen. Adding a model still means editing both files; forgetting one now fails
+in `pnpm test` rather than at runtime, where `model()` would have resolved the
+unknown id to the default and quietly loaded something else.
 
-The default is positional in both places:
-`DEFAULT_SPEECH_MODEL_ID = SPEECH_MODELS[0].id`, and `default_model_id()`
-reading `MODELS[0].id` ([settings.rs:36](../src-tauri/src/settings.rs)). Nothing
-names a default; `whisper-cpp-small` is one because it is first, which is
-deliberate — it is the only model a fresh install can get on its own.
+The Rust table is a macro at the Whisper entries. `whisper!` takes an id, a
+label, a file name, a length, a hash, a group, a memory figure and a line of
+detail, and fills in the engine, the URL and the `Weights` wrapper — because
+spelling those out fourteen times is fourteen chances to put a hash against the
+wrong file. `bytes` and `sha256` are Hugging Face's own figures: the file size
+and the LFS object id, which is its SHA-256.
+
+The default is named rather than positional. It used to be `MODELS[0]` and
+`SPEECH_MODELS[0].id`, which worked while the first entry was the only
+self-downloading model; now the table is ordered lightest-first for the models
+page to read, and the lightest Whisper is Tiny. `DEFAULT_MODEL_ID` and
+`DEFAULT_SPEECH_MODEL_ID` both say `whisper-cpp-small` — accurate enough that a
+first dictation is not a bad first impression, and small enough to run anywhere.
 
 There used to be a third copy of the id list, in the settings validator, and the
 comment it left behind is worth reading before adding a fourth
@@ -82,9 +97,20 @@ appears in `runtime_installed`, `catalog`, `start` and `transcribe`.
 
 | id | engine | runtime | weights |
 | --- | --- | --- | --- |
-| `whisper-cpp-small` | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/ggml-small.bin` |
+| `whisper-cpp-*` (14 of them) | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/<remote_id>` |
 | `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `~/Library/Caches/NeMoSpeech/models/<remote_id>` |
 | `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `~/.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots` |
+
+For a Whisper entry `remote_id` is the GGML file's own name, which is all that
+engine needs, so it appears as both the weight path and the thing loaded.
+
+Not every file in the whisper.cpp repository is listed. `large-v1` and
+`large-v2` are superseded by `large-v3` at the same size; the `q8_0`
+quantizations save little over the full weights; and quantized English-only
+weights combine two compromises on a model already small enough to need
+neither. `scripts/setup-whisper-cpp.sh` still fetches any of them into a
+checkout by name — `WAVEFORM_WHISPER_CPP_MODEL=large-v2-q5_0`, say — but only
+what the table names can be chosen in the app.
 
 There used to be a fourth entry: OpenAI's own `openai-whisper` package, running
 the same Whisper `small` as a Python worker. It was removed. GGML `.bin` and
@@ -141,7 +167,7 @@ on a blocking thread too.
 Because it is in-process, `runtime_installed` is unconditionally true, there is
 no readiness poll and no `START_TIMEOUT` race, and `engine_pid` is cleared —
 there is no separate engine for the resource monitor to report on. `stop()`
-drops the context, which for Whisper Small frees most a gigabyte of this
+drops the context, which for Whisper Small frees most of a gigabyte of this
 process's own memory.
 
 ## How audio reaches an engine
@@ -170,8 +196,9 @@ is single-threaded and overlapping calls would only queue anyway.
 
 ## Status and events
 
-`ModelStatus` — `{ id, label, selected, runtimeInstalled, weightsInstalled,
-setupCommand }` — reports the runtime and the weights separately on purpose:
+`ModelStatus` — `{ id, label, group, detail, selected, runtimeInstalled,
+weightsInstalled, setupCommand, downloadBytes, memoryMb, fit, recommended }` —
+reports the runtime and the weights separately on purpose:
 having a runtime is not the same as having a model, `setup:model` installs
 nemo-speech and pulls Parakeet in two steps, and either can be done without the
 other. Saying only "not ready" would not tell anyone what to do.
@@ -182,10 +209,72 @@ other. Saying only "not ready" would not tell anyone what to do.
 `downloading`. The renderer's handler drops events for any model that is not the
 selected one, except downloads — those run for whichever row was pressed.
 
-One inconsistency worth knowing: `ModelStatus.label` carries Rust's
-`short_label`, so the Models page says "Parakeet 0.6B", while the Overview row
-uses the TypeScript `label` and says "NVIDIA Parakeet TDT 0.6B v3". The same
-model is named two ways in one app.
+There used to be an inconsistency here: `ModelStatus.label` carries Rust's
+`short_label`, so the Models page said "Parakeet 0.6B" while the Overview row
+used a longer TypeScript `label` and said "NVIDIA Parakeet TDT 0.6B v3" — one
+model named two ways in one app. The long field is gone. TypeScript now carries
+one `label` per model, matching `short_label`, which is also fourteen fewer
+strings to keep in step.
+
+## What the models page recommends, and why
+
+`ModelStatus` carries three fields the interface does not compute for itself:
+`memoryMb`, `fit`, and `recommended`.
+
+`memory_mb` is an estimate on each table row — the weight file plus the working
+state around it — not a measurement. It exists to be compared against what the
+Mac has, and to order the models by weight, so being a couple of hundred
+megabytes out does not change what it is used for.
+
+`installed_memory_mb()` shells out to `sysctl -n hw.memsize` once and keeps the
+answer in a `OnceLock`: it cannot change while the app runs, and it is asked for
+once per row. `fit()` then grades the model against it in thirds rather than
+yes-or-no, because the interesting answer is usually neither:
+
+| `Fit` | Model wants | Means |
+| --- | --- | --- |
+| `Comfortable` | ≤ ⅛ of memory | Leave it loaded and forget it |
+| `Tight` | ≤ ¼ | It runs; it is also the largest thing on the machine |
+| `TooLarge` | more than ¼ | Everything else starts moving towards swap |
+
+Fractions rather than fixed sizes, because the question is not whether the model
+loads — macOS will find the pages either way, by swapping something else out —
+but whether leaving it resident between phrases is something the rest of the
+machine notices.
+
+`recommended` is the first entry of `SUGGESTION_ORDER` that comes out
+`Comfortable`, or the last entry if none do. The order is hand-written, not
+derived from size, because size is not desirability:
+
+- **Large v3 is deliberately absent.** It is the most accurate model in the
+  table. Turbo is within a hair of it and several times faster, which for
+  dictation — where the wait is in front of you — is the trade to take.
+- **The English-only weights are absent too**, for the opposite reason: they are
+  the better choice for someone who only ever dictates English, and silently
+  wrong for anyone else. That is a choice to make deliberately.
+
+So an 8 GB Mac is pointed at Small, a 16 GB Mac at Large v3 Turbo · Q5, and
+anything from 24 GB up at Large v3 Turbo.
+`the_suggestion_follows_the_memory_the_machine_has` pins exactly those three,
+against a passed-in figure rather than the machine running the test — a test
+that agreed with whatever laptop ran it would assert nothing.
+
+When `sysctl` cannot be read, `fit` is `None` and nothing is recommended. That
+is the honest answer: a suggestion made without knowing what the machine has
+would be a guess wearing the word "recommended".
+
+`Group` decides which heading a row is listed under — `Whisper`, `Whisper,
+English only`, `Other engines` — and the renderer builds its groups from the
+order the catalogue arrives in, so the interface holds no second opinion about
+which groups exist. Sixteen rows is more than anyone reads, so `renderModels`
+shows only what someone would act on — the recommended model, the one in use,
+anything already downloaded, and anything the app cannot fetch — and folds the
+rest behind a **Show every size** button that flips one module-level flag and
+re-renders. That last condition is what keeps Parakeet and Qwen out of the fold:
+what is hidden is the tail of Whisper weight files, which is exactly the set the
+app downloads itself. Each heading gets its own
+`role="radiogroup"`, so arrow keys move within a group instead of sweeping
+through fourteen Whisper sizes to reach Parakeet.
 
 ## How weights arrive
 
@@ -202,11 +291,18 @@ finish.
 
 ### The app fetches them
 
-Only `whisper-cpp-small`. `Weights::GgmlFile` carries a `Download` — file name,
-URL, byte length and SHA-256 — because whisper.cpp is linked into the binary, so
-a model there is nothing but one file. Every other engine needs an installer or
-a virtual environment wrapped around its weights, which is not something to run
-on a user's behalf.
+Every `whisper-cpp-*` entry, and nothing else. `Weights::GgmlFile` carries a
+`Download` — file name, URL, byte length and SHA-256 — because whisper.cpp is
+linked into the binary, so a model there is nothing but one file. Every other
+engine needs an installer or a virtual environment wrapped around its weights,
+which is not something to run on a user's behalf.
+`only_the_ggml_weights_download_themselves` ties the two together: a model
+downloads itself exactly when its engine is `WhisperCpp`.
+
+`every_download_describes_the_file_it_names` checks each row against the URL
+prefix, its own `remote_id`, and the hashes of the other thirteen — the same
+hash against two files is the mistake a table this size invites, and a user
+would find it as a checksum failure on a model they did not ask for.
 
 `download_weights` refuses a second concurrent download, streams the body in
 chunks with `Response::chunk()`, hashes as it writes, and writes to
@@ -241,8 +337,9 @@ Everything else, with `catalog()` naming the command:
   the weights — "rather than on the first phrase, which would otherwise stall
   behind a download with no way to say so".
 - `setup-whisper-cpp.sh` still exists, and still works. It is how a checkout
-  fetches other sizes through `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the
-  URL the Rust side hard-codes. The app no longer tells anyone to run it.
+  fetches weights the table does not offer, through
+  `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the URL the Rust side
+  hard-codes. The app no longer tells anyone to run it.
 
 ## Known gaps
 
@@ -254,15 +351,27 @@ scripts, and it could not usefully do so: a user who installed
 from the disk image has no checkout and no pnpm, so `pnpm setup:model` and
 `pnpm setup:qwen` name commands that cannot exist on their machine.
 
-That install can now reach a working model — `whisper-cpp-small` downloads
-itself — so this is no longer a dead end. It is a limit on choice rather than on
-use. Closing it properly would mean running NVIDIA's installer and building a
-2.5 GB virtual environment from inside the app, neither of which reduces to a
-download.
+That install can now reach fourteen working models — every Whisper size
+downloads itself — so this is no longer a dead end, and it is a much smaller
+limit on choice than it was when Whisper meant one file. Closing it properly
+would mean running NVIDIA's installer and building a 2.5 GB virtual environment
+from inside the app, neither of which reduces to a download.
 
-### Nothing checks that the two registries agree
+### The memory figures are estimates
 
-`SPEECH_MODELS` and `MODELS` are still hand-kept duplicates. The TypeScript side
-now also carries `downloadBytes` through `ModelStatus`, which comes from the Rust
-table — so a model added to one and not the other fails at runtime rather than
-at build time.
+`memory_mb` is a hand-written number per row, and everything the interface says
+about fit rests on it. It is close enough to order the models and to tell an
+8 GB Mac apart from a 32 GB one, which is all it is used for, but nothing
+measures it: a model whose real resident size drifted from its table entry would
+be graded against the wrong figure and nothing would notice. Measuring it
+properly means loading each model and reading the process back, which is 12 GB
+of downloads to answer a question a rounded estimate already answers.
+
+### Quality is not described anywhere
+
+The `detail` line on each row is prose about relative accuracy, written from
+what Whisper's own model card and the whisper.cpp benchmarks say. There is no
+word-error-rate figure in the table and no test on a fixed sample, so "hears
+accents Small guesses at" is a claim the code cannot check. A recorded sample
+and a transcript to diff against would turn every one of those lines into
+something falsifiable.

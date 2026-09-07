@@ -4,6 +4,12 @@
 # No virtual environment and no interpreter: whisper.cpp is linked into the
 # app, so a model is nothing but its weight file. Building the app does need
 # cmake, which Cargo's build script uses to compile whisper.cpp itself.
+#
+# The app fetches every size it offers by itself, from Settings -> Models, so
+# this is for a checkout: it names any file in the whisper.cpp repository,
+# including the ones the app does not list.
+#
+#   WAVEFORM_WHISPER_CPP_MODEL=large-v3-turbo-q5_0 ./scripts/setup-whisper-cpp.sh
 set -eu
 
 dir="${WAVEFORM_WHISPER_CPP_DIR:-$HOME/Library/Application Support/Waveform/whisper.cpp}"

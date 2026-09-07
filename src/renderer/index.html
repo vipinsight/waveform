@@ -415,10 +415,12 @@
         <section class="settings-page" data-page="models" hidden>
           <h1 class="display">Models</h1>
           <p class="note">
-            Speech happens on this Mac. A model needs its runtime installed and its
-            weights downloaded before it can be used.
+            Speech happens on this Mac, so a model's size is memory this Mac gives up
+            while dictation is loaded. One is marked <strong>Recommended</strong>: the
+            most capable Whisper that fits comfortably in the memory you have. Anything
+            larger will still run — it will just be the largest thing on the machine.
           </p>
-          <div class="model-list" id="model-list" role="radiogroup" aria-label="Speech model"></div>
+          <div class="model-groups" id="model-list"></div>
 
           <div class="card">
             <div class="row">
