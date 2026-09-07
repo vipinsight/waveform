@@ -105,6 +105,15 @@ person or a second machine.
 `pnpm dmg` is still dmg-only, which is right for a local build. `pnpm release`
 builds `app,dmg`.
 
+**Notarising the app is not notarising the disk image.** The bundler notarises
+and staples the `.app`, which is what lets it launch. Gatekeeper treats the
+image as a separate thing, and `finish-dmg.sh` repacks it to lay out its
+window, which invalidates whatever signature it had. Two builds went out that
+way and met "Apple cannot check it for malicious software" on download, before
+anyone reached the app inside. `finish-dmg.sh` now notarises and staples the
+image too, and prints the `spctl` verdict -- which reads `accepted` only when a
+downloaded copy would open without a warning.
+
 **The Tauri CLI does not read `.env` files.** `TAURI_SIGNING_PRIVATE_KEY` and
 its password have to be in the environment. `release.sh` sources
 `.env.notarization` itself for the same reason.

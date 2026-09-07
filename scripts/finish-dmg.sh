@@ -95,3 +95,24 @@ if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
 else
   echo "finish-dmg: laid out $DMG (unsigned: no APPLE_SIGNING_IDENTITY)"
 fi
+
+# And notarise the image, not only the app inside it.
+#
+# The bundler notarises and staples the .app, which is what lets it launch. The
+# image is a separate thing to Gatekeeper, and repacking it above invalidated
+# whatever it had -- so without this the download meets "Apple cannot check it
+# for malicious software" before anyone gets as far as the app. Two builds went
+# out that way.
+if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+  echo "finish-dmg: notarising $DMG"
+  xcrun notarytool submit "$DMG" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  xcrun stapler staple "$DMG"
+  # Says "accepted" only when a downloaded copy would open without a warning.
+  spctl -a -t open --context context:primary-signature -v "$DMG" || true
+else
+  echo "finish-dmg: not notarised (APPLE_ID, APPLE_PASSWORD or APPLE_TEAM_ID unset)" >&2
+fi
