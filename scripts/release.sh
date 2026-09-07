@@ -39,6 +39,16 @@ if git rev-parse "v$VERSION" >/dev/null 2>&1; then
   fail "v$VERSION already exists; bump the version first"
 fi
 
+# The build reads this checkout; the tag is cut from what the remote has. If
+# HEAD has not been pushed, the release names one commit and ships another,
+# and nothing about it looks wrong afterwards -- the tag exists, the assets
+# are attached. Checked rather than pushed for you: pushing is a decision.
+COMMIT="$(git rev-parse HEAD)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+git fetch --quiet origin "$BRANCH" 2>/dev/null || fail "cannot reach origin to check $BRANCH is pushed"
+git merge-base --is-ancestor "$COMMIT" "origin/$BRANCH" 2>/dev/null \
+  || fail "HEAD is not on origin/$BRANCH; push before releasing so the tag names what was built"
+
 [ -f "$KEY" ] || fail "no update signing key at $KEY (tauri signer generate -w \"$KEY\")"
 command -v gh >/dev/null 2>&1 || fail "the gh CLI is needed to publish the release"
 
@@ -119,8 +129,12 @@ PY
 # latest.json is fetched through releases/latest/download, which always
 # resolves to the newest release -- so it has to be attached to this one.
 echo "release: publishing v$VERSION"
+# --target pins the tag to the commit that was actually built. Without it the
+# tag is cut from the remote's default branch, which is the same thing only
+# until it is not.
 gh release create "v$VERSION" \
   --repo "$REPO" \
+  --target "$COMMIT" \
   --title "Waveform $VERSION" \
   --generate-notes \
   "$DMG" \
