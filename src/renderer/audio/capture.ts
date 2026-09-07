@@ -1,4 +1,4 @@
-import { SpeechSegmenter } from "./segmenter";
+import { SpeechSegmenter, rootMeanSquare } from "./segmenter";
 import { encodeMonoPcm16Wav } from "./wav";
 
 export interface CaptureHandlers {
@@ -32,6 +32,15 @@ export class AudioCapture {
   private spectrum: Uint8Array<ArrayBuffer> | null = null;
   private pending = 0;
   private discarding = false;
+  /**
+   * What this session heard, so a session that produced nothing can say why.
+   *
+   * Silence and a stream that never arrived look identical from the outside --
+   * the meter runs off the analyser, so the pill animates either way.
+   */
+  private blocks = 0;
+  private peak = 0;
+  private phrases = 0;
 
   constructor(private readonly handlers: CaptureHandlers) {}
 
@@ -46,6 +55,9 @@ export class AudioCapture {
   async start(): Promise<void> {
     if (this.context) return;
     this.discarding = false;
+    this.blocks = 0;
+    this.peak = 0;
+    this.phrases = 0;
 
     const permission = await this.handlers.requestMicrophoneAccess();
     if (!permission.granted) throw new Error(microphoneMessage(permission.status));
@@ -100,8 +112,16 @@ export class AudioCapture {
   stop(): void {
     const tail = this.segmenter?.flush();
     const sampleRate = this.context?.sampleRate;
+    const { blocks, peak, phrases } = this;
     this.release();
     if (tail && sampleRate) this.queue(tail, sampleRate);
+    if (phrases === 0 && !tail) {
+      this.handlers.onError(
+        blocks === 0
+          ? "Heard nothing: no audio arrived from the microphone."
+          : `Heard nothing above the speech threshold: ${blocks} blocks, peak ${peak.toFixed(4)} against 0.014.`,
+      );
+    }
   }
 
   /** Ends the session and throws away the audio, including anything in flight. */
@@ -155,12 +175,15 @@ export class AudioCapture {
 
   private handleAudio(event: AudioProcessingEvent): void {
     const samples = new Float32Array(event.inputBuffer.getChannelData(0));
+    this.blocks += 1;
+    this.peak = Math.max(this.peak, rootMeanSquare(samples));
     const segment = this.segmenter?.push(samples);
     if (segment && this.context) this.queue(segment, this.context.sampleRate);
   }
 
   private queue(samples: Float32Array, sampleRate: number): void {
     if (this.discarding) return;
+    this.phrases += 1;
     this.pending += 1;
     this.handlers.onPendingChange(this.pending);
 

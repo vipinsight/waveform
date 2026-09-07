@@ -1,10 +1,13 @@
 //! Runs the local speech engine and turns WAV bytes into text.
 //!
-//! Two shapes sit behind one interface. Parakeet serves an OpenAI-compatible
-//! HTTP endpoint. Qwen and Whisper are Python workers spoken to over
-//! newline-delimited JSON on stdin/stdout -- the same protocol, so they share
-//! one reader loop, one pending-job table and one readiness handshake, and
-//! differ only in which interpreter and script are launched.
+//! Three shapes sit behind one interface. Whisper is whisper.cpp, linked into
+//! this process. Parakeet serves an OpenAI-compatible HTTP endpoint. Qwen is a
+//! Python worker spoken to over newline-delimited JSON on stdin/stdout.
+//!
+//! The worker plumbing is still written for more than one of its kind -- one
+//! reader loop, one pending-job table, one readiness handshake, and a
+//! `WorkerSpec` saying which interpreter and script to launch. Qwen is the only
+//! engine using it today, and OpenAI's own Whisper package was the other.
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -77,9 +80,6 @@ pub enum Weights {
     NemoCache,
     /// The Hugging Face hub layout, `models--<org>--<name>`.
     HuggingFace,
-    /// Whisper names its own file under `~/.cache/whisper`; the name is not
-    /// the model id, so it is spelled out.
-    WhisperFile(&'static str),
 }
 
 /// A weight file the app can fetch without a terminal.
@@ -111,7 +111,6 @@ const GGML_SMALL: Download = Download {
 pub enum Engine {
     Nemo,
     Qwen,
-    Whisper,
     /// whisper.cpp, linked into this process rather than run beside it.
     WhisperCpp,
 }
@@ -137,7 +136,7 @@ enum Runtime {
 /// whisper.cpp leads because it is the only engine that needs nothing
 /// installed alongside the app: no interpreter, no virtual environment, no
 /// second process. A new Mac can dictate as soon as the weights land.
-pub const MODELS: [ModelDefinition; 4] = [
+pub const MODELS: [ModelDefinition; 3] = [
     ModelDefinition {
         id: "whisper-cpp-small",
         short_label: "Whisper Small (whisper.cpp)",
@@ -159,15 +158,6 @@ pub const MODELS: [ModelDefinition; 4] = [
         remote_id: "Qwen/Qwen3-ASR-0.6B",
         engine: Engine::Qwen,
         weights: Weights::HuggingFace,
-    },
-    ModelDefinition {
-        id: "whisper-small",
-        short_label: "Whisper Small",
-        // What `whisper.load_model` takes, not a Hugging Face path: the
-        // official package names its own weights.
-        remote_id: "small",
-        engine: Engine::Whisper,
-        weights: Weights::WhisperFile("small.pt"),
     },
 ];
 
@@ -196,20 +186,10 @@ const QWEN_WORKER: WorkerSpec = WorkerSpec {
     setup_command: "pnpm setup:qwen",
 };
 
-const WHISPER_WORKER: WorkerSpec = WorkerSpec {
-    label: "Whisper",
-    venv: "whisper",
-    project_venv: ".venv-whisper",
-    env_var: "WAVEFORM_WHISPER_PYTHON",
-    script: "whisper-worker.py",
-    setup_command: "pnpm setup:whisper",
-};
-
 fn runtime(engine: Engine) -> Runtime {
     match engine {
         Engine::Nemo => Runtime::Http,
         Engine::Qwen => Runtime::Worker(&QWEN_WORKER),
-        Engine::Whisper => Runtime::Worker(&WHISPER_WORKER),
         Engine::WhisperCpp => Runtime::InProcess,
     }
 }
@@ -221,7 +201,7 @@ fn runtime(engine: Engine) -> Runtime {
 fn downloadable(definition: &ModelDefinition) -> Option<&'static Download> {
     match definition.weights {
         Weights::GgmlFile(spec) => Some(spec),
-        Weights::NemoCache | Weights::HuggingFace | Weights::WhisperFile(_) => None,
+        Weights::NemoCache | Weights::HuggingFace => None,
     }
 }
 
@@ -974,7 +954,6 @@ fn weights_present(definition: &ModelDefinition) -> bool {
             let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
             has_contents(&cache.join(folder).join("snapshots"))
         }
-        Weights::WhisperFile(name) => home.join(".cache/whisper").join(name).is_file(),
         // The partial file a download writes to is a different name, so an
         // interrupted transfer reads as absent rather than as installed.
         Weights::GgmlFile(spec) => crate::whisper_cpp::weights_path(spec.file)

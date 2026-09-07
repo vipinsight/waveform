@@ -73,8 +73,7 @@
     },
     "resources": {
       "../dist/native/waveform-hotkey": "waveform-hotkey",
-      "../scripts/qwen-worker.py": "qwen-worker.py",
-      "../scripts/whisper-worker.py": "whisper-worker.py"
+      "../scripts/qwen-worker.py": "qwen-worker.py"
     }
   }
 }

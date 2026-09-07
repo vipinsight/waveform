@@ -29,15 +29,6 @@ export const SPEECH_MODELS = [
     modelId: "Qwen/Qwen3-ASR-0.6B",
     engine: "qwen",
   },
-  {
-    id: "whisper-small",
-    label: "OpenAI Whisper Small",
-    shortLabel: "Whisper Small",
-    // What `whisper.load_model` takes, not a Hugging Face path: the official
-    // package names its own weights.
-    modelId: "small",
-    engine: "whisper",
-  },
 ] as const;
 
 export type SpeechModelDefinition = (typeof SPEECH_MODELS)[number];

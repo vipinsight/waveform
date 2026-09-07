@@ -1067,6 +1067,13 @@ kbd {
   gap: 8px;
 }
 
+/* Nothing else would separate the two: .card carries no margin of its own,
+   because everywhere else on these pages it is the first thing under the
+   heading. 16px is the gap .prompt-block uses for the same job. */
+.model-list + .card {
+  margin-top: 16px;
+}
+
 .model-row {
   display: flex;
   align-items: center;

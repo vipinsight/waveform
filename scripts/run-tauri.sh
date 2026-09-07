@@ -103,7 +103,6 @@ fi
 # The Qwen engine is a Python script, not a library. Bundling it keeps the app
 # independent of the checkout it was built from.
 cp scripts/qwen-worker.py "$APP/Contents/Resources/qwen-worker.py"
-cp scripts/whisper-worker.py "$APP/Contents/Resources/whisper-worker.py"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

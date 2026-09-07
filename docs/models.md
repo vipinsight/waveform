@@ -85,11 +85,13 @@ appears in `runtime_installed`, `catalog`, `start` and `transcribe`.
 | `whisper-cpp-small` | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/ggml-small.bin` |
 | `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `~/Library/Caches/NeMoSpeech/models/<remote_id>` |
 | `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `~/.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots` |
-| `whisper-small` | `Whisper` | `Worker` — Python over NDJSON | `~/.cache/whisper/small.pt` |
 
-Note that the two Whisper entries are not interchangeable. whisper.cpp takes
-GGML `.bin` weights and the Python package takes `.pt`; neither can read the
-other's, so they download separately and both can be absent independently.
+There used to be a fourth entry: OpenAI's own `openai-whisper` package, running
+the same Whisper `small` as a Python worker. It was removed. GGML `.bin` and
+`.pt` weights are not interchangeable, so it downloaded its own ~490 MB on top
+of a 2.5 GB virtual environment, reloaded them per worker restart, and fell back
+to the CPU whenever Metal was missing an operation — to be slower at the same
+model the app already has linked in.
 
 ### Parakeet, over HTTP
 
@@ -104,31 +106,28 @@ The binary is looked for as `NEMO_SPEECH_BIN`, then `~/.local/bin/nemo-speech`,
 then along `PATH` — the explicit candidate matters more than `PATH` does,
 because a bundle launched from Finder gets a minimal one.
 
-### Qwen and Whisper, over one Python worker
+### Qwen, over a Python worker
 
-One implementation serves both. They differ only by `WorkerSpec` — venv name,
-the environment variable that overrides the interpreter, the script, and the
-setup command ([model_server.rs:139](../src-tauri/src/model_server.rs)). Each
-engine keeps its own virtual environment on purpose: they pin different torch
-versions, and one failing to resolve should not take the other down.
+Written for more than one of its kind, and Qwen is the only one left: a
+`WorkerSpec` ([model_server.rs:139](../src-tauri/src/model_server.rs)) says which
+virtual environment, which interpreter override, which script and which setup
+command, and OpenAI's Whisper package was the other. The plumbing is kept as it
+is rather than folded into Qwen, because the reason for the split still holds —
+two Python engines would pin different torch versions, and one failing to
+resolve should not take the other down.
 
 The protocol is newline-delimited JSON. The worker prints `WAVEFORM:{json}`
 lines of type `ready`, `result` or `error`; a reader task parses them and fans
 results to a pending-job table keyed `"{venv}-{n}"`. The WAV is base64'd into
 the request.
 
-There is exactly one worker slot, which is why `WorkerState` records which
-engine it is serving — "is a worker ready?" is not a useful question on its own,
-since a Qwen worker left running would otherwise be handed Whisper's audio.
-Switching engines kills the incumbent and fails its pending jobs with
-"Speech model changed."
+There is exactly one worker slot, and `WorkerState` still records which engine
+it is serving. With one worker engine left that check cannot currently fail, but
+it is the thing that stopped a worker from being handed the wrong engine's
+audio, and it costs nothing to keep.
 
-Decoding differs on the Python side. `whisper-worker.py` decodes the WAV with
-`wave` and numpy and resamples with `scipy.signal.resample_poly` — deliberately
-not `whisper.load_audio`, which shells out to ffmpeg — and validates itself
-against 0.1 s of silence before reporting ready. `qwen-worker.py` re-encodes the
-WAV as a `data:audio/wav;base64,` URL, so that audio is base64'd twice: once
-into the JSON request, once into the data URL.
+`qwen-worker.py` re-encodes the WAV as a `data:audio/wav;base64,` URL, so that
+audio is base64'd twice: once into the JSON request, once into the data URL.
 
 ### whisper.cpp, in this process
 
@@ -234,13 +233,13 @@ Everything else, with `catalog()` naming the command:
 | runtime | setup command |
 | --- | --- |
 | `Http` | `pnpm setup:model` |
-| `Worker` | `pnpm setup:qwen` / `pnpm setup:whisper` |
+| `Worker` | `pnpm setup:qwen` |
 
 - `setup-model.sh` curls NVIDIA's `install.sh` for a pinned version, then
   `nemo-speech pull nvidia/parakeet-tdt-0.6b-v3`.
-- `setup-qwen.sh` and `setup-whisper.sh` build separate virtual environments,
-  pip install, and pre-fetch the weights — "rather than on the first phrase,
-  which would otherwise stall behind a download with no way to say so".
+- `setup-qwen.sh` builds a virtual environment, pip installs, and pre-fetches
+  the weights — "rather than on the first phrase, which would otherwise stall
+  behind a download with no way to say so".
 - `setup-whisper-cpp.sh` still exists, and still works. It is how a checkout
   fetches other sizes through `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the
   URL the Rust side hard-codes. The app no longer tells anyone to run it.
@@ -250,8 +249,8 @@ Everything else, with `catalog()` naming the command:
 ### Parakeet and Qwen still need a checkout
 
 `resources` in [tauri.conf.json](../src-tauri/tauri.conf.json) bundles
-`waveform-hotkey`, `qwen-worker.py` and `whisper-worker.py`. It does not bundle
-the `setup-*.sh` scripts, and it could not usefully do so: a user who installed
+`waveform-hotkey` and `qwen-worker.py`. It does not bundle the `setup-*.sh`
+scripts, and it could not usefully do so: a user who installed
 from the disk image has no checkout and no pnpm, so `pnpm setup:model` and
 `pnpm setup:qwen` name commands that cannot exist on their machine.
 
