@@ -35,3 +35,7 @@ serde_json = "1"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 tokio = { version = "1", features = ["process", "io-util", "time", "sync", "rt-multi-thread", "macros", "signal"] }
+# whisper.cpp, linked in rather than run as a subprocess. The metal feature
+# also embeds the GGML Metal library into the binary, so a bundled .app has no
+# shader file to lose.
+whisper-rs = { version = "0.16", default-features = false, features = ["metal"] }

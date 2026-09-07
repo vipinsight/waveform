@@ -4,6 +4,11 @@ import {
   type HotkeyBindingId,
 } from "./hotkeys";
 import {
+  DEFAULT_SPEECH_LANGUAGE,
+  isSpeechLanguage,
+  type SpeechLanguageCode,
+} from "./languages";
+import {
   DEFAULT_SPEECH_MODEL_ID,
   isSpeechModelId,
   type SpeechModelId,
@@ -19,6 +24,8 @@ export type OverlayPlacement = "bottom" | "top";
 
 export interface AppSettings {
   modelId: SpeechModelId;
+  /** Language handed to the speech model. Empty asks it to detect. */
+  speechLanguage: SpeechLanguageCode;
   /** Empty means let macOS choose its current default input. */
   microphoneDeviceId: string;
   /** Last readable device label, used by the menu bar while the window is hidden. */
@@ -64,6 +71,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelId: DEFAULT_SPEECH_MODEL_ID,
+  speechLanguage: DEFAULT_SPEECH_LANGUAGE,
   microphoneDeviceId: "",
   microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
@@ -102,6 +110,9 @@ export function normalizeSettings(
   const input = isRecord(value) ? value : {};
   return {
     modelId: isSpeechModelId(input.modelId) ? input.modelId : base.modelId,
+    speechLanguage: isSpeechLanguage(input.speechLanguage)
+      ? input.speechLanguage
+      : base.speechLanguage,
     microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
     microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,

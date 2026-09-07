@@ -56,6 +56,9 @@ pub struct ModelDefinition {
 /// something useful about a model that is not ready.
 #[derive(Clone, Copy)]
 pub enum Weights {
+    /// A GGML `.bin` beside the app's own data, downloaded by
+    /// `setup:whisper-cpp`. Unrelated to the Python package's `.pt` files.
+    GgmlFile(&'static str),
     /// nemo-speech caches by repository under the platform cache directory.
     NemoCache,
     /// The Hugging Face hub layout, `models--<org>--<name>`.
@@ -70,9 +73,40 @@ pub enum Engine {
     Nemo,
     Qwen,
     Whisper,
+    /// whisper.cpp, linked into this process rather than run beside it.
+    WhisperCpp,
 }
 
-pub const MODELS: [ModelDefinition; 3] = [
+/// How an engine is reached, which is what every "is it installed?" and "how
+/// do I talk to it?" question actually turns on.
+///
+/// Kept apart from `Engine` so adding an engine cannot quietly land in the
+/// wrong branch: this used to be `Option<&WorkerSpec>`, where `None` silently
+/// meant Parakeet.
+enum Runtime {
+    /// Serves an OpenAI-compatible endpoint over HTTP.
+    Http,
+    /// A Python process spoken to over stdin/stdout.
+    Worker(&'static WorkerSpec),
+    /// Compiled in. Nothing to install, nothing to launch.
+    InProcess,
+}
+
+/// The first entry is the default for a fresh install, and the fallback for a
+/// stored id that no longer names anything.
+///
+/// whisper.cpp leads because it is the only engine that needs nothing
+/// installed alongside the app: no interpreter, no virtual environment, no
+/// second process. A new Mac can dictate as soon as the weights land.
+pub const MODELS: [ModelDefinition; 4] = [
+    ModelDefinition {
+        id: "whisper-cpp-small",
+        short_label: "Whisper Small (whisper.cpp)",
+        // The GGML weight file's own name, which is all this engine needs.
+        remote_id: "ggml-small.bin",
+        engine: Engine::WhisperCpp,
+        weights: Weights::GgmlFile("ggml-small.bin"),
+    },
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
         short_label: "Parakeet 0.6B",
@@ -88,13 +122,13 @@ pub const MODELS: [ModelDefinition; 3] = [
         weights: Weights::HuggingFace,
     },
     ModelDefinition {
-        id: "whisper-turbo",
-        short_label: "Whisper Turbo",
+        id: "whisper-small",
+        short_label: "Whisper Small",
         // What `whisper.load_model` takes, not a Hugging Face path: the
         // official package names its own weights.
-        remote_id: "turbo",
+        remote_id: "small",
         engine: Engine::Whisper,
-        weights: Weights::WhisperFile("large-v3-turbo.pt"),
+        weights: Weights::WhisperFile("small.pt"),
     },
 ];
 
@@ -132,12 +166,12 @@ const WHISPER_WORKER: WorkerSpec = WorkerSpec {
     setup_command: "pnpm setup:whisper",
 };
 
-/// The worker behind an engine, or none for Parakeet, which is not one.
-fn worker_spec(engine: Engine) -> Option<&'static WorkerSpec> {
+fn runtime(engine: Engine) -> Runtime {
     match engine {
-        Engine::Nemo => None,
-        Engine::Qwen => Some(&QWEN_WORKER),
-        Engine::Whisper => Some(&WHISPER_WORKER),
+        Engine::Nemo => Runtime::Http,
+        Engine::Qwen => Runtime::Worker(&QWEN_WORKER),
+        Engine::Whisper => Runtime::Worker(&WHISPER_WORKER),
+        Engine::WhisperCpp => Runtime::InProcess,
     }
 }
 
@@ -169,6 +203,10 @@ pub struct ModelServer {
     /// not exit on its own, so dropping this handle would leave a process of
     /// several hundred megabytes running after the app quits.
     parakeet: Mutex<Option<Child>>,
+    /// Loaded whisper.cpp weights, shared with whichever blocking thread is
+    /// transcribing. Held behind an `Arc` so a phrase in flight keeps the
+    /// model alive even if the selection changes underneath it.
+    whisper_cpp: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
     user_data: PathBuf,
@@ -196,6 +234,7 @@ impl ModelServer {
             last_event: Mutex::new(initial),
             worker: Mutex::new(None),
             parakeet: Mutex::new(None),
+            whisper_cpp: Mutex::new(None),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
             user_data,
@@ -221,11 +260,18 @@ impl ModelServer {
     /// user discovering it when their first phrase fails.
     pub async fn is_installed(&self) -> bool {
         let id = self.selected.lock().await.clone();
-        match worker_spec(model(&id).engine) {
-            None => find_nemo_runtime().is_some(),
-            Some(spec) => {
+        self.runtime_installed(model(&id))
+    }
+
+    /// Whether a model's engine could run at all, weights aside.
+    fn runtime_installed(&self, definition: &ModelDefinition) -> bool {
+        match runtime(definition.engine) {
+            Runtime::Http => find_nemo_runtime().is_some(),
+            Runtime::Worker(spec) => {
                 self.find_worker_runtime(spec).is_some() && self.worker_script(spec).is_file()
             }
+            // Linked into this binary, so it is installed wherever the app is.
+            Runtime::InProcess => true,
         }
     }
 
@@ -238,17 +284,12 @@ impl ModelServer {
                 id: definition.id.into(),
                 label: definition.short_label.into(),
                 selected: definition.id == selected,
-                runtime_installed: match worker_spec(definition.engine) {
-                    None => find_nemo_runtime().is_some(),
-                    Some(spec) => {
-                        self.find_worker_runtime(spec).is_some()
-                            && self.worker_script(spec).is_file()
-                    }
-                },
+                runtime_installed: self.runtime_installed(definition),
                 weights_installed: weights_present(definition),
-                setup_command: match worker_spec(definition.engine) {
-                    None => "pnpm setup:model".into(),
-                    Some(spec) => spec.setup_command.into(),
+                setup_command: match runtime(definition.engine) {
+                    Runtime::Http => "pnpm setup:model".into(),
+                    Runtime::Worker(spec) => spec.setup_command.into(),
+                    Runtime::InProcess => "pnpm setup:whisper-cpp".into(),
                 },
             })
             .collect()
@@ -273,15 +314,16 @@ impl ModelServer {
         let id = self.selected.lock().await.clone();
         let definition = model(&id);
 
-        let ready = match worker_spec(definition.engine) {
-            None => self.parakeet_ready().await,
-            Some(_) => self
+        let ready = match runtime(definition.engine) {
+            Runtime::Http => self.parakeet_ready().await,
+            Runtime::Worker(_) => self
                 .worker
                 .lock()
                 .await
                 .as_ref()
                 .map(|state| state.ready && state.engine == definition.engine)
                 .unwrap_or(false),
+            Runtime::InProcess => self.whisper_cpp.lock().await.is_some(),
         };
         if ready {
             self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
@@ -296,9 +338,9 @@ impl ModelServer {
         )
         .await;
 
-        match worker_spec(definition.engine) {
-            None => self.start_parakeet(definition, &id).await?,
-            Some(spec) => {
+        match runtime(definition.engine) {
+            Runtime::Http => self.start_parakeet(definition, &id).await?,
+            Runtime::Worker(spec) => {
                 // Whichever engine was running, it is not this one, and both
                 // are hundreds of megabytes of Python.
                 if let Some(mut previous) = self.worker.lock().await.take() {
@@ -306,6 +348,7 @@ impl ModelServer {
                 }
                 self.start_worker(spec, definition, &id).await?
             }
+            Runtime::InProcess => self.start_whisper_cpp(definition, &id).await?,
         }
 
         self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
@@ -321,23 +364,78 @@ impl ModelServer {
         if let Some(mut child) = self.parakeet.lock().await.take() {
             let _ = child.kill().await;
         }
+        // Dropping the last handle frees the weights, which for Whisper Small
+        // is most of a gigabyte of this process's own memory.
+        self.whisper_cpp.lock().await.take();
         *self.engine_pid.lock().await = None;
         for (_, sender) in self.pending.lock().await.drain(..) {
             let _ = sender.send(Err("Speech model changed.".into()));
         }
     }
 
-    pub async fn transcribe(&self, wav: Vec<u8>) -> Result<String, String> {
+    /// `language` is an ISO 639-1 code, or empty to let the engine detect one.
+    ///
+    /// Passed per phrase rather than fixed when the engine starts, so changing
+    /// it takes effect on the next phrase instead of after a reload.
+    pub async fn transcribe(&self, wav: Vec<u8>, language: &str) -> Result<String, String> {
         // One request at a time: both engines are single-threaded, and
         // overlapping calls only queue behind each other anyway.
         let _guard = self.transcribe_lock.lock().await;
         self.start().await?;
 
         let id = self.selected.lock().await.clone();
-        match worker_spec(model(&id).engine) {
-            None => self.transcribe_parakeet(wav).await,
-            Some(spec) => self.transcribe_worker(spec, wav).await,
+        match runtime(model(&id).engine) {
+            Runtime::Http => self.transcribe_parakeet(wav, language).await,
+            Runtime::Worker(spec) => self.transcribe_worker(spec, wav, language).await,
+            Runtime::InProcess => self.transcribe_whisper_cpp(wav, language).await,
         }
+    }
+
+    /// Loads whisper.cpp's weights into this process.
+    ///
+    /// The load is the slow part and it holds a lock, so it runs on a blocking
+    /// thread: doing it on the async runtime would stall the HUD's animation
+    /// and the hotkey listener for as long as it took.
+    async fn start_whisper_cpp(
+        &self,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        // A Python worker left running would otherwise sit on a gigabyte of
+        // memory that nothing is going to ask for again.
+        if let Some(mut previous) = self.worker.lock().await.take() {
+            let _ = previous.child.kill().await;
+        }
+        self.emit_stage("loading", "Loading Whisper on Metal…", id).await;
+
+        let file = definition.remote_id;
+        let context = tokio::task::spawn_blocking(move || crate::whisper_cpp::load(file))
+            .await
+            .map_err(|error| format!("Loading Whisper panicked: {error}"))??;
+        *self.whisper_cpp.lock().await = Some(Arc::new(context));
+        // In this process, so there is no separate engine to report on.
+        *self.engine_pid.lock().await = None;
+        Ok(())
+    }
+
+    async fn transcribe_whisper_cpp(
+        &self,
+        wav: Vec<u8>,
+        language: &str,
+    ) -> Result<String, String> {
+        let context = self
+            .whisper_cpp
+            .lock()
+            .await
+            .clone()
+            .ok_or("Whisper is not loaded.")?;
+        let language = language.to_string();
+        tokio::task::spawn_blocking(move || {
+            let audio = crate::whisper_cpp::decode_wav(&wav)?;
+            crate::whisper_cpp::transcribe(&context, &audio, &language)
+        })
+        .await
+        .map_err(|error| format!("Transcription panicked: {error}"))?
     }
 
     async fn start_parakeet(&self, definition: &ModelDefinition, id: &str) -> Result<(), String> {
@@ -516,15 +614,20 @@ impl ModelServer {
         }
     }
 
-    async fn transcribe_parakeet(&self, wav: Vec<u8>) -> Result<String, String> {
+    async fn transcribe_parakeet(&self, wav: Vec<u8>, language: &str) -> Result<String, String> {
         let part = reqwest::multipart::Part::bytes(wav)
             .file_name("speech.wav")
             .mime_str("audio/wav")
             .map_err(|error| error.to_string())?;
-        let form = reqwest::multipart::Form::new()
+        let mut form = reqwest::multipart::Form::new()
             .part("file", part)
             .text("model", "default")
             .text("response_format", "json");
+        // Omitted rather than sent empty: the field's absence is what asks for
+        // detection, and an empty string is not a language.
+        if !language.is_empty() {
+            form = form.text("language", language.to_string());
+        }
 
         let response = reqwest::Client::new()
             .post(format!(
@@ -558,6 +661,7 @@ impl ModelServer {
         &self,
         spec: &WorkerSpec,
         wav: Vec<u8>,
+        language: &str,
     ) -> Result<String, String> {
         let job_id;
         let request;
@@ -565,7 +669,8 @@ impl ModelServer {
             let mut guard = self.worker.lock().await;
             let not_ready = || format!("{} is not ready.", spec.label);
             let state = guard.as_mut().ok_or_else(not_ready)?;
-            if !state.ready || worker_spec(state.engine).map(|s| s.script) != Some(spec.script) {
+            if !state.ready || !matches!(runtime(state.engine), Runtime::Worker(s) if s.script == spec.script)
+            {
                 return Err(not_ready());
             }
             state.next_job += 1;
@@ -575,6 +680,9 @@ impl ModelServer {
             request = serde_json::json!({
                 "id": job_id,
                 "audio": base64::engine::general_purpose::STANDARD.encode(&wav),
+                // Null, not "", so the worker can pass it straight through to
+                // an engine that reads null as "detect".
+                "language": (!language.is_empty()).then(|| language.to_string()),
             })
             .to_string();
 
@@ -638,6 +746,9 @@ fn weights_present(definition: &ModelDefinition) -> bool {
             has_contents(&cache.join(folder).join("snapshots"))
         }
         Weights::WhisperFile(name) => home.join(".cache/whisper").join(name).is_file(),
+        Weights::GgmlFile(name) => crate::whisper_cpp::weights_path(name)
+            .map(|path| path.is_file())
+            .unwrap_or(false),
     }
 }
 

@@ -109,7 +109,11 @@ def main():
             request = json.loads(raw_line)
             request_id = request["id"]
             audio = decode_wav(base64.b64decode(request["audio"]))
-            result = model.transcribe(audio, fp16=device != "cpu", language=None)
+            # None asks Whisper to detect. Detection reads only the opening
+            # seconds, so on one dictated phrase it is a coin toss the app
+            # would rather not make -- the caller names a language when it can.
+            language = request.get("language") or None
+            result = model.transcribe(audio, fp16=device != "cpu", language=language)
             send(
                 {
                     "type": "result",

@@ -17,6 +17,7 @@
     "setup:model": "./scripts/setup-model.sh",
     "setup:qwen": "./scripts/setup-qwen.sh",
     "setup:whisper": "./scripts/setup-whisper.sh",
+    "setup:whisper-cpp": "./scripts/setup-whisper-cpp.sh",
     "icon": "./.venv-qwen/bin/python scripts/generate-icon.py"
   },
   "devDependencies": {

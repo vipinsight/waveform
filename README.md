@@ -2,9 +2,12 @@
 
 Waveform is a small macOS app for private, local voice transcription. Choose between:
 
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) running Whisper
+  `small`, linked into the app. The default.
 - [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B)
-- [OpenAI Whisper](https://github.com/openai/whisper) `turbo` (large-v3-turbo)
+- [OpenAI Whisper](https://github.com/openai/whisper) `small`, through its own
+  Python package
 
 Hold a key anywhere in macOS, speak, and the text lands in whatever you were
 typing into. Audio stays on this Mac.
@@ -14,6 +17,7 @@ typing into. Audio stays on this Mac.
 - Apple Silicon Mac
 - macOS 13 or newer
 - Rust and Cargo
+- CMake, which Cargo uses to build whisper.cpp (`brew install cmake`)
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
 - Node.js 20 or newer
 - Python 3.9 or newer for Qwen3-ASR and Whisper
@@ -23,19 +27,29 @@ typing into. Audio stays on this Mac.
 
 ```bash
 pnpm install
-pnpm setup:model
+pnpm setup:whisper-cpp
+pnpm setup:model     # optional
 pnpm setup:qwen      # optional
 pnpm setup:whisper   # optional
 pnpm app
 ```
 
+`setup:whisper-cpp` is the only one needed to dictate, because whisper.cpp is
+the default engine and the only one already inside the app.
 `setup:model` installs NVIDIA's `nemo-speech` Metal runtime and Parakeet model.
 `setup:qwen` creates an isolated runtime in `~/Library/Application Support/Waveform/qwen`,
 installs Qwen's official `qwen-asr` runtime, and downloads Qwen3-ASR 0.6B.
 `setup:whisper` does the same for OpenAI's own `openai-whisper` package under
-`~/Library/Application Support/Waveform/whisper`, and downloads the `turbo`
+`~/Library/Application Support/Waveform/whisper`, and downloads the `small`
 weights. Each engine keeps its own environment, because they pin different
 torch versions and one failing to resolve should not take the others with it.
+`setup:whisper-cpp` downloads GGML weights to
+`~/Library/Application Support/Waveform/whisper.cpp` and installs nothing else:
+whisper.cpp is linked into the app, so that engine has no interpreter, no
+virtual environment and no separate process. It is the same Whisper model as
+the Python entry -- about 490MB of weights against that engine's 2.5GB
+environment -- and keeps its weights loaded between phrases. On an M1 Pro it
+transcribes eleven seconds of speech in under half a second.
 Model weights remain in local Hugging Face, NeMo and Whisper caches.
 
 Install only the engines you intend to use. Waveform names the missing command
@@ -218,6 +232,10 @@ pressed while another app is frontmost, or type into one — that needs a
 newline-delimited JSON over stdio, which is why it survived the move from
 Electron untouched.
 
+The speech engines are the least obvious part of this. `docs/models.md`
+traces how a model id becomes a running engine, where each one's weights are
+looked for, and what a user who installed from the disk image is still missing.
+
 ## Commands
 
 ```bash
@@ -228,7 +246,8 @@ pnpm test:rust   # Rust only
 pnpm typecheck   # check TypeScript
 pnpm build       # build the frontend and the native helper into dist/
 pnpm setup:qwen  # install and download Qwen3-ASR 0.6B
-pnpm setup:whisper  # install and download OpenAI Whisper turbo
+pnpm setup:whisper  # install and download OpenAI Whisper small
+pnpm setup:whisper-cpp  # download GGML weights for the whisper.cpp engine
 pnpm icon        # regenerate the app icon and .icns
 ```
 

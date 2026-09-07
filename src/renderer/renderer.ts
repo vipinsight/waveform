@@ -19,6 +19,7 @@ import {
   getSpeechModel,
   isSpeechModelId,
 } from "../shared/models";
+import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import {
@@ -45,6 +46,7 @@ const element = {
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
   modelList: requireElement<HTMLElement>("model-list"),
+  speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
@@ -210,6 +212,10 @@ function wireEvents(): void {
     if (!id || !isSpeechModelId(id) || row.getAttribute("aria-disabled") === "true") return;
     void host().selectModel(id);
   });
+  element.speechLanguage.addEventListener("change", () => {
+    const value = element.speechLanguage.value;
+    if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
+  });
   element.microphoneSelect.addEventListener("change", () => {
     const id = element.microphoneSelect.value;
     const device = microphones.find((candidate) => candidate.id === id);
@@ -329,6 +335,7 @@ function applySettings(next: AppSettings): void {
   else document.documentElement.dataset.theme = next.theme;
 
   void renderModels();
+  renderLanguageSelect();
   renderMicrophoneSelect();
   element.hotkeySelect.value = next.hotkeyId;
   element.menubarToggle.checked = next.menuBarIcon;
@@ -647,6 +654,15 @@ async function renderModels(): Promise<void> {
       return row;
     }),
   );
+}
+
+function renderLanguageSelect(): void {
+  if (element.speechLanguage.options.length === 0) {
+    element.speechLanguage.append(
+      ...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)),
+    );
+  }
+  element.speechLanguage.value = settings.speechLanguage;
 }
 
 /** Joins labels the way a sentence would: "a, b and c". */

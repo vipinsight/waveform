@@ -9,7 +9,7 @@ set -eu
 runtime_dir="${WAVEFORM_RUNTIME_DIR:-$HOME/Library/Application Support/Waveform}"
 venv="$runtime_dir/whisper"
 python="${WHISPER_SETUP_PYTHON:-python3}"
-model="${WAVEFORM_WHISPER_MODEL:-turbo}"
+model="${WAVEFORM_WHISPER_MODEL:-small}"
 
 if [ ! -x "$venv/bin/python3" ]; then
   mkdir -p "$runtime_dir"

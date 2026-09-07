@@ -14,6 +14,7 @@ mod resources;
 mod rewrite;
 mod settings;
 mod stats;
+mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
@@ -103,7 +104,7 @@ pub struct AppState {
     overlay_hit_region: StdMutex<Option<(f64, f64, f64, f64)>>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct MicrophoneDevice {
     id: String,
@@ -168,12 +169,18 @@ async fn set_available_microphones(
             })
         })
         .take(32)
-        .collect();
-    *state.microphones.lock().map_err(|_| "Microphone list unavailable")? = devices;
+        .collect::<Vec<_>>();
+    {
+        let mut microphones = state.microphones.lock().map_err(|_| "Microphone list unavailable")?;
+        if *microphones == devices {
+            return Ok(());
+        }
+        *microphones = devices;
+    }
 
     let settings = state.settings.lock().await.value();
     if settings.menu_bar_icon {
-        rebuild_tray(&app);
+        refresh_tray_menu(&app);
     }
     Ok(())
 }
@@ -225,7 +232,7 @@ async fn update_settings(
         || next.microphone_device_name != previous.microphone_device_name
     {
         if next.menu_bar_icon {
-            rebuild_tray(&app);
+            refresh_tray_menu(&app);
         }
     }
     state
@@ -315,7 +322,8 @@ async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, S
 
 #[tauri::command]
 async fn transcribe(state: State<'_, AppState>, wav_bytes: Vec<u8>) -> Result<String, String> {
-    state.models.transcribe(wav_bytes).await
+    let language = state.settings.lock().await.value().speech_language;
+    state.models.transcribe(wav_bytes, &language).await
 }
 
 /// WKWebView drives its own microphone prompt from the bundle's usage
@@ -908,7 +916,7 @@ fn select_microphone_from_menu(app: &tauri::AppHandle, device_id: String, device
         };
         let _ = app.emit("settings-changed", &next);
         if next.menu_bar_icon {
-            rebuild_tray(&app);
+            refresh_tray_menu(&app);
         }
     });
 }
@@ -942,8 +950,8 @@ fn accelerator_label(accelerator: &str) -> String {
         .replace("Shift+", "⇧")
 }
 
-/// Builds the menu bar icon.
-fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+/// Builds menu contents independently of the persistent menu bar icon.
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Waveform", true, None::<&str>)?;
@@ -1086,8 +1094,12 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         &separator,
         &quit,
     ]);
-    let menu = Menu::with_items(app, &items)?;
+    Menu::with_items(app, &items)
+}
 
+/// Creates the menu bar icon when first shown.
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let menu = build_tray_menu(app)?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png"))?;
 
     TrayIconBuilder::with_id("waveform")
@@ -1107,11 +1119,16 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 /// WebView commands run off the AppKit thread. Tray mutation must return to it
 /// or macOS aborts with a BoardServices threading violation.
-fn rebuild_tray(app: &tauri::AppHandle) {
+fn refresh_tray_menu(app: &tauri::AppHandle) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        app.remove_tray_by_id("waveform");
-        let _ = build_tray(&app);
+        // Recreating the status item makes macOS remove and reinsert it,
+        // shifting menu bar icons whenever dictation discovers microphones.
+        if let Some(tray) = app.tray_by_id("waveform") {
+            if let Ok(menu) = build_tray_menu(&app) {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
     });
 }
 
@@ -1121,7 +1138,9 @@ fn set_tray_visibility(app: &tauri::AppHandle, visible: bool) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         if visible {
-            let _ = build_tray(&app);
+            if app.tray_by_id("waveform").is_none() {
+                let _ = build_tray(&app);
+            }
         } else {
             app.remove_tray_by_id("waveform");
         }
