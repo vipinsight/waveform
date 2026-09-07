@@ -405,12 +405,19 @@ impl ModelServer {
     }
 
     /// Shuts the engine down. Called when the app exits.
+    /// Stops the engine and waits for it to be gone.
+    ///
+    /// The signal is sent before anything is awaited, so a caller that gives
+    /// up waiting has still killed the child. That matters at shutdown: the
+    /// alternative is an orphaned engine of several hundred megabytes.
     pub async fn stop(&self) {
         if let Some(mut state) = self.worker.lock().await.take() {
-            let _ = state.child.kill().await;
+            let _ = state.child.start_kill();
+            let _ = state.child.wait().await;
         }
         if let Some(mut child) = self.parakeet.lock().await.take() {
-            let _ = child.kill().await;
+            let _ = child.start_kill();
+            let _ = child.wait().await;
         }
         // Dropping the last handle frees the weights, which for Whisper Small
         // is most of a gigabyte of this process's own memory.

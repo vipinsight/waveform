@@ -833,9 +833,17 @@ pub fn run() {
             // The engine is a separate process of several hundred megabytes and
             // does not exit on its own, so it has to be shut down explicitly or
             // it outlives the app.
+            //
+            // Bounded, because this runs on the AppKit thread: waiting here is
+            // waiting with the window still on screen, which is a quit that
+            // looks like a freeze. stop() signals the child before it awaits
+            // anything, so giving up on the wait still leaves it dying.
             RunEvent::Exit => {
                 let models = app.state::<AppState>().models.clone();
-                tauri::async_runtime::block_on(async move { models.stop().await });
+                let stopping = tauri::async_runtime::spawn(async move { models.stop().await });
+                let _ = tauri::async_runtime::block_on(async {
+                    tokio::time::timeout(std::time::Duration::from_millis(1500), stopping).await
+                });
             }
             _ => {}
         });
