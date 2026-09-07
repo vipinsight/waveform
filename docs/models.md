@@ -1,0 +1,251 @@
+# Models: how one is chosen, and how it runs
+
+Waveform ships four speech models over three genuinely different execution
+mechanisms. `README.md` covers this from the outside — which `pnpm setup:*`
+script installs what. This is the inside: how a model id becomes a running
+engine, where each engine's weights are looked for, and which parts of that
+story are still unfinished.
+
+Line references drift. Treat them as a starting point, not a promise.
+
+## Two registries, kept in step by hand
+
+The catalogue exists twice. `SPEECH_MODELS` in
+[src/shared/models.ts](../src/shared/models.ts) is what the interface knows;
+`MODELS` in [src-tauri/src/model_server.rs:101](../src-tauri/src/model_server.rs)
+is what actually runs. The Rust table carries two things the TypeScript one does
+not — an `Engine` and a `Weights` variant — and the TypeScript table carries a
+long `label` the Rust one has no use for.
+
+Nothing checks that the two agree. `tests/model-registry.test.ts` pins the
+TypeScript list, and `every_engine_model_survives_load` in
+[src-tauri/src/settings.rs:281](../src-tauri/src/settings.rs) iterates the Rust
+one, but no test compares them. Adding a model means editing both.
+
+The default is positional in both places:
+`DEFAULT_SPEECH_MODEL_ID = SPEECH_MODELS[0].id`, and `default_model_id()`
+reading `MODELS[0].id` ([settings.rs:36](../src-tauri/src/settings.rs)). Parakeet
+is the default because it is first, not because anything names it.
+
+There used to be a third copy of the id list, in the settings validator, and the
+comment it left behind is worth reading before adding a fourth
+([settings.rs:21](../src-tauri/src/settings.rs)):
+
+> Read from the engine's own table rather than repeated here: a hand-kept copy
+> that fell behind is what silently reverted every attempt to choose Whisper,
+> because `normalize` treated a real model id as corrupt input.
+
+`is_known_model` now reads `MODELS` directly, and `rejects_an_unknown_speech_model`
+guards the other side of it. The TypeScript equivalent is `isSpeechModelId`.
+
+## From a click to a running engine
+
+1. `#model-list` is an empty `role="radiogroup"`
+   ([index.html:374](../src/renderer/index.html)); the rows are built at runtime.
+2. `renderModels()` ([renderer.ts:621](../src/renderer/renderer.ts)) asks for
+   `getModelCatalog()` and emits one `<button role="radio" data-model=…>` per
+   entry. A model that cannot run is listed rather than hidden — the page's job
+   is to say what is available and what it would take to have it — so it gets
+   `aria-disabled="true"` and a line naming the setup command.
+3. A delegated click handler ([renderer.ts:209](../src/renderer/renderer.ts))
+   validates the id with `isSpeechModelId`, ignores disabled rows, and calls
+   `host().selectModel(id)`.
+4. `select_model` ([lib.rs:300](../src-tauri/src/lib.rs)) **persists before
+   starting**: otherwise the choice is lost on relaunch, and the next
+   `settings-changed` broadcast snaps the picker back to the stored value.
+5. `ModelServer::select()` stops the previous engine only if the id actually
+   changed, then `start()`.
+
+Two things about this are easy to miss:
+
+- `model(id)` ([model_server.rs:178](../src-tauri/src/model_server.rs)) resolves
+  an unknown id to `MODELS[0]` rather than failing.
+- `select_model` is not the only entry point. Changing `modelId` through
+  `update_settings` reselects too ([lib.rs:211](../src-tauri/src/lib.rs)).
+
+At launch the stored model is selected eagerly
+([lib.rs:695](../src-tauri/src/lib.rs)) so the first dictation is not the thing
+that waits for it.
+
+## Three mechanisms
+
+`Engine` says which model it is; `Runtime` says how it is reached. They are
+deliberately separate types ([model_server.rs:86](../src-tauri/src/model_server.rs)):
+
+> Kept apart from `Engine` so adding an engine cannot quietly land in the wrong
+> branch: this used to be `Option<&WorkerSpec>`, where `None` silently meant
+> Parakeet.
+
+`runtime(engine)` is the whole routing table, and the same four-way match then
+appears in `runtime_installed`, `catalog`, `start` and `transcribe`.
+
+| id | engine | runtime | weights |
+| --- | --- | --- | --- |
+| `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `~/Library/Caches/NeMoSpeech/models/<remote_id>` |
+| `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `~/.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots` |
+| `whisper-small` | `Whisper` | `Worker` — Python over NDJSON | `~/.cache/whisper/small.pt` |
+| `whisper-cpp-small` | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/ggml-small.bin` |
+
+Note that the two Whisper entries are not interchangeable. whisper.cpp takes
+GGML `.bin` weights and the Python package takes `.pt`; neither can read the
+other's, so they download separately and both can be absent independently.
+
+### Parakeet, over HTTP
+
+`nemo-speech serve --asr-model <remote_id> --device metal` on `127.0.0.1:8178`
+(`WAVEFORM_PORT` overrides the port). Readiness is a poll of `GET /ready` every
+600 ms up to a 15-minute `START_TIMEOUT`. Transcription is a multipart POST of
+the WAV to `/v1/audio/transcriptions`, reading `.text` back, with a 120-second
+`TRANSCRIBE_TIMEOUT`. The `language` field is omitted rather than sent empty:
+its absence is what asks for detection.
+
+The binary is looked for as `NEMO_SPEECH_BIN`, then `~/.local/bin/nemo-speech`,
+then along `PATH` — the explicit candidate matters more than `PATH` does,
+because a bundle launched from Finder gets a minimal one.
+
+### Qwen and Whisper, over one Python worker
+
+One implementation serves both. They differ only by `WorkerSpec` — venv name,
+the environment variable that overrides the interpreter, the script, and the
+setup command ([model_server.rs:139](../src-tauri/src/model_server.rs)). Each
+engine keeps its own virtual environment on purpose: they pin different torch
+versions, and one failing to resolve should not take the other down.
+
+The protocol is newline-delimited JSON. The worker prints `WAVEFORM:{json}`
+lines of type `ready`, `result` or `error`; a reader task parses them and fans
+results to a pending-job table keyed `"{venv}-{n}"`. The WAV is base64'd into
+the request.
+
+There is exactly one worker slot, which is why `WorkerState` records which
+engine it is serving — "is a worker ready?" is not a useful question on its own,
+since a Qwen worker left running would otherwise be handed Whisper's audio.
+Switching engines kills the incumbent and fails its pending jobs with
+"Speech model changed."
+
+Decoding differs on the Python side. `whisper-worker.py` decodes the WAV with
+`wave` and numpy and resamples with `scipy.signal.resample_poly` — deliberately
+not `whisper.load_audio`, which shells out to ffmpeg — and validates itself
+against 0.1 s of silence before reporting ready. `qwen-worker.py` re-encodes the
+WAV as a `data:audio/wav;base64,` URL, so that audio is base64'd twice: once
+into the JSON request, once into the data URL.
+
+### whisper.cpp, in this process
+
+No subprocess. `start_whisper_cpp` kills any Python worker still holding a
+gigabyte of memory, then loads the `WhisperContext` on
+`tokio::task::spawn_blocking` — the load is slow and holds a lock, and doing it
+on the async runtime would stall the HUD's animation and the hotkey listener for
+as long as it took. `transcribe_whisper_cpp` runs `decode_wav` and `transcribe`
+on a blocking thread too.
+
+Because it is in-process, `runtime_installed` is unconditionally true, there is
+no readiness poll and no `START_TIMEOUT` race, and `engine_pid` is cleared —
+there is no separate engine for the resource monitor to report on. `stop()`
+drops the context, which for Whisper Small frees most a gigabyte of this
+process's own memory.
+
+## How audio reaches an engine
+
+`getUserMedia` runs with automatic gain control on and echo cancellation and
+noise suppression off — the latter two make macOS duck other apps' output — and
+is tapped by a 2048-frame `ScriptProcessorNode` through a muted gain node
+([capture.ts:54](../src/renderer/audio/capture.ts)).
+
+Samples go into `SpeechSegmenter`, which returns a completed phrase at each
+pause; `stop()` flushes the tail. Each phrase is WAV-encoded at the **hardware**
+sample rate — usually 48 kHz, with no resampling in the renderer — into a fixed
+44-byte-header mono PCM16 buffer ([wav.ts](../src/renderer/audio/wav.ts)). Every
+engine resamples to 16 kHz itself, which is why there are three separate
+resamplers in the tree.
+
+The bytes cross as a JSON number array, because Tauri IPC is JSON
+([tauri-bridge.ts:79](../src/renderer/tauri-bridge.ts)). `transcribe`
+([lib.rs:324](../src-tauri/src/lib.rs)) reads the language from settings **per
+phrase** rather than fixing it when the engine starts, so changing it takes
+effect on the next phrase instead of after a reload.
+
+`ModelServer::transcribe` takes `transcribe_lock` before anything else. The
+renderer issues phrases concurrently; Rust serializes them, because every engine
+is single-threaded and overlapping calls would only queue anyway.
+
+## Status and events
+
+`ModelStatus` — `{ id, label, selected, runtimeInstalled, weightsInstalled,
+setupCommand }` — reports the runtime and the weights separately on purpose:
+having a runtime is not the same as having a model, `setup:model` installs
+nemo-speech and pulls Parakeet in two steps, and either can be done without the
+other. Saying only "not ready" would not tell anyone what to do.
+
+`ModelEvent` is `{ stage, message, modelId }`, with `ModelStage` declared as
+`idle | starting | downloading | loading | ready | error`
+([contracts.ts:5](../src/shared/contracts.ts)). The renderer's handler drops
+events for any model that is not the selected one.
+
+One inconsistency worth knowing: `ModelStatus.label` carries Rust's
+`short_label`, so the Models page says "Parakeet 0.6B", while the Overview row
+uses the TypeScript `label` and says "NVIDIA Parakeet TDT 0.6B v3". The same
+model is named two ways in one app.
+
+## What a new user actually gets
+
+**There is no in-app downloader.** The app detects weights and prints a shell
+command; acquiring them is always something the user does in a terminal.
+
+Detection is `weights_present()`
+([model_server.rs:730](../src-tauri/src/model_server.rs)), one arm per `Weights`
+variant. For the two cache-directory layouts, a directory that exists but is
+empty counts as absent (`has_contents`) — that is a download that did not
+finish.
+
+A row that is not ready reads "Not installed — run `<command>`" or "Runtime
+ready, weights missing — run `<command>`"
+([renderer.ts:641](../src/renderer/renderer.ts)), where the command comes from
+`catalog()`:
+
+| runtime | setup command |
+| --- | --- |
+| `Http` | `pnpm setup:model` |
+| `Worker` | `pnpm setup:qwen` / `pnpm setup:whisper` |
+| `InProcess` | `pnpm setup:whisper-cpp` |
+
+The scripts themselves:
+
+- `setup-model.sh` curls NVIDIA's `install.sh` for a pinned version, then
+  `nemo-speech pull nvidia/parakeet-tdt-0.6b-v3`.
+- `setup-qwen.sh` and `setup-whisper.sh` build separate virtual environments,
+  pip install, and pre-fetch the weights — "rather than on the first phrase,
+  which would otherwise stall behind a download with no way to say so".
+- `setup-whisper-cpp.sh` is the outlier: it installs nothing, and just curls one
+  GGML file. It downloads to `<file>.partial` and `mv`s it into place, so an
+  interrupted download cannot leave a truncated file that looks installed.
+
+## Known gaps
+
+### A disk-image install cannot install any model
+
+`resources` in [tauri.conf.json](../src-tauri/tauri.conf.json) bundles
+`waveform-hotkey`, `qwen-worker.py` and `whisper-worker.py`. It does not bundle
+the `setup-*.sh` scripts, and it could not usefully do so: a user who installed
+from the DMG has no checkout and no pnpm, so every command the Models page names
+is one that cannot exist on their machine.
+
+`whisper-cpp-small` makes this much easier to fix than it was, because that
+engine's entire installation is one HTTPS GET of one file — `setup-whisper-cpp.sh`
+is twenty lines of `curl` and `mv`, all of which Rust can do. See
+[docs/plans/whisper-cpp-in-app-download.md](plans/whisper-cpp-in-app-download.md).
+
+### The `downloading` stage is never emitted
+
+`ModelStage` declares it, and `UiStage` inherits it, but no
+`emit_stage("downloading", …)` call exists anywhere — the stages that actually
+fire are `idle`, `starting`, `loading`, `ready` and `error`. Any interface
+branch on `downloading` is unreachable today. It is the stage an in-app download
+would need, and `ModelEvent` has no numeric field to carry progress in.
+
+### `pnpm setup:whisper-cpp` is named from inside Rust
+
+`whisper_cpp::load` tells the user to run `pnpm setup:whisper-cpp`
+([whisper_cpp.rs:38](../src-tauri/src/whisper_cpp.rs)), and `catalog()` returns
+the same string. Both are correct for someone with a checkout and wrong for
+everyone else; both would need to change if the app learned to fetch the file
+itself.
