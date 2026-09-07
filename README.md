@@ -31,15 +31,14 @@ Needs an Apple Silicon Mac on macOS 13 or newer.
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph mac["all of this happens on your Mac"]
-        direction LR
-        key["You hold a key<br/>in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
+        key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
         listen --> model["An open model<br/>transcribes it"]
         model --> typed["The text is typed back<br/>where you were working"]
     end
 
-    model -. "optional, and text only" .-> polish["AI Polish"]
+    model -. "optional, text only" .-> polish["AI Polish"]
     polish -.-> typed
 ```
 

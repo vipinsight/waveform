@@ -6,18 +6,18 @@ split falls where it does.
 ## Three processes
 
 ```mermaid
-flowchart LR
-    helper["HotkeyHelper.swift<br/>CGEventTap"]
+flowchart TD
+    helper["HotkeyHelper.swift<br/>a CGEventTap in its own process"]
     core["Rust host"]
-    web["WebKit webview"]
+    web["WebKit webview<br/>interface and audio capture"]
     engine["Speech engine"]
 
-    helper -->|"key down/up, as JSON over stdio"| core
-    core -->|"paste this text"| helper
-    core -->|"start, stop, cancel"| web
-    web -->|"finished WAV segments"| core
+    helper <-->|"the key press, and text to paste back"| core
+    core <-->|"start and stop, and finished WAV segments"| web
     core <-->|"audio in, text out"| engine
 ```
+
+The helper and the Rust host speak newline-delimited JSON over stdio.
 
 **The webview** owns the interface, audio capture, segmentation and the overlay
 meter. It talks to Rust through the `window.waveform` surface in
