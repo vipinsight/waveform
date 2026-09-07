@@ -53,6 +53,11 @@ export class AudioCapture {
   private blocks = 0;
   private peak = 0;
   private phrases = 0;
+  private inserted = 0;
+  private empty = 0;
+  /** The last phrase sent, for a session that comes back with no words. */
+  private lastSeconds = 0;
+  private lastPeak = 0;
 
   constructor(private readonly handlers: CaptureHandlers) {}
 
@@ -81,6 +86,8 @@ export class AudioCapture {
     this.blocks = 0;
     this.peak = 0;
     this.phrases = 0;
+    this.inserted = 0;
+    this.empty = 0;
 
     const permission = await this.handlers.requestMicrophoneAccess();
     if (!permission.granted) throw new Error(microphoneMessage(permission.status));
@@ -262,12 +269,23 @@ export class AudioCapture {
     if (this.discarding) return;
     this.phrases += 1;
     this.pending += 1;
+    this.lastSeconds = samples.length / sampleRate;
+    this.lastPeak = rootMeanSquare(samples);
     this.handlers.onPendingChange(this.pending);
 
     void this.handlers
       .transcribe(encodeMonoPcm16Wav(samples, sampleRate))
       .then(({ text }) => {
-        if (this.discarding || !text) return;
+        if (this.discarding) return;
+        if (!text) {
+          // The engine heard the audio and found no words in it. whisper.cpp
+          // says so as the literal text "[BLANK_AUDIO]", which is filtered
+          // out on the way back rather than typed into whatever the cursor
+          // was in -- so an empty reply is the normal shape of that answer.
+          this.empty += 1;
+          return;
+        }
+        this.inserted += 1;
         this.handlers.onPhrase(text);
       })
       .catch((error: unknown) => {
@@ -277,6 +295,18 @@ export class AudioCapture {
       .finally(() => {
         this.pending -= 1;
         this.handlers.onPendingChange(this.pending);
+        // Every phrase is back and none of them had words in it. Silence in a
+        // recording that measured well above the speech threshold is worth
+        // saying, with the numbers: it is the difference between a quiet room
+        // and audio arriving mangled.
+        if (this.pending === 0 && this.inserted === 0 && this.empty > 0) {
+          const empty = this.empty;
+          this.empty = 0;
+          this.handlers.onError(
+            `No words in ${empty === 1 ? "the phrase" : `${empty} phrases`}: ` +
+              `${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}.`,
+          );
+        }
       });
   }
 }

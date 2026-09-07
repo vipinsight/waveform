@@ -80,10 +80,33 @@ pub fn transcribe(
     let mut text = String::new();
     for segment in state.as_iter() {
         if let Ok(piece) = segment.to_str_lossy() {
-            text.push_str(&piece);
+            if is_speech(&piece) {
+                text.push_str(&piece);
+            }
         }
     }
     Ok(text.trim().to_string())
+}
+
+/// Whether a segment is words, rather than whisper.cpp describing the audio.
+///
+/// Silence comes back as the literal text `[BLANK_AUDIO]`, and non-speech as
+/// `[MUSIC]`, `(buzzer)` and others -- ordinary output, not special tokens, so
+/// `set_print_special(false)` does not touch them. Inserting them is worse than
+/// inserting nothing: dictating into a pause typed `[BLANK_AUDIO]` into
+/// whatever the cursor was in.
+///
+/// The rule is the shape rather than a list of the markers, because the list is
+/// whisper's to change. A segment entirely inside brackets is a description of
+/// the audio; speech that happens to contain brackets does not begin and end
+/// with them.
+fn is_speech(piece: &str) -> bool {
+    let trimmed = piece.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let bracketed = |open: char, close: char| trimmed.starts_with(open) && trimmed.ends_with(close);
+    !(bracketed('[', ']') || bracketed('(', ')') || bracketed('*', '*'))
 }
 
 fn worker_threads() -> i32 {
@@ -286,6 +309,33 @@ mod tests {
         let decoded = decode_wav(&wav(&samples, 48_000)).unwrap();
         let peak = decoded[100..1_500].iter().fold(0.0f32, |a, b| a.max(b.abs()));
         assert!(peak > 0.5, "1kHz tone came back at only {peak}");
+    }
+
+    #[test]
+    fn descriptions_of_the_audio_are_not_speech() {
+        assert!(!is_speech("[BLANK_AUDIO]"));
+        assert!(!is_speech(" [ Silence ] "));
+        assert!(!is_speech("(buzzer)"));
+        assert!(!is_speech("*laughs*"));
+        assert!(!is_speech("   "));
+        assert!(is_speech("Hello there."));
+        // Brackets inside speech are speech. Only a segment that is nothing
+        // but a bracketed phrase is whisper describing what it heard.
+        assert!(is_speech("the value [see below] is wrong"));
+        assert!(is_speech("(as I said) it works"));
+    }
+
+    /// Silence must come back as nothing, not as a description of itself.
+    ///
+    /// Ignored by default: it needs the real weights. Run with
+    /// `cargo test silence -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn silence_transcribes_to_nothing() {
+        let context = load("ggml-small.bin").expect("could not load the weights");
+        let quiet = vec![0.0f32; WHISPER_RATE as usize * 2];
+        let text = transcribe(&context, &quiet, "en").expect("transcription failed");
+        assert_eq!(text, "", "two seconds of silence produced {text:?}");
     }
 
     /// The whole path, on real speech, with real weights.
