@@ -17,6 +17,9 @@ await Promise.all([
   cp("src/renderer/styles.css", "dist/renderer/styles.css"),
   cp("src/renderer/overlay.html", "dist/renderer/overlay.html"),
   cp("src/renderer/overlay.css", "dist/renderer/overlay.css"),
+  // Fetched by addModule at run time rather than bundled: an AudioWorklet
+  // module is loaded by URL, and neither bundle can contain it.
+  cp("src/renderer/audio/capture-worklet.js", "dist/renderer/capture-worklet.js"),
   cp("icons/waveform-mark.svg", "dist/renderer/waveform-mark.svg"),
   cp("icons/waveform-icon.png", "dist/renderer/waveform-icon.png"),
   bundle("src/renderer/renderer.ts", "dist/renderer/renderer.js"),

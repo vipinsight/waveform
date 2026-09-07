@@ -74,10 +74,28 @@ osascript -e 'quit app "Waveform"' 2>/dev/null || true
 pkill -f "$ROOT/release/Waveform.app" 2>/dev/null || true
 pkill -f "$ROOT/dist/src/main/waveform-hotkey" 2>/dev/null || true
 pkill -f "$ROOT/node_modules/.*electron/cli.js" 2>/dev/null || true
-sleep 0.6
 
-# Anything left is a second writer for the same history file, so say so rather
-# than launch beside it.
+# Then make sure. The bundle is deleted and rebuilt below, so a survivor is
+# not merely a second writer for the history file: `open` re-fronts the
+# running copy instead of launching the new one, and every change since it
+# started is invisible while looking like it shipped. This was a warning on
+# stderr for a while, which is not the same as being stopped.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  pgrep -f "$ROOT/release/Waveform.app" >/dev/null 2>&1 || break
+  sleep 0.3
+done
+if pgrep -f "$ROOT/release/Waveform.app" >/dev/null 2>&1; then
+  echo "run-tauri: the running copy ignored SIGTERM; killing it" >&2
+  pkill -9 -f "$ROOT/release/Waveform.app" 2>/dev/null || true
+  sleep 0.6
+fi
+if pgrep -f "$ROOT/release/Waveform.app" >/dev/null 2>&1; then
+  echo "run-tauri: could not stop the running Waveform; not replacing it" >&2
+  exit 1
+fi
+
+# Anything else answering to the name is a second writer for the same history
+# file, so say so rather than launch beside it.
 strays=$(pgrep -fl "[Ww]aveform" | grep -v -e "$$" -e "run-tauri" -e pgrep || true)
 if [ -n "$strays" ]; then
   echo "warning: other Waveform processes are still running:" >&2

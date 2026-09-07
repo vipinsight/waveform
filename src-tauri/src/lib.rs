@@ -717,7 +717,13 @@ pub fn run() {
                     _ = terminate.recv() => {}
                     _ = interrupt.recv() => {}
                 }
-                engine.stop().await;
+                // Bounded, and then leave regardless. stop() takes the same
+                // locks as a dictation in flight, so a phrase mid-transcription
+                // can hold it long enough to look like a hang -- and an app
+                // that ignores SIGTERM is one that pnpm app cannot replace,
+                // which is how a rebuilt bundle ends up watching the old
+                // process keep running.
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(3), engine.stop()).await;
                 std::process::exit(0);
             });
 

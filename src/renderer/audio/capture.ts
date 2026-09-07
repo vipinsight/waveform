@@ -23,6 +23,9 @@ export class AudioCapture {
   private stream: MediaStream | null = null;
   private context: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  /** The audio thread's reader. Null only where AudioWorklet is missing. */
+  private worklet: AudioWorkletNode | null = null;
+  /** The fallback reader, on the main thread. See `openReader`. */
   private processor: ScriptProcessorNode | null = null;
   private analyser: AnalyserNode | null = null;
   private segmenter: SpeechSegmenter | null = null;
@@ -94,18 +97,56 @@ export class AudioCapture {
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.25;
     this.spectrum = new Uint8Array(this.analyser.frequencyBinCount);
-    this.processor = context.createScriptProcessor(2048, 1, 1);
-    this.processor.onaudioprocess = (event) => this.handleAudio(event);
+    const reader = await this.openReader(context);
 
     this.source.connect(this.analyser);
-    this.source.connect(this.processor);
-    // A ScriptProcessorNode only pulls audio while connected to a sink. Routing
-    // it through a muted gain node keeps it running without echoing the mic to
+    this.source.connect(reader);
+    // Either reader only pulls audio while connected to a sink. Routing it
+    // through a muted gain node keeps it running without echoing the mic to
     // the speakers.
     const mute = context.createGain();
     mute.gain.value = 0;
-    this.processor.connect(mute);
+    reader.connect(mute);
     mute.connect(context.destination);
+  }
+
+  /**
+   * Opens the node that reads samples, preferring the audio thread.
+   *
+   * An AudioWorklet cannot be starved by the window; a ScriptProcessorNode
+   * shares a thread with the meter and drops blocks when it is busy, which
+   * corrupts phrases rather than merely delaying them. The old node stays as a
+   * fallback because losing the microphone entirely would be worse than losing
+   * some accuracy, and because `addModule` fetches a file that a broken build
+   * could be missing.
+   */
+  private async openReader(context: AudioContext): Promise<AudioNode> {
+    try {
+      // Beside the document, so this resolves for both windows. Calling it
+      // again on a context that already has the module is a no-op.
+      await context.audioWorklet.addModule("capture-worklet.js");
+      const worklet = new AudioWorkletNode(context, "capture", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
+        this.handleBlock(event.data);
+      };
+      this.worklet = worklet;
+      return worklet;
+    } catch (error) {
+      // Worth saying out loud: the same session will still work, less
+      // reliably, and the difference shows up as wrong words rather than as
+      // an error later on.
+      console.warn("AudioWorklet unavailable, falling back to ScriptProcessorNode", error);
+      const processor = context.createScriptProcessor(2048, 1, 1);
+      processor.onaudioprocess = (event) => {
+        this.handleBlock(new Float32Array(event.inputBuffer.getChannelData(0)));
+      };
+      this.processor = processor;
+      return processor;
+    }
   }
 
   /** Ends the session, transcribing whatever is still buffered. */
@@ -157,6 +198,10 @@ export class AudioCapture {
   }
 
   private release(): void {
+    if (this.worklet) {
+      this.worklet.port.onmessage = null;
+      this.worklet.disconnect();
+    }
     this.processor?.disconnect();
     this.source?.disconnect();
     this.analyser?.disconnect();
@@ -164,6 +209,7 @@ export class AudioCapture {
     // The context is kept alive and reused; only the microphone is released,
     // so the macOS recording indicator still clears between sessions.
 
+    this.worklet = null;
     this.processor = null;
     this.source = null;
     this.analyser = null;
@@ -173,8 +219,7 @@ export class AudioCapture {
     this.segmenter = null;
   }
 
-  private handleAudio(event: AudioProcessingEvent): void {
-    const samples = new Float32Array(event.inputBuffer.getChannelData(0));
+  private handleBlock(samples: Float32Array): void {
     this.blocks += 1;
     this.peak = Math.max(this.peak, rootMeanSquare(samples));
     const segment = this.segmenter?.push(samples);

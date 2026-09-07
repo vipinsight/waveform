@@ -73,8 +73,8 @@ let pointerOver = false;
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
   onPendingChange: () => syncDerivedState(),
-  onError: () => {
-    setState("error");
+  onError: (message) => {
+    setState("error", message);
     scheduleIdle();
   },
   transcribe: (bytes) => host().transcribe(bytes),
@@ -387,7 +387,14 @@ function showIdle(): void {
   reportHitRegion();
 }
 
-function setState(next: DictationState): void {
+/**
+ * `message` says what went wrong, for the states where anything did.
+ *
+ * The pill has nowhere to put a sentence, but the window does: this is what
+ * carries a failure to the sidebar. Without it an error is a red pill and no
+ * explanation anywhere, which reads as the shortcut doing nothing.
+ */
+function setState(next: DictationState, message?: string): void {
   hud.dataset.expanded = "false";
   const changed = next !== state;
   state = next;
@@ -399,7 +406,7 @@ function setState(next: DictationState): void {
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {
-    host().reportDictationState({ state: next, sink, mode });
+    host().reportDictationState({ state: next, sink, mode, message });
   }
 }
 
