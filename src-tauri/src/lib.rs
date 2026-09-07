@@ -355,7 +355,32 @@ async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, S
 #[tauri::command]
 async fn transcribe(state: State<'_, AppState>, wav_bytes: Vec<u8>) -> Result<String, String> {
     let language = state.settings.lock().await.value().speech_language;
+    dump_audio(&wav_bytes);
     state.models.transcribe(wav_bytes, &language).await
+}
+
+/// Writes each phrase to disk when `WAVEFORM_DUMP_AUDIO` names a directory.
+///
+/// For when an engine reports silence and the meter says otherwise: those two
+/// read the microphone through different nodes, so only the bytes actually sent
+/// settle which one is lying. Off unless asked for, and audio is never
+/// otherwise written anywhere.
+fn dump_audio(wav: &[u8]) {
+    let Some(dir) = std::env::var_os("WAVEFORM_DUMP_AUDIO") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("phrase-{stamp}.wav"));
+    if std::fs::write(&path, wav).is_ok() {
+        eprintln!("waveform: wrote {} bytes to {}", wav.len(), path.display());
+    }
 }
 
 /// WKWebView drives its own microphone prompt from the bundle's usage
