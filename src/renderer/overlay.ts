@@ -85,6 +85,10 @@ const capture = new AudioCapture({
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
 
+// Build the audio graph's slow half now rather than between the key and the
+// meter. Nothing here opens the microphone.
+capture.prepare();
+
 void host().getSettings().then((settings) => {
   microphoneDeviceId = settings.microphoneDeviceId;
   showFlowBarAlways = settings.showFlowBarAlways;

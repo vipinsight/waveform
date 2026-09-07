@@ -32,6 +32,15 @@ export class AudioCapture {
   /** Reused across sessions: building an AudioContext is a large part of the
       delay between pressing the key and the meter moving. */
   private sharedContext: AudioContext | null = null;
+  /**
+   * The worklet module, loaded once for the life of the shared context.
+   *
+   * `addModule` fetches a file and compiles it on the audio thread. Doing that
+   * inside `start` put it between the key and the meter, which is exactly
+   * where nothing belongs -- so it is kicked off by `prepare` and only awaited
+   * here, by which point it has long since resolved.
+   */
+  private moduleReady: Promise<void> | null = null;
   private spectrum: Uint8Array<ArrayBuffer> | null = null;
   private pending = 0;
   private discarding = false;
@@ -53,6 +62,17 @@ export class AudioCapture {
 
   get pendingCount(): number {
     return this.pending;
+  }
+
+  /**
+   * Does the slow, microphone-free part of starting up, ahead of being asked.
+   *
+   * Called when the window loads. Nothing here touches the microphone or shows
+   * anything, so it costs the user nothing to have already happened; skipping
+   * it only makes the first dictation slower.
+   */
+  prepare(): void {
+    void this.loadModule(this.audioContext());
   }
 
   async start(): Promise<void> {
@@ -85,8 +105,7 @@ export class AudioCapture {
       },
     });
 
-    const context = this.sharedContext ?? new AudioContext();
-    this.sharedContext = context;
+    const context = this.audioContext();
     if (context.state === "suspended") await context.resume();
     this.context = context;
     this.segmenter = new SpeechSegmenter({ sampleRate: context.sampleRate });
@@ -110,6 +129,18 @@ export class AudioCapture {
     mute.connect(context.destination);
   }
 
+  private audioContext(): AudioContext {
+    const context = this.sharedContext ?? new AudioContext();
+    this.sharedContext = context;
+    return context;
+  }
+
+  /** Loads the worklet module once per context, and remembers the attempt. */
+  private loadModule(context: AudioContext): Promise<void> {
+    this.moduleReady ??= context.audioWorklet.addModule("capture-worklet.js");
+    return this.moduleReady;
+  }
+
   /**
    * Opens the node that reads samples, preferring the audio thread.
    *
@@ -122,9 +153,10 @@ export class AudioCapture {
    */
   private async openReader(context: AudioContext): Promise<AudioNode> {
     try {
-      // Beside the document, so this resolves for both windows. Calling it
-      // again on a context that already has the module is a no-op.
-      await context.audioWorklet.addModule("capture-worklet.js");
+      // Already resolved, unless this is the first session and prepare() has
+      // not finished -- the module is fetched beside the document, so this
+      // resolves for both windows.
+      await this.loadModule(context);
       const worklet = new AudioWorkletNode(context, "capture", {
         numberOfInputs: 1,
         numberOfOutputs: 1,
