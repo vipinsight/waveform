@@ -1,10 +1,10 @@
 # Models: how one is chosen, and how it runs
 
 Waveform ships four speech models over three genuinely different execution
-mechanisms. `README.md` covers this from the outside — which `pnpm setup:*`
-script installs what. This is the inside: how a model id becomes a running
-engine, where each engine's weights are looked for, and which parts of that
-story are still unfinished.
+mechanisms. [building.md](building.md) covers this from the outside — which
+`pnpm setup:*` script installs what. This is the inside: how a model id becomes
+a running engine, where each engine's weights are looked for, and which parts of
+that story are still unfinished.
 
 Line references drift. Treat them as a starting point, not a promise.
 
