@@ -25,6 +25,9 @@ export class SpeechSegmenter {
   private speaking = false;
 
   constructor(options: SegmenterOptions) {
+    // Tuned against a noise-suppressed stream. It is a fixed floor rather than
+    // a measured one, so it is only correct while capture.ts asks for
+    // noiseSuppression -- the two settings are one decision, not two.
     this.silenceThreshold = options.silenceThreshold ?? 0.014;
     this.trailingSilenceSamples = millisecondsToSamples(
       options.trailingSilenceMs ?? 650,

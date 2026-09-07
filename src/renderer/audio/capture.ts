@@ -54,7 +54,16 @@ export class AudioCapture {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         autoGainControl: true,
-        echoCancellation: true,
+        // Off on purpose: this is what puts macOS into its voice-processing
+        // audio unit, which ducks every other app's output for as long as the
+        // microphone is open. Dictation is not a call -- there is no far-end
+        // echo to cancel -- so the ducking buys nothing and costs the user
+        // whatever they were listening to.
+        echoCancellation: false,
+        // On, and it has to stay on: the segmenter decides speech from a fixed
+        // RMS threshold, and an unsuppressed room floor sits above it. With
+        // this off, every chunk reads as speech, no phrase ever ends at a
+        // pause, and dictation goes silent until the 15-second cap.
         noiseSuppression: true,
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
