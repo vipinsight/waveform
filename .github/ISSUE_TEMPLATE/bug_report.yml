@@ -1,0 +1,89 @@
+name: Bug report
+description: Something in Waveform behaves differently from how it reads.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most Waveform bugs come down to one of three things: which speech
+        engine was loaded, whether macOS had granted both permissions, or
+        which key was held. The fields below ask for those up front so the
+        first reply is not a request for them.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        Held Fn in Mail, said a sentence, released. Nothing was inserted and
+        the indicator stayed open for about a second afterwards.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Waveform version
+      description: Shown at the foot of the Settings sidebar.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 15.3, M1 Pro"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Speech engine
+      description: Settings → Models shows which one is selected.
+      options:
+        - whisper.cpp (the default)
+        - Parakeet
+        - Qwen3-ASR
+        - Not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions
+      description: >
+        Settings → Setup lists these with their live state. A grant that looks
+        ticked in System Settings can still be refused if it was first given to
+        a differently signed build, so trust this screen over that one.
+      options:
+        - label: Microphone is granted
+        - label: Input Monitoring is granted
+        - label: Accessibility is granted
+
+  - type: input
+    id: trigger
+    attributes:
+      label: Trigger key
+      description: Only if the bug involves starting or stopping a dictation.
+      placeholder: "Fn"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        Settings → Logs, copied from around when it went wrong. Transcribed
+        text can appear here, so read before pasting.
+      render: text
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: >
+        Whether it happens every time, whether it started after an update, or
+        anything you tried that changed it.

@@ -1,0 +1,37 @@
+name: Feature request
+description: Something Waveform should do and does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Waveform's premise is that audio stays on this Mac. Anything that would
+        send audio off it is out of scope no matter how useful — text is the
+        exception, and only when pressed.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        The situation, rather than the feature. Knowing what you were trying to
+        get done often turns up a simpler answer than the one being asked for.
+      placeholder: |
+        I dictate into a terminal a lot, and the pasted text runs immediately
+        because the newline lands with it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: If you already have a shape for it. Skip if you do not.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: >
+        Existing settings, other apps, or a workaround you settled on. Useful
+        for telling a missing feature apart from one that is hard to find.
