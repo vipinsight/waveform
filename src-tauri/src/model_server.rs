@@ -1253,7 +1253,12 @@ impl ModelServer {
                 spec.file, spec.bytes
             ));
         }
-        if format!("{:x}", hasher.finalize()) != spec.sha256 {
+        let checksum: String = hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        if checksum != spec.sha256 {
             return Err(format!(
                 "{} did not match its checksum and has been discarded.",
                 spec.file
