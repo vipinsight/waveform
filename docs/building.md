@@ -20,7 +20,8 @@ WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 ```
 
 `pnpm app` quits any running copy, rebuilds, assembles `release/Waveform.app`
-and opens it. `pnpm package:mac` does the same with an optimised release build.
+and opens it. It is a release build by default; set `WAVEFORM_PROFILE=debug`
+for a faster Rust iteration.
 
 The bundle is put together by hand rather than by the Tauri CLI, and not just
 for convenience: WKWebView refuses microphone access to a bare binary, so the
@@ -88,7 +89,7 @@ so it was removed. If you installed it, the environment it left behind is
 
 ```bash
 pnpm app         # build and launch
-pnpm test        # all tests, TypeScript and Rust
+pnpm test        # TypeScript, Rust, and release-script tests
 pnpm test:ui     # TypeScript only
 pnpm test:rust   # Rust only
 pnpm test:release # release script tests with mocked tools

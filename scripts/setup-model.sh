@@ -16,5 +16,5 @@ fi
 "$runtime" doctor
 "$runtime" pull nvidia/parakeet-tdt-0.6b-v3
 
-printf '\nReady. Run: pnpm dev\n'
+printf '\nReady. Run: pnpm app\n'
 

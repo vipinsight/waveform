@@ -29,4 +29,4 @@ printf 'Downloading %s…\n' "$file"
 curl -fL --progress-bar -o "$dir/$file.partial" "$url"
 mv "$dir/$file.partial" "$dir/$file"
 
-printf '\nWhisper (%s, whisper.cpp) ready. Run: pnpm start\n' "$model"
+printf '\nWhisper (%s, whisper.cpp) ready. Run: pnpm app\n' "$model"

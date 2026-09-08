@@ -33,10 +33,10 @@ security find-identity -v -p codesigning
 WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 ```
 
-**`pnpm test` spans two languages.** TypeScript and Rust both run, and both
-have to pass. `pnpm test:ui` and `pnpm test:rust` narrow it while you work.
-Run `pnpm test:release` too when changing version or release tooling; these
-Python tests use fake tools and never sign, notarise, or upload an app.
+**`pnpm test` runs TypeScript, Rust, and the release-script tests.** All three
+have to pass. `pnpm test:ui`, `pnpm test:rust`, and `pnpm test:release` narrow
+it while you work. The release tests use fake tools and never sign, notarise,
+or upload an app.
 
 [docs/building.md](docs/building.md) has the rest of the toolchain.
 
