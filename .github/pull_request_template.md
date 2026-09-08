@@ -1,20 +1,20 @@
-## What this changes
+## Summary
 
-<!-- What it does, and why. If it fixes an issue, "Fixes #123". -->
+<!-- Explain the problem and resulting behavior. Link related issues: Fixes #123. -->
 
-## How you tested it
+## Validation
 
-<!--
-Dictation is hard to test automatically: it crosses a webview, a Rust host, a
-Swift helper and whatever app has focus. Say what you actually exercised —
-which engine, which trigger key, which app you dictated into.
--->
+<!-- List commands and results, including anything not tested and why.
+For docs-only changes, say so; native testing is not required.
+For native changes: macOS version, Mac chip, engine/model, trigger key,
+and the app you dictated into. Attach before/after screenshots for UI changes.
+Redact transcripts, keys, and personal information from logs and screenshots. -->
 
 ## Checklist
 
-- [ ] `pnpm test` passes (TypeScript and Rust)
-- [ ] `pnpm typecheck` passes
-- [ ] Dictated into a real app at least once, if this touches capture,
-      transcription, or insertion
-- [ ] Docs updated, if this changes behaviour the README or `docs/` describes
-- [ ] No audio leaves the Mac
+- [ ] Changes stay focused; related docs are updated.
+- [ ] Relevant checks pass (`pnpm typecheck`, `pnpm test`, `pnpm build`), or omissions are explained above.
+- [ ] Capture, transcription, or insertion changes were exercised in a real app, or limitations are explained above.
+- [ ] Audio stays on the Mac; any new network behavior is documented.
+- [ ] No credentials, private recordings, model weights, or generated builds are included.
+- [ ] New dependencies/assets have compatible licenses and required notices.

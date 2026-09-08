@@ -3,24 +3,25 @@
 A free ASR tool for macOS, running open-source speech models on your own
 machine.
 
-## Why
+## What it does
 
-Speaking is the fastest way to get words into a computer, and almost every tool
-that does it well begins by uploading your voice — usually for a subscription.
+Hold a shortcut, speak, and release to insert text into the focused app.
+Waveform combines a Tauri desktop app, a native macOS helper, and local speech
+engines. No account or subscription is required.
 
-That trade stopped being necessary. The open speech models are good now, and
-fast: Whisper transcribes eleven seconds of speech in under half a second on an
-M1 Pro. The Mac in front of you is already enough to run them.
+- **Local transcription:** built-in whisper.cpp, with optional Parakeet and Qwen3-ASR.
+- **Dictation controls:** hold to speak, double-tap to lock, and Escape to cancel.
+- **Menu bar and Wave Bar:** keep dictation available while working in other apps.
+- **Optional AI Polish:** send text through OpenRouter to your selected model when requested.
 
-Waveform is those models, given a key to listen for and somewhere to put the
-text. It is free, there is nothing to sign into, and your voice does not go
-anywhere.
+Apple Silicon and macOS 13 or newer are required. Intel Macs, Windows, and Linux
+are not currently supported. Waveform is pre-1.0; behavior may change between releases.
 
 ## Install
 
 Download the disk image from [the latest release](https://github.com/vipiny35/waveform/releases/latest)
-and drag Waveform to Applications. It is signed and notarised, so it opens
-without a warning.
+and drag Waveform to Applications. Official release builds are signed and notarised.
+If no release is available yet, follow the [source build guide](docs/building.md).
 
 On first launch, **Settings → Setup** asks for the three things macOS will not
 grant on Waveform's behalf: the microphone, permission to see your key while
@@ -42,13 +43,13 @@ flowchart TD
     polish -.-> typed
 ```
 
-The dotted path is the only part of this that leaves your Mac. It carries text
-rather than audio, and it runs because you pressed something.
+The dotted path sends text through OpenRouter to your selected model when requested.
+Model downloads and update checks also use the network; see [Privacy](#privacy).
 
 ## A few things worth knowing
 
-- **It works in every app.** Mail, a browser, a terminal — anywhere there is a
-  cursor.
+- **Insert into the focused app.** Works with standard editable text fields;
+  secure fields and apps that restrict synthetic input may behave differently.
 - **Open models, switchable.** Every size of
   [Whisper](https://github.com/ggml-org/whisper.cpp) — Tiny through Large v3,
   quantized or not, multilingual or English-only — runs inside the app and needs
@@ -66,10 +67,27 @@ rather than audio, and it runs because you pressed something.
 Your voice is heard and transcribed entirely on your own Mac. It is not
 uploaded, and there is no server to upload it to.
 
-Two things do reach the network, both by your choice:
+Network activity includes:
 
-- **AI Polish**, when you press it, and only ever the text.
+- **AI Polish**, when you request it, sends text through OpenRouter to your selected model.
+  OpenRouter and the model provider's privacy and retention terms apply.
+- **Model and optional runtime downloads**, during setup or model installation.
 - **The update check**, which you can switch off in **Settings → General**.
+
+## Build from source
+
+Install the [toolchain prerequisites](docs/building.md#toolchain), then:
+
+```sh
+git clone https://github.com/vipiny35/waveform.git
+cd waveform
+pnpm install --frozen-lockfile
+WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
+```
+
+Use your own Apple development team/certificate for the local app. Typechecking,
+unit tests, and the frontend/helper build do not require distribution credentials.
+See [Contributing](CONTRIBUTING.md) for the first-PR workflow.
 
 ## Docs
 
@@ -78,6 +96,8 @@ Two things do reach the network, both by your choice:
 - [Architecture](docs/architecture.md) — how the pieces fit
 - [Models](docs/models.md) — how a model id becomes a running engine
 - [Updates](docs/updates.md) — how a release reaches an installed copy
+- [Releasing](docs/releasing.md) — maintainer build, review, and publish checklist
+- [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Contributing
 
@@ -87,6 +107,12 @@ what you need to get building.
 One thing before a large one: Waveform's premise is that audio stays on your
 Mac. A change that sends audio anywhere is not a feature this app can take,
 however good it is. Text is different.
+
+## License
+
+Waveform's source code is available under the [MIT License](LICENSE).
+Third-party dependencies, speech runtimes, model weights, and third-party assets
+remain subject to their own licenses.
 
 ## Support
 

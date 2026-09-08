@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Most Waveform bugs come down to one of three things: which speech
-        engine was loaded, whether macOS had granted both permissions, or
+        engine was loaded, whether macOS had granted all three permissions, or
         which key was held. The fields below ask for those up front so the
         first reply is not a request for them.
 

@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # Builds and launches the Tauri host.
 #
-# The Tauri CLI is not a dependency of this repo, so the bundle is assembled by
-# hand. That is not merely convenience: WKWebView will not grant microphone
-# access to a bare binary, so the executable has to sit inside a real .app with
-# NSMicrophoneUsageDescription before dictation can work at all.
-#
-# Installing the CLI (`cargo install tauri-cli`) gets you `cargo tauri build`
-# with proper dmg packaging, which is the route to take once the port lands.
+# The local development loop assembles a signed .app so WKWebView can grant
+# microphone access. The installed Tauri CLI handles distribution bundles;
+# see scripts/release.sh and docs/releasing.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -97,6 +97,6 @@ jobs:
             echo "pnpm release"
             echo '```'
             echo
-            echo "That builds, signs, notarises, tags \`v$VERSION\`, and attaches the disk"
-            echo "image and \`latest.json\` with generated release notes."
+            echo "That builds, signs, notarises, and drafts \`v$VERSION\`, and uploads the disk"
+            echo "image and \`latest.json\` with generated release notes. Review docs/releasing.md before publishing."
           } >> "$GITHUB_STEP_SUMMARY"

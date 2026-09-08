@@ -2,6 +2,7 @@
   "name": "waveform",
   "version": "0.1.1",
   "private": true,
+  "license": "MIT",
   "description": "Local-first desktop voice transcription with selectable speech models.",
   "packageManager": "pnpm@9.4.0",
   "scripts": {
@@ -14,6 +15,7 @@
     "release": "./scripts/release.sh",
     "test": "vitest run && cd src-tauri && cargo test",
     "test:ui": "vitest run",
+    "test:release": "python3 -m unittest discover -s tests -p '*_test.py'",
     "test:rust": "cd src-tauri && cargo test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "setup:model": "./scripts/setup-model.sh",

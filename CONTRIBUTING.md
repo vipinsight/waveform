@@ -1,6 +1,24 @@
 # Contributing
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome. Please follow the [code of conduct](CODE_OF_CONDUCT.md).
+For security issues, use [private reporting](SECURITY.md).
+
+## Your first pull request
+
+1. Fork the repository and clone your fork. Create a branch for one focused change.
+2. Install dependencies with `pnpm install --frozen-lockfile` using the pnpm version
+   in `package.json`. Follow [Building](docs/building.md) for native prerequisites.
+3. Make the change and update relevant docs. Run `pnpm typecheck`, `pnpm test`,
+   and `pnpm build` for code changes. Docs-only changes need a link/content review.
+4. Commit and push your branch, then open a pull request against `main`.
+   Fill in the template with actual test results and any limitations.
+5. Respond to review feedback. The maintainer handles merging and releases.
+
+You do not need Apple distribution credentials to run typechecking, unit tests,
+or build the frontend/native helper. Launching the signed app uses your own
+local certificate. Never request or use the maintainer's signing keys.
+GitHub CI checks macOS builds and tests; it cannot verify native dictation or
+permission behavior for you.
 
 ## Two things that catch people out
 
@@ -17,6 +35,8 @@ WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 
 **`pnpm test` spans two languages.** TypeScript and Rust both run, and both
 have to pass. `pnpm test:ui` and `pnpm test:rust` narrow it while you work.
+Run `pnpm test:release` too when changing version or release tooling; these
+Python tests use fake tools and never sign, notarise, or upload an app.
 
 [docs/building.md](docs/building.md) has the rest of the toolchain.
 
@@ -62,3 +82,9 @@ Worth exercising by hand when you touch the dictation path:
 Match what is there. The code explains why rather than what, and comments
 record the constraint that forced a decision — not a summary of the line below.
 Commit messages are written the same way.
+
+## Licensing contributions
+
+By submitting a contribution, you agree that it is provided under the project's
+[MIT License](LICENSE). Only submit work you have the right to contribute, and
+preserve required notices for third-party code or assets.

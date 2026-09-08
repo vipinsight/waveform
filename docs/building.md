@@ -8,14 +8,14 @@
 - Rust and Cargo
 - CMake, which Cargo uses to build whisper.cpp (`brew install cmake`)
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
-- Node.js 20 or newer
-- Python 3.9 or newer, only for Qwen3-ASR
+- Node.js 22 LTS and pnpm 9.4.0 (pinned in `package.json`)
+- Python 3 for version/release scripts; optional Qwen setup has its own runtime requirements
 - An Apple developer team of your own — see [Signing](#signing)
 
 ## Running it
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 ```
 
@@ -25,8 +25,8 @@ and opens it. `pnpm package:mac` does the same with an optimised release build.
 The bundle is put together by hand rather than by the Tauri CLI, and not just
 for convenience: WKWebView refuses microphone access to a bare binary, so the
 executable has to sit inside a real `.app` carrying `NSMicrophoneUsageDescription`.
-Installing the CLI (`cargo install tauri-cli`) gets you `cargo tauri build` and
-dmg packaging when you want to distribute it.
+The Tauri CLI is already a development dependency: `pnpm exec tauri build`
+provides normal app/DMG bundling for distribution.
 
 Nothing but this is needed to dictate. whisper.cpp is the default engine and the
 only one already inside the app, so its weights are the one missing piece, and
@@ -91,10 +91,11 @@ pnpm app         # build and launch
 pnpm test        # all tests, TypeScript and Rust
 pnpm test:ui     # TypeScript only
 pnpm test:rust   # Rust only
+pnpm test:release # release script tests with mocked tools
 pnpm typecheck   # check TypeScript
 pnpm build       # build the frontend and the native helper into dist/
 pnpm icon        # regenerate the app icon and .icns
-pnpm release     # build, sign, notarise and publish a release
+pnpm release     # build, sign, notarise and upload a release draft
 ```
 
 `pnpm build` also compiles `src/native/HotkeyHelper.swift` into
@@ -115,8 +116,6 @@ release/Waveform.app/Contents/MacOS/Waveform
 
 ## Releasing
 
-**Actions → Bump version** sets the version in all four files and pushes; then
-`pnpm release` here builds, signs, notarises and publishes both the disk image
-and what the updater needs. [updates.md](updates.md) covers the two signatures
-involved, why losing the update key is unrecoverable, and why signing is not
-done in CI.
+Follow [Releasing](releasing.md) for version PRs, signing prerequisites, draft
+review, publication, and recovery. [Updates](updates.md) explains the two
+signatures and the installed app's update behavior.

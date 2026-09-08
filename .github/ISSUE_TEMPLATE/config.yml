@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/vipiny35/waveform/security/advisories/new
+    about: Do not include vulnerability details in public issues.
   - name: How the speech engines work
     url: https://github.com/vipiny35/waveform/blob/main/docs/models.md
     about: Where each engine's weights are looked for, and what a model id becomes.
