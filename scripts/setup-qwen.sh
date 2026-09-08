@@ -14,4 +14,4 @@ fi
 "$venv/bin/python3" -m pip install "torch>=2.6" "qwen-asr==0.0.6"
 "$venv/bin/python3" -c 'from huggingface_hub import snapshot_download; snapshot_download("Qwen/Qwen3-ASR-0.6B")'
 
-printf '\nQwen3-ASR ready. Run: pnpm start\n'
+printf '\nQwen3-ASR ready. Run: pnpm app\n'

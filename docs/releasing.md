@@ -51,7 +51,6 @@ branch protection to accommodate that shortcut.
 ```sh
 pnpm typecheck
 pnpm test
-pnpm test:release
 pnpm build
 python3 scripts/check-version.py
 pnpm release

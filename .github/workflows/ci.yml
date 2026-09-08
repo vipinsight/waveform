@@ -43,7 +43,7 @@ jobs:
       - name: TypeScript tests
         run: pnpm test:ui
       - name: Rust tests
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+        run: pnpm test:rust
       - name: Release orchestration tests (no signing or upload)
         run: pnpm test:release
       - name: Check version consistency
