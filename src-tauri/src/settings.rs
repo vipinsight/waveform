@@ -45,10 +45,17 @@ pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
 pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4.1-mini";
 /// Defaults that turned out not to name a model OpenRouter serves.
 pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
-/// The dictation prompt as it was before it described how speech is written
-/// down. Kept only to recognise it: a default nobody chose is not a preference
-/// worth preserving, so it is replaced rather than left in place.
-pub const RETIRED_TRANSFORM_PROMPT: &str = include_str!("prompts/transform-retired.txt");
+/// Defaults nobody chose, replaced on load wherever they are still stored
+/// unedited. A default is not a preference worth preserving.
+///
+/// The first dictation prompt predates the rules about how spoken numbers and
+/// times are written down. The second still rewrote grammar and phrasing.
+pub const RETIRED_TRANSFORM_PROMPTS: [&str; 2] = [
+    include_str!("prompts/transform-retired.txt"),
+    include_str!("prompts/transform-retired-grammar.txt"),
+];
+/// The polish prompt as it was when it was a copy editor.
+pub const RETIRED_POLISH_PROMPTS: [&str; 1] = [include_str!("prompts/polish-retired.txt")];
 
 /// Serialized as camelCase so one settings.json serves both hosts and the
 /// shape matches what the shared frontend expects.
@@ -170,8 +177,17 @@ impl AppSettings {
         if RETIRED_OPENROUTER_MODELS.contains(&self.open_router_model.as_str()) {
             self.open_router_model = DEFAULT_OPENROUTER_MODEL.to_string();
         }
-        if self.transform_prompt.trim() == RETIRED_TRANSFORM_PROMPT.trim() {
+        if RETIRED_TRANSFORM_PROMPTS
+            .iter()
+            .any(|retired| self.transform_prompt.trim() == retired.trim())
+        {
             self.transform_prompt = DEFAULT_TRANSFORM_PROMPT.trim().to_string();
+        }
+        if RETIRED_POLISH_PROMPTS
+            .iter()
+            .any(|retired| self.polish_prompt.trim() == retired.trim())
+        {
+            self.polish_prompt = DEFAULT_POLISH_PROMPT.trim().to_string();
         }
         self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
         self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
@@ -237,23 +253,36 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
-    /// A prompt left at the old default is replaced, since it predates the
-    /// rules about how spoken numbers and times are written down.
+    /// A prompt left at an old default is replaced, since nobody chose it.
     #[test]
     fn a_retired_prompt_is_replaced_on_load() {
-        let mut stored = AppSettings::default();
-        stored.transform_prompt = RETIRED_TRANSFORM_PROMPT.trim().to_string();
-        let loaded = stored.normalize(&AppSettings::default());
-        assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
+        for retired in RETIRED_TRANSFORM_PROMPTS {
+            let mut stored = AppSettings::default();
+            stored.transform_prompt = retired.trim().to_string();
+            let loaded = stored.normalize(&AppSettings::default());
+            assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
+        }
     }
 
-    /// A prompt the user wrote is theirs, however close to the old one.
+    /// The copy-editor polish default rewrote wording; it is replaced the same
+    /// way, so a default nobody edited is not kept as a preference.
+    #[test]
+    fn a_retired_polish_prompt_is_replaced_on_load() {
+        let mut stored = AppSettings::default();
+        stored.polish_prompt = RETIRED_POLISH_PROMPTS[0].trim().to_string();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
+    }
+
+    /// A prompt the user wrote is theirs, however close to an old default.
     #[test]
     fn an_edited_prompt_survives_load() {
         let mut stored = AppSettings::default();
         stored.transform_prompt = "Clean it up. Keep it short.".into();
+        stored.polish_prompt = "Make it rhyme.".into();
         let loaded = stored.normalize(&AppSettings::default());
         assert_eq!(loaded.transform_prompt, "Clean it up. Keep it short.");
+        assert_eq!(loaded.polish_prompt, "Make it rhyme.");
     }
 
     /// The old default never named a real model, so every rewrite failed and

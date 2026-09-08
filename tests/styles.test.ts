@@ -98,6 +98,8 @@ describe("prompt defaults match the files the host embeds", () => {
     ["transform.txt", "DEFAULT_TRANSFORM_PROMPT"],
     ["polish.txt", "DEFAULT_POLISH_PROMPT"],
     ["transform-retired.txt", "RETIRED_TRANSFORM_PROMPTS"],
+    ["transform-retired-grammar.txt", "RETIRED_TRANSFORM_PROMPTS"],
+    ["polish-retired.txt", "RETIRED_POLISH_PROMPTS"],
   ] as const;
 
   it.each(cases)("keeps %s in step with %s", (file, constant) => {

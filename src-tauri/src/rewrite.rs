@@ -460,6 +460,13 @@ mod tests {
     }
 
     #[test]
+    fn accepts_a_spoken_list_turned_into_bullets() {
+        let said = "we need three things first a login page second a dashboard and last settings";
+        let cleaned = "We need three things:\n- a login page\n- a dashboard\n- settings";
+        assert!(is_rewrite_of(said, cleaned));
+    }
+
+    #[test]
     fn accepts_a_short_rewrite() {
         assert!(is_rewrite_of("thanks alot", "Thanks a lot."));
     }

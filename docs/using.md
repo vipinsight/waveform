@@ -149,13 +149,13 @@ exists and replace it, but cannot read it.
 
 | Feature | What it does |
 | --- | --- |
-| **Clean up dictation** | Rewrites every phrase before inserting it. Removes filler, fixes grammar, costs a round trip per phrase. |
-| **Polish shortcut** (`⌥1`) | Rewrites whatever text is selected in the focused app, in place. |
+| **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
+| **Polish shortcut** (`⌥1`) | Tidies whatever text is selected in the focused app, in place, without rewriting it. |
 
 Both run on system prompts you can edit, with **Reset** to restore the defaults.
 Pick any OpenRouter model id; the field suggests a few fast ones.
 
-Pressing polish on the indicator rewrites that dictation even when **Clean up
+Pressing polish on the indicator tidies that dictation even when **Clean up
 dictation** is switched off. While it runs, the meter becomes a progress row and
 the button becomes a loader ring.
 
