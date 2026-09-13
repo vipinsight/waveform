@@ -9,6 +9,7 @@ mod history;
 mod logs;
 mod hotkey;
 mod dictation;
+mod mic;
 mod model_server;
 mod panel;
 mod resources;
@@ -105,6 +106,7 @@ pub struct AppState {
     /// HUD itself because the shape is decided in CSS. Everything outside it is
     /// made click-through.
     overlay_hit_region: StdMutex<Option<(f64, f64, f64, f64)>>,
+    capture: Arc<mic::NativeCapture>,
 }
 
 #[derive(Clone, Deserialize, PartialEq, Eq)]
@@ -458,6 +460,23 @@ fn request_microphone() -> MicrophoneResult {
 }
 
 #[tauri::command]
+async fn start_native_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let name = state.settings.lock().await.value().microphone_device_name;
+    let capture = state.capture.clone();
+    tokio::task::spawn_blocking(move || capture.start(&app, &name))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn stop_native_capture(state: State<'_, AppState>) -> Result<(), String> {
+    let capture = state.capture.clone();
+    tokio::task::spawn_blocking(move || capture.stop())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn toggle_dictation(state: State<'_, AppState>) -> Result<(), String> {
     state.dictation.toggle_from_app().await;
     Ok(())
@@ -766,6 +785,7 @@ pub fn run() {
                 microphones: StdMutex::new(Vec::new()),
                 overlay_hovered: AtomicBool::new(false),
                 overlay_hit_region: StdMutex::new(None),
+                capture: Arc::new(mic::NativeCapture::new()),
             });
 
             build_overlay_window(app.handle())?;
@@ -867,6 +887,8 @@ pub fn run() {
             select_model,
             transcribe,
             request_microphone,
+            start_native_capture,
+            stop_native_capture,
             toggle_dictation,
             model_catalog,
             download_model,

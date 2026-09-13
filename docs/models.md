@@ -172,10 +172,13 @@ process's own memory.
 
 ## How audio reaches an engine
 
-`getUserMedia` runs with automatic gain control on and echo cancellation and
-noise suppression off — the latter two make macOS duck other apps' output — and
-is tapped by a 2048-frame `ScriptProcessorNode` through a muted gain node
-([capture.ts:54](../src/renderer/audio/capture.ts)).
+`getUserMedia` asks for a plain input — no echo cancellation, no automatic
+gain, no noise suppression. Asking for echo cancellation is what starts
+WebKit's voice-processing unit, which took about a second to open the
+microphone and made macOS duck other apps. Gain is applied on the samples
+instead ([gain.ts](../src/renderer/audio/gain.ts)). The stream is tapped by an
+AudioWorklet (a 2048-frame `ScriptProcessorNode` if that is missing) through a
+muted gain node ([capture.ts](../src/renderer/audio/capture.ts)).
 
 Samples go into `SpeechSegmenter`, which returns a completed phrase at each
 pause; `stop()` flushes the tail. Each phrase is WAV-encoded at the **hardware**

@@ -40,6 +40,8 @@ const QUIETEST_REFERENCE = 12;
 const REFERENCE_DECAY = 0.995;
 /** Keeps the HUD up briefly after the last phrase, so it reads as finished. */
 const LINGER_MS = 420;
+/** Keeps the microphone open after the key comes up, so the last sound is not cut. */
+const RELEASE_TAIL_MS = 300;
 /** Errors stay up longer: they carry information the user has to notice. */
 const ERROR_LINGER_MS = 1_600;
 /** Spring constants for the meter. Attack outruns release on purpose. */
@@ -78,6 +80,7 @@ let mode: DictationMode = "hold";
 let previewing = false;
 let animationFrame: number | null = null;
 let lingerTimer: ReturnType<typeof setTimeout> | null = null;
+let releaseTailTimer: ReturnType<typeof setTimeout> | null = null;
 let phase = 0;
 let microphoneDeviceId = "";
 let showFlowBarAlways = false;
@@ -95,12 +98,16 @@ const capture = new AudioCapture({
     scheduleIdle();
   },
   transcribe: (bytes) => host().transcribe(bytes),
-  requestMicrophoneAccess: () => host().requestMicrophoneAccess(),
-  getMicrophoneDeviceId: () => microphoneDeviceId,
+  startNativeCapture: () => host().startNativeCapture(),
+  stopNativeCapture: () => host().stopNativeCapture(),
 });
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+
+host().onCaptureBlock((block) => {
+  capture.feed(Float32Array.from(block.samples), block.sampleRate);
+});
 
 // Build the audio graph's slow half now rather than between the key and the
 // meter. Nothing here opens the microphone.
@@ -246,6 +253,8 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   }
 
   if (command.action === "idle") {
+    cancelReleaseTail();
+    if (capture.isRunning) capture.stop();
     showIdle();
     return;
   }
@@ -253,6 +262,8 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   // Something went wrong out of sight of the app window; show it rather than
   // vanishing, which reads as the shortcut doing nothing at all.
   if (command.action === "fail") {
+    cancelReleaseTail();
+    if (capture.isRunning) capture.stop();
     cancelLinger();
     previewing = false;
     hud.dataset.mode = "hold";
@@ -263,6 +274,8 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   }
 
   if (command.action === "busy") {
+    cancelReleaseTail();
+    if (capture.isRunning) capture.stop();
     cancelLinger();
     previewing = false;
     hud.dataset.mode = "hold";
@@ -276,6 +289,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   hud.dataset.mode = mode;
 
   if (command.action === "start") {
+    cancelReleaseTail();
     cancelLinger();
     previewing = false;
     acceptButton.disabled = false;
@@ -283,9 +297,9 @@ async function handleCommand(command: DictationCommand): Promise<void> {
       setState("listening");
       return;
     }
-    // Paint first, open the microphone second. getUserMedia costs 100-300ms,
-    // and waiting for it before showing the HUD is the difference between the
-    // indicator feeling instant and feeling broken.
+    // Paint first, open the microphone second. A plain getUserMedia is tens of
+    // milliseconds; waiting for it before showing the HUD is still the
+    // difference between the indicator feeling instant and feeling broken.
     setState("listening");
     startAnimation();
     try {
@@ -299,15 +313,31 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   }
 
   if (command.action === "cancel") {
+    cancelReleaseTail();
     capture.cancel();
     finish();
     return;
   }
 
-  capture.stop();
   acceptButton.disabled = true;
-  syncDerivedState();
-  scheduleIdle();
+  scheduleReleaseTail();
+}
+
+/** Holds the microphone after the key comes up, then ends the session. */
+function scheduleReleaseTail(): void {
+  cancelReleaseTail();
+  releaseTailTimer = setTimeout(() => {
+    releaseTailTimer = null;
+    capture.stop();
+    syncDerivedState();
+    scheduleIdle();
+  }, RELEASE_TAIL_MS);
+}
+
+function cancelReleaseTail(): void {
+  if (releaseTailTimer === null) return;
+  clearTimeout(releaseTailTimer);
+  releaseTailTimer = null;
 }
 
 /** After first capture WebKit exposes readable labels, so populate the tray. */
@@ -367,6 +397,7 @@ function cancelLinger(): void {
 }
 
 function finish(): void {
+  if (capture.isRunning) capture.stop();
   stopAnimation();
   levels.fill(0);
   velocities.fill(0);
@@ -394,6 +425,7 @@ function syncIdleHover(): void {
 
 /** Renders the persistent Wave Bar without starting capture or reporting a session. */
 function showIdle(): void {
+  if (capture.isRunning) capture.stop();
   cancelLinger();
   previewing = false;
   stopAnimation();

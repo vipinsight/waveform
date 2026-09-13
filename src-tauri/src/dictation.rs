@@ -451,6 +451,10 @@ impl Dictation {
             let _ = models.start().await;
         });
 
+        // Show first, then open the microphone. A hidden WKWebView will start
+        // capture, then restart it when the window appears, which is the
+        // menu-bar icon blinking twice. getUserMedia is now a plain input and
+        // does not need that head start.
         self.show_overlay().await;
         self.send_to_overlay("start", sink, mode).await;
         self.capture_escape().await;

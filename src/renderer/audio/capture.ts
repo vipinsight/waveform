@@ -1,5 +1,38 @@
+import { InputGain } from "./gain";
 import { SpeechSegmenter, rootMeanSquare } from "./segmenter";
+import { spectrumFromBlock } from "./spectrum";
 import { encodeMonoPcm16Wav } from "./wav";
+
+/**
+ * Whether an already-open microphone can serve this session.
+ *
+ * The stream is released when dictation ends. This only avoids a second
+ * getUserMedia if a new session starts before that release has finished.
+ */
+export function canReuseMicrophoneStream(
+  stream: MediaStream | null,
+  openedDeviceId: string,
+  requestedDeviceId: string,
+): stream is MediaStream {
+  if (!stream || openedDeviceId !== requestedDeviceId) return false;
+  return stream.getAudioTracks().some((track) => track.readyState === "live");
+}
+
+/**
+ * A plain input, kept for tests and any leftover WebKit path.
+ *
+ * Dictation itself no longer uses getUserMedia: that plus an AudioContext is
+ * what pulls AirPods into the same aggregate as the built-in mic and makes
+ * Music hitch.
+ */
+export function microphoneConstraints(deviceId: string): MediaTrackConstraints {
+  return {
+    autoGainControl: false,
+    echoCancellation: false,
+    noiseSuppression: false,
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+  };
+}
 
 export interface CaptureHandlers {
   /** A finished phrase, already transcribed. */
@@ -10,47 +43,29 @@ export interface CaptureHandlers {
   /** Writes into the app's log. Nowhere else knows these numbers. */
   log(message: string): void;
   transcribe(wavBytes: Uint8Array): Promise<{ text: string }>;
-  requestMicrophoneAccess(): Promise<{ granted: boolean; status: string }>;
-  getMicrophoneDeviceId(): string;
+  startNativeCapture(): Promise<string>;
+  stopNativeCapture(): Promise<void>;
 }
 
 /**
- * Owns the microphone for one dictation session: opens the stream, splits it at
- * natural pauses, and hands each phrase off to be transcribed.
+ * Owns one dictation session: opens the native input, splits it at natural
+ * pauses, and hands each phrase off to be transcribed.
  *
- * Phrases are emitted as they complete rather than at the end of the session,
- * so dictating into another app feels continuous instead of arriving in a lump.
+ * The microphone is a HAL input in the host, not a WebKit stream, so Music
+ * playing through headphones is not on the same device graph.
  */
 export class AudioCapture {
-  private stream: MediaStream | null = null;
-  private context: AudioContext | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  /** The audio thread's reader. Null only where AudioWorklet is missing. */
-  private worklet: AudioWorkletNode | null = null;
-  /** The fallback reader, on the main thread. See `openReader`. */
-  private processor: ScriptProcessorNode | null = null;
-  private analyser: AnalyserNode | null = null;
-  private segmenter: SpeechSegmenter | null = null;
-  /** Reused across sessions: building an AudioContext is a large part of the
-      delay between pressing the key and the meter moving. */
-  private sharedContext: AudioContext | null = null;
-  /**
-   * The worklet module, loaded once for the life of the shared context.
-   *
-   * `addModule` fetches a file and compiles it on the audio thread. Doing that
-   * inside `start` put it between the key and the meter, which is exactly
-   * where nothing belongs -- so it is kicked off by `prepare` and only awaited
-   * here, by which point it has long since resolved.
-   */
-  private moduleReady: Promise<void> | null = null;
+  private running = false;
+  private sampleRate = 48_000;
   private spectrum: Uint8Array<ArrayBuffer> | null = null;
+  private segmenter: SpeechSegmenter | null = null;
   private pending = 0;
   private discarding = false;
   /**
    * What this session heard, so a session that produced nothing can say why.
    *
    * Silence and a stream that never arrived look identical from the outside --
-   * the meter runs off the analyser, so the pill animates either way.
+   * the meter runs off the spectrum, so the pill animates either way.
    */
   private blocks = 0;
   private peak = 0;
@@ -60,162 +75,103 @@ export class AudioCapture {
   /** The last phrase sent, for a session that comes back with no words. */
   private lastSeconds = 0;
   private lastPeak = 0;
+  /** Per session, so a shout in one does not starve the next. */
+  private gain = new InputGain();
+  /** In-flight open, so a second start cannot stop the first stream. */
+  private opening: Promise<void> | null = null;
+  /** Bumped on every release so a late start cannot keep the microphone. */
+  private epoch = 0;
 
   constructor(private readonly handlers: CaptureHandlers) {}
 
   get isRunning(): boolean {
-    return this.context !== null;
+    return this.running;
   }
 
   get pendingCount(): number {
     return this.pending;
   }
 
-  /**
-   * Does the slow, microphone-free part of starting up, ahead of being asked.
-   *
-   * Called when the window loads. Nothing here touches the microphone or shows
-   * anything, so it costs the user nothing to have already happened; skipping
-   * it only makes the first dictation slower.
-   */
-  prepare(): void {
-    void this.loadModule(this.audioContext());
-  }
+  /** Nothing to warm: native capture does not build an AudioContext. */
+  prepare(): void {}
 
   async start(): Promise<void> {
-    if (this.context) return;
+    if (this.opening) {
+      await this.opening;
+      return;
+    }
+    if (this.running) return;
+    this.opening = this.openSession();
+    try {
+      await this.opening;
+    } finally {
+      this.opening = null;
+    }
+  }
+
+  /** PCM from the host, already mono. */
+  feed(samples: Float32Array, sampleRate: number): void {
+    if (!this.running) return;
+    if (sampleRate !== this.sampleRate || !this.segmenter) {
+      this.sampleRate = sampleRate;
+      this.segmenter = new SpeechSegmenter({ sampleRate });
+    }
+    this.spectrum = spectrumFromBlock(samples);
+    this.handleBlock(samples);
+  }
+
+  private async openSession(): Promise<void> {
     this.discarding = false;
     this.blocks = 0;
     this.peak = 0;
     this.phrases = 0;
     this.inserted = 0;
     this.empty = 0;
+    this.gain = new InputGain();
+    this.sampleRate = 48_000;
+    this.segmenter = new SpeechSegmenter({ sampleRate: this.sampleRate });
+    this.spectrum = new Uint8Array(128);
 
-    const permission = await this.handlers.requestMicrophoneAccess();
-    if (!permission.granted) throw new Error(microphoneMessage(permission.status));
-
-    const deviceId = this.handlers.getMicrophoneDeviceId();
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        // All three on, which in WebKit is one decision rather than three:
-        // they come from the same voice-processing audio unit, and it is only
-        // reached for when echoCancellation is asked for.
-        //
-        // Asking for none of them has now been tried twice. It gets a plain
-        // input and stops macOS ducking other apps -- and on this Mac's built
-        // in microphone it also drops the level about twenty-five fold: a
-        // measured peak of 0.0036 against 0.088 for the same voice through the
-        // voice-processing unit. That is not a threshold that can be tuned
-        // around, because speech then sits level with a muted microphone's own
-        // noise. The gain control is doing real work here, not just ducking.
-        //
-        // The ducking is still unsolved, and the remaining route is capturing
-        // outside the webview where the gain is ours to set. See
-        // docs/plans/microphone-ducking.md.
-        autoGainControl: true,
-        echoCancellation: true,
-        noiseSuppression: true,
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-      },
-    });
-
-    const context = this.audioContext();
-    if (context.state === "suspended") await context.resume();
-    this.context = context;
-    this.segmenter = new SpeechSegmenter({ sampleRate: context.sampleRate });
-    this.source = context.createMediaStreamSource(this.stream);
-    this.analyser = context.createAnalyser();
-    // Small FFT with light built-in smoothing: the meter does its own easing,
-    // and anything heavier here reads as lag between voice and bars.
-    this.analyser.fftSize = 256;
-    this.analyser.smoothingTimeConstant = 0.25;
-    this.spectrum = new Uint8Array(this.analyser.frequencyBinCount);
-    const reader = await this.openReader(context);
-    this.handlers.log(
-      `session open at ${context.sampleRate}Hz, ` +
-        `reader ${this.worklet ? "worklet" : "script processor"}`,
-    );
-
-    this.source.connect(this.analyser);
-    this.source.connect(reader);
-    // Either reader only pulls audio while connected to a sink. Routing it
-    // through a muted gain node keeps it running without echoing the mic to
-    // the speakers.
-    const mute = context.createGain();
-    mute.gain.value = 0;
-    reader.connect(mute);
-    mute.connect(context.destination);
-  }
-
-  private audioContext(): AudioContext {
-    const context = this.sharedContext ?? new AudioContext();
-    this.sharedContext = context;
-    return context;
-  }
-
-  /** Loads the worklet module once per context, and remembers the attempt. */
-  private loadModule(context: AudioContext): Promise<void> {
-    this.moduleReady ??= context.audioWorklet.addModule("capture-worklet.js");
-    return this.moduleReady;
-  }
-
-  /**
-   * Opens the node that reads samples, preferring the audio thread.
-   *
-   * An AudioWorklet cannot be starved by the window; a ScriptProcessorNode
-   * shares a thread with the meter and drops blocks when it is busy, which
-   * corrupts phrases rather than merely delaying them. The old node stays as a
-   * fallback because losing the microphone entirely would be worse than losing
-   * some accuracy, and because `addModule` fetches a file that a broken build
-   * could be missing.
-   */
-  private async openReader(context: AudioContext): Promise<AudioNode> {
+    const opened = performance.now();
+    const epoch = this.epoch;
     try {
-      // Already resolved, unless this is the first session and prepare() has
-      // not finished -- the module is fetched beside the document, so this
-      // resolves for both windows.
-      await this.loadModule(context);
-      const worklet = new AudioWorkletNode(context, "capture", {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1],
-      });
-      worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
-        this.handleBlock(event.data);
-      };
-      this.worklet = worklet;
-      return worklet;
+      const device = await this.handlers.startNativeCapture();
+      if (epoch !== this.epoch) {
+        await this.handlers.stopNativeCapture();
+        return;
+      }
+      this.running = true;
+      this.handlers.log(
+        `session open in ${Math.round(performance.now() - opened)}ms, ${device}, reader native`,
+      );
     } catch (error) {
-      // Worth saying out loud: the same session will still work, less
-      // reliably, and the difference shows up as wrong words rather than as
-      // an error later on.
-      console.warn("AudioWorklet unavailable, falling back to ScriptProcessorNode", error);
-      const processor = context.createScriptProcessor(2048, 1, 1);
-      processor.onaudioprocess = (event) => {
-        this.handleBlock(new Float32Array(event.inputBuffer.getChannelData(0)));
-      };
-      this.processor = processor;
-      return processor;
+      this.release();
+      throw new Error(error instanceof Error ? error.message : String(error));
     }
   }
 
   /** Ends the session, transcribing whatever is still buffered. */
   stop(): void {
+    if (!this.running && this.opening) {
+      this.release();
+      return;
+    }
     const tail = this.segmenter?.flush();
-    const sampleRate = this.context?.sampleRate;
+    const sampleRate = this.sampleRate;
     const { blocks, peak, phrases } = this;
     const threshold = this.segmenter?.threshold() ?? 0;
     this.release();
     if (tail && sampleRate) this.queue(tail, sampleRate);
     this.handlers.log(
       `session closed: ${blocks} blocks, peak ${peak.toFixed(4)}, ` +
-        `threshold ${threshold.toFixed(4)}, ${phrases} phrase(s)`,
+        `threshold ${threshold.toFixed(4)}, gain ${this.gain.factor().toFixed(1)}x, ` +
+        `${phrases} phrase(s)`,
     );
     if (phrases === 0 && !tail) {
       this.handlers.onError(
         blocks === 0
           ? "Heard nothing: no audio arrived from the microphone."
-          : `Heard nothing above the speech threshold: ${blocks} blocks, peak ${peak.toFixed(4)} against 0.014.`,
+          : `Heard nothing above the speech threshold: ${blocks} blocks, peak ${peak.toFixed(4)} against ${threshold.toFixed(4)}.`,
       );
     }
   }
@@ -226,17 +182,6 @@ export class AudioCapture {
     this.release();
   }
 
-  /** Reads the analyser for a smooth level, independent of the segmenter. */
-  sampleLevel(): number {
-    const analyser = this.analyser;
-    if (!analyser) return 0;
-    const samples = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(samples);
-    let sum = 0;
-    for (const sample of samples) sum += sample * sample;
-    return Math.sqrt(sum / samples.length);
-  }
-
   /**
    * Current frequency magnitudes, 0..1 per bin.
    *
@@ -245,40 +190,23 @@ export class AudioCapture {
    * spinner, not a voice.
    */
   sampleSpectrum(): Uint8Array<ArrayBuffer> | null {
-    const analyser = this.analyser;
-    const spectrum = this.spectrum;
-    if (!analyser || !spectrum) return null;
-    analyser.getByteFrequencyData(spectrum);
-    return spectrum;
+    return this.running ? this.spectrum : null;
   }
 
   private release(): void {
-    if (this.worklet) {
-      this.worklet.port.onmessage = null;
-      this.worklet.disconnect();
-    }
-    this.processor?.disconnect();
-    this.source?.disconnect();
-    this.analyser?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    // The context is kept alive and reused; only the microphone is released,
-    // so the macOS recording indicator still clears between sessions.
-
-    this.worklet = null;
-    this.processor = null;
-    this.source = null;
-    this.analyser = null;
-    this.spectrum = null;
-    this.stream = null;
-    this.context = null;
+    this.epoch += 1;
+    this.running = false;
     this.segmenter = null;
+    this.spectrum = null;
+    void this.handlers.stopNativeCapture();
   }
 
   private handleBlock(samples: Float32Array): void {
+    const boosted = this.gain.apply(samples);
     this.blocks += 1;
-    this.peak = Math.max(this.peak, rootMeanSquare(samples));
-    const segment = this.segmenter?.push(samples);
-    if (segment && this.context) this.queue(segment, this.context.sampleRate);
+    this.peak = Math.max(this.peak, rootMeanSquare(boosted));
+    const segment = this.segmenter?.push(boosted);
+    if (segment) this.queue(segment, this.sampleRate);
   }
 
   private queue(samples: Float32Array, sampleRate: number): void {
@@ -328,12 +256,4 @@ export class AudioCapture {
         }
       });
   }
-}
-
-function microphoneMessage(status: string): string {
-  if (status === "denied") {
-    return "Microphone denied. Enable Waveform in System Settings → Privacy & Security → Microphone.";
-  }
-  if (status === "restricted") return "Microphone blocked by macOS restrictions.";
-  return `Microphone unavailable (${status}).`;
 }

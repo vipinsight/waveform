@@ -22,10 +22,11 @@ const MINIMUM_THRESHOLD = 0.004;
 /**
  * How far above the room a block has to sit to count as speech.
  *
- * Three is about 10dB. Lower and a fan crosses it; much higher and a quiet
- * speaker never does.
+ * 2.5 is about 8dB. Three (10dB) was what the voice-processing unit
+ * delivered; a raw built-in microphone was measured at 2.8×, so three
+ * dropped every phrase. Lower than this and a fan crosses it.
  */
-const FLOOR_MARGIN = 3;
+const FLOOR_MARGIN = 2.5;
 
 /**
  * How long the room is listened to before anything counts as speech.
