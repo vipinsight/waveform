@@ -86,6 +86,11 @@ let microphoneDeviceId = "";
 let showFlowBarAlways = false;
 /** Last hover answer from the host; see the `onOverlayHover` subscription. */
 let pointerOver = false;
+/**
+ * The host is told the session is over while the wait circle stays up, so
+ * polish can warm that same circle instead of collapsing it and opening another.
+ */
+let sessionReleased = false;
 
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
@@ -280,7 +285,6 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     previewing = false;
     hud.dataset.mode = "hold";
     setState("rewriting");
-    startAnimation();
     return;
   }
 
@@ -292,6 +296,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     cancelReleaseTail();
     cancelLinger();
     previewing = false;
+    sessionReleased = false;
     acceptButton.disabled = false;
     if (capture.isRunning) {
       setState("listening");
@@ -366,13 +371,23 @@ function startPreview(): void {
 }
 
 function syncDerivedState(): void {
-  if (state === "error") return;
+  if (state === "error" || state === "rewriting") return;
   if (capture.isRunning) {
     setState(capture.pendingCount > 0 ? "transcribing" : "listening");
     return;
   }
   if (capture.pendingCount > 0) {
     setState("transcribing");
+    return;
+  }
+  if (state === "transcribing") {
+    setState("transcribing");
+    releaseSession();
+    return;
+  }
+  if (state === "listening") {
+    setState("transcribing");
+    scheduleIdle();
     return;
   }
   scheduleIdle();
@@ -384,10 +399,25 @@ function scheduleIdle(): void {
     () => {
       lingerTimer = null;
       if (capture.isRunning || capture.pendingCount > 0) return;
+      if (state === "error") {
+        finish();
+        return;
+      }
+      if (isWaiting(state)) {
+        releaseSession();
+        return;
+      }
       finish();
     },
     state === "error" ? ERROR_LINGER_MS : LINGER_MS,
   );
+}
+
+/** Tells the host the phrase is in, without taking the wait circle down. */
+function releaseSession(): void {
+  if (sessionReleased) return;
+  sessionReleased = true;
+  host().reportDictationState({ state: "idle", sink, mode });
 }
 
 function cancelLinger(): void {
@@ -405,11 +435,15 @@ function finish(): void {
   state = "idle";
   hud.dataset.mode = "hold";
   hud.dataset.state = "idle";
+  hud.dataset.busy = "false";
   hud.dataset.visible = showFlowBarAlways ? "true" : "false";
   srLabel.textContent = STATE_LABEL.idle;
   syncIdleHover();
   reportHitRegion();
-  host().reportDictationState({ state: "idle", sink, mode });
+  if (!sessionReleased) {
+    sessionReleased = true;
+    host().reportDictationState({ state: "idle", sink, mode });
+  }
 }
 
 /**
@@ -434,10 +468,21 @@ function showIdle(): void {
   targets.fill(0);
   state = "idle";
   hud.dataset.state = "idle";
+  hud.dataset.busy = "false";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL.idle;
   syncIdleHover();
   reportHitRegion();
+}
+
+/**
+ * The capsule only gathers into a spinner once the microphone is closed.
+ * A phrase can still be transcribing while the key is down; shrinking then
+ * would hide the meter they are talking into.
+ */
+function isWaiting(next: DictationState): boolean {
+  if (previewing || capture.isRunning) return false;
+  return next === "transcribing" || next === "rewriting";
 }
 
 /**
@@ -452,9 +497,11 @@ function setState(next: DictationState, message?: string): void {
   const changed = next !== state;
   state = next;
   hud.dataset.state = next;
+  hud.dataset.busy = isWaiting(next) ? "true" : "false";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL[next];
   if (next === "rewriting" || next === "error") acceptButton.disabled = true;
+  if (isWaiting(next)) stopAnimation();
   reportHitRegion();
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.

@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./overlay.css" />
   </head>
   <body>
-    <div id="hud" class="hud" data-state="idle" tabindex="0" role="group" aria-label="Dictation controls">
+    <div id="hud" class="hud" data-state="idle" data-mode="hold" data-busy="false" tabindex="0" role="group" aria-label="Dictation controls">
       <div id="hud-hint" class="hud-hint" aria-hidden="true">
         <span>Dictate</span>
         <b id="hud-hint-key" class="hud-hint-key">Fn</b>
@@ -29,6 +29,33 @@
 
       <div class="hud-tip hud-tip-cancel" aria-hidden="true">Cancel</div>
       <div class="hud-tip hud-tip-accept" aria-hidden="true">Finish and Paste</div>
+
+      <div class="hud-shine" aria-hidden="true"></div>
+
+      <div class="hud-sparkles" aria-hidden="true">
+        <svg class="hud-spark hud-spark-a" viewBox="0 0 16 16">
+          <path d="M8 0 9.15 6.85 16 8 9.15 9.15 8 16 6.85 9.15 0 8 6.85 6.85Z" />
+        </svg>
+        <svg class="hud-spark hud-spark-b" viewBox="0 0 16 16">
+          <path d="M8 0 9.15 6.85 16 8 9.15 9.15 8 16 6.85 9.15 0 8 6.85 6.85Z" />
+        </svg>
+        <svg class="hud-spark hud-spark-c" viewBox="0 0 16 16">
+          <path d="M8 0 9.15 6.85 16 8 9.15 9.15 8 16 6.85 9.15 0 8 6.85 6.85Z" />
+        </svg>
+        <svg class="hud-spark hud-spark-d" viewBox="0 0 16 16">
+          <path d="M8 0 9.15 6.85 16 8 9.15 9.15 8 16 6.85 9.15 0 8 6.85 6.85Z" />
+        </svg>
+        <svg class="hud-spark hud-spark-e" viewBox="0 0 16 16">
+          <path d="M8 0 9.15 6.85 16 8 9.15 9.15 8 16 6.85 9.15 0 8 6.85 6.85Z" />
+        </svg>
+      </div>
+
+      <div class="hud-wait" aria-hidden="true">
+        <svg class="hud-spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle class="hud-spinner-track" cx="12" cy="12" r="8" />
+          <circle class="hud-spinner-head" cx="12" cy="12" r="8" />
+        </svg>
+      </div>
 
       <div class="hud-session">
         <button id="hud-cancel" class="hud-cancel" type="button" aria-label="Cancel">

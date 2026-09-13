@@ -156,8 +156,8 @@ Both run on system prompts you can edit, with **Reset** to restore the defaults.
 Pick any OpenRouter model id; the field suggests a few fast ones.
 
 Pressing polish on the indicator tidies that dictation even when **Clean up
-dictation** is switched off. While it runs, the meter becomes a progress row and
-the button becomes a loader ring.
+dictation** is switched off. After you stop speaking, the pill gathers into a
+circle with a spinner — blue while polish runs, grey while it only transcribes.
 
 Polishing has to copy the selection to read it, since no API exposes another
 app's selection, so it needs Accessibility. Your clipboard is restored
