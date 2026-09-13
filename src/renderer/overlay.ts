@@ -584,8 +584,10 @@ function fillTargets(): void {
   const voice = Math.min(1, Math.pow(frameLoudest / loudest, 0.55));
 
   for (let index = 0; index < BAR_COUNT; index += 1) {
-    const ripple = 0.78 + 0.22 * Math.sin(phase * 2.1 - index * 0.5);
-    targets[index] = Math.max(0, Math.min(1, voice * ripple));
+    // A quiet rest motion, so silence is still a live wave rather than a line.
+    const idle = 0.2 + 0.07 * Math.sin(phase * 1.15 - index * 0.62);
+    const spoken = voice * (0.78 + 0.22 * Math.sin(phase * 2.1 - index * 0.5));
+    targets[index] = Math.max(0, Math.min(1, Math.max(idle, spoken)));
   }
 }
 
