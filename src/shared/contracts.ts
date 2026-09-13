@@ -73,6 +73,12 @@ export interface MicrophoneDevice {
   displayLabel: string;
 }
 
+/** One block of mono PCM from the native input. */
+export interface CaptureBlock {
+  samples: number[];
+  sampleRate: number;
+}
+
 /** Where a dictation session's text should end up. */
 export type DictationSink = "insert" | "transcript";
 
@@ -223,6 +229,10 @@ export interface DesktopApi {
   /** Writes into the same log from a window, which knows things Rust does not. */
   log(level: LogLine["level"], source: string, message: string): Promise<void>;
   requestMicrophoneAccess(): Promise<MicrophonePermissionResult>;
+  /** Opens a HAL input only — not an AudioContext on the speakers. */
+  startNativeCapture(): Promise<string>;
+  stopNativeCapture(): Promise<void>;
+  onCaptureBlock(listener: (block: CaptureBlock) => void): () => void;
   transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;
   getModelState(): Promise<ModelEvent>;

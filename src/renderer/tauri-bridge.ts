@@ -8,6 +8,7 @@
 import type {
   AiStatus,
   AppStats,
+  CaptureBlock,
   DesktopApi,
   DictationCommand,
   DictationUpdate,
@@ -87,6 +88,9 @@ const api: DesktopApi = {
   log: (level, source, message) => invoke<void>("append_log", { level, source, message }),
   requestMicrophoneAccess: () =>
     invoke<MicrophonePermissionResult>("request_microphone"),
+  startNativeCapture: () => invoke<string>("start_native_capture"),
+  stopNativeCapture: () => invoke<void>("stop_native_capture"),
+  onCaptureBlock: (listener) => subscribe<CaptureBlock>("capture-block", listener),
   transcribe: async (wavBytes) => {
     // Tauri's IPC carries JSON, so the buffer crosses as a number array.
     const text = await invoke<string>("transcribe", {
