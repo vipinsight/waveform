@@ -334,6 +334,11 @@ kbd {
   stroke-width: 2.25;
 }
 
+/* The polish wand is drawn at 1.5 in a 20 box; Lucide's 2.25 would fatten it. */
+.nav-item svg[data-icon="wand"] {
+  stroke-width: 1.5;
+}
+
 .nav-item:hover {
   background: var(--surface-hover);
 }

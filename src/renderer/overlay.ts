@@ -10,20 +10,15 @@ import type {
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
-const BAR_COUNT = 7;
-const BAR_GAP = 2.5;
-const BAR_WIDTH = 2.5;
-const MIN_BAR = 4;
-/**
- * Kept off the meter's full height so a loud phrase does not run right up to
- * the capsule. The canvas is as tall as the space it was given, and a bar that
- * uses all of it reads as touching the edge even when it is a pixel short.
- */
-const BAR_HEADROOM = 4;
-/** Bar colours from the design, in sRGB. */
-const BAR_INK = "246, 245, 242";
-const ACCENT = "50, 132, 208";
-const LEVEL_GAIN = 7;
+const BAR_COUNT = 10;
+/** Designed heights in the wave SVG's 24-tall viewBox. */
+const BAR_SHAPE = [3.611, 9.167, 6.944, 11.389, 9.167, 15.833, 11.389, 5.833, 6.944, 2.5];
+const BAR_MIN = 2.5;
+const BAR_CENTRE = 12;
+/** Tallest designed bar; other marks scale against this so the shape holds. */
+const BAR_TALLEST = 15.833;
+/** How tall the peak mark is allowed to grow in the 24-tall viewBox. */
+const BAR_TRAVEL = 20;
 /**
  * The loudest bin seen lately, which is what the bars are drawn against.
  *
@@ -62,13 +57,14 @@ const STATE_LABEL: Record<DictationState, string> = {
 
 const hud = requireElement<HTMLElement>("hud");
 const srLabel = requireElement<HTMLElement>("hud-label");
-const canvas = requireElement<HTMLCanvasElement>("wave");
+const meter = document.getElementById("wave");
+if (!(meter instanceof SVGSVGElement)) throw new Error("Missing #wave");
+const bars = Array.from(meter.querySelectorAll("rect"));
 const cancelButton = requireElement<HTMLButtonElement>("hud-cancel");
 const micButton = requireElement<HTMLButtonElement>("hud-mic");
 const acceptButton = requireElement<HTMLButtonElement>("hud-accept");
 const hintKey = requireElement<HTMLElement>("hud-hint-key");
 const hintArrow = requireElement<HTMLElement>("hud-hint-arrow");
-const context = canvas.getContext("2d");
 
 /** Per-bar displacement and velocity, integrated each frame. */
 const levels = new Float32Array(BAR_COUNT);
@@ -147,9 +143,6 @@ function applyShortcutHint(hotkeyId: Parameters<typeof getHotkeyBinding>[0]): vo
   );
 }
 
-resizeCanvasForDisplay();
-window.addEventListener("resize", resizeCanvasForDisplay);
-new ResizeObserver(resizeCanvasForDisplay).observe(canvas);
 enableDragging();
 
 /*
@@ -578,11 +571,9 @@ function fillTargets(): void {
     return;
   }
 
-  // Speech energy lives low in the spectrum, so only the lower bins are mapped;
-  // spreading across all of them would leave most bars permanently flat.
+  // Speech lives in the low bins. The whole silhouette follows the peak
+  // there, not the mean — averaging across bins left the meter looking flat.
   const usableBins = Math.floor(spectrum.length * SPECTRUM_SPAN);
-  const half = Math.ceil(BAR_COUNT / 2);
-
   let frameLoudest = 0;
   for (let bin = 0; bin < usableBins; bin += 1) {
     frameLoudest = Math.max(frameLoudest, spectrum[bin] ?? 0);
@@ -590,54 +581,23 @@ function fillTargets(): void {
   // Rises at once and forgets slowly, so one loud word does not leave the
   // meter deaf for the rest of the sentence.
   loudest = Math.max(frameLoudest, loudest * REFERENCE_DECAY, QUIETEST_REFERENCE);
+  const voice = Math.min(1, Math.pow(frameLoudest / loudest, 0.55));
 
-  for (let index = 0; index < half; index += 1) {
-    const from = Math.floor((index / half) * usableBins);
-    const to = Math.max(from + 1, Math.floor(((index + 1) / half) * usableBins));
-
-    let peak = 0;
-    for (let bin = from; bin < to; bin += 1) peak = Math.max(peak, spectrum[bin] ?? 0);
-
-    // Lift the high bands, which carry far less energy than the low ones.
-    const tilt = 1 + (index / half) * 1.5;
-    const value = Math.min(1, (peak / loudest) * LEVEL_GAIN * 0.12 * tilt);
-
-    // Mirror around the centre so the meter reads as one symmetric shape.
-    targets[half - 1 - index] = value;
-    if (half + index < BAR_COUNT) targets[half + index] = value;
+  for (let index = 0; index < BAR_COUNT; index += 1) {
+    const ripple = 0.78 + 0.22 * Math.sin(phase * 2.1 - index * 0.5);
+    targets[index] = Math.max(0, Math.min(1, voice * ripple));
   }
 }
 
 function draw(): void {
-  if (!context) return;
-  const { width, height } = meterSize();
-  context.clearRect(0, 0, width, height);
-
-  const total = BAR_COUNT * BAR_WIDTH + (BAR_COUNT - 1) * BAR_GAP;
-  const left = (width - total) / 2;
-  const centre = height / 2;
-
-  // While a rewrite runs the meter stops being a meter: the bars flatten and
-  // fill from the left, which reads as progress rather than as sound.
-  const rewriting = state === "rewriting";
-  const filled = rewriting ? Math.floor(((phase * 0.6) % 1) * (BAR_COUNT + 1)) : 0;
-
   for (let index = 0; index < BAR_COUNT; index += 1) {
-    const value = levels[index] ?? 0;
-    const barHeight = rewriting
-      ? MIN_BAR
-      : Math.max(MIN_BAR, value * (height - BAR_HEADROOM));
-    const x = left + index * (BAR_WIDTH + BAR_GAP);
-
-    context.fillStyle = rewriting
-      ? index < filled
-        ? `rgb(${ACCENT})`
-        : `rgba(${BAR_INK}, 0.28)`
-      : `rgba(${BAR_INK}, ${(0.5 + 0.5 * Math.min(1, value * 2.2)).toFixed(3)})`;
-
-    context.beginPath();
-    context.roundRect(x, centre - barHeight / 2, BAR_WIDTH, barHeight, BAR_WIDTH / 2);
-    context.fill();
+    const bar = bars[index];
+    const designed = BAR_SHAPE[index] ?? BAR_MIN;
+    if (!bar) continue;
+    const ceiling = (designed / BAR_TALLEST) * BAR_TRAVEL;
+    const height = BAR_MIN + (ceiling - BAR_MIN) * (levels[index] ?? 0);
+    bar.setAttribute("height", height.toFixed(3));
+    bar.setAttribute("y", (BAR_CENTRE - height / 2).toFixed(3));
   }
 }
 
@@ -675,28 +635,6 @@ function enableDragging(): void {
   };
   hud.addEventListener("pointerup", end);
   hud.addEventListener("pointercancel", end);
-}
-
-/**
- * The meter's layout size, which is not what `getBoundingClientRect` reports:
- * the controls layer scales from 0.5 to 1 as it is revealed, and a rect
- * carries ancestor transforms. Measuring that way sized the backing store
- * against a half-scale canvas and drew the bars at twice the size they should
- * be. `clientWidth` is the untransformed box.
- */
-function meterSize(): { width: number; height: number } {
-  return { width: canvas.clientWidth, height: canvas.clientHeight };
-}
-
-/** Backs the canvas with real device pixels so the bars are not blurry. */
-function resizeCanvasForDisplay(): void {
-  const ratio = window.devicePixelRatio || 1;
-  const { width, height } = meterSize();
-  if (width === 0 || height === 0) return;
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
-  context?.setTransform(ratio, 0, 0, ratio, 0, 0);
-  draw();
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {
