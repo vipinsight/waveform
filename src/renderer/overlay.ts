@@ -283,6 +283,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     if (capture.isRunning) capture.stop();
     cancelLinger();
     previewing = false;
+    sessionReleased = false;
     hud.dataset.mode = "hold";
     setState("rewriting");
     return;
@@ -320,6 +321,14 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "cancel") {
     cancelReleaseTail();
     capture.cancel();
+    finish();
+    return;
+  }
+
+  // Dictation key-up. Polish-only completion uses the same command, but there
+  // is no microphone session: treating it as a release tail called stop() on a
+  // capture that never started, which hung the HUD.
+  if (command.action === "stop" && !capture.isRunning) {
     finish();
     return;
   }

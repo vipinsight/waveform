@@ -152,6 +152,7 @@ export class AudioCapture {
 
   /** Ends the session, transcribing whatever is still buffered. */
   stop(): void {
+    if (!this.running && !this.opening) return;
     if (!this.running && this.opening) {
       this.release();
       return;

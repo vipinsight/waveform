@@ -64,6 +64,24 @@ describe("stylesheet covers the markup", () => {
     );
     expect(overlayCss).not.toMatch(/\.hud\[data-state="idle"\][^{]*\{[^}]*display:\s*none/);
   });
+
+  /*
+   * The wait circle inherited the pill's top-edge inset highlight, which on a
+   * 28px disc reads as a rim that only exists at the top — especially on the
+   * blue polish fill.
+   */
+  it("does not put a top-only highlight on the wait circle", () => {
+    const rewriting = overlayCss.match(
+      /\.hud\[data-busy="true"\]\[data-state="rewriting"\]\s*\{[^}]+\}/,
+    )?.[0];
+    const transcribing = overlayCss.match(
+      /\.hud\[data-busy="true"\]\[data-state="transcribing"\]\s*\{[^}]+\}/,
+    )?.[0];
+    expect(rewriting).toBeDefined();
+    expect(transcribing).toBeDefined();
+    expect(rewriting).not.toMatch(/inset\s+0\s+1px\s+0/);
+    expect(transcribing).not.toMatch(/inset\s+0\s+1px\s+0/);
+  });
 });
 
 describe("markup provides what the renderer requires", () => {
@@ -85,6 +103,15 @@ describe("markup provides what the renderer requires", () => {
     );
     const present = new Set(idsIn(overlayHtml));
     expect(required.filter((id) => !present.has(id))).toEqual([]);
+  });
+
+  /*
+   * Polish completion reuses action "stop". Falling through to the dictation
+   * release tail called capture.stop() with no session and froze the HUD.
+   */
+  it("finishes polish-only stop without the microphone release tail", () => {
+    const overlay = readFileSync("src/renderer/overlay.ts", "utf8");
+    expect(overlay).toContain('command.action === "stop" && !capture.isRunning');
   });
 });
 
