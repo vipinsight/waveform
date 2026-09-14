@@ -380,9 +380,8 @@ body {
 
 .wave {
   width: 34px;
-  height: 18px;
+  height: 16px;
   flex: 0 0 auto;
-  color: rgb(246 245 242 / 88%);
 }
 
 /* --------------------------------------------------------------- microphone */
