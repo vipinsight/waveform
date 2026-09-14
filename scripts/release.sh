@@ -84,7 +84,19 @@ esac
 echo "release: building $VERSION"
 # Recompile the helper so a cached development helper cannot bypass signing.
 rm -f dist/native/waveform-hotkey
-pnpm exec tauri build --bundles app,dmg
+
+# Without these the build machine's absolute paths -- and so the builder's home
+# directory and username -- are readable with `strings` in the published binary.
+# Rust's flag covers our own crates and the registry; whisper.cpp is compiled by
+# the cc crate, so its __FILE__ strings need the C compiler's own flag.
+# Cargo's `trim-paths` would replace both, but it is still nightly-only.
+REMAP="--remap-path-prefix=$ROOT=/waveform"
+REMAP="$REMAP --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+export RUSTFLAGS="${RUSTFLAGS:-} $REMAP"
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
+
+pnpm exec tauri build --features dist --bundles app,dmg
 [ -x dist/native/waveform-hotkey ] || fail "native hotkey helper was not built"
 
 BUNDLE="src-tauri/target/release/bundle"

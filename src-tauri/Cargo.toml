@@ -19,6 +19,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # build we make, rather than differing between our debug and release output.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Published builds. Drops the compiled-in path to this checkout; see
+# project_root() in src/lib.rs. scripts/release.sh turns it on.
+dist = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -1528,6 +1528,22 @@ fn user_data_dir(app: &tauri::AppHandle) -> PathBuf {
 }
 
 /// Locates the repo when running unbundled; scripts/ lives beside it.
+///
+/// `CARGO_MANIFEST_DIR` is resolved by the compiler, so the fallback bakes the
+/// build machine's absolute path -- and the builder's username with it -- into
+/// the binary as a plain string. `--remap-path-prefix` does not reach an
+/// `env!`, so a published build compiles without that arm: an installed .app
+/// reads its scripts from the bundle's resources and has no checkout to find.
+/// `WAVEFORM_PROJECT_ROOT` still points a dist build at one when asked.
+#[cfg(feature = "dist")]
+fn project_root() -> PathBuf {
+    std::env::var("WAVEFORM_PROJECT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Locates the repo when running unbundled; scripts/ lives beside it.
+#[cfg(not(feature = "dist"))]
 fn project_root() -> PathBuf {
     std::env::var("WAVEFORM_PROJECT_ROOT")
         .map(PathBuf::from)

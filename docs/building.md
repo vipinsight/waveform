@@ -29,6 +29,14 @@ executable has to sit inside a real `.app` carrying `NSMicrophoneUsageDescriptio
 The Tauri CLI is already a development dependency: `pnpm exec tauri build`
 provides normal app/DMG bundling for distribution.
 
+Anything actually published goes through `scripts/release.sh` rather than that
+command directly. It builds with the `dist` feature and with path-remapping
+flags set, which together keep the build machine's absolute paths -- and so the
+builder's username -- out of the shipped binary. A disk image built any other
+way carries them; check with
+`strings Waveform.app/Contents/MacOS/waveform | grep /Users/` before handing it
+to anyone.
+
 Nothing but this is needed to dictate. whisper.cpp is the default engine and the
 only one already inside the app, so its weights are the one missing piece, and
 **Settings → Models** downloads them itself — no terminal, which is what an
