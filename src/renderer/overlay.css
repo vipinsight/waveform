@@ -173,18 +173,22 @@ body {
     transform 260ms cubic-bezier(0.16, 1.3, 0.3, 1);
 }
 
-/* Local work: the dark circle. */
+/*
+ * The pill's glass highlight is a 1px strip along the top edge. Once the
+ * capsule is a circle that strip reads as a rim that only exists at the top.
+ * The 1px border is already a full outline, so drop the directional inset.
+ */
 .hud[data-busy="true"][data-state="transcribing"] {
   border-color: rgb(255 255 255 / 20%);
   background: #121212;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
+  box-shadow: none;
 }
 
 /* Polish: the same circle, in the meter blue. */
 .hud[data-busy="true"][data-state="rewriting"] {
   border-color: rgb(255 255 255 / 28%);
   background: #3284d0;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%);
+  box-shadow: none;
 }
 
 .hud[data-dragging="true"] {

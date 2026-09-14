@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { InputGain } from "../src/renderer/audio/gain";
 import { SpeechSegmenter, rootMeanSquare } from "../src/renderer/audio/segmenter";
-import { canReuseMicrophoneStream, microphoneConstraints } from "../src/renderer/audio/capture";
+import { canReuseMicrophoneStream, AudioCapture, microphoneConstraints } from "../src/renderer/audio/capture";
 
 function samples(length: number, amplitude: number): Float32Array {
   return new Float32Array(length).fill(amplitude);
@@ -114,5 +114,44 @@ describe("InputGain", () => {
     }
     expect(segmenter.push(gain.apply(samples(200, 0.0036)))).toBeNull();
     expect(segmenter.push(gain.apply(samples(200, 0.0013)))).not.toBeNull();
+  });
+});
+
+function silentCaptureHandlers(overrides: {
+  onError?: (message: string) => void;
+  stopNativeCapture?: () => Promise<void>;
+} = {}) {
+  return {
+    onPhrase: () => undefined,
+    onPendingChange: () => undefined,
+    onError: overrides.onError ?? (() => undefined),
+    log: () => undefined,
+    transcribe: async () => ({ text: "" }),
+    startNativeCapture: async () => "mic",
+    stopNativeCapture: overrides.stopNativeCapture ?? (async () => undefined),
+  };
+}
+
+describe("AudioCapture.stop", () => {
+  /*
+   * The polish shortcut ends with overlay action "stop", the same command that
+   * means the dictation key came up. Stopping a capture that never started
+   * used to report "Heard nothing" and tear down native capture, which hung
+   * the HUD when polish ran with no microphone session.
+   */
+  it("does nothing when no session was opened", () => {
+    const errors: string[] = [];
+    let stopped = 0;
+    const capture = new AudioCapture(
+      silentCaptureHandlers({
+        onError: (message) => errors.push(message),
+        stopNativeCapture: async () => {
+          stopped += 1;
+        },
+      }),
+    );
+    capture.stop();
+    expect(errors).toEqual([]);
+    expect(stopped).toBe(0);
   });
 });

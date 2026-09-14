@@ -743,12 +743,18 @@ impl Dictation {
 
         *self.polishing.lock().await = true;
         *self.polish_cancelled.lock().await = false;
-        self.show_overlay().await;
-        self.send_to_overlay("busy", "insert", "hold").await;
         self.capture_escape().await;
 
+        // Copy first, while the focused app is still frontmost. Showing the
+        // HUD before ⌘C put a WKWebView on screen as the pasteboard changed,
+        // which froze the app when polish ran with no dictation session.
         let outcome = async {
             let selection = self.helper.request_selection().await?;
+            if *self.polish_cancelled.lock().await {
+                return Err("Cancelled.".to_string());
+            }
+            self.show_overlay().await;
+            self.send_to_overlay("busy", "insert", "hold").await;
             let polished = self.rewriter.polish(&selection).await?;
             if *self.polish_cancelled.lock().await {
                 return Err("Cancelled.".to_string());
@@ -768,6 +774,7 @@ impl Dictation {
                 self.send_to_overlay("cancel", "insert", "hold").await;
             }
             Err(message) => {
+                self.show_overlay().await;
                 self.send_to_overlay("fail", "insert", "hold").await;
                 self.report_error(&message).await;
             }
