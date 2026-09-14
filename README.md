@@ -9,7 +9,9 @@ Hold a shortcut, speak, and release to insert text into the focused app.
 Waveform combines a Tauri desktop app, a native macOS helper, and local speech
 engines. No account or subscription is required.
 
-- **Local transcription:** built-in whisper.cpp, with optional Parakeet and Qwen3-ASR.
+- **Local transcription:** whisper.cpp is linked into the app, so every Whisper
+  size downloads and runs with nothing else installed. Parakeet and Qwen3-ASR
+  need a source checkout and a `pnpm setup:*` step.
 - **Dictation controls:** hold to speak, double-tap to lock, and Escape to cancel.
 - **Menu bar and Wave Bar:** keep dictation available while working in other apps.
 - **Optional AI Polish:** send text through OpenRouter to your selected model when requested.
@@ -54,9 +56,13 @@ Model downloads and update checks also use the network; see [Privacy](#privacy).
   [Whisper](https://github.com/ggml-org/whisper.cpp) — Tiny through Large v3,
   quantized or not, multilingual or English-only — runs inside the app and needs
   nothing installed; Settings → Models marks the one that fits the memory your
-  Mac has. [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
-  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) are there too, if you
-  want them.
+  Mac has. Pressing a row fetches its weights, and for an installed copy of the
+  app that is the whole story.
+  [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
+  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) are listed as well,
+  but each runs outside the app — Parakeet over HTTP, Qwen through a Python
+  worker — so they need a source checkout and their `pnpm setup:*` step first.
+  [Models](docs/models.md) has the details.
 - **It waits until you finish.** Text arrives when you stop speaking, so a
   sentence never lands half-written somewhere.
 - **It lives in the menu bar.** Closing the window does not quit it, and
