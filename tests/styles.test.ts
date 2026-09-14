@@ -58,9 +58,9 @@ describe("stylesheet covers the markup", () => {
    * back with no way to finish it. The controls now share one layer that is
    * revealed for every non-idle state at once.
    */
-  it("reveals the session controls for every state but idle", () => {
+  it("reveals the session controls for every listening state", () => {
     expect(overlayCss).toContain(
-      '.hud[data-state]:not([data-state="idle"]) .hud-session',
+      '.hud[data-state]:not([data-state="idle"]):not([data-busy="true"]) .hud-session',
     );
     expect(overlayCss).not.toMatch(/\.hud\[data-state="idle"\][^{]*\{[^}]*display:\s*none/);
   });
