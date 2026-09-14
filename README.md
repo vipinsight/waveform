@@ -112,7 +112,8 @@ however good it is. Text is different.
 
 Waveform's source code is available under the [MIT License](LICENSE).
 Third-party dependencies, speech runtimes, model weights, and third-party assets
-remain subject to their own licenses.
+remain subject to their own licenses. [NOTICE](NOTICE) carries the attribution
+that bundled third-party material requires.
 
 ## Support
 
