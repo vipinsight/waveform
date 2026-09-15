@@ -148,6 +148,22 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Opens an address in the system browser. The settings window must not
+/// navigate itself, so About's links hand the URL over instead.
+#[tauri::command]
+fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !is_web_url(&url) {
+        return Err("Only web addresses can be opened.".into());
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+fn is_web_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
 #[tauri::command]
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     Ok(state.settings.lock().await.value())
@@ -875,6 +891,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             show_main_window,
             app_version,
+            open_url,
             get_settings,
             update_settings,
             set_available_microphones,
@@ -1643,5 +1660,13 @@ mod tests {
         assert!(merged.transform_on_dictate);
         assert_eq!(merged.polish_shortcut, "Alt+2");
         assert_eq!(merged.hotkey_id, "right-option");
+    }
+
+    #[test]
+    fn only_web_addresses_are_opened() {
+        assert!(is_web_url("https://vipinyadav.com"));
+        assert!(is_web_url("http://example.com"));
+        assert!(!is_web_url("file:///etc/passwd"));
+        assert!(!is_web_url("javascript:alert(1)"));
     }
 }

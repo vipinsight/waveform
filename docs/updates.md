@@ -73,7 +73,7 @@ traffic is AI Polish and a model download, and both happen because something was
 pressed. An update check is the first request the app makes that nobody asked
 for, so **Settings → General → Check for updates automatically** turns it off.
 
-**Check now** still checks with the switch off. The switch is about unprompted
+**Check now** on **Settings → About** still checks with the switch off. The switch is about unprompted
 requests; pressing the button is the prompt.
 
 ## Cutting a release

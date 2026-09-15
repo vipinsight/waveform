@@ -180,8 +180,8 @@ Waveform checks twenty seconds after launch and once a day after that. An update
 downloads with progress and restarts the app into itself.
 
 That check is the only request Waveform makes that you did not ask for, so
-**Settings → General** can switch it off. **Check now** still works with it off
-— the switch is about unprompted requests, and pressing the button is the
-prompt.
+**Settings → General** can switch it off. **Settings → About → Check for
+Updates** still works with it off — the switch is about unprompted requests,
+and pressing the button is the prompt.
 
 [updates.md](updates.md) covers how a release reaches an installed copy.

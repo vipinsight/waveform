@@ -67,6 +67,11 @@ const element = {
   updateState: requireElement<HTMLElement>("update-state"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
   updateInstall: requireElement<HTMLButtonElement>("update-install"),
+  aboutVersion: requireElement<HTMLElement>("about-version"),
+  openRepository: requireElement<HTMLButtonElement>("open-repository"),
+  openProfile: requireElement<HTMLButtonElement>("open-profile"),
+  openDonate: requireElement<HTMLButtonElement>("open-donate"),
+  openSite: requireElement<HTMLButtonElement>("open-site"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   emptyHeadline: requireElement<HTMLElement>("empty-headline"),
   emptyHint: requireElement<HTMLElement>("empty-hint"),
@@ -144,7 +149,7 @@ async function bootstrap(): Promise<void> {
   // rendered as "Waveform null".
   appVersion = await host().getAppVersion().catch(() => "");
   element.versionLine.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
-  element.updateState.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
+  element.aboutVersion.textContent = appVersion || "Waveform";
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -336,6 +341,18 @@ function wireEvents(): void {
   });
   element.updateInstall.addEventListener("click", () => {
     void installUpdate();
+  });
+  element.openRepository.addEventListener("click", () => {
+    void host().openUrl("https://github.com/vipiny35/waveform");
+  });
+  element.openProfile.addEventListener("click", () => {
+    void host().openUrl("https://x.com/vip_iny");
+  });
+  element.openDonate.addEventListener("click", () => {
+    void host().openUrl("https://buymeacoffee.com/vip_iny");
+  });
+  element.openSite.addEventListener("click", () => {
+    void host().openUrl("https://vipinyadav.com");
   });
   element.dockToggle.addEventListener("change", () => {
     void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
@@ -930,7 +947,7 @@ async function installUpdate(): Promise<void> {
   }
 }
 
-/** Every stage of an update lands in the one line under Version. */
+/** Every stage of an update lands in the line beside Check for Updates. */
 function handleUpdateEvent(event: UpdateEvent): void {
   element.updateState.textContent =
     event.stage === "downloading" && event.progress !== undefined
