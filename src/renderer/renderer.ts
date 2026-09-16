@@ -64,9 +64,12 @@ const element = {
   logCopy: requireElement<HTMLButtonElement>("log-copy"),
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
-  updateState: requireElement<HTMLElement>("update-state"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
-  updateInstall: requireElement<HTMLButtonElement>("update-install"),
+  aboutVersion: requireElement<HTMLElement>("about-version"),
+  openRepository: requireElement<HTMLButtonElement>("open-repository"),
+  openProfile: requireElement<HTMLButtonElement>("open-profile"),
+  openDonate: requireElement<HTMLButtonElement>("open-donate"),
+  openSite: requireElement<HTMLButtonElement>("open-site"),
   hintKey: requireElement<HTMLElement>("hint-key"),
   emptyHeadline: requireElement<HTMLElement>("empty-headline"),
   emptyHint: requireElement<HTMLElement>("empty-hint"),
@@ -114,8 +117,10 @@ let modelLoading = false;
 let downloading: SpeechModelId | null = null;
 /** Whether the models page is listing every size, or only the useful few. */
 let showEveryModel = false;
-/** The version the app is running, for the line that reports updates. */
+/** The version the app is running, for the About page and the sidebar. */
 let appVersion = "";
+/** Whether the About button is asking for a check or installing one. */
+let updateAction: "check" | "install" = "check";
 /** Everything the log has said this session, oldest first. */
 let logLines: LogLine[] = [];
 let settingsOpen = false;
@@ -144,7 +149,7 @@ async function bootstrap(): Promise<void> {
   // rendered as "Waveform null".
   appVersion = await host().getAppVersion().catch(() => "");
   element.versionLine.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
-  element.updateState.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
+  element.aboutVersion.textContent = appVersion || "Waveform";
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -332,10 +337,23 @@ function wireEvents(): void {
     void patchSettings({ automaticUpdateCheck: element.updateToggle.checked });
   });
   element.updateCheck.addEventListener("click", () => {
+    if (updateAction === "install") {
+      void installUpdate();
+      return;
+    }
     void checkForUpdate();
   });
-  element.updateInstall.addEventListener("click", () => {
-    void installUpdate();
+  element.openRepository.addEventListener("click", () => {
+    void host().openUrl("https://github.com/vipiny35/waveform");
+  });
+  element.openProfile.addEventListener("click", () => {
+    void host().openUrl("https://x.com/vip_iny");
+  });
+  element.openDonate.addEventListener("click", () => {
+    void host().openUrl("https://buymeacoffee.com/vip_iny");
+  });
+  element.openSite.addEventListener("click", () => {
+    void host().openUrl("https://vipinyadav.com");
   });
   element.dockToggle.addEventListener("change", () => {
     void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
@@ -903,16 +921,10 @@ function showDownloadProgress(event: ModelEvent): void {
  * a result rather than silence.
  */
 async function checkForUpdate(): Promise<void> {
-  element.updateCheck.disabled = true;
   try {
-    const update = await host().checkForUpdate();
-    element.updateInstall.hidden = update === null;
-    // The event carried the message already; this only has to leave the button
-    // in a state that matches it.
+    await host().checkForUpdate();
   } catch {
-    // Reported as an error event, which is what says why.
-  } finally {
-    element.updateCheck.disabled = false;
+    // Reported as an error event, which is what paints the button.
   }
 }
 
@@ -920,25 +932,66 @@ async function checkForUpdate(): Promise<void> {
  * Installs the newer version. Does not return: the app relaunches into it.
  */
 async function installUpdate(): Promise<void> {
-  element.updateInstall.disabled = true;
-  element.updateCheck.disabled = true;
   try {
     await host().installUpdate();
   } catch {
-    element.updateInstall.disabled = false;
-    element.updateCheck.disabled = false;
+    // Reported as an error event, which is what paints the button.
   }
 }
 
-/** Every stage of an update lands in the one line under Version. */
+function setUpdateButton(
+  label: string,
+  options?: { busy?: boolean; install?: boolean; detail?: string },
+): void {
+  element.updateCheck.textContent = label;
+  element.updateCheck.disabled = Boolean(options?.busy);
+  element.updateCheck.title = options?.detail ?? "";
+  element.updateCheck.setAttribute("aria-busy", options?.busy ? "true" : "false");
+  element.updateCheck.classList.toggle("is-primary", Boolean(options?.install));
+  updateAction = options?.install ? "install" : "check";
+}
+
+/**
+ * The button itself carries every stage, so a status line cannot shove the
+ * copyright off to the left.
+ */
 function handleUpdateEvent(event: UpdateEvent): void {
-  element.updateState.textContent =
-    event.stage === "downloading" && event.progress !== undefined
-      ? `${event.message} ${Math.round(event.progress * 100)}%`
-      : event.message;
-  if (event.stage === "available") element.updateInstall.hidden = false;
-  if (event.stage === "current" || event.stage === "error") {
-    element.updateInstall.hidden = true;
+  switch (event.stage) {
+    case "checking":
+      setUpdateButton("Checking…", { busy: true });
+      return;
+    case "current":
+      setUpdateButton("Up to date");
+      return;
+    case "available":
+      setUpdateButton("Update and Restart", { install: true, detail: event.message });
+      return;
+    case "downloading": {
+      const percent =
+        event.progress !== undefined ? ` ${Math.round(event.progress * 100)}%` : "";
+      setUpdateButton(`Downloading…${percent}`, {
+        busy: true,
+        install: true,
+        detail: event.message,
+      });
+      return;
+    }
+    case "installed":
+      setUpdateButton("Restarting…", { busy: true, install: true, detail: event.message });
+      return;
+    case "error":
+      setUpdateButton(
+        event.message.startsWith("Could not install") ? "Update failed" : "Could not check",
+        {
+          detail: event.message,
+          install: updateAction === "install",
+        },
+      );
+      return;
+    default: {
+      const _exhaustive: never = event.stage;
+      return _exhaustive;
+    }
   }
 }
 

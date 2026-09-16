@@ -66,6 +66,24 @@ describe("stylesheet covers the markup", () => {
   });
 
   /*
+   * Status used to sit beside Check for Updates. Long copy wrapped the
+   * copyright onto a new line, so it jumped left. The button now carries every
+   * stage itself, and the footer is forbidden from wrapping.
+   */
+  it("keeps the About copyright from shifting when an update check runs", () => {
+    const foot = css.match(/\.about-foot\s*\{[^}]+\}/)?.[0];
+    const updates = css.match(/\.about-updates\s*\{[^}]+\}/)?.[0];
+    expect(foot).toContain("flex-wrap: nowrap");
+    expect(updates).toContain("min-width: 0");
+    expect(css).toMatch(
+      /\.about-legal \{\n  display: flex;\n  flex: none;[\s\S]*?white-space: nowrap;/,
+    );
+    expect(html).toMatch(/id="update-check"[^>]*aria-live="polite"/);
+    expect(html).not.toContain('id="update-state"');
+    expect(html).not.toContain('id="update-install"');
+  });
+
+  /*
    * The wait circle inherited the pill's top-edge inset highlight, which on a
    * 28px disc reads as a rim that only exists at the top — especially on the
    * blue polish fill.

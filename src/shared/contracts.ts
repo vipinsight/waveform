@@ -268,6 +268,8 @@ export interface DesktopApi {
   onOpenMicrophoneSettings(listener: () => void): () => void;
   onOpenShortcutSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
+  /** Opens an http(s) address in the system browser. The webview must not navigate. */
+  openUrl(url: string): Promise<void>;
   getHistory(): Promise<SavedDictation[]>;
   deleteDictation(id: string): Promise<SavedDictation[]>;
   clearHistory(): Promise<SavedDictation[]>;
