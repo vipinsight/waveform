@@ -148,7 +148,7 @@ const api: DesktopApi = {
 
   beginOverlayDrag: () => void invoke("begin_overlay_drag"),
   moveOverlay: (deltaX, deltaY) => void invoke("drag_overlay", { deltaX, deltaY }),
-  endOverlayDrag: () => void invoke("end_overlay_drag"),
+  endOverlayDrag: (deltaX, deltaY) => void invoke("end_overlay_drag", { deltaX, deltaY }),
 
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>("resource-usage", listener),

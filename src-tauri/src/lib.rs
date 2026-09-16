@@ -635,7 +635,13 @@ async fn set_overlay_hit_region(
 async fn begin_overlay_drag(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
         if let Ok(position) = overlay.outer_position() {
-            *state.drag_origin.lock().await = Some((position.x as f64, position.y as f64));
+            // Logical, because that is what the deltas are: the HUD measures
+            // them from `screenX`, which WebKit reports in CSS pixels. Keeping
+            // the origin physical meant adding points to device pixels, and on
+            // a Retina display the pill tracked the pointer at half speed.
+            let scale = overlay.scale_factor().unwrap_or(1.0);
+            let logical = position.to_logical::<f64>(scale);
+            *state.drag_origin.lock().await = Some((logical.x, logical.y));
         }
     }
     Ok(())
@@ -651,10 +657,10 @@ async fn drag_overlay(
     let origin = *state.drag_origin.lock().await;
     let Some((x, y)) = origin else { return Ok(()) };
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = overlay.set_position(tauri::PhysicalPosition::new(
-            (x + delta_x) as i32,
-            (y + delta_y) as i32,
-        ));
+        // Absolute from the origin rather than relative to the last move, so a
+        // dropped event cannot leave the pill behind the pointer for good --
+        // and logical throughout, so it moves exactly as far as the hand does.
+        let _ = overlay.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
     }
     Ok(())
 }
@@ -663,11 +669,20 @@ async fn drag_overlay(
 async fn end_overlay_drag(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    delta_x: f64,
+    delta_y: f64,
 ) -> Result<AppSettings, String> {
-    *state.drag_origin.lock().await = None;
+    let origin = state.drag_origin.lock().await.take();
     let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) else {
         return Ok(state.settings.lock().await.value());
     };
+    // The last position, applied here rather than by a `drag_overlay` racing
+    // this command: both are spawned futures, and the one that saved could run
+    // first. The pill would then come to rest a frame short of the pointer and
+    // that is what got written down.
+    if let Some((x, y)) = origin {
+        let _ = overlay.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
+    }
     let Ok(position) = overlay.outer_position() else {
         return Ok(state.settings.lock().await.value());
     };

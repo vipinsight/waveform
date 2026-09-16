@@ -658,6 +658,28 @@ function draw(): void {
  */
 function enableDragging(): void {
   let origin: { x: number; y: number } | null = null;
+  /** The newest delta, and whether a frame is already booked to send it. */
+  let pending: { x: number; y: number } | null = null;
+  let frame = 0;
+
+  /**
+   * One move per frame, carrying the latest position rather than every
+   * position.
+   *
+   * A pointer reports faster than the screen redraws, and each report was a
+   * separate IPC call the host had to answer. The window cannot be moved more
+   * often than it is drawn, so the extra calls only queued -- and a queue is
+   * exactly what makes a dragged thing trail behind the hand holding it.
+   *
+   * Dropping the intermediate positions is safe because each one is absolute:
+   * every call says where the window should be, not how far to shift it.
+   */
+  const flush = (): void => {
+    frame = 0;
+    if (!pending) return;
+    host().moveOverlay(pending.x, pending.y);
+    pending = null;
+  };
 
   hud.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -672,15 +694,23 @@ function enableDragging(): void {
 
   hud.addEventListener("pointermove", (event) => {
     if (!origin) return;
-    host().moveOverlay(event.screenX - origin.x, event.screenY - origin.y);
+    pending = { x: event.screenX - origin.x, y: event.screenY - origin.y };
+    if (frame === 0) frame = requestAnimationFrame(flush);
   });
 
   const end = (event: PointerEvent): void => {
     if (!origin) return;
+    // Where it was let go, which the last frame may not have carried. It goes
+    // with the ending rather than as one more move before it, so the position
+    // that gets saved cannot be the one before the last.
+    const last = { x: event.screenX - origin.x, y: event.screenY - origin.y };
     origin = null;
+    pending = null;
+    if (frame !== 0) cancelAnimationFrame(frame);
+    frame = 0;
     hud.dataset.dragging = "false";
     hud.releasePointerCapture(event.pointerId);
-    host().endOverlayDrag();
+    host().endOverlayDrag(last.x, last.y);
   };
   hud.addEventListener("pointerup", end);
   hud.addEventListener("pointercancel", end);

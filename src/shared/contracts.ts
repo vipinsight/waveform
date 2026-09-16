@@ -267,7 +267,14 @@ export interface DesktopApi {
   previewIndicator(): Promise<void>;
   beginOverlayDrag(): void;
   moveOverlay(deltaX: number, deltaY: number): void;
-  endOverlayDrag(): void;
+  /**
+   * Ends the drag, carrying the position the pointer was let go at.
+   *
+   * The final move travels with the ending rather than before it: they are
+   * separate commands on the same channel but separate futures once they land,
+   * and an ending that won the race saved the second-to-last position.
+   */
+  endOverlayDrag(deltaX: number, deltaY: number): void;
   onResourceUsage(listener: (usage: ResourceUsage) => void): () => void;
   getAiStatus(): Promise<AiStatus>;
   setOpenRouterKey(key: string): Promise<AiStatus>;
