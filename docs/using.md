@@ -3,6 +3,27 @@
 `README.md` covers what Waveform is and how to install it. This is everything
 it does once installed.
 
+## First launch
+
+Waveform opens on a card listing everything it needs before it can dictate, in
+the order it needs them:
+
+1. **Microphone**, to hear you.
+2. **Input Monitoring**, to see your key while another app is focused.
+3. **Accessibility**, to type the text into that app.
+4. **A voice**, which is the speech model. Weights are not bundled with the
+   app, so this one is a download — about 500 MB for the default.
+
+Each step says what it gets you and what macOS calls the same thing, because
+the second is the word to look for in System Settings a moment later. Press a
+step and Waveform opens the right pane or starts the download; the card ticks
+the step off by itself while you are still in System Settings, without a
+restart.
+
+The card is replaced by the dictation panel once all four are done, and comes
+back if one of them stops being true. **Settings → Setup** is the same list, for
+when something needs checking later.
+
 ## Dictating
 
 Put the cursor in any text field and:
@@ -19,11 +40,12 @@ sentence never lands half-written in whatever you happened to click on. Long
 pauses still split the audio internally — that is what keeps transcription
 accurate — but the pieces are joined and delivered together.
 
-A small indicator appears while the microphone is open, so an open microphone is
-never a surprise. It carries cancel on the left and polish on the right, never
-takes focus from the app you are typing into, and can be dragged anywhere; the
-position is remembered. **Settings → General** has **Show** to summon it and
-**Reset** to put it back.
+A small indicator — the Wave Bar — appears while the microphone is open, so an
+open microphone is never a surprise. It carries cancel on the left and polish on
+the right, never takes focus from the app you are typing into, and can be
+dragged anywhere; the position is remembered. **Settings → General** has **Show
+me** to summon it and **Reset** to put it back, and a switch to keep it on
+screen the whole time rather than only while you dictate.
 
 ## The trigger key
 
@@ -36,8 +58,9 @@ Nothing**. Otherwise tapping it switches input source at the same time.
 ## Permissions
 
 **Settings → Setup** lists everything dictation depends on with its live state
-and a button that opens the right pane. It updates while you are still in System
-Settings, so a grant takes effect without restarting the app.
+and a button that opens the right pane — the same list the first-launch card
+shows. It updates while you are still in System Settings, so a grant takes
+effect without restarting the app.
 
 | Permission | Why it is needed |
 | --- | --- |

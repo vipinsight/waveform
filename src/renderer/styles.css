@@ -692,17 +692,21 @@ kbd {
 
 .empty-state {
   max-width: 520px;
-  padding-bottom: 6vh;
+  padding: 10px 0 6vh;
 }
 
+/* It was set at the body size, which for the one heading on an otherwise empty
+   panel read as a caption for nothing. */
 .empty-headline {
   margin: 0;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
+  font-size: 21px;
+  letter-spacing: -0.012em;
 }
 
 .empty-hint {
   max-width: 430px;
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   color: var(--ink-soft);
   font-size: 14px;
   font-weight: 440;
@@ -719,7 +723,7 @@ kbd {
   flex-direction: column;
   gap: 12px;
   padding: 0;
-  margin: 26px 0 0;
+  margin: 22px 0 0;
   list-style: none;
 }
 
@@ -754,62 +758,6 @@ kbd {
 .starter kbd,
 .starter-key {
   font-size: 12px;
-}
-
-/* --------------------------------------------------------------- banner */
-
-/* A standing notice that something is stopping dictation from working. It sits
-   in the view rather than in a dialog, because it describes the app's whole
-   state, not a step the user is in the middle of. */
-.banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 13px;
-  margin-bottom: 18px;
-  background: var(--surface-sunken);
-  animation: banner-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.banner[hidden] {
-  display: none;
-}
-
-.banner-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-soft);
-}
-
-.banner-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12.5px;
-}
-
-.banner-text strong {
-  font-weight: 560;
-}
-
-.banner-text > span {
-  color: var(--ink-soft);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-@keyframes banner-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
 }
 
 /* ---------------------------------------------------------------- setup */
@@ -894,11 +842,22 @@ kbd {
   line-height: 1.45;
 }
 
+/* How many steps are left, rather than the bare dot it used to be: during
+   setup the number is the useful part, and it is the only time this shows. */
 .nav-badge {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  margin-left: auto;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
   background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  line-height: 1;
 }
 
 .nav-badge[hidden] {
@@ -1212,6 +1171,32 @@ kbd {
   padding: 4px 18px;
   border-radius: 14px;
   background: var(--surface-sunken);
+}
+
+/* A link that sits under a row's helper text rather than beside its control:
+   left where the sentence it follows is, not centred in the column. */
+.row-label > .link {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* A heading over a group of rows. Settings pages grew past the length where
+   one undifferentiated card of switches can be read: six of them in a row is
+   six things to hold at once, and they are not all about the same subject. */
+.section-label {
+  margin: 26px 2px 8px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* First on its page, under the title or the lede, where the page's own margin
+   is already the gap. */
+.display + .section-label,
+.lede + .section-label {
+  margin-top: 0;
 }
 
 /* ----------------------------------------------------------------- models */
@@ -1852,6 +1837,210 @@ select {
 
 /* The dictation page starts with a live instruction. It answers the only
    question users have before speaking: which key, what gesture, what state. */
+/* ------------------------------------------------------------- onboarding */
+
+/*
+ * What a new install sees where the deck sits, until dictation actually
+ * works. It borrows the deck's gradient on purpose: the two occupy the same
+ * slot, one after the other, and a different-looking card in the same place
+ * would read as a different part of the app rather than the same one earlier
+ * in its life.
+ */
+.onboard {
+  position: relative;
+  padding: 26px 27px 20px;
+  border-radius: 18px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 88% -6%, rgb(143 128 255 / 40%), transparent 34%),
+    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 16%), transparent 38%),
+    linear-gradient(130deg, #1a2140, #292260);
+  color: #f8f8ff;
+}
+
+.onboard[hidden],
+.dictation-deck[hidden] {
+  display: none;
+}
+
+/* The list is a flex column while it is empty, and a card that can shrink is a
+   card with its last steps cut off. */
+.onboard,
+.dictation-deck {
+  flex: 0 0 auto;
+}
+
+.onboard-head {
+  max-width: 52ch;
+}
+
+.onboard-title {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-size: 23px;
+  font-weight: 710;
+  letter-spacing: -0.043em;
+  line-height: 1.1;
+}
+
+.onboard-lede {
+  margin: 8px 0 0;
+  color: rgb(239 240 255 / 74%);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* How much is left, as a bar rather than a sentence: the point of it is to be
+   read at a glance and to visibly move when a step completes. */
+.onboard-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.onboard-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 13%);
+  overflow: hidden;
+}
+
+.onboard-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: #32d6a1;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboard-count {
+  flex: 0 0 auto;
+  color: rgb(239 240 255 / 66%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+}
+
+.onboard-steps {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 18px 0 0;
+  list-style: none;
+}
+
+.onboard-step {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 0;
+}
+
+.onboard-step + .onboard-step {
+  border-top: 1px solid rgb(255 255 255 / 9%);
+}
+
+/* The number while there is something to do, a tick once there is not: a done
+   step is no longer a thing with a position in a queue. */
+.onboard-mark {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid rgb(255 255 255 / 26%);
+  border-radius: 50%;
+  color: rgb(239 240 255 / 76%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.onboard-step[data-done="true"] .onboard-mark {
+  border-color: #32d6a1;
+  background: #32d6a1;
+}
+
+/* The same two-border tick the Setup checklist draws, lifted by the same
+   0.99px its rotation puts below centre. */
+.onboard-step[data-done="true"] .onboard-mark::after {
+  content: "";
+  width: 4.5px;
+  height: 9px;
+  border: solid #10231d;
+  border-width: 0 1.9px 1.9px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.onboard-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.onboard-body strong {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.onboard-body small {
+  color: rgb(239 240 255 / 62%);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* A step already done has nothing to press, so its text steps back and lets
+   the one that is next be the loudest row. */
+.onboard-step[data-done="true"] .onboard-body strong {
+  color: rgb(239 240 255 / 56%);
+  font-weight: 560;
+}
+
+.onboard-step[data-done="true"] .onboard-body small {
+  color: rgb(239 240 255 / 38%);
+}
+
+/* Light on dark, which none of the other pill buttons have to be. */
+.onboard-action.is-primary {
+  flex: 0 0 auto;
+  min-width: 74px;
+  border-color: transparent;
+  background: #fff;
+  color: #221d4a;
+}
+
+.onboard-action.is-primary:hover:not(:disabled) {
+  background: rgb(255 255 255 / 86%);
+}
+
+.onboard-action.is-primary:disabled {
+  background: rgb(255 255 255 / 22%);
+  color: rgb(255 255 255 / 70%);
+  opacity: 1;
+}
+
+.onboard-action:focus-visible {
+  outline-color: #fff;
+}
+
+@media (max-width: 820px) {
+  .onboard-step {
+    flex-wrap: wrap;
+  }
+
+  .onboard-action.is-primary {
+    margin-left: 34px;
+  }
+}
+
 .dictation-deck {
   position: relative;
   display: grid;
