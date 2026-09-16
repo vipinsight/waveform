@@ -1136,6 +1136,7 @@ kbd {
   font: inherit;
   font-size: 13px;
   font-weight: 520;
+  cursor: pointer;
 }
 
 .about-links button:first-child {
@@ -1155,33 +1156,38 @@ kbd {
 .about-foot {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
-  gap: 10px 16px;
+  flex-wrap: nowrap;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
 }
 
 .about-updates {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex: 1;
+  min-width: 0;
 }
 
 .about-updates .pill-button {
   margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.about-updates .about-version {
-  margin: 0;
+.about-updates .pill-button:disabled {
+  opacity: 0.55;
 }
 
 .about-legal {
   display: flex;
+  flex: none;
   gap: 8px;
   align-items: center;
   margin: 0;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 /* A button, not an anchor: the webview must not navigate away, so the click
