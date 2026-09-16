@@ -7,7 +7,6 @@ import type {
   MicrophoneDevice,
   LogLine,
   ModelEvent,
-  ModelFit,
   ModelStatus,
   ResourceUsage,
   UpdateEvent,
@@ -115,8 +114,6 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
-/** Whether the models page is listing every size, or only the useful few. */
-let showEveryModel = false;
 /** The version the app is running, for the About page and the sidebar. */
 let appVersion = "";
 /** Whether the About button is asking for a check or installing one. */
@@ -173,6 +170,7 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenModelSettings(() => toggleSettings(true, "models"));
   host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
@@ -236,10 +234,11 @@ function wireEvents(): void {
   });
 
   element.modelList.addEventListener("click", (event) => {
-    const more = (event.target as HTMLElement).closest<HTMLElement>("[data-show-all]");
-    if (more) {
-      showEveryModel = more.dataset.showAll === "true";
-      void renderModels();
+    // The card link sits inside the row, so it is checked first: otherwise
+    // reading about a model would also switch to it.
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-card]");
+    if (card?.dataset.card) {
+      void host().openUrl(card.dataset.card);
       return;
     }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
@@ -737,26 +736,16 @@ function renderSidebarCollapsed(): void {
 /**
  * The models, and what is on this machine for each.
  *
- * A model that cannot run is still listed rather than hidden: the point of the
- * page is to say what is available, and what it would take to have it.
+ * All of them, every time. They used to arrive folded, with a `Show every size`
+ * button holding back the eleven nobody had downloaded -- which meant the page
+ * opened having already decided the question it exists to ask.
  *
- * Sixteen of them is too many to read at once, though, so all but a handful
- * start folded away. What stays out is what someone would actually act on: the
- * one recommended for this Mac, the one in use, and anything already
- * downloaded. `Show every size` brings out the rest.
+ * What makes the full list readable instead is that each row is four facts in
+ * one line: how accurate, how big to fetch, how much memory to keep loaded, and
+ * a link to the page those came from.
  */
 async function renderModels(): Promise<void> {
   const catalog = await host().getModelCatalog().catch(() => []);
-  // What is folded away is the long tail of Whisper weight files, which is
-  // exactly the set the app can fetch itself. A model it cannot fetch is one of
-  // a small handful, and each is a different engine rather than another size of
-  // the same one, so those always show.
-  const featured = (model: ModelStatus): boolean =>
-    model.recommended ||
-    model.selected ||
-    model.weightsInstalled ||
-    model.downloadBytes === null;
-  const hidden = catalog.filter((model) => !featured(model)).length;
 
   // Group headings come from the catalogue in its own order, so the interface
   // does not hold a second opinion about which groups exist.
@@ -767,10 +756,7 @@ async function renderModels(): Promise<void> {
     return all;
   }, []);
 
-  const sections: HTMLElement[] = groups.flatMap(({ heading, models }) => {
-    const shown = models.filter((model) => showEveryModel || featured(model));
-    if (shown.length === 0) return [];
-
+  const sections = groups.flatMap(({ heading, models }) => {
     const title = document.createElement("h2");
     title.className = "model-group";
     title.textContent = heading;
@@ -781,99 +767,177 @@ async function renderModels(): Promise<void> {
     // than sweeping through fourteen Whisper sizes to reach Parakeet.
     rows.setAttribute("role", "radiogroup");
     rows.setAttribute("aria-label", heading);
-    rows.append(...shown.map(modelRow));
+    rows.append(...models.map(modelRow));
     return [title, rows];
   });
-
-  if (hidden > 0) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "model-more";
-    more.dataset.showAll = String(!showEveryModel);
-    more.textContent = showEveryModel
-      ? "Show fewer"
-      : `Show every size and quantization (${hidden} more)`;
-    sections.push(more);
-  }
 
   element.modelList.replaceChildren(...sections);
 }
 
-/** One model: what it is, what it needs, and what it would take to have it. */
-function modelRow(model: ModelStatus): HTMLButtonElement {
+/**
+ * A Lucide glyph, built here because these rows are built here.
+ *
+ * The markup carries its icons inline with `data-icon` naming the Lucide entry
+ * it came from; this is the same thing for a row that does not exist until the
+ * catalogue arrives.
+ */
+function icon(name: string, paths: string[]): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("data-icon", name);
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/** Lucide `cloud-download`: what macOS draws beside a thing not yet on the disk. */
+const CLOUD_DOWNLOAD = [
+  "M12 13v8l-4-4",
+  "m12 21 4-4",
+  "M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284",
+];
+
+/** Lucide `terminal`: the two models the app cannot fetch for you. */
+const TERMINAL = ["M12 19h8", "m4 17 6-6-6-6"];
+
+/**
+ * One model: the numbers to choose on, and what it would take to have it.
+ *
+ * The row is not the button. Choosing a model and reading about it are
+ * different acts, and a link inside a button is not a thing a browser will
+ * render -- so the press target is a transparent layer over the whole row, and
+ * everything visible sits on top of it and lets clicks through. The arrow out
+ * to Hugging Face is the one exception, and takes its own.
+ *
+ * What that press does depends on what is on the disk, because there is nothing
+ * else it could sensibly do: a model whose weights are here is chosen, and one
+ * whose weights are not is fetched. The two are not the same act, so they are
+ * not the same control either -- the first is a radio, the second a button --
+ * and the row says which it is with a cloud, the way the Finder does.
+ */
+function modelRow(model: ModelStatus): HTMLElement {
   const ready = model.runtimeInstalled && model.weightsInstalled;
   const fetchable = !ready && model.downloadBytes !== null;
-  const row = document.createElement("button");
-  row.type = "button";
-  row.className = "model-row";
-  row.dataset.model = model.id;
-  row.setAttribute("role", "radio");
-  row.setAttribute("aria-checked", String(model.selected));
-  if (fetchable) row.dataset.download = "true";
-  // Disabled only when there is nothing the button could do. A model the
-  // app can fetch is not disabled: pressing it is how the weights arrive.
-  if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
+  const size = model.downloadBytes === null ? "" : formatBytes(model.downloadBytes);
 
-  const name = document.createElement("strong");
-  name.textContent = model.label;
-
-  // What it is, before what state it is in: someone reading this list is
-  // choosing between models, not auditing an installation.
-  const detail = document.createElement("small");
-  detail.className = "model-detail";
-  detail.textContent = model.detail;
-
-  const state = document.createElement("small");
-  state.textContent = [
-    ready
-      ? "Downloaded"
-      : fetchable
-        ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
-        : !model.runtimeInstalled
-          ? `Not installed — run ${model.setupCommand}`
-          : `Runtime ready, weights missing — run ${model.setupCommand}`,
-    `about ${formatMemory(model.memoryMb)} of memory while loaded`,
-    fitPhrase(model.fit),
+  // The numbers the choice is made on, in the order they get used: is it good
+  // enough, will it fit, and what does keeping it cost. Spelled "word errors"
+  // rather than "WER", because the abbreviation is one more thing to know
+  // before the row can be read.
+  const facts = [
+    model.wer === null ? "" : `${model.wer.toFixed(1)}% word errors`,
+    size,
+    `${formatMemory(model.memoryMb)} in memory`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
+  // Only where there is something the numbers do not say: what a quantization
+  // is, which languages an engine adds, and -- for the two the app cannot fetch
+  // -- the command that brings them. Most rows have none of it.
+  const aside = [model.detail, ready || fetchable ? "" : `Run ${model.setupCommand}`]
+    .filter((part) => part !== "")
+    .join(" ");
+
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "model-pick";
+  pick.dataset.model = model.id;
+  if (fetchable) pick.dataset.download = "true";
+  // A radio only where there is something to choose. Pressing a row whose
+  // weights are missing starts a download, and calling that "selected" would
+  // be the interface saying a thing that is not true.
+  if (ready) {
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", String(model.selected));
+    pick.setAttribute("aria-label", `${model.label} — ${facts}`);
+  } else if (fetchable) {
+    pick.setAttribute("aria-label", `Download ${model.label}, ${size} — ${facts}`);
+  } else {
+    // Nothing the button could do: the weights arrive through a terminal.
+    pick.setAttribute("aria-disabled", "true");
+    pick.setAttribute("aria-label", `${model.label} — run ${model.setupCommand}`);
+  }
+
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "model-card";
+  card.dataset.card = model.cardUrl;
+  // The arrow a link out of the app is drawn with, sitting against the name it
+  // belongs to rather than at the far end of the row.
+  card.textContent = "↗";
+  card.setAttribute("aria-label", `Open ${model.label} on Hugging Face`);
+  card.title = `Open ${model.label} on Hugging Face`;
+
+  const name = document.createElement("span");
+  name.className = "model-name";
+  const title = document.createElement("strong");
+  title.textContent = model.label;
+  name.append(title, card);
+
+  const factLine = document.createElement("small");
+  factLine.className = "model-facts";
+  factLine.textContent = facts;
 
   const body = document.createElement("span");
   body.className = "model-body";
-  body.append(name, detail, state);
+  body.append(name, factLine);
+  if (aside !== "") {
+    const detail = document.createElement("small");
+    detail.className = "model-detail";
+    detail.textContent = aside;
+    body.append(detail);
+  }
 
-  const tag = document.createElement("span");
-  tag.className = "model-tag";
-  tag.dataset.ready = String(ready);
-  // The recommendation is the more useful thing to say about a row that is
-  // neither in use nor downloaded, which is what every row starts as.
-  tag.textContent = model.selected
-    ? ready
-      ? "In use"
-      : "Selected"
-    : model.recommended
-      ? "Recommended"
-      : ready
-        ? "Ready"
-        : fetchable
-          ? "Download"
-          : "Available";
-  if (model.recommended && !model.selected) tag.dataset.recommended = "true";
+  const row = document.createElement("div");
+  row.className = "model-row";
+  row.setAttribute("role", "presentation");
+  // What the row is, in one word, so the stylesheet can say the rest: a model
+  // that is not here reads dimmer than one that is.
+  row.dataset.state = ready ? "here" : fetchable ? "download" : "terminal";
+  row.append(pick, body);
 
-  row.append(body, tag);
+  // Recommended stands beside the state rather than replacing it: "the one to
+  // pick on this Mac" and "not downloaded yet" are both worth saying, and the
+  // row used to have to choose between them.
+  if (model.recommended && !model.selected) {
+    const suggestion = document.createElement("span");
+    suggestion.className = "model-tag";
+    suggestion.dataset.recommended = "true";
+    suggestion.textContent = "Recommended";
+    row.append(suggestion);
+  }
+
+  if (ready) {
+    const tag = document.createElement("span");
+    tag.className = "model-tag";
+    tag.dataset.ready = String(model.selected);
+    tag.textContent = model.selected ? "In use" : "Downloaded";
+    row.append(tag);
+  } else {
+    // Not a button: the whole row already is one, and two nested targets for
+    // the same act is two ways to get it slightly wrong.
+    const action = document.createElement("span");
+    action.className = "model-action";
+    action.append(
+      fetchable ? icon("cloud-download", CLOUD_DOWNLOAD) : icon("terminal", TERMINAL),
+    );
+    action.title = fetchable
+      ? `Download ${model.label} — ${size}`
+      : `Run ${model.setupCommand}`;
+    row.append(action);
+  }
+
   return row;
-}
-
-/**
- * What a model's memory means on this Mac.
- *
- * Comfortable is left unsaid: it is the ordinary case, and a list where every
- * row carries a verdict is a list where none of them stand out.
- */
-function fitPhrase(fit: ModelFit | null): string {
-  if (fit === "tight") return "tight on this Mac";
-  if (fit === "too-large") return "more memory than this Mac has to spare";
-  return "";
 }
 
 /**
@@ -902,15 +966,18 @@ async function downloadModel(id: SpeechModelId): Promise<void> {
  * each time, and replace the button under the pointer that started it.
  */
 function showDownloadProgress(event: ModelEvent): void {
-  const row = element.modelList.querySelector<HTMLElement>(
+  const pick = element.modelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
   );
+  const row = pick?.closest(".model-row");
   if (!row) return;
-  const state = row.querySelector("small");
-  if (state) state.textContent = event.message;
-  const tag = row.querySelector<HTMLElement>(".model-tag");
-  if (tag) {
-    tag.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  const facts = row.querySelector(".model-facts");
+  if (facts) facts.textContent = event.message;
+  // The cloud gives way to the figure it would otherwise be standing in for.
+  const action = row.querySelector<HTMLElement>(".model-action");
+  if (action) {
+    action.dataset.progress = "true";
+    action.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
   }
 }
 
@@ -995,8 +1062,17 @@ function handleUpdateEvent(event: UpdateEvent): void {
   }
 }
 
+/**
+ * A download's size, in the unit someone would say it in.
+ *
+ * Whisper Medium is "1.5 GB", not "1534 MB": past a thousand the megabytes
+ * stop being a size and start being a number to read.
+ */
 function formatBytes(bytes: number): string {
-  return `${Math.round(bytes / 1_000_000)} MB`;
+  const megabytes = bytes / 1_000_000;
+  return megabytes >= 1_000
+    ? `${(megabytes / 1_000).toFixed(1)} GB`
+    : `${Math.round(megabytes)} MB`;
 }
 
 function renderLanguageSelect(): void {

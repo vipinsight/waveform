@@ -155,6 +155,7 @@ const api: DesktopApi = {
   onOpenSettings: (listener) => subscribe<void>("open-settings", listener),
   onOpenMicrophoneSettings: (listener) =>
     subscribe<void>("open-microphone-settings", listener),
+  onOpenModelSettings: (listener) => subscribe<void>("open-model-settings", listener),
   onOpenShortcutSettings: (listener) =>
     subscribe<void>("open-shortcut-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),

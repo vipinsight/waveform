@@ -58,8 +58,10 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
-**Settings → Models** shows what each engine is missing: a Download button where
-the app can fetch the weights itself, and the command to run where it cannot.
+**Settings → Models** says what is on this Mac and what is not. A filled row is
+downloaded; an outlined one with a cloud beside it is not, and pressing it
+fetches the weights. The two engines the app cannot fetch show a prompt instead,
+with the command to run.
 Only whisper.cpp can be set up without a terminal, which is why it is the
 default — an install from the disk image cannot assume one. Because it is linked
 in, every size and quantization of Whisper is one press away, and the models
@@ -70,8 +72,11 @@ quicker once its runtime is warm.
 
 ## Choosing a Whisper size
 
-The models page starts folded: it shows the recommended model, the one in use,
-and anything already downloaded. **Show every size** brings out the rest.
+The models page lists every size at once. Each row carries the four things the
+choice turns on: the share of words the model gets wrong, from the figure its
+Hugging Face page publishes on LibriSpeech test-clean; the size of the download;
+the memory it holds while loaded; and an arrow beside the name out to the page
+those came from.
 
 Two things separate them. Bigger weights hear accents, proper nouns and
 technical words that smaller ones guess at. And a quantized model — the `Q5`
@@ -169,6 +174,12 @@ Closing the window does not quit Waveform — the shortcut keeps working with
 nothing on screen, and the Dock or menu bar icon brings the window back.
 **Settings → General** can drop the app out of the Dock entirely while the
 window is closed, leaving only the menu bar icon.
+
+The icon's menu carries **Model** and **Microphone** submenus, so switching
+either takes one gesture and no window. **Model** lists the whole catalogue
+under the same headings the models page uses; a model that still needs a
+download or a terminal is listed greyed out, because the menu bar can switch
+between models that are here and the window is where models arrive.
 
 With **Start with login** enabled, Waveform starts in the background after you
 log in, including after a restart, with its window hidden and dictation ready.

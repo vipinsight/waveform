@@ -1220,21 +1220,21 @@ kbd {
 .model-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-/* Nothing else would separate the two: .card carries no margin of its own,
-   because everywhere else on these pages it is the first thing under the
-   heading. 16px is the gap .prompt-block uses for the same job. */
-.model-groups + .card {
-  margin-top: 16px;
+/* The language picker leads the page, so the list needs the gap under it that
+   .card does not carry: everywhere else a card is the first thing under a
+   heading. */
+.card + .note {
+  margin-top: 18px;
 }
 
 /* Fourteen Whisper sizes and two other engines in one column read as one
    undifferentiated list, when the choice is really "which Whisper" followed by
    "or something else entirely". */
 .model-group {
-  margin: 10px 2px 0;
+  margin: 14px 2px 2px;
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 620;
@@ -1246,42 +1246,86 @@ kbd {
   margin-top: 0;
 }
 
-/* Reads as a link rather than a button: pressing it reveals rows, which is
-   navigation, not a change to anything. */
-.model-more {
-  align-self: flex-start;
-  padding: 4px 2px;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 520;
-  cursor: pointer;
+/* The heading follows a paragraph rather than the page title, and .note has no
+   bottom margin of its own. */
+.note + .model-groups {
+  margin-top: 16px;
 }
 
+/* The row is not the control. Choosing a model and reading about it are
+   different acts, and a link cannot live inside a button -- so the radio is a
+   transparent layer over the whole row (below) and everything visible sits on
+   top of it. The border lives here, around all of it. */
 .model-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 11px 14px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-sunken);
-  color: var(--ink);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
   transition: border-color 130ms ease, background 130ms ease;
+}
+
+/* Covers the row so that pressing anywhere chooses the model -- the row-sized
+   target it looks like -- while leaving the arrow above it free to be its own
+   button. It has no text of its own, which is why it carries an aria-label. */
+.model-pick {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  cursor: pointer;
+  /* The row draws the focus ring, around everything at once. */
+  outline: none;
 }
 
 /* Still listed, because the page's subject is what exists and what it would
    take to have it -- but not selectable until it can actually run. */
-.model-row[aria-disabled="true"] {
+.model-pick[aria-disabled="true"] {
   cursor: default;
 }
 
-.model-row[aria-checked="true"] {
+/* Lifted out of the stacking order the press layer sits in, so everything is
+   drawn over it rather than under. None of it takes the pointer: the row is one
+   target, and the only thing that wants its own is the arrow. */
+.model-body,
+.model-tag,
+.model-action {
+  position: relative;
+  pointer-events: none;
+}
+
+.model-card {
+  pointer-events: auto;
+}
+
+/* Filled is here, outlined is not: the page answers "which of these do I
+   actually have?" before a word of it is read. Dimming the text was the other
+   way to say it, and it made eleven of sixteen rows hard to read in order to
+   say something about all eleven at once. */
+.model-row[data-state="download"],
+.model-row[data-state="terminal"] {
+  border-color: var(--hairline);
+  background: none;
+}
+
+.model-row[data-state="download"]:hover {
+  background: var(--surface-sunken);
+}
+
+.model-row[data-state="download"] .model-body strong,
+.model-row[data-state="terminal"] .model-body strong {
+  color: var(--ink-soft);
+  font-weight: 520;
+}
+
+/* After the state rules above, so the accent wins the border on equal
+   specificity: a chosen row is chosen whatever else it is. */
+.model-row:has(.model-pick[aria-checked="true"]),
+.model-row:has(.model-pick:focus-visible) {
   border-color: var(--accent);
 }
 
@@ -1290,10 +1334,20 @@ kbd {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+
+/* The arrow rides with the name rather than sitting at the far end of the row,
+   where it read as a second column nobody asked for. */
+.model-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
 }
 
 .model-body strong {
+  color: var(--ink);
   font-size: 13.5px;
   font-weight: 560;
 }
@@ -1301,13 +1355,20 @@ kbd {
 .model-body small {
   color: var(--ink-faint);
   font-size: 11.5px;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
-/* What the model is, rather than what state it is in. Carried a shade brighter
-   because it is the line the choice is actually made on. */
-.model-detail {
+/* The line the choice is actually made on: accuracy, size, memory. Carried in
+   tabular figures so the numbers line up down sixteen rows. */
+.model-facts {
   color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only where the numbers leave something unsaid -- what a quantization is, and
+   which engines want a terminal -- so most rows do not have one. */
+.model-detail {
+  color: var(--ink-faint);
 }
 
 .model-tag {
@@ -1330,12 +1391,95 @@ kbd {
   color: var(--accent);
 }
 
+/* What the row would do, drawn rather than spelled: the cloud macOS puts
+   beside a file that is not on the disk yet, and a prompt for the two models
+   that need one. Sized to the text beside it rather than to a button, because
+   it is a state, and pressing the row is what acts on it. */
+.model-action {
+  display: flex;
+  width: 30px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  transition: color 130ms ease;
+}
+
+.model-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The cloud is the one thing on an undownloaded row that is not dimmed, and
+   it colours under the pointer: the row is pressable, and this is what says
+   what pressing it does. */
+.model-row[data-state="download"]:hover .model-action {
+  color: var(--accent);
+}
+
+/* Mid-download the cloud is replaced by how far it has got, which is a number
+   and wants none of the icon's sizing. */
+.model-action[data-progress="true"] {
+  color: var(--accent);
+}
+
+/* Nothing the app can do about it, so it does not invite a press. */
+.model-row[data-state="terminal"] .model-pick {
+  cursor: default;
+}
+
 /* Outlined rather than filled: a recommendation is a suggestion, and it sits
    beside rows whose filled tag means the model is actually there. */
 .model-tag[data-recommended="true"] {
   border-color: var(--accent);
   background: none;
   color: var(--accent);
+}
+
+/* The same cloud, inline in the sentence that explains it, so the paragraph
+   and the rows are talking about one thing. */
+.note-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+  color: var(--ink-soft);
+}
+
+.note-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Quiet until wanted: sixteen of these are beside sixteen names, and a word
+   against each would be the loudest thing on a page about the models. The
+   arrow alone is what a link out of the app is drawn with. */
+.model-card {
+  flex: 0 0 auto;
+  padding: 0 1px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 130ms ease;
+}
+
+.model-card:hover,
+.model-card:focus-visible {
+  color: var(--accent);
+}
+
+/* Rows are quiet until the pointer is on one, and then the arrow in that row
+   says it can be pressed. */
+.model-row:hover .model-card {
+  color: var(--ink-soft);
 }
 
 /* ------------------------------------------------------------------- logs */

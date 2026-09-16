@@ -402,13 +402,6 @@
 
         <section class="settings-page" data-page="models" hidden>
           <h1 class="display">Models</h1>
-          <p class="note">
-            Speech happens on this Mac, so a model's size is memory this Mac gives up
-            while dictation is loaded. One is marked <strong>Recommended</strong>: the
-            most capable Whisper that fits comfortably in the memory you have. Anything
-            larger will still run — it will just be the largest thing on the machine.
-          </p>
-          <div class="model-groups" id="model-list"></div>
 
           <div class="card">
             <div class="row">
@@ -418,6 +411,15 @@
               </span>
             </div>
           </div>
+
+          <p class="note">
+            Speech runs on this Mac, so a model has to be downloaded before it can be
+            used — press a row marked with <span class="note-icon"><svg data-icon="cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="the cloud icon"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></svg></span> to fetch one. Memory is
+            what it costs while loaded, and accuracy is the word error rate its Hugging
+            Face page publishes on LibriSpeech test-clean: lower is better, and
+            comparable down the column.
+          </p>
+          <div class="model-groups" id="model-list"></div>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>
