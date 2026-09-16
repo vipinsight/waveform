@@ -1,4 +1,4 @@
-# Waveform
+# <img src="icons/waveform-icon.png" alt="" width="48" height="48" align="absmiddle"> Waveform
 
 A free ASR tool for macOS, running open-source speech models on your own
 machine.
