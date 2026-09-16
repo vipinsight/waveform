@@ -7,7 +7,6 @@ import type {
   MicrophoneDevice,
   LogLine,
   ModelEvent,
-  ModelFit,
   ModelStatus,
   ResourceUsage,
   UpdateEvent,
@@ -51,6 +50,14 @@ const element = {
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
   modelList: requireElement<HTMLElement>("model-list"),
+  openOpenRouter: requireElement<HTMLButtonElement>("open-openrouter"),
+  overlayPreview: requireElement<HTMLButtonElement>("overlay-preview"),
+  overlayReset: requireElement<HTMLButtonElement>("overlay-reset"),
+  transformHint: requireElement<HTMLElement>("transform-hint"),
+  onboard: requireElement<HTMLElement>("onboard"),
+  onboardSteps: requireElement<HTMLElement>("onboard-steps"),
+  onboardCount: requireElement<HTMLElement>("onboard-count"),
+  onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
@@ -83,10 +90,6 @@ const element = {
   gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
-  setupBanner: requireElement<HTMLElement>("setup-banner"),
-  bannerTitle: requireElement<HTMLElement>("banner-title"),
-  bannerDetail: requireElement<HTMLElement>("banner-detail"),
-  bannerAction: requireElement<HTMLButtonElement>("banner-action"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   setupLede: requireElement<HTMLElement>("setup-lede"),
   checklist: requireElement<HTMLElement>("checklist"),
@@ -115,8 +118,19 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
-/** Whether the models page is listing every size, or only the useful few. */
-let showEveryModel = false;
+/** Whether the chosen model's weights are here, which is a setup step. */
+let modelInstalled = false;
+/** How big the chosen model's download is, for the step that offers it. */
+let modelDownloadSize = "";
+/**
+ * Whether the catalogue has been read once.
+ *
+ * Until it has, and until the permissions have come back, nothing is known
+ * about whether setup is finished -- and guessing shows the wrong card. An
+ * install in daily use would open on the onboarding panel for the length of
+ * one round trip and then replace it, which reads as a glitch.
+ */
+let setupKnown = false;
 /** The version the app is running, for the About page and the sidebar. */
 let appVersion = "";
 /** Whether the About button is asking for a check or installing one. */
@@ -157,6 +171,7 @@ async function bootstrap(): Promise<void> {
   hotkeyStatus = await host().getHotkeyStatus();
   renderHotkeyStatus();
   renderAiStatus(await host().getAiStatus());
+  await refreshModelInstalled();
 }
 
 function wireEvents(): void {
@@ -173,6 +188,7 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenModelSettings(() => toggleSettings(true, "models"));
   host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
@@ -219,27 +235,28 @@ function wireEvents(): void {
     void patchSettings({ sidebarCollapsed: collapsed });
   });
   element.scrim.addEventListener("click", () => toggleSettings(false));
-  element.bannerAction.addEventListener("click", () => {
-    toggleSettings(true, "setup");
-  });
   element.deckSettings.addEventListener("click", () => {
     toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
   });
 
-  for (const button of Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-fix]"),
-  )) {
-    button.addEventListener("click", () => resolveSetupStep(button.dataset.fix ?? ""));
+  // Delegated rather than bound per button: both the onboarding card and the
+  // Setup page rebuild their rows whenever a step completes.
+  for (const container of [element.onboardSteps, element.checklist]) {
+    container.addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>("[data-fix]");
+      if (button) resolveSetupStep(button.dataset.fix ?? "");
+    });
   }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && settingsOpen) toggleSettings(false);
   });
 
   element.modelList.addEventListener("click", (event) => {
-    const more = (event.target as HTMLElement).closest<HTMLElement>("[data-show-all]");
-    if (more) {
-      showEveryModel = more.dataset.showAll === "true";
-      void renderModels();
+    // The card link sits inside the row, so it is checked first: otherwise
+    // reading about a model would also switch to it.
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-card]");
+    if (card?.dataset.card) {
+      void host().openUrl(card.dataset.card);
       return;
     }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
@@ -354,6 +371,18 @@ function wireEvents(): void {
   });
   element.openSite.addEventListener("click", () => {
     void host().openUrl("https://vipinyadav.com");
+  });
+  element.openOpenRouter.addEventListener("click", () => {
+    void host().openUrl("https://openrouter.ai/keys");
+  });
+  // Both were documented and neither existed. Between them they are the only
+  // way to find a Wave Bar that has been dragged somewhere unfortunate, or to
+  // see what it looks like without holding the key and saying something.
+  element.overlayPreview.addEventListener("click", () => {
+    void host().previewIndicator();
+  });
+  element.overlayReset.addEventListener("click", () => {
+    void patchSettings({ overlayX: null, overlayY: null, overlayCx: null, overlayCy: null });
   });
   element.dockToggle.addEventListener("change", () => {
     void patchSettings({ hideDockWhenClosed: !element.dockToggle.checked });
@@ -482,10 +511,12 @@ function applySettings(next: AppSettings): void {
   const model = getSpeechModel(next.modelId);
   element.overviewModel.textContent = model.label;
 
-
   renderHotkeyLabels();
   renderHotkeyStatus();
   renderDictationDeck();
+  // Choosing a different model can un-finish setup: the new one's weights are
+  // very likely not here.
+  void refreshModelInstalled();
 }
 
 function populateSelects(): void {
@@ -565,13 +596,21 @@ function renderAiStatus(status: AiStatus): void {
 
   if (!status.hasApiKey) {
     element.keyState.textContent =
-      "Stored in your login keychain, never in plain text.";
+      "Waveform reaches the AI through OpenRouter. Your key is kept in the login keychain, never in plain text.";
   } else if (status.memoryOnly) {
     element.keyState.textContent =
       "Saved for this session only: the keychain was unavailable.";
   } else {
-    element.keyState.textContent = "Saved to your login keychain.";
+    element.keyState.textContent = "Saved in your login keychain.";
   }
+
+  // Nothing to fetch once there is a key, and the row is long enough already.
+  element.openOpenRouter.hidden = status.hasApiKey;
+  // The switch has nothing to turn on without one, so the row says why rather
+  // than sitting there greyed out with no explanation.
+  element.transformHint.textContent = status.hasApiKey
+    ? "Adds a second or two before your words appear."
+    : "Needs an OpenRouter key, below.";
 
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
@@ -641,69 +680,203 @@ function renderHotkeyLabels(): void {
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
+interface SetupStep {
+  id: string;
+  done: boolean;
+  /** What the step gets you, in the words of someone who has not read a manual. */
+  title: string;
+  /**
+   * What macOS calls the same thing.
+   *
+   * Said as well as the plain title rather than instead of it: the plain title
+   * is what makes the step make sense, and this is the word they have to find
+   * in System Settings a second later. Dropping either one strands someone.
+   */
+  detail: string;
+  /** The button, which is a verb. */
+  action: string;
+  /** How the step reads inside a sentence listing what is missing. */
+  label: string;
+}
+
 /**
- * The steps that have to be complete before dictation works end to end.
+ * Everything that has to be true before dictation works end to end.
  *
- * Ordered the way a person hits them: hear you, understand you, notice the
- * shortcut, type the result.
+ * Ordered the way a person hits them: hear you, notice the shortcut, type the
+ * result, and have something to do the listening with.
+ *
+ * The voice is a step like any other because it is one. Weights are not
+ * bundled -- the disk image would be half a gigabyte heavier and most of it
+ * unwanted -- and nothing downloads them on its own, so an install with three
+ * permissions granted and no model is an install that fails on the first
+ * phrase with a file path in the error. It used to do exactly that.
  */
-function setupSteps(): { id: string; done: boolean; label: string }[] {
+function setupSteps(): SetupStep[] {
   const status = hotkeyStatus;
+  const model = getSpeechModel(settings.modelId);
   return [
     {
       id: "microphone",
       done: status?.microphone === "granted",
+      title: "Let Waveform hear you",
+      detail: "Microphone — macOS will ask, and the audio stays on this Mac",
+      action: "Allow",
       label: "microphone access",
     },
     {
       id: "input-monitoring",
       done: status?.inputMonitoring === true,
+      title: "Let it watch for your shortcut",
+      detail: "Input Monitoring — so your key works in every app, not just this one",
+      action: "Allow",
       label: "Input Monitoring",
     },
     {
       id: "accessibility",
       done: status?.accessibility === true,
+      title: "Let it type for you",
+      detail: "Accessibility — so your words land wherever your cursor is",
+      action: "Allow",
       label: "Accessibility",
     },
+    {
+      id: "model",
+      done: modelInstalled,
+      title: "Download a voice",
+      detail: `${model.label}${modelDownloadSize === "" ? "" : ` · ${modelDownloadSize}`} — the part that turns speech into words`,
+      action: "Download",
+      label: "a voice to listen with",
+    },
   ];
+}
+
+/**
+ * Whether the chosen model's weights are on this Mac.
+ *
+ * Kept here rather than asked for at each render: it comes from the catalogue,
+ * which is a round trip to the host, and four different things on this page
+ * want to know it.
+ */
+async function refreshModelInstalled(): Promise<void> {
+  const catalog = await host().getModelCatalog().catch(() => []);
+  const current = catalog.find((model) => model.selected);
+  modelInstalled = current ? current.runtimeInstalled && current.weightsInstalled : false;
+  modelDownloadSize =
+    current && current.downloadBytes !== null ? formatBytes(current.downloadBytes) : "";
+  setupKnown = true;
+  renderSetup();
+  renderDictationDeck();
+}
+
+/**
+ * The first thing a new install shows, and the thing it keeps showing until
+ * dictation actually works.
+ *
+ * It sits where the deck sits, on the page someone lands on, rather than
+ * behind a button that opens Settings. Setup used to be three rows inside a
+ * modal, reached by pressing "Finish setup" on a card that had already
+ * explained nothing -- which is two decisions and a dialog between someone and
+ * the first thing they want to do.
+ *
+ * Each step says what it gets you first and what macOS calls it second. The
+ * plain sentence is what makes the step make sense; the macOS term is the one
+ * they have to recognise in System Settings ten seconds later.
+ */
+function renderOnboarding(steps: SetupStep[]): void {
+  const done = steps.filter((step) => step.done).length;
+  element.onboardCount.textContent = `${done} of ${steps.length}`;
+  element.onboardBar.style.width = `${(done / steps.length) * 100}%`;
+
+  element.onboardSteps.replaceChildren(
+    ...steps.map((step, index) => {
+      const item = document.createElement("li");
+      item.className = "onboard-step";
+      item.dataset.done = String(step.done);
+      item.dataset.step = step.id;
+
+      const mark = document.createElement("span");
+      mark.className = "onboard-mark";
+      // The tick replaces the number rather than joining it: a row that is
+      // done is no longer a thing with a position in a queue.
+      mark.textContent = step.done ? "" : String(index + 1);
+      mark.setAttribute("aria-hidden", "true");
+
+      const body = document.createElement("span");
+      body.className = "onboard-body";
+      const title = document.createElement("strong");
+      title.textContent = step.title;
+      const detail = document.createElement("small");
+      detail.textContent = step.detail;
+      body.append(title, detail);
+
+      item.append(mark, body);
+
+      if (!step.done) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "pill-button is-primary onboard-action";
+        button.dataset.fix = step.id;
+        button.textContent =
+          step.id === "model" && downloading !== null ? "Downloading…" : step.action;
+        button.disabled = step.id === "model" && downloading !== null;
+        item.append(button);
+      }
+      return item;
+    }),
+  );
 }
 
 function renderSetup(): void {
   const steps = setupSteps();
   const outstanding = steps.filter((step) => !step.done);
 
-  for (const step of steps) {
-    const row = element.checklist.querySelector<HTMLElement>(`[data-check="${step.id}"]`);
-    if (!row) continue;
-    row.dataset.done = String(step.done);
-    const button = row.querySelector("button");
-    if (button) {
+  // One list, two surfaces. The Setup page used to hold its own copy of the
+  // three permissions in markup, which is how it came to be missing the one
+  // step that actually stops a fresh install working.
+  element.checklist.replaceChildren(
+    ...steps.map((step) => {
+      const row = document.createElement("li");
+      row.className = "check";
+      row.dataset.check = step.id;
+      row.dataset.done = String(step.done);
+
+      const mark = document.createElement("span");
+      mark.className = "check-mark";
+      mark.setAttribute("aria-hidden", "true");
+
+      const body = document.createElement("span");
+      body.className = "check-body";
+      const title = document.createElement("strong");
+      title.textContent = step.title;
+      const detail = document.createElement("small");
+      detail.textContent = step.detail;
+      body.append(title, detail);
+
+      row.append(mark, body);
+
       // A granted step already carries its tick. A button reading "Done" says
       // the same thing a second time, and looks like something to press.
-      button.hidden = step.done;
-      if (!step.done) button.textContent = "Grant";
-    }
-  }
+      if (!step.done) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "pill-button is-primary";
+        button.dataset.fix = step.id;
+        button.textContent = step.action;
+        row.append(button);
+      }
+      return row;
+    }),
+  );
 
+  renderOnboarding(steps);
   element.setupBadge.hidden = outstanding.length === 0;
+  element.setupBadge.textContent = String(outstanding.length);
   element.setupLede.textContent =
     outstanding.length === 0
       ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Enable the macOS permissions Waveform needs to dictate in any app.";
+      : "Waveform needs these before it can dictate into other apps.";
 
-  // The banner names what is missing rather than saying "setup incomplete",
-  // so the next action is obvious without opening anything.
   renderEmptyState();
-  // Dictation deck is the single source of next action. Repeating the same
-  // warning below it pushed actual history out of the window.
-  element.setupBanner.hidden = true;
-  if (outstanding.length > 0) {
-    element.bannerTitle.textContent =
-      outstanding.length === 1 ? "One thing left" : `${outstanding.length} things left`;
-    element.bannerDetail.textContent = `Waveform still needs ${listPhrase(
-      outstanding.map((step) => step.label),
-    )}.`;
-  }
 }
 
 /**
@@ -737,26 +910,16 @@ function renderSidebarCollapsed(): void {
 /**
  * The models, and what is on this machine for each.
  *
- * A model that cannot run is still listed rather than hidden: the point of the
- * page is to say what is available, and what it would take to have it.
+ * All of them, every time. They used to arrive folded, with a `Show every size`
+ * button holding back the eleven nobody had downloaded -- which meant the page
+ * opened having already decided the question it exists to ask.
  *
- * Sixteen of them is too many to read at once, though, so all but a handful
- * start folded away. What stays out is what someone would actually act on: the
- * one recommended for this Mac, the one in use, and anything already
- * downloaded. `Show every size` brings out the rest.
+ * What makes the full list readable instead is that each row is four facts in
+ * one line: how accurate, how big to fetch, how much memory to keep loaded, and
+ * a link to the page those came from.
  */
 async function renderModels(): Promise<void> {
   const catalog = await host().getModelCatalog().catch(() => []);
-  // What is folded away is the long tail of Whisper weight files, which is
-  // exactly the set the app can fetch itself. A model it cannot fetch is one of
-  // a small handful, and each is a different engine rather than another size of
-  // the same one, so those always show.
-  const featured = (model: ModelStatus): boolean =>
-    model.recommended ||
-    model.selected ||
-    model.weightsInstalled ||
-    model.downloadBytes === null;
-  const hidden = catalog.filter((model) => !featured(model)).length;
 
   // Group headings come from the catalogue in its own order, so the interface
   // does not hold a second opinion about which groups exist.
@@ -767,10 +930,7 @@ async function renderModels(): Promise<void> {
     return all;
   }, []);
 
-  const sections: HTMLElement[] = groups.flatMap(({ heading, models }) => {
-    const shown = models.filter((model) => showEveryModel || featured(model));
-    if (shown.length === 0) return [];
-
+  const sections = groups.flatMap(({ heading, models }) => {
     const title = document.createElement("h2");
     title.className = "model-group";
     title.textContent = heading;
@@ -781,99 +941,177 @@ async function renderModels(): Promise<void> {
     // than sweeping through fourteen Whisper sizes to reach Parakeet.
     rows.setAttribute("role", "radiogroup");
     rows.setAttribute("aria-label", heading);
-    rows.append(...shown.map(modelRow));
+    rows.append(...models.map(modelRow));
     return [title, rows];
   });
-
-  if (hidden > 0) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "model-more";
-    more.dataset.showAll = String(!showEveryModel);
-    more.textContent = showEveryModel
-      ? "Show fewer"
-      : `Show every size and quantization (${hidden} more)`;
-    sections.push(more);
-  }
 
   element.modelList.replaceChildren(...sections);
 }
 
-/** One model: what it is, what it needs, and what it would take to have it. */
-function modelRow(model: ModelStatus): HTMLButtonElement {
+/**
+ * A Lucide glyph, built here because these rows are built here.
+ *
+ * The markup carries its icons inline with `data-icon` naming the Lucide entry
+ * it came from; this is the same thing for a row that does not exist until the
+ * catalogue arrives.
+ */
+function icon(name: string, paths: string[]): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("data-icon", name);
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/** Lucide `cloud-download`: what macOS draws beside a thing not yet on the disk. */
+const CLOUD_DOWNLOAD = [
+  "M12 13v8l-4-4",
+  "m12 21 4-4",
+  "M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284",
+];
+
+/** Lucide `terminal`: the two models the app cannot fetch for you. */
+const TERMINAL = ["M12 19h8", "m4 17 6-6-6-6"];
+
+/**
+ * One model: the numbers to choose on, and what it would take to have it.
+ *
+ * The row is not the button. Choosing a model and reading about it are
+ * different acts, and a link inside a button is not a thing a browser will
+ * render -- so the press target is a transparent layer over the whole row, and
+ * everything visible sits on top of it and lets clicks through. The arrow out
+ * to Hugging Face is the one exception, and takes its own.
+ *
+ * What that press does depends on what is on the disk, because there is nothing
+ * else it could sensibly do: a model whose weights are here is chosen, and one
+ * whose weights are not is fetched. The two are not the same act, so they are
+ * not the same control either -- the first is a radio, the second a button --
+ * and the row says which it is with a cloud, the way the Finder does.
+ */
+function modelRow(model: ModelStatus): HTMLElement {
   const ready = model.runtimeInstalled && model.weightsInstalled;
   const fetchable = !ready && model.downloadBytes !== null;
-  const row = document.createElement("button");
-  row.type = "button";
-  row.className = "model-row";
-  row.dataset.model = model.id;
-  row.setAttribute("role", "radio");
-  row.setAttribute("aria-checked", String(model.selected));
-  if (fetchable) row.dataset.download = "true";
-  // Disabled only when there is nothing the button could do. A model the
-  // app can fetch is not disabled: pressing it is how the weights arrive.
-  if (!ready && !fetchable) row.setAttribute("aria-disabled", "true");
+  const size = model.downloadBytes === null ? "" : formatBytes(model.downloadBytes);
 
-  const name = document.createElement("strong");
-  name.textContent = model.label;
-
-  // What it is, before what state it is in: someone reading this list is
-  // choosing between models, not auditing an installation.
-  const detail = document.createElement("small");
-  detail.className = "model-detail";
-  detail.textContent = model.detail;
-
-  const state = document.createElement("small");
-  state.textContent = [
-    ready
-      ? "Downloaded"
-      : fetchable
-        ? `${formatBytes(model.downloadBytes ?? 0)} to download — no setup needed`
-        : !model.runtimeInstalled
-          ? `Not installed — run ${model.setupCommand}`
-          : `Runtime ready, weights missing — run ${model.setupCommand}`,
-    `about ${formatMemory(model.memoryMb)} of memory while loaded`,
-    fitPhrase(model.fit),
+  // The numbers the choice is made on, in the order they get used: is it good
+  // enough, will it fit, and what does keeping it cost. Spelled "word errors"
+  // rather than "WER", because the abbreviation is one more thing to know
+  // before the row can be read.
+  const facts = [
+    model.wer === null ? "" : `${model.wer.toFixed(1)}% word errors`,
+    size,
+    `${formatMemory(model.memoryMb)} in memory`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
+  // Only where there is something the numbers do not say: what a quantization
+  // is, which languages an engine adds, and -- for the two the app cannot fetch
+  // -- the command that brings them. Most rows have none of it.
+  const aside = [model.detail, ready || fetchable ? "" : `Run ${model.setupCommand}`]
+    .filter((part) => part !== "")
+    .join(" ");
+
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "model-pick";
+  pick.dataset.model = model.id;
+  if (fetchable) pick.dataset.download = "true";
+  // A radio only where there is something to choose. Pressing a row whose
+  // weights are missing starts a download, and calling that "selected" would
+  // be the interface saying a thing that is not true.
+  if (ready) {
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", String(model.selected));
+    pick.setAttribute("aria-label", `${model.label} — ${facts}`);
+  } else if (fetchable) {
+    pick.setAttribute("aria-label", `Download ${model.label}, ${size} — ${facts}`);
+  } else {
+    // Nothing the button could do: the weights arrive through a terminal.
+    pick.setAttribute("aria-disabled", "true");
+    pick.setAttribute("aria-label", `${model.label} — run ${model.setupCommand}`);
+  }
+
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "model-card";
+  card.dataset.card = model.cardUrl;
+  // The arrow a link out of the app is drawn with, sitting against the name it
+  // belongs to rather than at the far end of the row.
+  card.textContent = "↗";
+  card.setAttribute("aria-label", `Open ${model.label} on Hugging Face`);
+  card.title = `Open ${model.label} on Hugging Face`;
+
+  const name = document.createElement("span");
+  name.className = "model-name";
+  const title = document.createElement("strong");
+  title.textContent = model.label;
+  name.append(title, card);
+
+  const factLine = document.createElement("small");
+  factLine.className = "model-facts";
+  factLine.textContent = facts;
 
   const body = document.createElement("span");
   body.className = "model-body";
-  body.append(name, detail, state);
+  body.append(name, factLine);
+  if (aside !== "") {
+    const detail = document.createElement("small");
+    detail.className = "model-detail";
+    detail.textContent = aside;
+    body.append(detail);
+  }
 
-  const tag = document.createElement("span");
-  tag.className = "model-tag";
-  tag.dataset.ready = String(ready);
-  // The recommendation is the more useful thing to say about a row that is
-  // neither in use nor downloaded, which is what every row starts as.
-  tag.textContent = model.selected
-    ? ready
-      ? "In use"
-      : "Selected"
-    : model.recommended
-      ? "Recommended"
-      : ready
-        ? "Ready"
-        : fetchable
-          ? "Download"
-          : "Available";
-  if (model.recommended && !model.selected) tag.dataset.recommended = "true";
+  const row = document.createElement("div");
+  row.className = "model-row";
+  row.setAttribute("role", "presentation");
+  // What the row is, in one word, so the stylesheet can say the rest: a model
+  // that is not here reads dimmer than one that is.
+  row.dataset.state = ready ? "here" : fetchable ? "download" : "terminal";
+  row.append(pick, body);
 
-  row.append(body, tag);
+  // Recommended stands beside the state rather than replacing it: "the one to
+  // pick on this Mac" and "not downloaded yet" are both worth saying, and the
+  // row used to have to choose between them.
+  if (model.recommended && !model.selected) {
+    const suggestion = document.createElement("span");
+    suggestion.className = "model-tag";
+    suggestion.dataset.recommended = "true";
+    suggestion.textContent = "Recommended";
+    row.append(suggestion);
+  }
+
+  if (ready) {
+    const tag = document.createElement("span");
+    tag.className = "model-tag";
+    tag.dataset.ready = String(model.selected);
+    tag.textContent = model.selected ? "In use" : "Downloaded";
+    row.append(tag);
+  } else {
+    // Not a button: the whole row already is one, and two nested targets for
+    // the same act is two ways to get it slightly wrong.
+    const action = document.createElement("span");
+    action.className = "model-action";
+    action.append(
+      fetchable ? icon("cloud-download", CLOUD_DOWNLOAD) : icon("terminal", TERMINAL),
+    );
+    action.title = fetchable
+      ? `Download ${model.label} — ${size}`
+      : `Run ${model.setupCommand}`;
+    row.append(action);
+  }
+
   return row;
-}
-
-/**
- * What a model's memory means on this Mac.
- *
- * Comfortable is left unsaid: it is the ordinary case, and a list where every
- * row carries a verdict is a list where none of them stand out.
- */
-function fitPhrase(fit: ModelFit | null): string {
-  if (fit === "tight") return "tight on this Mac";
-  if (fit === "too-large") return "more memory than this Mac has to spare";
-  return "";
 }
 
 /**
@@ -892,6 +1130,9 @@ async function downloadModel(id: SpeechModelId): Promise<void> {
   } finally {
     downloading = null;
     await renderModels();
+    // The model is a setup step, so its arrival is what closes the last row of
+    // the onboarding card.
+    await refreshModelInstalled();
   }
 }
 
@@ -902,15 +1143,27 @@ async function downloadModel(id: SpeechModelId): Promise<void> {
  * each time, and replace the button under the pointer that started it.
  */
 function showDownloadProgress(event: ModelEvent): void {
-  const row = element.modelList.querySelector<HTMLElement>(
+  // The onboarding card offers the same download without the models page ever
+  // being opened, so it gets the same progress.
+  const percent = Math.round((event.progress ?? 0) * 100);
+  const step = element.onboardSteps.querySelector<HTMLElement>('[data-step="model"]');
+  const stepAction = step?.querySelector("button");
+  if (stepAction) stepAction.textContent = `${percent}%`;
+  const stepDetail = step?.querySelector("small");
+  if (stepDetail) stepDetail.textContent = event.message;
+
+  const pick = element.modelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
   );
+  const row = pick?.closest(".model-row");
   if (!row) return;
-  const state = row.querySelector("small");
-  if (state) state.textContent = event.message;
-  const tag = row.querySelector<HTMLElement>(".model-tag");
-  if (tag) {
-    tag.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  const facts = row.querySelector(".model-facts");
+  if (facts) facts.textContent = event.message;
+  // The cloud gives way to the figure it would otherwise be standing in for.
+  const action = row.querySelector<HTMLElement>(".model-action");
+  if (action) {
+    action.dataset.progress = "true";
+    action.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
   }
 }
 
@@ -995,8 +1248,17 @@ function handleUpdateEvent(event: UpdateEvent): void {
   }
 }
 
+/**
+ * A download's size, in the unit someone would say it in.
+ *
+ * Whisper Medium is "1.5 GB", not "1534 MB": past a thousand the megabytes
+ * stop being a size and start being a number to read.
+ */
 function formatBytes(bytes: number): string {
-  return `${Math.round(bytes / 1_000_000)} MB`;
+  const megabytes = bytes / 1_000_000;
+  return megabytes >= 1_000
+    ? `${(megabytes / 1_000).toFixed(1)} GB`
+    : `${Math.round(megabytes)} MB`;
 }
 
 function renderLanguageSelect(): void {
@@ -1008,13 +1270,11 @@ function renderLanguageSelect(): void {
   element.speechLanguage.value = settings.speechLanguage;
 }
 
-/** Joins labels the way a sentence would: "a, b and c". */
-function listPhrase(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
 function resolveSetupStep(id: string): void {
+  if (id === "model") {
+    void downloadModel(settings.modelId);
+    return;
+  }
   if (id === "microphone") {
     void host().openPrivacySettings("microphone");
     return;
@@ -1052,20 +1312,19 @@ function renderEmptyState(): void {
   const glyph = shortcut ? hotkeyKeycap(shortcut) : "your shortcut";
   const firstRun = lifetimeSessions === 0;
 
-  if (outstanding.length > 0) {
-    element.emptyHeadline.textContent = "Almost ready.";
-    element.emptyHint.textContent =
-      "Finish the steps above and your words will appear here, and wherever your cursor is.";
-    element.starter.hidden = true;
-    return;
-  }
+  // The onboarding card is already saying what to do, at length. A second
+  // paragraph under it saying the same thing more vaguely is the page talking
+  // over itself.
+  element.emptyState.hidden = outstanding.length > 0 || !setupKnown;
+  if (element.emptyState.hidden) return;
 
   element.starter.hidden = !firstRun;
   element.starterKey.textContent = glyph;
 
   if (firstRun) {
-    element.emptyHeadline.textContent = "Try it now.";
-    element.emptyHint.textContent = "Speak once and Waveform will type it for you.";
+    element.emptyHeadline.textContent = "You're set. Try it once.";
+    element.emptyHint.textContent =
+      "Dictation works in any app. Here is the whole thing:";
     return;
   }
 
@@ -1079,16 +1338,15 @@ function renderDictationDeck(): void {
   const binding = getHotkeyBinding(settings.hotkeyId);
   const key = binding ? hotkeyKeycap(binding) : "—";
 
+  // One card in this slot at a time. Until dictation works, the thing worth
+  // saying is how to make it work -- and until the host has answered, neither
+  // is true yet, so the slot stays empty rather than guessing.
+  const known = setupKnown && hotkeyStatus !== null;
+  element.onboard.hidden = !known || outstanding.length === 0;
+  element.dictationDeck.hidden = !known || outstanding.length > 0;
+  if (!known || outstanding.length > 0) return;
+
   element.deckKey.textContent = key;
-  if (outstanding.length > 0) {
-    element.deckStatus.textContent = "Setup needed";
-    element.deckTitle.textContent = "Finish setup, then dictate anywhere";
-    element.deckDescription.textContent = `Waveform still needs ${listPhrase(
-      outstanding.map((step) => step.label),
-    )}.`;
-    element.deckSettings.textContent = "Finish setup";
-    return;
-  }
 
   if (!binding) {
     element.deckStatus.textContent = "Shortcut off";
@@ -1186,6 +1444,11 @@ function renderShortcutCard(): void {
   const hint = element.shortcutHint;
   hint.replaceChildren();
 
+  // Nothing to hold yet. The card told a new install to hold a key that could
+  // not have worked, beside a panel explaining why not.
+  hint.hidden = setupSteps().some((step) => !step.done);
+  if (hint.hidden) return;
+
   // With no button on the page, an unusable shortcut would leave no way in at
   // all, so say which one it is instead of repeating the instruction.
   const binding = getHotkeyBinding(settings.hotkeyId);
@@ -1218,7 +1481,8 @@ function renderHistory(): void {
       ? entries
       : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
 
-  element.history.replaceChildren(element.dictationDeck);
+  // Both cards stay in the tree; renderDictationDeck decides which is showing.
+  element.history.replaceChildren(element.onboard, element.dictationDeck);
   element.history.classList.toggle("is-empty", matches.length === 0);
 
   if (matches.length === 0 && query !== "") {
@@ -1227,7 +1491,8 @@ function renderHistory(): void {
     note.textContent = `Nothing matches \u201c${query}\u201d.`;
     element.history.append(note);
   } else if (matches.length === 0) {
-    element.emptyState.hidden = false;
+    // renderEmptyState decides whether it is shown: during setup the
+    // onboarding card is already saying all of this.
     element.history.append(element.emptyState);
     renderEmptyState();
   } else {

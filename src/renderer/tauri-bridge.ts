@@ -148,13 +148,14 @@ const api: DesktopApi = {
 
   beginOverlayDrag: () => void invoke("begin_overlay_drag"),
   moveOverlay: (deltaX, deltaY) => void invoke("drag_overlay", { deltaX, deltaY }),
-  endOverlayDrag: () => void invoke("end_overlay_drag"),
+  endOverlayDrag: (deltaX, deltaY) => void invoke("end_overlay_drag", { deltaX, deltaY }),
 
   onResourceUsage: (listener) =>
     subscribe<ResourceUsage>("resource-usage", listener),
   onOpenSettings: (listener) => subscribe<void>("open-settings", listener),
   onOpenMicrophoneSettings: (listener) =>
     subscribe<void>("open-microphone-settings", listener),
+  onOpenModelSettings: (listener) => subscribe<void>("open-model-settings", listener),
   onOpenShortcutSettings: (listener) =>
     subscribe<void>("open-shortcut-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),

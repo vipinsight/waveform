@@ -3,6 +3,27 @@
 `README.md` covers what Waveform is and how to install it. This is everything
 it does once installed.
 
+## First launch
+
+Waveform opens on a card listing everything it needs before it can dictate, in
+the order it needs them:
+
+1. **Microphone**, to hear you.
+2. **Input Monitoring**, to see your key while another app is focused.
+3. **Accessibility**, to type the text into that app.
+4. **A voice**, which is the speech model. Weights are not bundled with the
+   app, so this one is a download — about 500 MB for the default.
+
+Each step says what it gets you and what macOS calls the same thing, because
+the second is the word to look for in System Settings a moment later. Press a
+step and Waveform opens the right pane or starts the download; the card ticks
+the step off by itself while you are still in System Settings, without a
+restart.
+
+The card is replaced by the dictation panel once all four are done, and comes
+back if one of them stops being true. **Settings → Setup** is the same list, for
+when something needs checking later.
+
 ## Dictating
 
 Put the cursor in any text field and:
@@ -19,11 +40,12 @@ sentence never lands half-written in whatever you happened to click on. Long
 pauses still split the audio internally — that is what keeps transcription
 accurate — but the pieces are joined and delivered together.
 
-A small indicator appears while the microphone is open, so an open microphone is
-never a surprise. It carries cancel on the left and polish on the right, never
-takes focus from the app you are typing into, and can be dragged anywhere; the
-position is remembered. **Settings → General** has **Show** to summon it and
-**Reset** to put it back.
+A small indicator — the Wave Bar — appears while the microphone is open, so an
+open microphone is never a surprise. It carries cancel on the left and polish on
+the right, never takes focus from the app you are typing into, and can be
+dragged anywhere; the position is remembered. **Settings → General** has **Show
+me** to summon it and **Reset** to put it back, and a switch to keep it on
+screen the whole time rather than only while you dictate.
 
 ## The trigger key
 
@@ -36,8 +58,9 @@ Nothing**. Otherwise tapping it switches input source at the same time.
 ## Permissions
 
 **Settings → Setup** lists everything dictation depends on with its live state
-and a button that opens the right pane. It updates while you are still in System
-Settings, so a grant takes effect without restarting the app.
+and a button that opens the right pane — the same list the first-launch card
+shows. It updates while you are still in System Settings, so a grant takes
+effect without restarting the app.
 
 | Permission | Why it is needed |
 | --- | --- |
@@ -58,8 +81,10 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
-**Settings → Models** shows what each engine is missing: a Download button where
-the app can fetch the weights itself, and the command to run where it cannot.
+**Settings → Models** says what is on this Mac and what is not. A filled row is
+downloaded; an outlined one with a cloud beside it is not, and pressing it
+fetches the weights. The two engines the app cannot fetch show a prompt instead,
+with the command to run.
 Only whisper.cpp can be set up without a terminal, which is why it is the
 default — an install from the disk image cannot assume one. Because it is linked
 in, every size and quantization of Whisper is one press away, and the models
@@ -70,8 +95,11 @@ quicker once its runtime is warm.
 
 ## Choosing a Whisper size
 
-The models page starts folded: it shows the recommended model, the one in use,
-and anything already downloaded. **Show every size** brings out the rest.
+The models page lists every size at once. Each row carries the four things the
+choice turns on: the share of words the model gets wrong, from the figure its
+Hugging Face page publishes on LibriSpeech test-clean; the size of the download;
+the memory it holds while loaded; and an arrow beside the name out to the page
+those came from.
 
 Two things separate them. Bigger weights hear accents, proper nouns and
 technical words that smaller ones guess at. And a quantized model — the `Q5`
@@ -169,6 +197,12 @@ Closing the window does not quit Waveform — the shortcut keeps working with
 nothing on screen, and the Dock or menu bar icon brings the window back.
 **Settings → General** can drop the app out of the Dock entirely while the
 window is closed, leaving only the menu bar icon.
+
+The icon's menu carries **Model** and **Microphone** submenus, so switching
+either takes one gesture and no window. **Model** lists the whole catalogue
+under the same headings the models page uses; a model that still needs a
+download or a terminal is listed greyed out, because the menu bar can switch
+between models that are here and the window is where models arrive.
 
 With **Start with login** enabled, Waveform starts in the background after you
 log in, including after a restart, with its window hidden and dictation ready.

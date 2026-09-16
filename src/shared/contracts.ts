@@ -123,8 +123,19 @@ export interface ModelStatus {
   downloadBytes: number | null;
   /** The heading this model is listed under. */
   group: string;
-  /** One line of what choosing this model costs and buys. */
+  /**
+   * The one thing worth saying beyond the numbers, or empty when the name and
+   * the figures already say it.
+   */
   detail: string;
+  /** The model's own page on Hugging Face. */
+  cardUrl: string;
+  /**
+   * Word error rate on LibriSpeech test-clean, in percent, as Hugging Face
+   * publishes it. `null` where no such figure exists -- the quantized builds,
+   * which nobody has benchmarked apart from the weights they came from.
+   */
+  wer: number | null;
   /** Roughly what it adds to resident memory once loaded, in MB. */
   memoryMb: number;
   /**
@@ -256,7 +267,14 @@ export interface DesktopApi {
   previewIndicator(): Promise<void>;
   beginOverlayDrag(): void;
   moveOverlay(deltaX: number, deltaY: number): void;
-  endOverlayDrag(): void;
+  /**
+   * Ends the drag, carrying the position the pointer was let go at.
+   *
+   * The final move travels with the ending rather than before it: they are
+   * separate commands on the same channel but separate futures once they land,
+   * and an ending that won the race saved the second-to-last position.
+   */
+  endOverlayDrag(deltaX: number, deltaY: number): void;
   onResourceUsage(listener: (usage: ResourceUsage) => void): () => void;
   getAiStatus(): Promise<AiStatus>;
   setOpenRouterKey(key: string): Promise<AiStatus>;
@@ -266,6 +284,7 @@ export interface DesktopApi {
   onOpenSettings(listener: () => void): () => void;
   /** The tray's microphone submenu opens directly to its matching control. */
   onOpenMicrophoneSettings(listener: () => void): () => void;
+  onOpenModelSettings(listener: () => void): () => void;
   onOpenShortcutSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
   /** Opens an http(s) address in the system browser. The webview must not navigate. */

@@ -692,17 +692,21 @@ kbd {
 
 .empty-state {
   max-width: 520px;
-  padding-bottom: 6vh;
+  padding: 10px 0 6vh;
 }
 
+/* It was set at the body size, which for the one heading on an otherwise empty
+   panel read as a caption for nothing. */
 .empty-headline {
   margin: 0;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
+  font-size: 21px;
+  letter-spacing: -0.012em;
 }
 
 .empty-hint {
   max-width: 430px;
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   color: var(--ink-soft);
   font-size: 14px;
   font-weight: 440;
@@ -719,7 +723,7 @@ kbd {
   flex-direction: column;
   gap: 12px;
   padding: 0;
-  margin: 26px 0 0;
+  margin: 22px 0 0;
   list-style: none;
 }
 
@@ -754,62 +758,6 @@ kbd {
 .starter kbd,
 .starter-key {
   font-size: 12px;
-}
-
-/* --------------------------------------------------------------- banner */
-
-/* A standing notice that something is stopping dictation from working. It sits
-   in the view rather than in a dialog, because it describes the app's whole
-   state, not a step the user is in the middle of. */
-.banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 13px;
-  margin-bottom: 18px;
-  background: var(--surface-sunken);
-  animation: banner-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.banner[hidden] {
-  display: none;
-}
-
-.banner-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-soft);
-}
-
-.banner-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12.5px;
-}
-
-.banner-text strong {
-  font-weight: 560;
-}
-
-.banner-text > span {
-  color: var(--ink-soft);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-@keyframes banner-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
 }
 
 /* ---------------------------------------------------------------- setup */
@@ -894,11 +842,22 @@ kbd {
   line-height: 1.45;
 }
 
+/* How many steps are left, rather than the bare dot it used to be: during
+   setup the number is the useful part, and it is the only time this shows. */
 .nav-badge {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  margin-left: auto;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
   background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  line-height: 1;
 }
 
 .nav-badge[hidden] {
@@ -1214,27 +1173,53 @@ kbd {
   background: var(--surface-sunken);
 }
 
+/* A link that sits under a row's helper text rather than beside its control:
+   left where the sentence it follows is, not centred in the column. */
+.row-label > .link {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* A heading over a group of rows. Settings pages grew past the length where
+   one undifferentiated card of switches can be read: six of them in a row is
+   six things to hold at once, and they are not all about the same subject. */
+.section-label {
+  margin: 26px 2px 8px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* First on its page, under the title or the lede, where the page's own margin
+   is already the gap. */
+.display + .section-label,
+.lede + .section-label {
+  margin-top: 0;
+}
+
 /* ----------------------------------------------------------------- models */
 
 .model-groups,
 .model-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-/* Nothing else would separate the two: .card carries no margin of its own,
-   because everywhere else on these pages it is the first thing under the
-   heading. 16px is the gap .prompt-block uses for the same job. */
-.model-groups + .card {
-  margin-top: 16px;
+/* The language picker leads the page, so the list needs the gap under it that
+   .card does not carry: everywhere else a card is the first thing under a
+   heading. */
+.card + .note {
+  margin-top: 18px;
 }
 
 /* Fourteen Whisper sizes and two other engines in one column read as one
    undifferentiated list, when the choice is really "which Whisper" followed by
    "or something else entirely". */
 .model-group {
-  margin: 10px 2px 0;
+  margin: 14px 2px 2px;
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 620;
@@ -1246,42 +1231,86 @@ kbd {
   margin-top: 0;
 }
 
-/* Reads as a link rather than a button: pressing it reveals rows, which is
-   navigation, not a change to anything. */
-.model-more {
-  align-self: flex-start;
-  padding: 4px 2px;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 520;
-  cursor: pointer;
+/* The heading follows a paragraph rather than the page title, and .note has no
+   bottom margin of its own. */
+.note + .model-groups {
+  margin-top: 16px;
 }
 
+/* The row is not the control. Choosing a model and reading about it are
+   different acts, and a link cannot live inside a button -- so the radio is a
+   transparent layer over the whole row (below) and everything visible sits on
+   top of it. The border lives here, around all of it. */
 .model-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 11px 14px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-sunken);
-  color: var(--ink);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
   transition: border-color 130ms ease, background 130ms ease;
+}
+
+/* Covers the row so that pressing anywhere chooses the model -- the row-sized
+   target it looks like -- while leaving the arrow above it free to be its own
+   button. It has no text of its own, which is why it carries an aria-label. */
+.model-pick {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  cursor: pointer;
+  /* The row draws the focus ring, around everything at once. */
+  outline: none;
 }
 
 /* Still listed, because the page's subject is what exists and what it would
    take to have it -- but not selectable until it can actually run. */
-.model-row[aria-disabled="true"] {
+.model-pick[aria-disabled="true"] {
   cursor: default;
 }
 
-.model-row[aria-checked="true"] {
+/* Lifted out of the stacking order the press layer sits in, so everything is
+   drawn over it rather than under. None of it takes the pointer: the row is one
+   target, and the only thing that wants its own is the arrow. */
+.model-body,
+.model-tag,
+.model-action {
+  position: relative;
+  pointer-events: none;
+}
+
+.model-card {
+  pointer-events: auto;
+}
+
+/* Filled is here, outlined is not: the page answers "which of these do I
+   actually have?" before a word of it is read. Dimming the text was the other
+   way to say it, and it made eleven of sixteen rows hard to read in order to
+   say something about all eleven at once. */
+.model-row[data-state="download"],
+.model-row[data-state="terminal"] {
+  border-color: var(--hairline);
+  background: none;
+}
+
+.model-row[data-state="download"]:hover {
+  background: var(--surface-sunken);
+}
+
+.model-row[data-state="download"] .model-body strong,
+.model-row[data-state="terminal"] .model-body strong {
+  color: var(--ink-soft);
+  font-weight: 520;
+}
+
+/* After the state rules above, so the accent wins the border on equal
+   specificity: a chosen row is chosen whatever else it is. */
+.model-row:has(.model-pick[aria-checked="true"]),
+.model-row:has(.model-pick:focus-visible) {
   border-color: var(--accent);
 }
 
@@ -1290,10 +1319,20 @@ kbd {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+
+/* The arrow rides with the name rather than sitting at the far end of the row,
+   where it read as a second column nobody asked for. */
+.model-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
 }
 
 .model-body strong {
+  color: var(--ink);
   font-size: 13.5px;
   font-weight: 560;
 }
@@ -1301,13 +1340,20 @@ kbd {
 .model-body small {
   color: var(--ink-faint);
   font-size: 11.5px;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
-/* What the model is, rather than what state it is in. Carried a shade brighter
-   because it is the line the choice is actually made on. */
-.model-detail {
+/* The line the choice is actually made on: accuracy, size, memory. Carried in
+   tabular figures so the numbers line up down sixteen rows. */
+.model-facts {
   color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only where the numbers leave something unsaid -- what a quantization is, and
+   which engines want a terminal -- so most rows do not have one. */
+.model-detail {
+  color: var(--ink-faint);
 }
 
 .model-tag {
@@ -1330,12 +1376,95 @@ kbd {
   color: var(--accent);
 }
 
+/* What the row would do, drawn rather than spelled: the cloud macOS puts
+   beside a file that is not on the disk yet, and a prompt for the two models
+   that need one. Sized to the text beside it rather than to a button, because
+   it is a state, and pressing the row is what acts on it. */
+.model-action {
+  display: flex;
+  width: 30px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  transition: color 130ms ease;
+}
+
+.model-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The cloud is the one thing on an undownloaded row that is not dimmed, and
+   it colours under the pointer: the row is pressable, and this is what says
+   what pressing it does. */
+.model-row[data-state="download"]:hover .model-action {
+  color: var(--accent);
+}
+
+/* Mid-download the cloud is replaced by how far it has got, which is a number
+   and wants none of the icon's sizing. */
+.model-action[data-progress="true"] {
+  color: var(--accent);
+}
+
+/* Nothing the app can do about it, so it does not invite a press. */
+.model-row[data-state="terminal"] .model-pick {
+  cursor: default;
+}
+
 /* Outlined rather than filled: a recommendation is a suggestion, and it sits
    beside rows whose filled tag means the model is actually there. */
 .model-tag[data-recommended="true"] {
   border-color: var(--accent);
   background: none;
   color: var(--accent);
+}
+
+/* The same cloud, inline in the sentence that explains it, so the paragraph
+   and the rows are talking about one thing. */
+.note-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+  color: var(--ink-soft);
+}
+
+.note-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Quiet until wanted: sixteen of these are beside sixteen names, and a word
+   against each would be the loudest thing on a page about the models. The
+   arrow alone is what a link out of the app is drawn with. */
+.model-card {
+  flex: 0 0 auto;
+  padding: 0 1px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 130ms ease;
+}
+
+.model-card:hover,
+.model-card:focus-visible {
+  color: var(--accent);
+}
+
+/* Rows are quiet until the pointer is on one, and then the arrow in that row
+   says it can be pressed. */
+.model-row:hover .model-card {
+  color: var(--ink-soft);
 }
 
 /* ------------------------------------------------------------------- logs */
@@ -1708,6 +1837,210 @@ select {
 
 /* The dictation page starts with a live instruction. It answers the only
    question users have before speaking: which key, what gesture, what state. */
+/* ------------------------------------------------------------- onboarding */
+
+/*
+ * What a new install sees where the deck sits, until dictation actually
+ * works. It borrows the deck's gradient on purpose: the two occupy the same
+ * slot, one after the other, and a different-looking card in the same place
+ * would read as a different part of the app rather than the same one earlier
+ * in its life.
+ */
+.onboard {
+  position: relative;
+  padding: 26px 27px 20px;
+  border-radius: 18px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 88% -6%, rgb(143 128 255 / 40%), transparent 34%),
+    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 16%), transparent 38%),
+    linear-gradient(130deg, #1a2140, #292260);
+  color: #f8f8ff;
+}
+
+.onboard[hidden],
+.dictation-deck[hidden] {
+  display: none;
+}
+
+/* The list is a flex column while it is empty, and a card that can shrink is a
+   card with its last steps cut off. */
+.onboard,
+.dictation-deck {
+  flex: 0 0 auto;
+}
+
+.onboard-head {
+  max-width: 52ch;
+}
+
+.onboard-title {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-size: 23px;
+  font-weight: 710;
+  letter-spacing: -0.043em;
+  line-height: 1.1;
+}
+
+.onboard-lede {
+  margin: 8px 0 0;
+  color: rgb(239 240 255 / 74%);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* How much is left, as a bar rather than a sentence: the point of it is to be
+   read at a glance and to visibly move when a step completes. */
+.onboard-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.onboard-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 13%);
+  overflow: hidden;
+}
+
+.onboard-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: #32d6a1;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboard-count {
+  flex: 0 0 auto;
+  color: rgb(239 240 255 / 66%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+}
+
+.onboard-steps {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 18px 0 0;
+  list-style: none;
+}
+
+.onboard-step {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 0;
+}
+
+.onboard-step + .onboard-step {
+  border-top: 1px solid rgb(255 255 255 / 9%);
+}
+
+/* The number while there is something to do, a tick once there is not: a done
+   step is no longer a thing with a position in a queue. */
+.onboard-mark {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid rgb(255 255 255 / 26%);
+  border-radius: 50%;
+  color: rgb(239 240 255 / 76%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.onboard-step[data-done="true"] .onboard-mark {
+  border-color: #32d6a1;
+  background: #32d6a1;
+}
+
+/* The same two-border tick the Setup checklist draws, lifted by the same
+   0.99px its rotation puts below centre. */
+.onboard-step[data-done="true"] .onboard-mark::after {
+  content: "";
+  width: 4.5px;
+  height: 9px;
+  border: solid #10231d;
+  border-width: 0 1.9px 1.9px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.onboard-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.onboard-body strong {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.onboard-body small {
+  color: rgb(239 240 255 / 62%);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* A step already done has nothing to press, so its text steps back and lets
+   the one that is next be the loudest row. */
+.onboard-step[data-done="true"] .onboard-body strong {
+  color: rgb(239 240 255 / 56%);
+  font-weight: 560;
+}
+
+.onboard-step[data-done="true"] .onboard-body small {
+  color: rgb(239 240 255 / 38%);
+}
+
+/* Light on dark, which none of the other pill buttons have to be. */
+.onboard-action.is-primary {
+  flex: 0 0 auto;
+  min-width: 74px;
+  border-color: transparent;
+  background: #fff;
+  color: #221d4a;
+}
+
+.onboard-action.is-primary:hover:not(:disabled) {
+  background: rgb(255 255 255 / 86%);
+}
+
+.onboard-action.is-primary:disabled {
+  background: rgb(255 255 255 / 22%);
+  color: rgb(255 255 255 / 70%);
+  opacity: 1;
+}
+
+.onboard-action:focus-visible {
+  outline-color: #fff;
+}
+
+@media (max-width: 820px) {
+  .onboard-step {
+    flex-wrap: wrap;
+  }
+
+  .onboard-action.is-primary {
+    margin-left: 34px;
+  }
+}
+
 .dictation-deck {
   position: relative;
   display: grid;

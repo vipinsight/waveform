@@ -111,18 +111,27 @@
             </div>
           </div>
 
-          <div id="setup-banner" class="banner" hidden>
-            <span class="banner-dot" aria-hidden="true"></span>
-            <span class="banner-text">
-              <strong id="banner-title">Finish setting up</strong>
-              <span id="banner-detail"></span>
-            </span>
-            <button id="banner-action" class="pill-button is-primary" type="button">
-              Open setup
-            </button>
-          </div>
-
           <div id="history" class="history" aria-live="polite">
+            <!--
+              Shown instead of the deck until Waveform can actually dictate.
+              The steps are built in the renderer from the same list the Setup
+              page reads, so the two cannot drift apart.
+            -->
+            <section class="onboard" id="onboard" hidden>
+              <div class="onboard-head">
+                <h2 class="onboard-title">Let's get you dictating</h2>
+                <p class="onboard-lede">
+                  A few one-time permissions and a voice to download. About a minute,
+                  and nothing you say ever leaves this Mac.
+                </p>
+                <div class="onboard-progress">
+                  <div class="onboard-track"><span id="onboard-bar"></span></div>
+                  <span class="onboard-count" id="onboard-count">0 of 4</span>
+                </div>
+              </div>
+              <ol class="onboard-steps" id="onboard-steps"></ol>
+            </section>
+
             <section class="dictation-deck" id="dictation-deck" aria-live="polite">
               <div class="deck-intro">
                 <p class="deck-status" id="deck-status">Checking setup</p>
@@ -201,8 +210,8 @@
               <strong>Your voice stays here.</strong>
               Recording and transcription happen on this Mac, and no audio is ever
               uploaded or kept. Dictations are saved on this Mac so you can find them
-              again, and you can delete any of them, or all of them, from the Dictation
-              list. Text leaves the machine only when you use AI&nbsp;Polish, and only
+              again, and you can delete any of them, or all of them, from the
+              Transcripts list. Text leaves the machine only when you use AI&nbsp;Polish, and only
               the words you asked it to rewrite.
             </p>
           </div>
@@ -281,32 +290,7 @@
             Enable the macOS permissions Waveform needs to dictate in any app.
           </p>
 
-          <ol class="checklist" id="checklist">
-            <li class="check" data-check="microphone">
-              <span class="check-mark" aria-hidden="true"></span>
-              <span class="check-body">
-                <strong>Microphone</strong>
-                <small>Audio stays on this Mac.</small>
-              </span>
-              <button class="pill-button is-primary" type="button" data-fix="microphone">Grant</button>
-            </li>
-            <li class="check" data-check="input-monitoring">
-              <span class="check-mark" aria-hidden="true"></span>
-              <span class="check-body">
-                <strong>Input Monitoring</strong>
-                <small>Detects your dictation shortcut in other apps.</small>
-              </span>
-              <button class="pill-button is-primary" type="button" data-fix="input-monitoring">Grant</button>
-            </li>
-            <li class="check" data-check="accessibility">
-              <span class="check-mark" aria-hidden="true"></span>
-              <span class="check-body">
-                <strong>Accessibility</strong>
-                <small>Allows Waveform to insert text in other apps.</small>
-              </span>
-              <button class="pill-button is-primary" type="button" data-fix="accessibility">Grant</button>
-            </li>
-          </ol>
+          <ol class="checklist" id="checklist"></ol>
 
           <p class="note" id="setup-hint">
             macOS ties these to the app's signature. If a permission looks granted but
@@ -336,6 +320,8 @@
 
         <section class="settings-page" data-page="general" hidden>
           <h1 class="display">General</h1>
+
+          <h2 class="section-label">Appearance</h2>
           <div class="card">
             <div class="row">
               <span class="row-label">Theme</span>
@@ -348,21 +334,51 @@
               </span>
             </div>
             <label class="row">
-              <span class="row-label">Show menu bar icon</span>
+              <span class="row-label">
+                Always show the Wave Bar
+                <small>The small floating bar that shows Waveform is listening. Off, it appears only while you dictate.</small>
+              </span>
+              <span class="row-actions"><input id="flow-bar-toggle" type="checkbox" class="switch" /></span>
+            </label>
+            <div class="row">
+              <span class="row-label">
+                Where the Wave Bar sits
+                <small>Drag it anywhere on screen and it stays there.</small>
+              </span>
+              <span class="row-actions">
+                <button id="overlay-preview" class="pill-button" type="button">Show me</button>
+                <button id="overlay-reset" class="pill-button" type="button">Reset</button>
+              </span>
+            </div>
+          </div>
+
+          <h2 class="section-label">Where Waveform lives</h2>
+          <div class="card">
+            <label class="row">
+              <span class="row-label">
+                Show the menu bar icon
+                <small>Switch voice or microphone, and paste your last dictation, without opening this window.</small>
+              </span>
               <span class="row-actions"><input id="menubar-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
-              <span class="row-label">Launch at login</span>
-              <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
-            </label>
-            <label class="row">
-              <span class="row-label">Always show Wave Bar</span>
-              <span class="row-actions"><input id="flow-bar-toggle" type="checkbox" class="switch" /></span>
-            </label>
-            <label class="row">
-              <span class="row-label">Keep in Dock when window closes</span>
+              <span class="row-label">
+                Keep the Dock icon when the window closes
+                <small>Off, closing the window leaves Waveform in the menu bar only. The shortcut keeps working either way.</small>
+              </span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
+            <label class="row">
+              <span class="row-label">
+                Start Waveform when you log in
+                <small>Opens in the background, ready for your shortcut. No window appears.</small>
+              </span>
+              <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
+            </label>
+          </div>
+
+          <h2 class="section-label">Updates</h2>
+          <div class="card">
             <label class="row">
               <span class="row-label">
                 Check for updates automatically
@@ -375,16 +391,25 @@
 
         <section class="settings-page" data-page="dictation" hidden>
           <h1 class="display">Dictation</h1>
+          <p class="lede">
+            The key you hold to speak, and what Waveform listens with.
+          </p>
           <div class="card">
             <div class="row">
-              <span class="row-label">Microphone</span>
+              <label class="row-label" for="hotkey-select">
+                Key to hold
+                <small>Pick one you never type with. Waveform watches it everywhere, not just here.</small>
+              </label>
+              <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
+            </div>
+            <div class="row">
+              <label class="row-label" for="microphone-select">
+                Microphone
+                <small>Auto-detect follows whatever macOS is using, including headphones you plug in later.</small>
+              </label>
               <span class="row-actions">
                 <select id="microphone-select" aria-label="Microphone"></select>
               </span>
-            </div>
-            <div class="row">
-              <span class="row-label">Dictation shortcut</span>
-              <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
             </div>
           </div>
 
@@ -402,13 +427,6 @@
 
         <section class="settings-page" data-page="models" hidden>
           <h1 class="display">Models</h1>
-          <p class="note">
-            Speech happens on this Mac, so a model's size is memory this Mac gives up
-            while dictation is loaded. One is marked <strong>Recommended</strong>: the
-            most capable Whisper that fits comfortably in the memory you have. Anything
-            larger will still run — it will just be the largest thing on the machine.
-          </p>
-          <div class="model-groups" id="model-list"></div>
 
           <div class="card">
             <div class="row">
@@ -418,22 +436,38 @@
               </span>
             </div>
           </div>
+
+          <p class="note">
+            Speech runs on this Mac, so a model has to be downloaded before it can be
+            used — press a row marked with <span class="note-icon"><svg data-icon="cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="the cloud icon"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></svg></span> to fetch one. Memory is
+            what it costs while loaded, and accuracy is the word error rate its Hugging
+            Face page publishes on LibriSpeech test-clean: lower is better, and
+            comparable down the column.
+          </p>
+          <div class="model-groups" id="model-list"></div>
         </section>
 
         <section class="settings-page" data-page="ai" hidden>
           <h1 class="display">AI Polish</h1>
+          <p class="lede">
+            Optional. Speech comes out the way it was spoken — with the ums, the repeated
+            words, the missing commas. Polish hands that text to an AI to tidy before it
+            lands. <strong>It is the only part of Waveform that sends anything off this
+            Mac</strong>; the transcription itself never does.
+          </p>
           <div class="card">
             <div class="row">
               <label class="row-label" for="transform-toggle">
-                Polish dictation before inserting
-                <small>AI processing delays insertion.</small>
+                Tidy every dictation
+                <small id="transform-hint">Adds a second or two before your words appear.</small>
               </label>
               <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
             </div>
             <div class="row is-stacked">
               <span class="row-label">
-                OpenRouter API key
-                <small id="key-state">Stored in your login keychain, never in plain text.</small>
+                OpenRouter key
+                <small id="key-state">Waveform reaches the AI through OpenRouter. Kept in your login keychain, never in plain text.</small>
+                <button type="button" class="link" id="open-openrouter">Get a key at openrouter.ai</button>
               </span>
               <span class="row-actions">
                 <input
@@ -449,18 +483,31 @@
               </span>
             </div>
             <div class="row">
-              <label class="row-label" for="ai-model">OpenRouter model ID</label>
+              <label class="row-label" for="ai-model">
+                AI model
+                <small>Which model does the tidying. Cheaper ones are quicker and rarely worse at this.</small>
+              </label>
               <span class="row-actions">
                 <select id="ai-model" aria-label="OpenRouter model"></select>
               </span>
             </div>
             <div class="row">
-              <span class="row-label">Polish selected text</span>
+              <label class="row-label" for="polish-shortcut">
+                Tidy text you have selected
+                <small>Select words in any app, press this, and they are rewritten in place.</small>
+              </label>
               <span class="row-actions">
                 <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
               </span>
             </div>
           </div>
+
+          <h2 class="section-label">What to tell the AI</h2>
+          <p class="note">
+            These steer how text is tidied. Waveform holds the reply to a rewrite of that
+            same text, so a reply that answers it or wanders off is dropped and your
+            original is kept.
+          </p>
 
           <div class="prompt-block">
             <div class="prompt-head">
@@ -478,15 +525,6 @@
             <textarea id="polish-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
           </div>
 
-          <p class="note">
-            Text you dictate or select is sent to OpenRouter when these features run.
-            Transcription itself always stays on this Mac.
-          </p>
-          <p class="note">
-            These instructions steer how text is tidied. Waveform holds the reply to a
-            rewrite of that same text, so a reply that answers it or wanders off is
-            dropped and the original is kept.
-          </p>
         </section>
 
         <section class="settings-page" data-page="about" hidden>

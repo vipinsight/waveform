@@ -21,7 +21,7 @@ mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
-use model_server::{ModelEvent, ModelServer, ModelStatus};
+use model_server::{ModelEvent, ModelServer, ModelStatus, MODELS};
 use rewrite::{AiStatus, Rewriter};
 use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SettingsStore};
@@ -232,6 +232,9 @@ async fn update_settings(
         tauri::async_runtime::spawn(async move {
             let _ = models.select(&id).await;
         });
+        if next.menu_bar_icon {
+            refresh_tray_menu(&app);
+        }
     }
 
     if next.hotkey_id != previous.hotkey_id
@@ -332,6 +335,11 @@ async fn select_model(
         settings.update(value)
     };
     let _ = app.emit("settings-changed", &next);
+    // The menu bar carries the same tick, so it has to hear about a choice
+    // made in the window.
+    if next.menu_bar_icon {
+        refresh_tray_menu(&app);
+    }
 
     state.models.select(&next.model_id).await
 }
@@ -342,8 +350,18 @@ async fn select_model(
 /// than this reply, but still awaited: the row cannot say what it is until the
 /// download has actually finished one way or the other.
 #[tauri::command]
-async fn download_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
-    state.models.download_weights(&model_id).await
+async fn download_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<(), String> {
+    let outcome = state.models.download_weights(&model_id).await;
+    // A model that has arrived is one the menu bar can now switch to, where a
+    // moment ago it was greyed out.
+    if outcome.is_ok() && state.settings.lock().await.value().menu_bar_icon {
+        refresh_tray_menu(&app);
+    }
+    outcome
 }
 
 /// Asks whether there is a newer version. `None` means this is the newest.
@@ -617,7 +635,13 @@ async fn set_overlay_hit_region(
 async fn begin_overlay_drag(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
         if let Ok(position) = overlay.outer_position() {
-            *state.drag_origin.lock().await = Some((position.x as f64, position.y as f64));
+            // Logical, because that is what the deltas are: the HUD measures
+            // them from `screenX`, which WebKit reports in CSS pixels. Keeping
+            // the origin physical meant adding points to device pixels, and on
+            // a Retina display the pill tracked the pointer at half speed.
+            let scale = overlay.scale_factor().unwrap_or(1.0);
+            let logical = position.to_logical::<f64>(scale);
+            *state.drag_origin.lock().await = Some((logical.x, logical.y));
         }
     }
     Ok(())
@@ -633,10 +657,10 @@ async fn drag_overlay(
     let origin = *state.drag_origin.lock().await;
     let Some((x, y)) = origin else { return Ok(()) };
     if let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = overlay.set_position(tauri::PhysicalPosition::new(
-            (x + delta_x) as i32,
-            (y + delta_y) as i32,
-        ));
+        // Absolute from the origin rather than relative to the last move, so a
+        // dropped event cannot leave the pill behind the pointer for good --
+        // and logical throughout, so it moves exactly as far as the hand does.
+        let _ = overlay.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
     }
     Ok(())
 }
@@ -645,11 +669,20 @@ async fn drag_overlay(
 async fn end_overlay_drag(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    delta_x: f64,
+    delta_y: f64,
 ) -> Result<AppSettings, String> {
-    *state.drag_origin.lock().await = None;
+    let origin = state.drag_origin.lock().await.take();
     let Some(overlay) = app.get_webview_window(OVERLAY_LABEL) else {
         return Ok(state.settings.lock().await.value());
     };
+    // The last position, applied here rather than by a `drag_overlay` racing
+    // this command: both are spawned futures, and the one that saved could run
+    // first. The pill would then come to rest a frame short of the pointer and
+    // that is what got written down.
+    if let Some((x, y)) = origin {
+        let _ = overlay.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
+    }
     let Ok(position) = overlay.outer_position() else {
         return Ok(state.settings.lock().await.value());
     };
@@ -1056,6 +1089,14 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
         select_microphone_from_menu(app, String::new(), String::new());
         return;
     }
+    if let Some(definition) = id
+        .strip_prefix("model-")
+        .and_then(|value| value.parse::<usize>().ok())
+        .and_then(|index| MODELS.get(index))
+    {
+        select_model_from_menu(app, definition.id);
+        return;
+    }
     if let Some(index) = id
         .strip_prefix("microphone-device-")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1081,6 +1122,10 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             present_main_window(app);
             let _ = app.emit_to(MAIN_LABEL, "open-microphone-settings", ());
         }
+        "model-settings" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-model-settings", ());
+        }
         "toggle-dictation" => {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.toggle_from_app().await });
@@ -1100,6 +1145,33 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
         "quit" => app.exit(0),
         _ => {}
     }
+}
+
+/// Switching model from the menu bar, which is `select_model` without a
+/// window: persist the choice, tell every WebView, then load the engine.
+///
+/// The load is what takes time, and it is left until last so the menu's tick
+/// has already moved by the time it starts. A failure is reported the way
+/// every other model failure is, through `model-event`.
+fn select_model_from_menu(app: &tauri::AppHandle, model_id: &'static str) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let (next, models) = {
+            let state = app.state::<AppState>();
+            let mut settings = state.settings.lock().await;
+            let mut value = settings.value();
+            if value.model_id == model_id {
+                return;
+            }
+            value.model_id = model_id.to_string();
+            (settings.update(value), state.models.clone())
+        };
+        let _ = app.emit("settings-changed", &next);
+        if next.menu_bar_icon {
+            refresh_tray_menu(&app);
+        }
+        let _ = models.select(model_id).await;
+    });
 }
 
 /// Menu selections are settings changes too, so every WebView gets the same
@@ -1149,6 +1221,50 @@ fn accelerator_label(accelerator: &str) -> String {
         .replace("Control+", "⌃")
         .replace("Alt+", "⌥")
         .replace("Shift+", "⇧")
+}
+
+/// The model picker for the menu bar.
+///
+/// The whole catalogue, under the same headings the models page uses, so the
+/// two places a model is chosen do not present different lists. A model that
+/// would need a download or a terminal is listed and disabled: the menu bar
+/// can switch between models that are here, and the window is where models
+/// arrive.
+fn build_model_menu(
+    app: &tauri::AppHandle,
+    selected: &str,
+    state: &AppState,
+) -> tauri::Result<Submenu<tauri::Wry>> {
+    let menu = Submenu::new(app, "Model", true)?;
+    let mut heading: Option<&str> = None;
+    for (index, definition) in MODELS.iter().enumerate() {
+        let group = definition.group.heading();
+        // Separators rather than nested submenus: the point of this menu is to
+        // switch models in one gesture, and a submenu per group adds a hop to
+        // every one of them.
+        if heading.is_some_and(|previous| previous != group) {
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        }
+        heading = Some(group);
+        let item = CheckMenuItem::with_id(
+            app,
+            format!("model-{index}"),
+            definition.short_label,
+            state.models.is_ready(definition) || definition.id == selected,
+            definition.id == selected,
+            None::<&str>,
+        )?;
+        menu.append(&item)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "model-settings",
+        "Model settings…",
+        true,
+        None::<&str>,
+    )?)?;
+    Ok(menu)
 }
 
 /// Builds menu contents independently of the persistent menu bar icon.
@@ -1274,6 +1390,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?;
+    let model_menu = build_model_menu(app, &settings.model_id, &state)?;
     microphone_menu.append(&PredefinedMenuItem::separator(app)?)?;
     microphone_menu.append(&microphone_settings)?;
     // Assembled rather than declared, because the preview line is only there
@@ -1282,6 +1399,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
         &open,
         &separator,
+        &model_menu,
         &microphone_menu,
         &shortcut_menu,
         &separator,

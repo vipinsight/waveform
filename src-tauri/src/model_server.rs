@@ -46,8 +46,14 @@ pub struct ModelStatus {
     pub download_bytes: Option<u64>,
     /// The heading this model is listed under.
     pub group: String,
-    /// One line of what choosing this model costs and buys.
+    /// The one thing worth saying beyond the numbers, or empty when the name
+    /// and the figures already say it.
     pub detail: String,
+    /// The model's own page on Hugging Face.
+    pub card_url: String,
+    /// Word error rate on LibriSpeech test-clean, in percent, as Hugging Face
+    /// publishes it. `None` where no such figure exists.
+    pub wer: Option<f32>,
     /// Roughly what it adds to resident memory once loaded, in MB.
     pub memory_mb: u32,
     /// How that sits on this particular Mac. `None` when the installed memory
@@ -77,9 +83,28 @@ pub struct ModelDefinition {
     pub engine: Engine,
     pub weights: Weights,
     pub group: Group,
-    /// What this size or quantization is for, in the terms someone choosing
-    /// between them would care about: speed, accuracy, and which languages.
+    /// What this size or quantization is for, kept to the one thing the name
+    /// and the numbers do not already say. Empty where they say all of it.
     pub detail: &'static str,
+    /// The model's own page on Hugging Face: where the accuracy figure below
+    /// comes from, and where someone goes to check it.
+    ///
+    /// A quantization points at the model it is a quantization of. The weight
+    /// file is ggerganov's, but the model is OpenAI's, and the page someone
+    /// wants is the one describing what they are about to run.
+    pub card_url: &'static str,
+    /// Word error rate on LibriSpeech test-clean, in percent, as published on
+    /// that page. Lower is better.
+    ///
+    /// One benchmark across the whole table rather than the best figure each
+    /// project quotes, because the column exists to be read down. It is read
+    /// audiobook speech, so it flatters every model here in the same
+    /// direction; what it is good for is ordering them.
+    ///
+    /// `None` for the quantized builds, which nobody has benchmarked
+    /// separately. Their full-precision figure is not theirs, and printed in
+    /// this column it would read as measured.
+    pub wer: Option<f32>,
     /// Roughly what the model adds to resident memory once loaded, in MB.
     ///
     /// An estimate, not a measurement: the weight file plus the working state
@@ -103,7 +128,7 @@ pub enum Group {
 }
 
 impl Group {
-    fn heading(self) -> &'static str {
+    pub fn heading(self) -> &'static str {
         match self {
             Group::Whisper => "Whisper",
             Group::WhisperEnglish => "Whisper, English only",
@@ -179,6 +204,8 @@ macro_rules! whisper {
         sha256: $sha256:literal,
         group: $group:expr,
         memory_mb: $memory_mb:literal,
+        card: $card:literal,
+        wer: $wer:expr,
         detail: $detail:literal $(,)?
     ) => {
         ModelDefinition {
@@ -195,6 +222,8 @@ macro_rules! whisper {
             }),
             group: $group,
             memory_mb: $memory_mb,
+            card_url: concat!("https://huggingface.co/", $card),
+            wer: $wer,
             detail: $detail,
         }
     };
@@ -247,7 +276,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
         group: Group::Whisper,
         memory_mb: 250,
-        detail: "Fastest and least accurate. Short, clearly spoken phrases only.",
+        card: "openai/whisper-tiny",
+        wer: Some(7.54),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-base",
@@ -257,7 +288,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
         group: Group::Whisper,
         memory_mb: 350,
-        detail: "Noticeably better than Tiny at punctuation and proper nouns.",
+        card: "openai/whisper-base",
+        wer: Some(5.01),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-small",
@@ -267,7 +300,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
         group: Group::Whisper,
         memory_mb: 800,
-        detail: "The accuracy floor for dictation you do not have to reread.",
+        card: "openai/whisper-small",
+        wer: Some(3.43),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-small-q5",
@@ -277,7 +312,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
         group: Group::Whisper,
         memory_mb: 440,
-        detail: "Small at five bits a weight: half the memory, a little less accurate.",
+        card: "openai/whisper-small",
+        wer: None,
+        detail: "Whisper Small at 5 bits a weight. Not separately benchmarked.",
     },
     whisper! {
         id: "whisper-cpp-medium",
@@ -287,7 +324,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
         group: Group::Whisper,
         memory_mb: 2_100,
-        detail: "Handles accents and technical words Small guesses at. Slower than real time on older chips.",
+        card: "openai/whisper-medium",
+        wer: Some(2.90),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-medium-q5",
@@ -297,7 +336,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f",
         group: Group::Whisper,
         memory_mb: 1_050,
-        detail: "Medium's accuracy in a third of its memory. The cheapest way to leave Small behind.",
+        card: "openai/whisper-medium",
+        wer: None,
+        detail: "Whisper Medium at 5 bits a weight. Not separately benchmarked.",
     },
     whisper! {
         id: "whisper-cpp-large-v3-turbo",
@@ -307,7 +348,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
         group: Group::Whisper,
         memory_mb: 2_200,
-        detail: "Nearly Large v3's accuracy at several times the speed. The best model here if it fits.",
+        card: "openai/whisper-large-v3-turbo",
+        wer: Some(2.10),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-large-v3-turbo-q5",
@@ -317,7 +360,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
         group: Group::Whisper,
         memory_mb: 1_150,
-        detail: "Turbo at five bits a weight, for a Mac that cannot spare two gigabytes.",
+        card: "openai/whisper-large-v3-turbo",
+        wer: None,
+        detail: "Large v3 Turbo at 5 bits a weight. Not separately benchmarked.",
     },
     whisper! {
         id: "whisper-cpp-large-v3-q5",
@@ -327,7 +372,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
         group: Group::Whisper,
         memory_mb: 1_800,
-        detail: "The most accurate weights that fit in under two gigabytes. Slower than Turbo.",
+        card: "openai/whisper-large-v3",
+        wer: None,
+        detail: "Large v3 at 5 bits a weight. Not separately benchmarked.",
     },
     whisper! {
         id: "whisper-cpp-large-v3",
@@ -337,7 +384,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
         group: Group::Whisper,
         memory_mb: 3_800,
-        detail: "The most accurate Whisper there is, and the slowest. Turbo is the better trade for dictation.",
+        card: "openai/whisper-large-v3",
+        wer: Some(2.01),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-tiny-en",
@@ -347,7 +396,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
         group: Group::WhisperEnglish,
         memory_mb: 250,
-        detail: "English alone, and better at it than multilingual Tiny.",
+        card: "openai/whisper-tiny.en",
+        wer: Some(5.66),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-base-en",
@@ -357,7 +408,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
         group: Group::WhisperEnglish,
         memory_mb: 350,
-        detail: "English alone. Roughly multilingual Small's accuracy for a third of the memory.",
+        card: "openai/whisper-base.en",
+        wer: Some(4.27),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-small-en",
@@ -367,7 +420,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
         group: Group::WhisperEnglish,
         memory_mb: 800,
-        detail: "English alone. A good match for a Mac with 8 GB that only dictates English.",
+        card: "openai/whisper-small.en",
+        wer: Some(3.05),
+        detail: "",
     },
     whisper! {
         id: "whisper-cpp-medium-en",
@@ -377,7 +432,9 @@ pub const MODELS: &[ModelDefinition] = &[
         sha256: "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
         group: Group::WhisperEnglish,
         memory_mb: 2_100,
-        detail: "English alone, and the most accurate way to hear it short of Turbo.",
+        card: "openai/whisper-medium.en",
+        wer: Some(3.02),
+        detail: "",
     },
     ModelDefinition {
         id: "parakeet-tdt-0.6b-v3",
@@ -387,7 +444,9 @@ pub const MODELS: &[ModelDefinition] = &[
         weights: Weights::NemoCache,
         group: Group::Other,
         memory_mb: 2_600,
-        detail: "Faster than any Whisper of its accuracy, and 25 European languages. Needs a terminal and 2.5 GB of Python.",
+        card_url: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        wer: Some(1.93),
+        detail: "25 European languages.",
     },
     ModelDefinition {
         id: "qwen3-asr-0.6b",
@@ -397,7 +456,9 @@ pub const MODELS: &[ModelDefinition] = &[
         weights: Weights::HuggingFace,
         group: Group::Other,
         memory_mb: 2_800,
-        detail: "Strong on Chinese and code-switched speech. Slowest to load, and needs a terminal.",
+        card_url: "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
+        wer: Some(2.11),
+        detail: "52 languages, strongest on Chinese.",
     },
 ];
 
@@ -645,6 +706,18 @@ impl ModelServer {
         self.runtime_installed(model(&id))
     }
 
+    /// Whether a model could be switched to right now, with no download and
+    /// no terminal.
+    ///
+    /// Synchronous, and deliberately so: the menu bar is built on the main
+    /// thread while the async settings lock may be held elsewhere, and it has
+    /// nowhere to put a download anyway. A model this says no to is listed
+    /// there greyed out rather than hidden, so the menu and the models page
+    /// agree about what exists.
+    pub fn is_ready(&self, definition: &ModelDefinition) -> bool {
+        self.runtime_installed(definition) && weights_present(definition)
+    }
+
     /// Whether a model's engine could run at all, weights aside.
     fn runtime_installed(&self, definition: &ModelDefinition) -> bool {
         match runtime(definition.engine) {
@@ -674,6 +747,8 @@ impl ModelServer {
                 download_bytes: downloadable(definition).map(|spec| spec.bytes),
                 group: definition.group.heading().into(),
                 detail: definition.detail.into(),
+                card_url: definition.card_url.into(),
+                wer: definition.wer,
                 memory_mb: definition.memory_mb,
                 fit: installed.map(|total| fit(definition.memory_mb, total)),
                 recommended: Some(definition.id) == suggested,
@@ -1507,6 +1582,40 @@ mod tests {
         assert!(!dir.join("README.md.partial").exists());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The models page reads down a column of these, so a missing card link is
+    /// a row with nothing to check the number against, and a wild figure is one
+    /// that silently reorders the list.
+    ///
+    /// The quantized builds are the ones with no figure, and they are named
+    /// here rather than counted: the point is that a `None` is a deliberate
+    /// gap, not an entry someone forgot to fill in.
+    #[test]
+    fn every_model_links_a_card_and_only_quantizations_lack_a_figure() {
+        let mut unmeasured: Vec<&str> = Vec::new();
+        for definition in MODELS.iter() {
+            assert!(
+                definition.card_url.starts_with("https://huggingface.co/"),
+                "{} does not link a Hugging Face page",
+                definition.id
+            );
+            match definition.wer {
+                // Nothing here is under 1% on LibriSpeech test-clean, and
+                // nothing usable is over 20%.
+                Some(wer) => assert!((1.0..20.0).contains(&wer), "{} claims {wer}%", definition.id),
+                None => unmeasured.push(definition.id),
+            }
+        }
+        assert_eq!(
+            unmeasured,
+            [
+                "whisper-cpp-small-q5",
+                "whisper-cpp-medium-q5",
+                "whisper-cpp-large-v3-turbo-q5",
+                "whisper-cpp-large-v3-q5",
+            ]
+        );
     }
 
     /// A model the app fetches must not also tell the user to run something,

@@ -269,15 +269,43 @@ would be a guess wearing the word "recommended".
 `Group` decides which heading a row is listed under — `Whisper`, `Whisper,
 English only`, `Other engines` — and the renderer builds its groups from the
 order the catalogue arrives in, so the interface holds no second opinion about
-which groups exist. Sixteen rows is more than anyone reads, so `renderModels`
-shows only what someone would act on — the recommended model, the one in use,
-anything already downloaded, and anything the app cannot fetch — and folds the
-rest behind a **Show every size** button that flips one module-level flag and
-re-renders. That last condition is what keeps Parakeet and Qwen out of the fold:
-what is hidden is the tail of Whisper weight files, which is exactly the set the
-app downloads itself. Each heading gets its own
-`role="radiogroup"`, so arrow keys move within a group instead of sweeping
-through fourteen Whisper sizes to reach Parakeet.
+which groups exist. Each heading gets its own `role="radiogroup"`, so arrow keys
+move within a group instead of sweeping through fourteen Whisper sizes to reach
+Parakeet.
+
+`renderModels` lists all sixteen. It used to open folded, showing only the
+recommended model, the one in use, anything downloaded and anything the app
+could not fetch, with the rest behind a **Show every size** button — which meant
+the page opened having already decided the question it exists to ask. What makes
+the full list readable instead is that a row is four facts on one line: `wer`,
+the download size, the memory, and an arrow beside the name carrying `card_url`
+through `openUrl`.
+
+The row is a `div`, not a button. The press target is a `.model-pick` layer
+absolutely positioned over the whole row; everything visible sits above it with
+`pointer-events: none`, so a click anywhere lands on the row, and the arrow
+takes its own back with `pointer-events: auto`. A link inside a button is not
+something a browser will render, which is what forced the split. The wrapper is
+`role="presentation"` so the radio group still sees radios as its children.
+
+What that press does depends on `weightsInstalled`, and the row says which:
+a model that is here is filled, carries a `Downloaded` or `In use` tag, and its
+press target is a `role="radio"`; one that is not is outlined, carries Lucide's
+`cloud-download` — the glyph macOS puts beside a file that is not on the disk —
+and its press target is a plain button labelled `Download …`. Calling the second
+one a radio was the interface saying a thing that is not true: you cannot select
+what you do not have. The two engines the app cannot fetch get `terminal` and
+the command instead. `data-state` on the row (`here`, `download`, `terminal`)
+is what the stylesheet reads for all of it.
+
+`wer` is word error rate on LibriSpeech test-clean, in percent, as published on
+each model's own Hugging Face page. One benchmark down the whole column rather
+than the best figure each project quotes — it is read audiobook speech, so it
+flatters everything here in the same direction, and what it is good for is
+ordering. It is `None` for the four quantized builds, which nobody has
+benchmarked separately: their full-precision figure is not theirs, and printed
+in that column it would read as measured. Those rows say so in a line of their
+own instead.
 
 ## How weights arrive
 
