@@ -369,7 +369,12 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
     // Cleaning up dictation drops filler and can compress a good deal; it never
     // has cause to run much longer than what was said.
     let (source_len, reply_len) = (source.chars().count() as f64, reply.chars().count() as f64);
-    if reply_len > source_len * 1.6 + 40.0 || reply_len < source_len * 0.4 - 40.0 {
+    // The fixed allowance is there so added punctuation and capitals cannot
+    // trip the ratio. On a phrase of a few words it is most of the length, and
+    // it is what lets "Hello! How can I help you today?" pass as a correction
+    // of "helo", so a short source gets a short allowance.
+    let slack = if source_len < 40.0 { 12.0 } else { 40.0 };
+    if reply_len > source_len * 1.6 + slack || reply_len < source_len * 0.4 - slack {
         return false;
     }
 
@@ -377,10 +382,17 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
     let source_words = words(source);
     // Under a sentence or so the proportions below say nothing useful: "thanks
     // alot" becoming "Thanks a lot." replaces half the words and is still the
-    // fix that was wanted. The lengths already agree, which is all a phrase
-    // that short can be held to.
+    // fix that was wanted. What a phrase that short can still be held to is
+    // that half of it survived -- otherwise "The text is already correct.",
+    // which is a small model's verdict rather than its answer, is close enough
+    // in length to pass and gets pasted over the words it was judging.
     if source_words.len() < 8 {
-        return true;
+        let kept = source_words
+            .iter()
+            .filter(|word| reply_words.iter().any(|reply| same_word(word, reply)))
+            .count() as f64
+            / source_words.len() as f64;
+        return kept >= 0.5;
     }
 
     let source_set: std::collections::HashSet<&String> = source_words.iter().collect();
@@ -405,49 +417,76 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
         .count() as f64
         / source_set.len() as f64;
 
-    borrowed >= 0.6 && kept >= 0.5 && covers_the_end(&source_words, &reply_set)
+    borrowed >= 0.6 && kept >= 0.5 && reaches_the_end(&source_words, &reply_words)
 }
 
-/// Whether the reply still carries the end of what it was given.
+/// Whether the reply reaches the end of what it was given.
 ///
 /// The proportions above are blind to where the missing words were: a small
 /// model that stops early keeps enough of the opening to pass both of them, and
-/// what it drops is a clause the speaker did say. "Send me the files when you
-/// are free, I need them for the meeting" came back as "send me the files when
-/// your free", which is not a tidier version of that sentence -- it is half of
-/// it.
+/// what it drops is a clause the speaker did say. "Can you send me the files
+/// when you are free, I need them for the meeting" came back as "can you send
+/// me the files when your free", which is not a tidier version of that sentence
+/// -- it is the first two thirds of it.
 ///
-/// Cleanup does drop words throughout, so this asks only that the closing third
-/// left a mark, not that it survived intact.
-fn covers_the_end(source_words: &[String], reply_words: &std::collections::HashSet<&String>) -> bool {
-    let start = source_words.len() * 2 / 3;
-    let ending = &source_words[start..];
-    if ending.is_empty() {
+/// So this asks where the reply gets to, not how much of the tail it kept: the
+/// last word of the source that appears in the reply has to be near the end of
+/// the source. A cleanup that drops a trailing "I think" still reaches nearly
+/// the end; a reply that stopped halfway does not.
+fn reaches_the_end(source_words: &[String], reply_words: &[String]) -> bool {
+    // Only the words worth tracking. "the", "for" and "me" appear all through
+    // both texts, so the source's last "the" is always matched by the reply's
+    // first one, and a reply that stopped halfway looks like it got to the end.
+    let carried: Vec<bool> = source_words
+        .iter()
+        .filter(|word| word.chars().count() >= 4)
+        .map(|word| reply_words.iter().any(|reply| same_word(word, reply)))
+        .collect();
+    if carried.is_empty() {
         return true;
     }
-    let kept = ending
-        .iter()
-        .filter(|word| reply_words.iter().any(|reply| same_word(word, reply)))
-        .count() as f64
-        / ending.len() as f64;
-    kept >= 0.4
+    let Some(furthest) = carried.iter().rposition(|matched| *matched) else {
+        return false;
+    };
+    (furthest + 1) as f64 / carried.len() as f64 >= 0.8
 }
 
 /// Whether two words are the same word, allowing for one having been corrected.
 ///
-/// The end of a sentence is exactly where a spelling fix lands -- "yesteday"
-/// comes back as "yesterday" -- and counting that as a word left behind is how
-/// a guard against truncation starts refusing the fixes it was meant to let
-/// through. Four characters is enough to tell a corrected word from a different
-/// one at this length.
+/// A spelling fix lands exactly where these counts are taken -- "yesteday"
+/// comes back as "yesterday", "helo" as "hello" -- and treating those as words
+/// left behind is how a guard against a reply going missing starts refusing the
+/// fixes it was meant to let through. One edit apart, and only for words long
+/// enough that one edit is a correction rather than a different word: "them"
+/// and "the" are not the same word.
 fn same_word(source: &str, reply: &str) -> bool {
     if source == reply {
         return true;
     }
-    if source.len() < 4 || reply.len() < 4 {
+    if source.chars().count() < 4 || reply.chars().count() < 4 {
         return false;
     }
-    source.chars().take(4).eq(reply.chars().take(4))
+    within_one_edit(source, reply)
+}
+
+/// Levenshtein distance of at most one, without computing the distance.
+fn within_one_edit(left: &str, right: &str) -> bool {
+    let (left, right): (Vec<char>, Vec<char>) = (left.chars().collect(), right.chars().collect());
+    if left.len().abs_diff(right.len()) > 1 {
+        return false;
+    }
+    // Walk both until they disagree, then allow exactly one of: a substitution,
+    // an insertion, or a deletion, and require the rest to match.
+    let mut index = 0;
+    while index < left.len() && index < right.len() && left[index] == right[index] {
+        index += 1;
+    }
+    let (rest_left, rest_right) = (&left[index..], &right[index..]);
+    match rest_left.len().cmp(&rest_right.len()) {
+        std::cmp::Ordering::Equal => rest_left.get(1..) == rest_right.get(1..),
+        std::cmp::Ordering::Less => rest_left == &rest_right[1..],
+        std::cmp::Ordering::Greater => &rest_left[1..] == rest_right,
+    }
 }
 
 fn words(text: &str) -> Vec<String> {
@@ -674,6 +713,18 @@ mod tests {
     #[test]
     fn accepts_a_short_rewrite() {
         assert!(is_rewrite_of("thanks alot", "Thanks a lot."));
+        assert!(is_rewrite_of("helo", "hello"));
+        assert!(is_rewrite_of("how r u doing", "How are you doing?"));
+    }
+
+    /// What a small model says instead of answering. It is about the right
+    /// length for a short selection, and every word of it is new -- which is
+    /// the only thing distinguishing it from the correction that was asked for.
+    #[test]
+    fn rejects_a_verdict_in_place_of_a_correction() {
+        assert!(!is_rewrite_of("thanks alot", "The text is already correct."));
+        assert!(!is_rewrite_of("how r u doing", "No changes are needed."));
+        assert!(!is_rewrite_of("helo", "Hello! How can I help you today?"));
     }
 
     #[test]
