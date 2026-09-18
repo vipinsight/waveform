@@ -89,7 +89,7 @@ export type DictationState =
   | "idle"
   | "listening"
   | "transcribing"
-  /** Waiting on an OpenRouter rewrite. */
+  /** Waiting on a rewrite, here or through OpenRouter. */
   | "rewriting"
   | "error";
 
@@ -99,6 +99,8 @@ export interface DictationCommand {
   action: "start" | "stop" | "cancel" | "preview" | "idle" | "busy" | "fail";
   sink: DictationSink;
   mode: DictationMode;
+  /** Why it failed, for the actions where something did. */
+  message?: string;
 }
 
 /**

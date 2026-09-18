@@ -383,7 +383,7 @@ Everything else, with `catalog()` naming the command:
 [tests/polish-model-registry.test.ts](../tests/polish-model-registry.test.ts) in
 the same way, for the same reason. They are rewriting models rather than speech
 ones, run through llama.cpp linked in beside whisper.cpp, and reached from
-Settings → AI Polish rather than the models page.
+the AI Polish section rather than the models page.
 
 The parts they share with the speech catalogue are the download (`Download`,
 checked by length and SHA-256, moved into place only when both match), the

@@ -39,7 +39,7 @@ to anyone.
 
 Nothing but this is needed to dictate. whisper.cpp is the default engine and the
 only one already inside the app, so its weights are the one missing piece, and
-**Settings → Models** downloads them itself — no terminal, which is what an
+The **Models** section downloads them itself — no terminal, which is what an
 install from the disk image has to work with.
 
 ## Signing

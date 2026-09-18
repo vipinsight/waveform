@@ -95,19 +95,50 @@ impl Rewriter {
         if settings.polish_engine == "local" {
             let model = local_llm::model(&settings.local_model_id);
             return format!(
-                "Download {} in Settings → AI Polish first.",
+                "Download {} in AI Polish first.",
                 model.label
             );
         }
         "Add an OpenRouter API key in Settings first.".to_string()
     }
 
-    /// Drops the local model when the engine is switched away from it, so an
-    /// unused gigabyte does not sit there until the app is quit.
-    pub async fn engine_changed(&self, engine: &str) {
+    /// Follows a change of engine: the local model is loaded when it becomes
+    /// the one that answers, and dropped when it stops being, so an unused
+    /// gigabyte does not sit there until the app is quit.
+    ///
+    /// Loading happens in the background. It takes a few seconds, and the point
+    /// of doing it here is that nobody is waiting on those seconds yet.
+    pub async fn engine_changed(self: &Arc<Self>, engine: &str) {
         if engine != "local" {
             self.local.unload().await;
+            return;
         }
+        self.warm_local().await;
+    }
+
+    /// Loads the local model at launch, when every dictation is going to use it
+    /// anyway.
+    ///
+    /// Only then. The weights are most of a gigabyte and nothing gives them
+    /// back until the app quits, so they are not worth holding on the chance
+    /// somebody presses the polish shortcut later -- that first press pays for
+    /// the load itself, once.
+    pub async fn warm_at_launch(self: &Arc<Self>) {
+        let settings = self.settings.lock().await.value();
+        if settings.polish_engine == "local" && settings.transform_on_dictate {
+            self.warm_local().await;
+        }
+    }
+
+    async fn warm_local(self: &Arc<Self>) {
+        let model_id = self.settings.lock().await.value().local_model_id;
+        if !local_llm::is_installed(local_llm::model(&model_id)) {
+            return;
+        }
+        let rewriter = self.clone();
+        tokio::spawn(async move {
+            let _ = rewriter.local.warm(&model_id).await;
+        });
     }
 
     pub async fn set_key(&self, key: &str) -> AiStatus {

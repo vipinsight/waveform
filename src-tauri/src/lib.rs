@@ -853,8 +853,14 @@ pub fn run() {
             })));
 
             let rewriter = Rewriter::new(settings.clone());
+            // A dictation that is always polished will want the local model
+            // within seconds of the first phrase; loading it now costs nobody
+            // a wait.
+            let warming = rewriter.clone();
+            tauri::async_runtime::spawn(async move { warming.warm_at_launch().await });
             let dictation = Dictation::new(
                 app.handle().clone(),
+                logs.clone(),
                 settings.clone(),
                 stats.clone(),
                 history.clone(),

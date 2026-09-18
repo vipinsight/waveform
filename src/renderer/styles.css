@@ -407,10 +407,21 @@ kbd {
   scrollbar-width: none;
 }
 
-/* Only the list runs to the edge. The overview is ordinary content and keeps
-   its bottom inset. */
-#view-overview {
+/* Only the list runs to the edge. The overview, the models and the polish
+   settings are ordinary content and keep their bottom inset. */
+#view-overview,
+#view-models,
+#view-ai {
   padding-bottom: 26px;
+}
+
+/* Models and AI Polish were pages of the settings panel until they became
+   sections of the window. Their heading keeps the size it had there: it labels
+   a page of controls, not a list with a toolbar beside it. */
+#view-models .display,
+#view-ai .display {
+  margin-bottom: 22px;
+  font-size: 26px;
 }
 
 .view[hidden] {

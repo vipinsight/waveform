@@ -325,6 +325,19 @@ impl LocalPolisher {
         *self.loaded.lock().await = None;
     }
 
+    /// Loads a model before anything needs it, and says how long it took.
+    ///
+    /// Loading is most of the wait on a first rewrite -- the weights, and
+    /// llama.cpp's Metal library behind them, take a few seconds between them --
+    /// and a few seconds spent while the pill spins reads as a shortcut that did
+    /// nothing. Doing it when the engine is chosen moves that wait to a moment
+    /// nobody is waiting on.
+    pub async fn warm(&self, id: &str) -> Result<std::time::Duration, String> {
+        let started = std::time::Instant::now();
+        self.loaded_model(model(id)).await?;
+        Ok(started.elapsed())
+    }
+
     /// Rewrites `text` under `style_prompt`, using the model `id` names.
     ///
     /// Blocking work -- loading weights, and then a token at a time -- so all
@@ -360,7 +373,7 @@ impl LocalPolisher {
         // when the file is missing.
         if !path.is_file() {
             return Err(format!(
-                "{} has not been downloaded yet. Fetch it in Settings → AI Polish.",
+                "{} has not been downloaded yet. Fetch it in AI Polish.",
                 definition.label
             ));
         }

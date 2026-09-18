@@ -59,7 +59,7 @@ Model downloads and update checks also use the network; see [Privacy](#privacy).
 - **Open models, switchable.** Every size of
   [Whisper](https://github.com/ggml-org/whisper.cpp) — Tiny through Large v3,
   quantized or not, multilingual or English-only — runs inside the app and needs
-  nothing installed; Settings → Models marks the one that fits the memory your
+  nothing installed; the Models section marks the one that fits the memory your
   Mac has. Pressing a row fetches its weights, and for an installed copy of the
   app that is the whole story.
   [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
@@ -69,7 +69,7 @@ Model downloads and update checks also use the network; see [Privacy](#privacy).
   [Models](docs/models.md) has the details.
 - **Polish without an account.** AI Polish can run
   [Qwen3](https://huggingface.co/Qwen/Qwen3-0.6B) 0.6B or 1.7B on your Mac
-  through llama.cpp, downloaded from Settings → AI Polish the same way a speech
+  through llama.cpp, downloaded from the AI Polish section the same way a speech
   model is. An OpenRouter key remains an option for the times a bigger model
   reads a passage better.
 - **It waits until you finish.** Text arrives when you stop speaking, so a

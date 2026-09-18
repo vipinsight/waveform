@@ -228,7 +228,10 @@ fn describe_selection_failure(reason: Option<&str>) -> String {
         Some("accessibility") => {
             "Accessibility permission is needed to read the selection.".into()
         }
-        Some("empty") => "Select some text first.".into(),
+        // The helper selects the focused field itself when nothing is
+        // selected, so an empty reply means there was no text where the cursor
+        // was -- or that the focus is not somewhere text is typed at all.
+        Some("empty") => "There was no text to polish where you were typing.".into(),
         Some("stopped") => "Hotkey helper stopped.".into(),
         _ => "Could not read the selection.".into(),
     }
@@ -315,7 +318,7 @@ mod tests {
 
     #[test]
     fn explains_selection_failures() {
-        assert!(describe_selection_failure(Some("empty")).contains("Select some text"));
+        assert!(describe_selection_failure(Some("empty")).contains("no text to polish"));
         assert!(describe_selection_failure(Some("accessibility")).contains("Accessibility"));
         assert!(describe_selection_failure(None).contains("Could not read"));
     }

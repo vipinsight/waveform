@@ -199,7 +199,10 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
-  host().onOpenModelSettings(() => toggleSettings(true, "models"));
+  host().onOpenModelSettings(() => {
+    toggleSettings(false);
+    showView("models");
+  });
   host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
@@ -442,8 +445,16 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "overview"]) {
+  for (const id of ["dictate", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
+  }
+  // Both lists describe files on the disk, which arrive while the section is
+  // closed -- from a download here, or from a terminal -- so each is re-read on
+  // the way in rather than trusted from startup.
+  if (view === "models") void renderModels();
+  if (view === "ai") {
+    void renderPolishModels();
+    void host().getAiStatus().then(renderAiStatus);
   }
 }
 
@@ -461,12 +472,6 @@ function showSettingsPage(page: string): void {
     section.hidden = section.dataset.page !== page;
   }
   if (page === "dictation") void refreshMicrophones(true);
-  // Runtimes and weights arrive from a terminal, not from here, so the list is
-  // re-read each time the page is opened rather than trusted from startup.
-  if (page === "models") void renderModels();
-  // Downloading a polish model is the same kind of act, and the same reason to
-  // re-read: the page may have been open since before it finished.
-  if (page === "ai") void renderPolishModels();
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }

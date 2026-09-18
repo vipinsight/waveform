@@ -52,6 +52,10 @@ struct DictationCommand {
     action: String,
     sink: String,
     mode: String,
+    /// Why, for the actions where something went wrong. The pill has nowhere to
+    /// put a sentence, but it hands this back to the window, which does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -100,6 +104,7 @@ struct Session {
 
 pub struct Dictation {
     app: AppHandle,
+    logs: Arc<crate::logs::Logs>,
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
@@ -144,6 +149,7 @@ pub struct Dictation {
 impl Dictation {
     pub fn new(
         app: AppHandle,
+        logs: Arc<crate::logs::Logs>,
         settings: Arc<Mutex<SettingsStore>>,
         stats: Arc<Mutex<StatsStore>>,
         history: Arc<Mutex<HistoryStore>>,
@@ -152,6 +158,7 @@ impl Dictation {
     ) -> Arc<Self> {
         Arc::new(Self {
             app,
+            logs,
             settings,
             stats,
             history,
@@ -737,9 +744,7 @@ impl Dictation {
             // What is missing depends on which engine is selected, so the
             // rewriter says it rather than this.
             let reason = self.rewriter.not_ready_message().await;
-            self.report_error(&reason).await;
-            self.show_overlay().await;
-            self.send_to_overlay("fail", "insert", "hold").await;
+            self.fail_with(&reason).await;
             return;
         }
 
@@ -761,9 +766,15 @@ impl Dictation {
             if *self.polish_cancelled.lock().await {
                 return Err("Cancelled.".to_string());
             }
-            if polished != selection {
-                self.helper.paste(&polished).await;
+            if polished == selection {
+                // Not a failure, and not nothing either: pasting the same words
+                // back would be a change to undo for no reason, and saying so
+                // is what distinguishes it from a shortcut that misfired.
+                self.logs
+                    .info(&self.app, "polish", "The text was already tidy.");
+                return Ok(());
             }
+            self.helper.paste(&polished).await;
             Ok::<(), String>(())
         }
         .await;
@@ -775,11 +786,7 @@ impl Dictation {
             Err(message) if message == "Cancelled." => {
                 self.send_to_overlay("cancel", "insert", "hold").await;
             }
-            Err(message) => {
-                self.show_overlay().await;
-                self.send_to_overlay("fail", "insert", "hold").await;
-                self.report_error(&message).await;
-            }
+            Err(message) => self.fail_with(&message).await,
         }
 
         *self.polishing.lock().await = false;
@@ -819,6 +826,29 @@ impl Dictation {
                 action: action.into(),
                 sink: sink.into(),
                 mode: mode.into(),
+                message: None,
+            },
+        );
+    }
+
+    /// Shows the failure on the pill and says what it was.
+    ///
+    /// A polish that goes wrong usually goes wrong with the app window closed,
+    /// where a red pill is the only thing anybody sees: that reads as the
+    /// shortcut doing nothing. So the reason travels with it, to the window if
+    /// one is open and to the log either way, where it can be read afterwards.
+    async fn fail_with(&self, message: &str) {
+        self.logs.error(&self.app, "polish", message.to_string());
+        self.report_error(message).await;
+        self.show_overlay().await;
+        let _ = self.app.emit_to(
+            OVERLAY_LABEL,
+            "dictation-command",
+            DictationCommand {
+                action: "fail".into(),
+                sink: "insert".into(),
+                mode: "hold".into(),
+                message: Some(message.to_string()),
             },
         );
     }

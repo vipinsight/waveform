@@ -81,7 +81,7 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
-**Settings → Models** says what is on this Mac and what is not. A filled row is
+**Models**, in the window's own menu, says what is on this Mac and what is not. A filled row is
 downloaded; an outlined one with a cloud beside it is not, and pressing it
 fetches the weights. The two engines the app cannot fetch show a prompt instead,
 with the command to run.
@@ -167,8 +167,8 @@ cleared. It holds the most recent 300 and is readable only by you.
 ## AI Polish
 
 Optional rewriting, which runs only when you ask, and which sends text rather
-than audio if it sends anything at all. **Settings → AI Polish** chooses where it
-runs.
+than audio if it sends anything at all. **AI Polish**, in the window's own menu,
+chooses where it runs.
 
 ### On this Mac
 
@@ -200,7 +200,7 @@ prompt.
 
 The hosted option. This is the one feature that sends anything off the Mac.
 
-Paste a key into **Settings → AI Polish**. It goes to your login keychain as a
+Paste a key into **AI Polish**. It goes to your login keychain as a
 generic password under `com.webtiara.waveform`, never to a file Waveform owns,
 and is never handed back to the interface — the screen can report that a key
 exists and replace it, but cannot read it.
@@ -228,6 +228,17 @@ circle with a spinner — blue while polish runs, grey while it only transcribes
 Polishing has to copy the selection to read it, since no API exposes another
 app's selection, so it needs Accessibility. Your clipboard is restored
 afterwards.
+
+With nothing selected, it takes the field you are typing in: the copy comes back
+empty, so Waveform selects all of it and copies again, and the polished text is
+pasted over that selection. Only where the keyboard focus is somewhere text is
+typed — a ⌘A in a file list would select files, so a focus that is not a text
+field is left alone and the shortcut reports that there was nothing to polish.
+
+When a polish goes wrong the pill turns red and the reason is written to
+**Settings → Logs**, which is where to look if a press seems to do nothing. Text
+that was already tidy comes back unchanged and nothing is pasted; that is the
+one case where a press really does leave everything as it was.
 
 ## Living in the menu bar
 

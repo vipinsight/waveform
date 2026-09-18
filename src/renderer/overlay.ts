@@ -272,7 +272,9 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     cancelLinger();
     previewing = false;
     hud.dataset.mode = "hold";
-    setState("error");
+    // The reason travels with the command, and setState carries it to the
+    // window: a red pill on its own says only that something happened.
+    setState("error", command.message);
     startAnimation();
     scheduleIdle();
     return;
