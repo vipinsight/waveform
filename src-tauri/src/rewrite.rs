@@ -30,6 +30,15 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// to it as preferences, so a rewrite stays a rewrite whatever they ask for.
 const CORE_PROMPT: &str = include_str!("prompts/core.txt");
 
+/// The same thing, said in fewer words, for the models running on this Mac.
+///
+/// The long version explains the fence in detail -- that it is written
+/// `<text-ID>`, that the ID changes every request -- and a 0.6B model answers
+/// by writing `text-ID: 18d667f…` at the top of its reply, which the check for
+/// a leaked fence then refuses. It is describing the machinery to something
+/// small enough to copy the description instead of following it.
+const LOCAL_CORE_PROMPT: &str = include_str!("prompts/core-local.txt");
+
 /// More text than a dictated session realistically holds. Past it we refuse
 /// rather than truncate, because a rewrite of half the text would delete the
 /// other half.
@@ -203,26 +212,34 @@ impl Rewriter {
             });
         }
 
-        let nonce = nonce();
-        let reply = if local {
-            self.local
-                .rewrite(
-                    &settings.local_model_id,
-                    &system_prompt(style_prompt),
-                    &fence(text, &nonce),
-                    reply_budget(text),
-                )
-                .await?
-        } else {
-            self.ask_open_router(&settings.open_router_model, style_prompt, text, &nonce)
-                .await?
-        };
-
-        let rewritten = unwrap_text(&unfence(&reply, &nonce));
-        if rewritten.contains(&nonce) || !is_rewrite_of(text, &rewritten) {
-            return Err("The reply was not a rewrite of the text, so it was ignored.".to_string());
+        if local {
+            // Two attempts at most. The fence id is part of the prompt, so the
+            // second is a different prompt and a different answer even though
+            // nothing here is sampled: a small model that copied the fence into
+            // its reply, or stopped halfway, usually does not do it twice.
+            for _ in 0..2 {
+                let nonce = nonce();
+                let reply = self
+                    .local
+                    .rewrite(
+                        &settings.local_model_id,
+                        &system_prompt_for(LOCAL_CORE_PROMPT, style_prompt),
+                        &fence(text, &nonce),
+                        reply_budget(text),
+                    )
+                    .await?;
+                if let Some(rewritten) = accept(text, &reply, &nonce) {
+                    return Ok(rewritten);
+                }
+            }
+            return Err(NOT_A_REWRITE.to_string());
         }
-        Ok(rewritten)
+
+        let nonce = nonce();
+        let reply = self
+            .ask_open_router(&settings.open_router_model, style_prompt, text, &nonce)
+            .await?;
+        accept(text, &reply, &nonce).ok_or_else(|| NOT_A_REWRITE.to_string())
     }
 
     /// One hosted rewrite. Returns the model's reply as it arrived, fence and
@@ -277,8 +294,27 @@ impl Rewriter {
 ///
 /// Order matters less than the framing in `CORE_PROMPT`, which casts whatever
 /// follows as preferences about rewriting rather than a fresh brief.
+/// What a refused reply is called, wherever it came from. The text it was given
+/// is kept instead, so this is the whole of what anybody sees.
+const NOT_A_REWRITE: &str = "The reply was not a rewrite of the text, so it was ignored.";
+
+/// The reply, if it is one: unfenced, unwrapped, and recognisable as a rewrite
+/// of `text`. `None` for anything else, which every caller turns into keeping
+/// the text it started with.
+fn accept(text: &str, reply: &str, nonce: &str) -> Option<String> {
+    let rewritten = unwrap_text(&unfence(reply, nonce));
+    if rewritten.contains(nonce) || !is_rewrite_of(text, &rewritten) {
+        return None;
+    }
+    Some(rewritten)
+}
+
 fn system_prompt(style_prompt: &str) -> String {
-    format!("{}\n\n{}", CORE_PROMPT.trim(), style_prompt.trim())
+    system_prompt_for(CORE_PROMPT, style_prompt)
+}
+
+fn system_prompt_for(core: &str, style_prompt: &str) -> String {
+    format!("{}\n\n{}", core.trim(), style_prompt.trim())
 }
 
 fn fence(text: &str, nonce: &str) -> String {
@@ -391,10 +427,27 @@ fn covers_the_end(source_words: &[String], reply_words: &std::collections::HashS
     }
     let kept = ending
         .iter()
-        .filter(|word| reply_words.contains(*word))
+        .filter(|word| reply_words.iter().any(|reply| same_word(word, reply)))
         .count() as f64
         / ending.len() as f64;
     kept >= 0.4
+}
+
+/// Whether two words are the same word, allowing for one having been corrected.
+///
+/// The end of a sentence is exactly where a spelling fix lands -- "yesteday"
+/// comes back as "yesterday" -- and counting that as a word left behind is how
+/// a guard against truncation starts refusing the fixes it was meant to let
+/// through. Four characters is enough to tell a corrected word from a different
+/// one at this length.
+fn same_word(source: &str, reply: &str) -> bool {
+    if source == reply {
+        return true;
+    }
+    if source.len() < 4 || reply.len() < 4 {
+        return false;
+    }
+    source.chars().take(4).eq(reply.chars().take(4))
 }
 
 fn words(text: &str) -> Vec<String> {
@@ -717,6 +770,43 @@ mod tests {
             Err(message) => println!("refused: {message}"),
         }
         assert!(outcome.is_ok(), "{outcome:?}");
+    }
+
+    /// Runs the real path over a handful of typed sentences and prints what
+    /// each came back as, using this Mac's own settings and model.
+    ///
+    /// Ignored, and kept: it is what caught the local model copying the fence
+    /// into its reply, and it is the only way to see what a prompt change does
+    /// before shipping it.
+    /// `cargo test --release shows_local_replies -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn shows_local_replies() {
+        let dir = std::env::var_os("HOME")
+            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
+            .expect("a home directory");
+        let store = SettingsStore::load(dir);
+        let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));
+
+        for text in [
+            "helo",
+            "thanks alot",
+            "how r u doing",
+            "i think we shuold ship this tommorow at 3pm is that okay",
+            "can you send me teh files when your free i need them",
+            "the report is ready for you're review i attached it yesteday",
+            "we discused the timeline and agreed to push the launch to next week",
+        ] {
+            let started = std::time::Instant::now();
+            let outcome = rewriter.polish(text).await;
+            let took = started.elapsed();
+            let verdict = match &outcome {
+                Ok(reply) if reply == text => "unchanged".to_string(),
+                Ok(reply) => format!("-> {reply:?}"),
+                Err(message) => format!("refused: {message}"),
+            };
+            println!("{took:>8.1?}  {text:?}\n          {verdict}");
+        }
     }
 
     #[test]

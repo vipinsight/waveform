@@ -54,8 +54,14 @@ pub const RETIRED_TRANSFORM_PROMPTS: [&str; 2] = [
     include_str!("prompts/transform-retired.txt"),
     include_str!("prompts/transform-retired-grammar.txt"),
 ];
-/// The polish prompt as it was when it was a copy editor.
-pub const RETIRED_POLISH_PROMPTS: [&str; 1] = [include_str!("prompts/polish-retired.txt")];
+/// Polish prompts nobody chose. The first was a copy editor; the second tidied
+/// dictation rather than fixing anything, which is the wrong job for text
+/// somebody typed and selected -- and far more instruction than a local model
+/// half a gigabyte wide can hold.
+pub const RETIRED_POLISH_PROMPTS: [&str; 2] = [
+    include_str!("prompts/polish-retired.txt"),
+    include_str!("prompts/polish-retired-dictation.txt"),
+];
 
 /// Serialized as camelCase so one settings.json serves both hosts and the
 /// shape matches what the shared frontend expects.

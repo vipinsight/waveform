@@ -187,10 +187,16 @@ is checked against its length and SHA-256 before it is put there. The model
 loads on the first rewrite and stays loaded until you switch engines, so the
 first polish after launch is a second or two slower than the ones after it.
 
-These are small models. They handle filler, punctuation, capitalisation and
-spoken numbers well; a hosted model is still better on a long or unusual
-passage, which is why the other option has not gone anywhere. Local polish takes
-up to 4,000 characters at a time, against 12,000 for OpenRouter.
+These are small models, and it shows. Qwen3 0.6B fixes ordinary typos in a
+sentence — "we discused the timeline" becomes "we discussed the timeline" — and
+leaves a fragment like "thanks alot" alone, because there is not enough sentence
+around it to work from. A hosted model catches both. Local polish also takes up
+to 4,000 characters at a time, against 12,000 for OpenRouter.
+
+A reply that is not a rewrite of what went in — the model answering instead of
+correcting, or stopping halfway through the sentence — is dropped and your text
+is kept. Locally that is retried once first, since the second attempt is a
+different prompt and usually a better answer.
 
 Base models — GPT-2, and others like it — are not offered. They continue text
 rather than follow an instruction, so handed a rewrite prompt they write more
@@ -210,7 +216,7 @@ exists and replace it, but cannot read it.
 | Feature | What it does |
 | --- | --- |
 | **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
-| **Polish shortcut** (`⌥1`) | Tidies whatever text is selected in the focused app, in place, without rewriting it. |
+| **Polish shortcut** (`⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
 
 Both run on system prompts you can edit, with **Reset** to restore the defaults,
 and both engines take the same prompts. With OpenRouter selected you can pick
