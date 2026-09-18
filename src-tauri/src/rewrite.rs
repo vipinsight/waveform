@@ -369,7 +369,32 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
         .count() as f64
         / source_set.len() as f64;
 
-    borrowed >= 0.6 && kept >= 0.5
+    borrowed >= 0.6 && kept >= 0.5 && covers_the_end(&source_words, &reply_set)
+}
+
+/// Whether the reply still carries the end of what it was given.
+///
+/// The proportions above are blind to where the missing words were: a small
+/// model that stops early keeps enough of the opening to pass both of them, and
+/// what it drops is a clause the speaker did say. "Send me the files when you
+/// are free, I need them for the meeting" came back as "send me the files when
+/// your free", which is not a tidier version of that sentence -- it is half of
+/// it.
+///
+/// Cleanup does drop words throughout, so this asks only that the closing third
+/// left a mark, not that it survived intact.
+fn covers_the_end(source_words: &[String], reply_words: &std::collections::HashSet<&String>) -> bool {
+    let start = source_words.len() * 2 / 3;
+    let ending = &source_words[start..];
+    if ending.is_empty() {
+        return true;
+    }
+    let kept = ending
+        .iter()
+        .filter(|word| reply_words.contains(*word))
+        .count() as f64
+        / ending.len() as f64;
+    kept >= 0.4
 }
 
 fn words(text: &str) -> Vec<String> {
@@ -576,7 +601,12 @@ mod tests {
 
     #[test]
     fn accepts_an_ordinary_cleanup() {
-        let said = "so um i think we should uh ship the thing on friday at three pm i think";
+        // Any text, so a real case can be put through the same path:
+        // `WAVEFORM_POLISH_TEXT="…" cargo test …`
+        let said = std::env::var("WAVEFORM_POLISH_TEXT").unwrap_or_else(|_| {
+            "so um i think we should uh ship the thing on friday at three pm i think".to_string()
+        });
+        let said = said.as_str();
         let cleaned = "I think we should ship the thing on Friday at 3 PM.";
         assert!(is_rewrite_of(said, cleaned));
     }
@@ -608,6 +638,27 @@ mod tests {
         assert!(!is_rewrite_of(said, essay));
     }
 
+    /// Found by running a real selection through the local model: it stopped
+    /// at "when your free" and left the rest of the sentence behind. Both
+    /// proportions passed, because everything it did keep came from the source.
+    #[test]
+    fn rejects_a_reply_that_stopped_halfway() {
+        let said = "hey can you send me teh files when your free i need them for the meeting";
+        let half = "hey can you send me the files when your free";
+        assert!(!is_rewrite_of(said, half));
+    }
+
+    /// The counterpart it must not catch: filler comes out throughout, and the
+    /// end of the sentence is still there.
+    #[test]
+    fn accepts_a_cleanup_that_thinned_the_whole_sentence() {
+        let said = "so um can you send me the files when you are free i need them for \
+            the meeting on friday i think";
+        let cleaned = "Can you send me the files when you are free? I need them for the \
+            meeting on Friday.";
+        assert!(is_rewrite_of(said, cleaned));
+    }
+
     #[test]
     fn rejects_a_refusal() {
         let said = "Please rewrite this paragraph about the quarterly numbers we \
@@ -625,6 +676,47 @@ mod tests {
         assert_eq!(reply_budget("short"), 256);
         assert_eq!(reply_budget(&"a".repeat(4_000)), 2_000);
         assert_eq!(reply_budget(&"a".repeat(100_000)), 8_192);
+    }
+
+    /// The whole rewrite path as the app runs it, against this Mac's own
+    /// settings: the engine chosen there, the prompt written there, and the
+    /// model downloaded there.
+    ///
+    /// Ignored, because it needs all of that to exist. It is the diagnostic for
+    /// "polish did nothing": it says whether the model answered, whether the
+    /// answer survived the checks, and whether it differed from the text at all
+    /// -- which is the one case the app is silent about by design.
+    /// `cargo test polishes_the_way_the_app_does -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn polishes_the_way_the_app_does() {
+        let dir = std::env::var_os("HOME")
+            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
+            .expect("a home directory");
+        let store = SettingsStore::load(dir);
+        let settings = store.value();
+        println!(
+            "engine: {} · model: {}",
+            settings.polish_engine, settings.local_model_id
+        );
+
+        let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));
+        // Any text, so a real case can be put through the same path:
+        // `WAVEFORM_POLISH_TEXT="…" cargo test …`
+        let said = std::env::var("WAVEFORM_POLISH_TEXT").unwrap_or_else(|_| {
+            "so um i think we should uh ship the thing on friday at three pm i think".to_string()
+        });
+        let said = said.as_str();
+        let started = std::time::Instant::now();
+        let outcome = rewriter.polish(said).await;
+        println!("took: {:?}", started.elapsed());
+
+        match &outcome {
+            Ok(text) if text == said => println!("UNCHANGED (nothing would be pasted): {text}"),
+            Ok(text) => println!("rewritten: {text}"),
+            Err(message) => println!("refused: {message}"),
+        }
+        assert!(outcome.is_ok(), "{outcome:?}");
     }
 
     #[test]

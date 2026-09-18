@@ -760,9 +760,21 @@ impl Dictation {
             if *self.polish_cancelled.lock().await {
                 return Err("Cancelled.".to_string());
             }
+            // Each step says what it did. Polish runs with the window closed
+            // and finishes by pasting into someone else's app, so when it
+            // appears to do nothing this log is the only account of which step
+            // that was.
+            self.logs.info(
+                &self.app,
+                "polish",
+                format!("Read {} characters from the focused app.", selection.chars().count()),
+            );
             self.show_overlay().await;
             self.send_to_overlay("busy", "insert", "hold").await;
+
+            let started = std::time::Instant::now();
             let polished = self.rewriter.polish(&selection).await?;
+            let took = started.elapsed();
             if *self.polish_cancelled.lock().await {
                 return Err("Cancelled.".to_string());
             }
@@ -770,10 +782,20 @@ impl Dictation {
                 // Not a failure, and not nothing either: pasting the same words
                 // back would be a change to undo for no reason, and saying so
                 // is what distinguishes it from a shortcut that misfired.
+                let note = "The text came back unchanged, so nothing was pasted.";
                 self.logs
-                    .info(&self.app, "polish", "The text was already tidy.");
+                    .info(&self.app, "polish", format!("{note} ({took:.1?})"));
+                self.report_note(note).await;
                 return Ok(());
             }
+            self.logs.info(
+                &self.app,
+                "polish",
+                format!(
+                    "Rewritten in {took:.1?}; pasting {} characters.",
+                    polished.chars().count()
+                ),
+            );
             self.helper.paste(&polished).await;
             Ok::<(), String>(())
         }
@@ -849,6 +871,24 @@ impl Dictation {
                 sink: "insert".into(),
                 mode: "hold".into(),
                 message: Some(message.to_string()),
+            },
+        );
+    }
+
+    /// Says something that is not a failure, where a failure would have been
+    /// said. The window shows it in the same place; nothing turns red.
+    async fn report_note(&self, message: &str) {
+        let _ = self.app.emit_to(
+            MAIN_LABEL,
+            "dictation-update",
+            DictationUpdate {
+                status: DictationStatus {
+                    state: "idle".into(),
+                    sink: "insert".into(),
+                    mode: "hold".into(),
+                    message: Some(message.into()),
+                },
+                phrase: None,
             },
         );
     }

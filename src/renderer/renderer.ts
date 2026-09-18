@@ -1636,7 +1636,11 @@ function handleDictationUpdate(update: DictationUpdate): void {
   // carries only the engine: which model, ready or not, and anything that
   // went wrong.
   const { status } = update;
-  if (status.state === "error" && status.message) setStatus(status.message);
+  // Errors, and the one outcome that is not an error and still needs saying:
+  // a polish that changed nothing looks exactly like a shortcut that missed.
+  if ((status.state === "error" || status.state === "idle") && status.message) {
+    setStatus(status.message);
+  }
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).label} ready`);
 }
 
