@@ -187,11 +187,14 @@ is checked against its length and SHA-256 before it is put there. The model
 loads on the first rewrite and stays loaded until you switch engines, so the
 first polish after launch is a second or two slower than the ones after it.
 
-These are small models, and it shows. Qwen3 0.6B fixes ordinary typos in a
-sentence — "we discused the timeline" becomes "we discussed the timeline" — and
-leaves a fragment like "thanks alot" alone, because there is not enough sentence
-around it to work from. A hosted model catches both. Local polish also takes up
-to 4,000 characters at a time, against 12,000 for OpenRouter.
+These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
+discused the timeline" becomes "we discussed the timeline", "how r u doing"
+becomes "how are you doing" — and it is shown three worked corrections before
+your text, because a model this size follows an example better than it follows a
+page of rules. A single word on its own is handed back untouched: there is no
+sentence around it to read it against, and a model that guesses pastes a word
+you never wrote. A hosted model has neither limit. Local polish also takes up to
+4,000 characters at a time, against 12,000 for OpenRouter.
 
 A reply that is not a rewrite of what went in — the model answering instead of
 correcting, or stopping halfway through the sentence — is dropped and your text

@@ -322,6 +322,19 @@ impl Dictation {
                 .await;
             }
             HelperEvent::Paste { ok, reason } => {
+                // Said either way. A paste that the helper accepted and an app
+                // that ignored it look identical from here, and only one of
+                // them is Waveform's problem.
+                self.logs.push(
+                    &self.app,
+                    if ok { "info" } else { "error" },
+                    "paste",
+                    match (&ok, reason.as_deref()) {
+                        (true, _) => "The helper pressed ⌘V into the focused app.".to_string(),
+                        (false, Some(reason)) => format!("The paste was refused: {reason}"),
+                        (false, None) => "The paste was refused.".to_string(),
+                    },
+                );
                 if ok {
                     return;
                 }

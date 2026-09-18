@@ -213,6 +213,12 @@ impl Rewriter {
         }
 
         if local {
+            // A lone word is not something a model this size can correct: it
+            // has no sentence to read it against, so it guesses, and "helo"
+            // comes back as "heloc". Two words is enough context to work from.
+            if words(text).len() < 2 {
+                return Ok(text.trim().to_string());
+            }
             // Two attempts at most. The fence id is part of the prompt, so the
             // second is a different prompt and a different answer even though
             // nothing here is sampled: a small model that copied the fence into
@@ -841,7 +847,8 @@ mod tests {
 
         for text in [
             "helo",
-            "thanks alot",
+            "we discused the timeline",
+            "the meting is at 4pm",
             "how r u doing",
             "i think we shuold ship this tommorow at 3pm is that okay",
             "can you send me teh files when your free i need them",
@@ -858,6 +865,43 @@ mod tests {
             };
             println!("{took:>8.1?}  {text:?}\n          {verdict}");
         }
+    }
+
+    /// The local model with whisper.cpp already loaded on Metal beside it,
+    /// which is what the app always is and what a test never was.
+    ///
+    /// Both engines vendor ggml and both run Metal kernels in this one process;
+    /// if that is what breaks local polish in the app while every test of it
+    /// passes, this is where it shows. Ignored: it needs both sets of weights.
+    /// `cargo test --release polishes_beside_whisper -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn polishes_beside_whisper() {
+        let dir = std::env::var_os("HOME")
+            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
+            .expect("a home directory");
+        let store = SettingsStore::load(dir);
+        let model_file = crate::model_server::model(&store.value().model_id).remote_id;
+        let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));
+        let text = "we discused the timeline and agreed to push the launch to next week";
+
+        println!("before whisper: {:?}", rewriter.polish(text).await);
+
+        let whisper = tokio::task::spawn_blocking(move || crate::whisper_cpp::load(model_file))
+            .await
+            .expect("the load thread");
+        println!("whisper loaded: {}", whisper.is_ok());
+        let _whisper = whisper.expect("whisper should load");
+
+        println!("after whisper:  {:?}", rewriter.polish(text).await);
+    }
+
+    /// A single word has no sentence around it, and a model that guesses at one
+    /// pastes a word nobody wrote. The text is handed back as it came.
+    #[test]
+    fn a_lone_word_is_left_alone() {
+        assert_eq!(words("helo").len(), 1);
+        assert_eq!(words("thanks alot").len(), 2);
     }
 
     #[test]
