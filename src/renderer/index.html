@@ -452,10 +452,23 @@
           <p class="lede">
             Optional. Speech comes out the way it was spoken — with the ums, the repeated
             words, the missing commas. Polish hands that text to an AI to tidy before it
-            lands. <strong>It is the only part of Waveform that sends anything off this
-            Mac</strong>; the transcription itself never does.
+            lands. That AI can be a model on this Mac, which sends nothing anywhere, or a
+            hosted one, <strong>which is the only part of Waveform that sends anything off
+            this Mac</strong>; the transcription itself never does.
           </p>
           <div class="card">
+            <div class="row">
+              <span class="row-label">
+                Where polish runs
+                <small id="engine-hint">On this Mac nothing leaves it, and no account is needed.</small>
+              </span>
+              <span class="row-actions">
+                <div class="segmented" id="polish-engine" role="radiogroup" aria-label="Where polish runs">
+                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                </div>
+              </span>
+            </div>
             <div class="row">
               <label class="row-label" for="transform-toggle">
                 Tidy every dictation
@@ -463,7 +476,7 @@
               </label>
               <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
             </div>
-            <div class="row is-stacked">
+            <div class="row is-stacked" data-engine-only="openrouter">
               <span class="row-label">
                 OpenRouter key
                 <small id="key-state">Waveform reaches the AI through OpenRouter. Kept in your login keychain, never in plain text.</small>
@@ -482,7 +495,7 @@
                 <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
               </span>
             </div>
-            <div class="row">
+            <div class="row" data-engine-only="openrouter">
               <label class="row-label" for="ai-model">
                 AI model
                 <small>Which model does the tidying. Cheaper ones are quicker and rarely worse at this.</small>
@@ -500,6 +513,17 @@
                 <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
               </span>
             </div>
+          </div>
+
+          <div data-engine-only="local">
+            <h2 class="section-label">Model on this Mac</h2>
+            <p class="note">
+              The model runs here, so it has to be downloaded before it can be used —
+              press a row marked with <span class="note-icon"><svg data-icon="cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="the cloud icon"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></svg></span> to fetch one. These are small models: they
+              fix filler, punctuation and capitals well, and a hosted model still reads a
+              long or unusual passage better.
+            </p>
+            <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
           </div>
 
           <h2 class="section-label">What to tell the AI</h2>

@@ -18,6 +18,7 @@ import type {
   ModelEvent,
   ModelStatus,
   OverlayPoint,
+  PolishModelStatus,
   ResourceUsage,
   LogLine,
   SavedDictation,
@@ -127,6 +128,9 @@ const api: DesktopApi = {
   getAiStatus: () => invoke<AiStatus>("get_ai_status"),
   setOpenRouterKey: (key) => invoke<AiStatus>("set_openrouter_key", { key }),
   clearOpenRouterKey: () => invoke<AiStatus>("clear_openrouter_key"),
+  getPolishModelCatalog: () => invoke<PolishModelStatus[]>("polish_model_catalog"),
+  downloadPolishModel: (modelId) => invoke<void>("download_polish_model", { modelId }),
+  onPolishModelEvent: (listener) => subscribe<ModelEvent>("polish-model-event", listener),
   polishSelection: () => invoke<void>("polish_selection"),
 
   toggleDictation: () => invoke<void>("toggle_dictation"),

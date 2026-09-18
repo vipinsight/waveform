@@ -1,9 +1,20 @@
-//! OpenRouter rewriting, and the API key it needs.
+//! Rewriting, wherever it runs, and the API key one of the two ways needs.
+//!
+//! Two engines sit behind one interface. OpenRouter is a hosted model reached
+//! over HTTP; the local engine is a small model running on this Mac through
+//! llama.cpp. Callers pass text and get text back and do not choose between
+//! them -- the setting does.
+//!
+//! What both share is everything around the model: the app's own instructions,
+//! the fence the text arrives in, and the check that what came back is a
+//! rewrite of what went in. A local model is no more trustworthy with a
+//! prompt-injection attempt in a selected paragraph than a hosted one.
 //!
 //! The key is a bearer credential: it is held in the keychain, never written in
-//! the clear, and never returned to a window. Callers pass text and get text
-//! back, so the credential travels no further than it must.
+//! the clear, and never returned to a window. It travels no further than the
+//! one request that needs it, and the local engine never sees it at all.
 
+use crate::local_llm::{self, LocalPolisher};
 use crate::settings::SettingsStore;
 use serde::Serialize;
 use std::sync::Arc;
@@ -24,18 +35,25 @@ const CORE_PROMPT: &str = include_str!("prompts/core.txt");
 /// other half.
 const MAX_INPUT_CHARS: usize = 12_000;
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiStatus {
     pub has_api_key: bool,
     /// True when the key could not reach the keychain and lives only in memory.
     pub memory_only: bool,
+    /// Which engine rewrites: "openrouter" or "local".
+    pub engine: String,
+    /// The local model chosen, whether or not it has been downloaded.
+    pub local_model_id: String,
+    /// Whether that model's weights are on this machine.
+    pub local_ready: bool,
 }
 
 pub struct Rewriter {
     settings: Arc<Mutex<SettingsStore>>,
     key: Mutex<Option<String>>,
     memory_only: Mutex<bool>,
+    local: LocalPolisher,
 }
 
 impl Rewriter {
@@ -44,18 +62,52 @@ impl Rewriter {
             settings,
             key: Mutex::new(keychain::read()),
             memory_only: Mutex::new(false),
+            local: LocalPolisher::new(),
         })
     }
 
     pub async fn status(&self) -> AiStatus {
+        let settings = self.settings.lock().await.value();
         AiStatus {
             has_api_key: self.key.lock().await.is_some(),
             memory_only: *self.memory_only.lock().await,
+            engine: settings.polish_engine.clone(),
+            local_ready: local_llm::is_installed(local_llm::model(&settings.local_model_id)),
+            local_model_id: settings.local_model_id,
         }
     }
 
+    /// Whether a rewrite would have something to run, without saying what.
     pub async fn is_configured(&self) -> bool {
+        let settings = self.settings.lock().await.value();
+        if settings.polish_engine == "local" {
+            return local_llm::is_installed(local_llm::model(&settings.local_model_id));
+        }
         self.key.lock().await.is_some()
+    }
+
+    /// What to tell someone who pressed polish with nothing behind it.
+    ///
+    /// The two engines are missing different things, and "add an API key" is
+    /// unhelpful advice to someone who chose not to use one.
+    pub async fn not_ready_message(&self) -> String {
+        let settings = self.settings.lock().await.value();
+        if settings.polish_engine == "local" {
+            let model = local_llm::model(&settings.local_model_id);
+            return format!(
+                "Download {} in Settings → AI Polish first.",
+                model.label
+            );
+        }
+        "Add an OpenRouter API key in Settings first.".to_string()
+    }
+
+    /// Drops the local model when the engine is switched away from it, so an
+    /// unused gigabyte does not sit there until the app is quit.
+    pub async fn engine_changed(&self, engine: &str) {
+        if engine != "local" {
+            self.local.unload().await;
+        }
     }
 
     pub async fn set_key(&self, key: &str) -> AiStatus {
@@ -98,21 +150,65 @@ impl Rewriter {
     /// text is fenced rather than handed over loose, and the reply is checked
     /// against it afterwards. Anything that fails the check is refused, and
     /// every caller falls back to the text it started with.
+    ///
+    /// Which engine answers changes none of that. It changes only how far the
+    /// text travels, and how much of it can be sent at once.
     async fn run(&self, style_prompt: &str, text: &str) -> Result<String, String> {
         if text.trim().is_empty() {
             return Ok(String::new());
         }
-        if text.chars().count() > MAX_INPUT_CHARS {
-            return Err("That is more text than Waveform will send in one rewrite.".to_string());
+        let settings = self.settings.lock().await.value();
+        let local = settings.polish_engine == "local";
+        let limit = if local {
+            local_llm::MAX_INPUT_CHARS
+        } else {
+            MAX_INPUT_CHARS
+        };
+        if text.chars().count() > limit {
+            return Err(if local {
+                "That is more text than the local model will rewrite at once.".to_string()
+            } else {
+                "That is more text than Waveform will send in one rewrite.".to_string()
+            });
         }
+
+        let nonce = nonce();
+        let reply = if local {
+            self.local
+                .rewrite(
+                    &settings.local_model_id,
+                    &system_prompt(style_prompt),
+                    &fence(text, &nonce),
+                    reply_budget(text),
+                )
+                .await?
+        } else {
+            self.ask_open_router(&settings.open_router_model, style_prompt, text, &nonce)
+                .await?
+        };
+
+        let rewritten = unwrap_text(&unfence(&reply, &nonce));
+        if rewritten.contains(&nonce) || !is_rewrite_of(text, &rewritten) {
+            return Err("The reply was not a rewrite of the text, so it was ignored.".to_string());
+        }
+        Ok(rewritten)
+    }
+
+    /// One hosted rewrite. Returns the model's reply as it arrived, fence and
+    /// all, because checking it is the caller's job either way.
+    async fn ask_open_router(
+        &self,
+        model: &str,
+        style_prompt: &str,
+        text: &str,
+        nonce: &str,
+    ) -> Result<String, String> {
         let key = self
             .key
             .lock()
             .await
             .clone()
             .ok_or("Add an OpenRouter API key in Settings first.")?;
-        let model = self.settings.lock().await.value().open_router_model;
-        let nonce = nonce();
 
         let response = reqwest::Client::new()
             .post(ENDPOINT)
@@ -123,7 +219,7 @@ impl Rewriter {
                 "model": model,
                 "messages": [
                     { "role": "system", "content": system_prompt(style_prompt) },
-                    { "role": "user", "content": fence(text, &nonce) },
+                    { "role": "user", "content": fence(text, nonce) },
                 ],
                 // Rewrites should be faithful, not creative.
                 "temperature": 0.2,
@@ -142,12 +238,7 @@ impl Rewriter {
         if !status.is_success() {
             return Err(describe_failure(status.as_u16(), &body));
         }
-
-        let rewritten = unwrap_text(&unfence(&extract_message(&body)?, &nonce));
-        if rewritten.contains(&nonce) || !is_rewrite_of(text, &rewritten) {
-            return Err("The reply was not a rewrite of the text, so it was ignored.".to_string());
-        }
-        Ok(rewritten)
+        extract_message(&body)
     }
 }
 

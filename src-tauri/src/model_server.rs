@@ -10,8 +10,8 @@
 //! `WorkerSpec` saying which interpreter and script to launch. Qwen is the only
 //! engine using it today, and OpenAI's own Whisper package was the other.
 
+use crate::download::Download;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -23,9 +23,6 @@ use tokio::time::{sleep, Duration, Instant};
 const DEFAULT_PORT: u16 = 8178;
 const START_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
-/// How often a download reports itself. An event per chunk would be tens of
-/// thousands of messages across the IPC bridge for one file.
-const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// What the interface needs to say whether a model can be used, and what to run
 /// if it cannot.
@@ -168,22 +165,6 @@ pub enum Weights {
     NemoCache,
     /// The Hugging Face hub layout, `models--<org>--<name>`.
     HuggingFace,
-}
-
-/// A weight file the app can fetch without a terminal.
-///
-/// whisper.cpp is linked into the binary, so a model there is nothing but one
-/// file -- which is what makes this possible at all. Every other engine needs
-/// an installer or a virtual environment around its weights.
-///
-/// The length and the hash are checked before the file is moved into place: it
-/// is loaded and executed as model weights, and a truncated download that read
-/// as installed would fail much later and much less clearly.
-pub struct Download {
-    pub file: &'static str,
-    pub url: &'static str,
-    pub bytes: u64,
-    pub sha256: &'static str,
 }
 
 /// One Whisper entry.
@@ -569,7 +550,7 @@ fn default_model() -> &'static ModelDefinition {
 ///
 /// Read once from the kernel and kept: it cannot change while the app is
 /// running, and it is asked for once per row of the models page.
-fn installed_memory_mb() -> Option<u32> {
+pub fn installed_memory_mb() -> Option<u32> {
     static INSTALLED: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
     *INSTALLED.get_or_init(|| {
         let output = std::process::Command::new("/usr/sbin/sysctl")
@@ -588,7 +569,7 @@ fn installed_memory_mb() -> Option<u32> {
 /// because the question is not whether the model loads -- macOS will find the
 /// pages either way, by swapping something else out -- but whether leaving it
 /// loaded is something the rest of the machine notices.
-fn fit(memory_mb: u32, installed_mb: u32) -> Fit {
+pub fn fit(memory_mb: u32, installed_mb: u32) -> Fit {
     if memory_mb.saturating_mul(8) <= installed_mb {
         Fit::Comfortable
     } else if memory_mb.saturating_mul(4) <= installed_mb {
@@ -1223,123 +1204,47 @@ impl ModelServer {
         outcome
     }
 
+    /// Streams a weight file down, with the interface told how far it has got.
+    ///
+    /// The fetching itself is shared with the local polish models; what belongs
+    /// here is only where Whisper keeps its weights and who hears about the
+    /// progress. Progress arrives on a channel because reporting it is an async
+    /// act and a download reports from inside a synchronous callback.
     async fn fetch(
         &self,
         spec: &Download,
         definition: &ModelDefinition,
         id: &str,
     ) -> Result<(), String> {
-        let path = crate::whisper_cpp::weights_path(spec.file)
+        let dir = crate::whisper_cpp::weights_dir()
             .ok_or("Could not work out where Whisper's weights live.")?;
-        if path.is_file() {
-            return Ok(());
-        }
-        let dir = path
-            .parent()
-            .ok_or_else(|| format!("{} has nowhere to live.", spec.file))?;
-        tokio::fs::create_dir_all(dir)
-            .await
-            .map_err(|error| format!("Could not make {}: {error}", dir.display()))?;
 
-        // Written beside the target and moved into place at the end, so an
-        // interrupted download cannot leave a truncated file that looks
-        // installed. A rename within one directory is atomic.
-        let partial = dir.join(format!("{}.partial", spec.file));
-        let outcome = self.stream(spec, definition, id, &partial).await;
-        if outcome.is_err() {
-            let _ = tokio::fs::remove_file(&partial).await;
-            return outcome;
-        }
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let report = move |fraction: f32| {
+            let _ = sender.send(fraction);
+        };
+        let download = crate::download::fetch(spec, &dir, &report);
+        tokio::pin!(download);
 
-        tokio::fs::rename(&partial, &path)
-            .await
-            .map_err(|error| format!("Could not put {} in place: {error}", spec.file))
-    }
-
-    async fn stream(
-        &self,
-        spec: &Download,
-        definition: &ModelDefinition,
-        id: &str,
-        partial: &Path,
-    ) -> Result<(), String> {
-        self.emit_event(
-            "downloading",
-            &format!("Downloading {}…", definition.short_label),
-            id,
-            Some(0.0),
-        )
-        .await;
-
-        let mut response = reqwest::Client::new()
-            .get(spec.url)
-            .send()
-            .await
-            .map_err(|error| format!("Could not reach the download: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("The download was refused: {error}"))?;
-
-        // Its own answer where it gives one, since a redirect or a mirror can
-        // serve a different length than the one recorded here.
-        let total = response.content_length().unwrap_or(spec.bytes).max(1);
-        let mut file = tokio::fs::File::create(partial)
-            .await
-            .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
-        let mut hasher = Sha256::new();
-        let mut written: u64 = 0;
-        let mut reported = Instant::now();
-
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| format!("The download stopped: {error}"))?
-        {
-            hasher.update(&chunk);
-            file.write_all(&chunk)
-                .await
-                .map_err(|error| format!("Could not write {}: {error}", partial.display()))?;
-            written += chunk.len() as u64;
-
-            if reported.elapsed() >= PROGRESS_INTERVAL {
-                reported = Instant::now();
-                let fraction = (written as f32 / total as f32).min(1.0);
-                self.emit_event(
-                    "downloading",
-                    &format!(
-                        "Downloading {} — {}%",
-                        definition.short_label,
-                        (fraction * 100.0).round() as u32
-                    ),
-                    id,
-                    Some(fraction),
-                )
-                .await;
+        loop {
+            tokio::select! {
+                outcome = &mut download => return outcome,
+                Some(fraction) = receiver.recv() => {
+                    // Nothing has arrived yet at zero, and "0%" reads as a
+                    // download that is stuck rather than one just starting.
+                    let message = if fraction <= 0.0 {
+                        format!("Downloading {}…", definition.short_label)
+                    } else {
+                        format!(
+                            "Downloading {} — {}%",
+                            definition.short_label,
+                            (fraction * 100.0).round() as u32
+                        )
+                    };
+                    self.emit_event("downloading", &message, id, Some(fraction)).await;
+                }
             }
         }
-
-        file.flush()
-            .await
-            .map_err(|error| format!("Could not finish {}: {error}", partial.display()))?;
-        drop(file);
-
-        if written != spec.bytes {
-            return Err(format!(
-                "{} should be {} bytes and arrived as {written}.",
-                spec.file, spec.bytes
-            ));
-        }
-        let checksum: String = hasher
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        if checksum != spec.sha256 {
-            return Err(format!(
-                "{} did not match its checksum and has been discarded.",
-                spec.file
-            ));
-        }
-        Ok(())
     }
 
     async fn emit_stage(&self, stage: &str, message: &str, id: &str) {
@@ -1529,59 +1434,6 @@ mod tests {
         for definition in MODELS.iter() {
             assert!(definition.memory_mb > 0, "{}", definition.id);
         }
-    }
-
-    /// Exercises the download for real: stream, hash, and the move into place.
-    ///
-    /// Ignored by default because it needs the network. The file is a small one
-    /// from the same host as the weights, so what is being tested is the code
-    /// rather than anybody's bandwidth. Run with:
-    /// `cargo test fetches -- --ignored --nocapture`
-    #[tokio::test]
-    #[ignore]
-    async fn fetches_verifies_and_moves_a_file_into_place() {
-        const SMALL: Download = Download {
-            file: "README.md",
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/README.md",
-            bytes: 3196,
-            sha256: "21fd967098804f33fc84e803fb0e5ab7666d71801f4027cf28a65e7af09c1758",
-        };
-
-        let dir = std::env::temp_dir().join(format!("waveform-fetch-{}", std::process::id()));
-        std::env::set_var("WAVEFORM_WHISPER_CPP_DIR", &dir);
-        let server = ModelServer::new(
-            dir.clone(),
-            dir.clone(),
-            None,
-            "whisper-cpp-small".into(),
-            Box::new(|_| {}),
-        );
-        let definition = model("whisper-cpp-small");
-
-        server
-            .fetch(&SMALL, definition, definition.id)
-            .await
-            .expect("the download should succeed");
-        assert!(dir.join("README.md").is_file());
-        // Nothing left behind: the partial file is renamed, not copied.
-        assert!(!dir.join("README.md.partial").exists());
-
-        // A wrong checksum must leave nothing at all, or the next launch would
-        // load whatever arrived.
-        std::fs::remove_file(dir.join("README.md")).expect("clear the file");
-        const WRONG: Download = Download {
-            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-            ..SMALL
-        };
-        let error = server
-            .fetch(&WRONG, definition, definition.id)
-            .await
-            .expect_err("a wrong checksum should fail");
-        assert!(error.contains("checksum"), "{error}");
-        assert!(!dir.join("README.md").exists());
-        assert!(!dir.join("README.md.partial").exists());
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The models page reads down a column of these, so a missing card link is

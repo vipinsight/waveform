@@ -166,22 +166,60 @@ cleared. It holds the most recent 300 and is readable only by you.
 
 ## AI Polish
 
-Optional rewriting through [OpenRouter](https://openrouter.ai). This is the one
-feature that sends anything off the Mac, it sends text rather than audio, and it
-runs only when you ask.
+Optional rewriting, which runs only when you ask, and which sends text rather
+than audio if it sends anything at all. **Settings → AI Polish** chooses where it
+runs.
+
+### On this Mac
+
+A small instruction-tuned model, run through llama.cpp in the app the way
+whisper.cpp runs the speech model. Nothing leaves the Mac and no account is
+needed; the model is one file, downloaded from that page by pressing its row.
+
+| Model | Download | Memory while loaded |
+| --- | --- | --- |
+| **Qwen3 0.6B · Q4** | 397 MB | ~0.9 GB |
+| **Qwen3 0.6B · Q8** | 639 MB | ~1.2 GB |
+| **Qwen3 1.7B · Q4** | 1.1 GB | ~1.9 GB |
+
+The weights land in `~/Library/Application Support/Waveform/llm`, and each file
+is checked against its length and SHA-256 before it is put there. The model
+loads on the first rewrite and stays loaded until you switch engines, so the
+first polish after launch is a second or two slower than the ones after it.
+
+These are small models. They handle filler, punctuation, capitalisation and
+spoken numbers well; a hosted model is still better on a long or unusual
+passage, which is why the other option has not gone anywhere. Local polish takes
+up to 4,000 characters at a time, against 12,000 for OpenRouter.
+
+Base models — GPT-2, and others like it — are not offered. They continue text
+rather than follow an instruction, so handed a rewrite prompt they write more
+prompt.
+
+### Through OpenRouter
+
+The hosted option. This is the one feature that sends anything off the Mac.
 
 Paste a key into **Settings → AI Polish**. It goes to your login keychain as a
 generic password under `com.webtiara.waveform`, never to a file Waveform owns,
 and is never handed back to the interface — the screen can report that a key
 exists and replace it, but cannot read it.
 
+### Either way
+
 | Feature | What it does |
 | --- | --- |
 | **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
 | **Polish shortcut** (`⌥1`) | Tidies whatever text is selected in the focused app, in place, without rewriting it. |
 
-Both run on system prompts you can edit, with **Reset** to restore the defaults.
-Pick any OpenRouter model id; the field suggests a few fast ones.
+Both run on system prompts you can edit, with **Reset** to restore the defaults,
+and both engines take the same prompts. With OpenRouter selected you can pick
+any model id; the field suggests a few fast ones.
+
+Whichever engine answers, the reply is checked against the text that went in: a
+rewrite runs to a similar length and reuses most of the words it started with, so
+an answer to a question buried in a selected paragraph does not pass. Anything
+that fails the check is dropped and your original text is kept.
 
 Pressing polish on the indicator tidies that dictation even when **Clean up
 dictation** is switched off. After you stop speaking, the pill gathers into a

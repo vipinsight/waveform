@@ -48,4 +48,11 @@ cpal = "0.15"
 # also embeds the GGML Metal library into the binary, so a bundled .app has no
 # shader file to lose.
 whisper-rs = { version = "0.16", default-features = false, features = ["metal"] }
+# llama.cpp, linked in beside whisper.cpp and for the same reason: the local
+# polish model is then one file the app can fetch, with no runtime to install.
+# Both crates vendor ggml; they share one Metal build in the final binary.
+llama-cpp-2 = { version = "0.1.156", default-features = false, features = ["metal"] }
+# llama.cpp hands back tokens, not characters, and a multi-byte character can
+# arrive split across two of them. This is the decoder its own API takes.
+encoding_rs = "0.8"
 tauri-plugin-updater = "2"

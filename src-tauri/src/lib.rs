@@ -4,11 +4,13 @@
 //! shared with the Electron build and reached through the same `window.waveform`
 //! surface. This crate supplies that surface natively.
 
+mod download;
 mod gestures;
 mod history;
 mod logs;
 mod hotkey;
 mod dictation;
+mod local_llm;
 mod mic;
 mod model_server;
 mod panel;
@@ -21,6 +23,7 @@ mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use history::{Dictation as SavedDictation, HistoryStore};
+use local_llm::{LocalDownloads, LocalModelStatus};
 use model_server::{ModelEvent, ModelServer, ModelStatus, MODELS};
 use rewrite::{AiStatus, Rewriter};
 use serde::{Deserialize, Serialize};
@@ -87,6 +90,8 @@ pub struct AppState {
     models: Arc<ModelServer>,
     dictation: Arc<Dictation>,
     rewriter: Arc<Rewriter>,
+    /// Fetches the models the local polish engine runs.
+    polish_downloads: Arc<LocalDownloads>,
     /// Bounds captured when an overlay drag begins, so moves are relative.
     drag_origin: Mutex<Option<(f64, f64)>>,
     /// Mirrors the setting of the same name.
@@ -266,6 +271,10 @@ async fn update_settings(
     // it back, or the change appears not to have applied until a restart.
     if !next.hide_dock_when_closed && previous.hide_dock_when_closed {
         let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    }
+
+    if next.polish_engine != previous.polish_engine {
+        state.rewriter.engine_changed(&next.polish_engine).await;
     }
 
     if next.polish_shortcut != previous.polish_shortcut {
@@ -595,6 +604,19 @@ async fn open_privacy_settings(app: tauri::AppHandle, pane: String) -> Result<()
     Ok(())
 }
 
+/// Every local polish model, and whether it is on this machine.
+#[tauri::command]
+async fn polish_model_catalog(state: State<'_, AppState>) -> Result<Vec<LocalModelStatus>, String> {
+    let selected = state.settings.lock().await.value().local_model_id;
+    Ok(local_llm::catalog(&selected))
+}
+
+/// Fetches one, with the row saying how far it has got.
+#[tauri::command]
+async fn download_polish_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    state.polish_downloads.download(&model_id).await
+}
+
 #[tauri::command]
 async fn get_ai_status(state: State<'_, AppState>) -> Result<AiStatus, String> {
     Ok(state.rewriter.status().await)
@@ -811,6 +833,25 @@ pub fn run() {
                 }),
             ));
 
+            let polish_handle = app.handle().clone();
+            let polish_log = logs.clone();
+            let polish_downloads = Arc::new(LocalDownloads::new(Box::new(move |event: ModelEvent| {
+                // Downloading is skipped for the same reason as the speech
+                // engine's: it arrives four times a second.
+                if event.stage != "downloading" {
+                    polish_log.push(
+                        &polish_handle,
+                        if event.stage == "error" { "error" } else { "info" },
+                        "polish",
+                        format!("{} — {}", event.stage, event.message),
+                    );
+                }
+                // Its own event rather than the speech engine's: the AI page
+                // draws these rows, and a progress message aimed at a model id
+                // the Models page has never heard of would land nowhere.
+                let _ = polish_handle.emit("polish-model-event", event);
+            })));
+
             let rewriter = Rewriter::new(settings.clone());
             let dictation = Dictation::new(
                 app.handle().clone(),
@@ -829,6 +870,7 @@ pub fn run() {
                 models: models.clone(),
                 dictation: dictation.clone(),
                 rewriter,
+                polish_downloads,
                 drag_origin: Mutex::new(None),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
@@ -958,6 +1000,8 @@ pub fn run() {
             request_hotkey_permission,
             open_privacy_settings,
             get_ai_status,
+            polish_model_catalog,
+            download_polish_model,
             set_openrouter_key,
             clear_openrouter_key,
             polish_selection,

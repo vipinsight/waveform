@@ -71,6 +71,26 @@ describe("normalizeSettings", () => {
     );
   });
 
+  // Polish used to mean OpenRouter and nothing else, so a settings file
+  // written before this setting existed has to keep meaning that.
+  it("keeps polishing where it already was for a file that predates the choice", () => {
+    expect(DEFAULT_SETTINGS.polishEngine).toBe("openrouter");
+    expect(normalizeSettings({}).polishEngine).toBe("openrouter");
+    expect(normalizeSettings({ polishEngine: "local" }).polishEngine).toBe("local");
+    expect(normalizeSettings({ polishEngine: "ollama" }).polishEngine).toBe("openrouter");
+  });
+
+  it("only accepts a local model the engine actually has", () => {
+    expect(normalizeSettings({ localModelId: "qwen3-1.7b-q4" }).localModelId).toBe(
+      "qwen3-1.7b-q4",
+    );
+    // A model from a later version, or a typed-in one: choosing it would load
+    // something that is not there.
+    expect(normalizeSettings({ localModelId: "gpt2-large" }).localModelId).toBe(
+      DEFAULT_SETTINGS.localModelId,
+    );
+  });
+
   it("restores a prompt that was blanked out", () => {
     expect(normalizeSettings({ polishPrompt: "   " }).polishPrompt).toBe(
       DEFAULT_POLISH_PROMPT,

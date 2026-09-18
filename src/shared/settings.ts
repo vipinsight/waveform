@@ -14,12 +14,19 @@ import {
   type SpeechModelId,
 } from "./models";
 import {
+  DEFAULT_POLISH_MODEL_ID,
+  isPolishModelId,
+  type PolishModelId,
+} from "./polish-models";
+import {
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_POLISH_PROMPT,
   DEFAULT_TRANSFORM_PROMPT,
 } from "./prompts";
 
 export type ThemePreference = "system" | "light" | "dark";
+/** Where a rewrite runs: a hosted model, or one downloaded onto this Mac. */
+export type PolishEngine = "openrouter" | "local";
 export type OverlayPlacement = "bottom" | "top";
 
 export interface AppSettings {
@@ -47,8 +54,18 @@ export interface AppSettings {
   overlayCy: number | null;
   theme: ThemePreference;
 
+  /** Which engine both rewrite paths use. */
+  polishEngine: PolishEngine;
   /** OpenRouter model id used for both rewrite paths. */
   openRouterModel: string;
+  /**
+   * Which downloaded model rewrites when the engine is local.
+   *
+   * Kept whether or not that engine is selected, so switching back does not
+   * forget the choice -- and so a gigabyte already downloaded is not orphaned
+   * by trying the hosted one.
+   */
+  localModelId: PolishModelId;
   /** Run every dictated phrase through the model before inserting it. */
   transformOnDictate: boolean;
   /** System prompt for the dictation cleanup path. */
@@ -90,7 +107,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlayCx: null,
   overlayCy: null,
   theme: "system",
+  // The hosted engine, because this setting arrived after the app did: a
+  // settings file written before it exists takes the default, and for anyone
+  // already polishing through OpenRouter that has to be what they had.
+  polishEngine: "openrouter",
   openRouterModel: DEFAULT_OPENROUTER_MODEL,
+  localModelId: DEFAULT_POLISH_MODEL_ID,
   transformOnDictate: false,
   transformPrompt: DEFAULT_TRANSFORM_PROMPT,
   polishPrompt: DEFAULT_POLISH_PROMPT,
@@ -135,7 +157,9 @@ export function normalizeSettings(
     overlayCx: coordinate(input.overlayCx, base.overlayCx),
     overlayCy: coordinate(input.overlayCy, base.overlayCy),
     theme: isThemePreference(input.theme) ? input.theme : base.theme,
+    polishEngine: isPolishEngine(input.polishEngine) ? input.polishEngine : base.polishEngine,
     openRouterModel: text(input.openRouterModel, base.openRouterModel, 200),
+    localModelId: isPolishModelId(input.localModelId) ? input.localModelId : base.localModelId,
     transformOnDictate:
       typeof input.transformOnDictate === "boolean"
         ? input.transformOnDictate
@@ -207,6 +231,10 @@ function clampNumber(
 ): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(range.max, Math.max(range.min, Math.round(value)));
+}
+
+function isPolishEngine(value: unknown): value is PolishEngine {
+  return value === "openrouter" || value === "local";
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {

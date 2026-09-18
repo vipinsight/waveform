@@ -193,6 +193,35 @@ export interface AiStatus {
   hasApiKey: boolean;
   /** True when the key could not be encrypted and lives only in memory. */
   memoryOnly: boolean;
+  /** Which engine rewrites: a hosted model, or one on this Mac. */
+  engine: PolishEngine;
+  /** The local model chosen, downloaded or not. */
+  localModelId: string;
+  /** Whether that model's weights are on this machine. */
+  localReady: boolean;
+}
+
+export type PolishEngine = "openrouter" | "local";
+
+/**
+ * One model the local polish engine can run.
+ *
+ * Fewer facts than a speech model carries: there is no runtime to install and
+ * no word error rate to read down a column, so what is left is the size of the
+ * download, what it costs to keep loaded, and whether it is here yet.
+ */
+export interface PolishModelStatus {
+  id: string;
+  label: string;
+  selected: boolean;
+  installed: boolean;
+  downloadBytes: number;
+  memoryMb: number;
+  detail: string;
+  /** The model's own page on Hugging Face. */
+  cardUrl: string;
+  /** How that memory sits on this Mac, or `null` when it could not be read. */
+  fit: ModelFit | null;
 }
 
 export interface SavedDictation {
@@ -279,6 +308,11 @@ export interface DesktopApi {
   getAiStatus(): Promise<AiStatus>;
   setOpenRouterKey(key: string): Promise<AiStatus>;
   clearOpenRouterKey(): Promise<AiStatus>;
+  /** Every local polish model, and what is on this machine for each. */
+  getPolishModelCatalog(): Promise<PolishModelStatus[]>;
+  /** Resolves when the download has finished, or rejects with why it did not. */
+  downloadPolishModel(modelId: string): Promise<void>;
+  onPolishModelEvent(listener: (event: ModelEvent) => void): () => void;
   polishSelection(): Promise<void>;
   /** The application menu asking for the settings dialog. */
   onOpenSettings(listener: () => void): () => void;

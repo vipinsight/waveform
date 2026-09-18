@@ -14,7 +14,8 @@ engines. No account or subscription is required.
   need a source checkout and a `pnpm setup:*` step.
 - **Dictation controls:** hold to speak, double-tap to lock, and Escape to cancel.
 - **Menu bar and Wave Bar:** keep dictation available while working in other apps.
-- **Optional AI Polish:** send text through OpenRouter to your selected model when requested.
+- **Optional AI Polish:** tidy dictated or selected text with a small model
+  downloaded onto your Mac, or with a hosted model through OpenRouter.
 
 Apple Silicon and macOS 13 or newer are required. Intel Macs, Windows, and Linux
 are not currently supported. Waveform is pre-1.0; behavior may change between releases.
@@ -39,13 +40,16 @@ flowchart TD
         key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
         listen --> model["An open model<br/>transcribes it"]
         model --> typed["The text is typed back<br/>where you were working"]
+        model -. "optional, text only" .-> local["AI Polish,<br/>model on this Mac"]
+        local -.-> typed
     end
 
-    model -. "optional, text only" .-> polish["AI Polish"]
+    model -. "optional, text only" .-> polish["AI Polish,<br/>through OpenRouter"]
     polish -.-> typed
 ```
 
-The dotted path sends text through OpenRouter to your selected model when requested.
+AI Polish runs either way round: a Qwen3 model you download runs here like the
+speech model does, and OpenRouter sends the text to a hosted model instead.
 Model downloads and update checks also use the network; see [Privacy](#privacy).
 
 ## A few things worth knowing
@@ -63,6 +67,11 @@ Model downloads and update checks also use the network; see [Privacy](#privacy).
   but each runs outside the app — Parakeet over HTTP, Qwen through a Python
   worker — so they need a source checkout and their `pnpm setup:*` step first.
   [Models](docs/models.md) has the details.
+- **Polish without an account.** AI Polish can run
+  [Qwen3](https://huggingface.co/Qwen/Qwen3-0.6B) 0.6B or 1.7B on your Mac
+  through llama.cpp, downloaded from Settings → AI Polish the same way a speech
+  model is. An OpenRouter key remains an option for the times a bigger model
+  reads a passage better.
 - **It waits until you finish.** Text arrives when you stop speaking, so a
   sentence never lands half-written somewhere.
 - **It lives in the menu bar.** Closing the window does not quit it, and
@@ -75,8 +84,10 @@ uploaded, and there is no server to upload it to.
 
 Network activity includes:
 
-- **AI Polish**, when you request it, sends text through OpenRouter to your selected model.
-  OpenRouter and the model provider's privacy and retention terms apply.
+- **AI Polish set to OpenRouter**, when you request it, sends text through
+  OpenRouter to your selected model. OpenRouter and the model provider's privacy
+  and retention terms apply. Set to run on this Mac, it sends nothing: the model
+  is downloaded once and then runs here.
 - **Model and optional runtime downloads**, during setup or model installation.
 - **The update check**, which you can switch off in **Settings → General**.
 

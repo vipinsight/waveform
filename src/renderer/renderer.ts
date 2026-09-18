@@ -8,6 +8,7 @@ import type {
   LogLine,
   ModelEvent,
   ModelStatus,
+  PolishModelStatus,
   ResourceUsage,
   UpdateEvent,
 } from "../shared/contracts";
@@ -26,6 +27,7 @@ import {
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import { isPolishModelId } from "../shared/polish-models";
 import {
   DEFAULT_POLISH_PROMPT,
   DEFAULT_TRANSFORM_PROMPT,
@@ -110,6 +112,9 @@ const element = {
   transformPrompt: requireElement<HTMLTextAreaElement>("transform-prompt"),
   polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
+  polishEngine: requireElement<HTMLElement>("polish-engine"),
+  polishModelList: requireElement<HTMLElement>("polish-model-list"),
+  engineHint: requireElement<HTMLElement>("engine-hint"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
@@ -118,6 +123,11 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
+/** The same, for the polish models, which are fetched from their own page. */
+let polishDownloading: string | null = null;
+/** The last thing the host said about the AI side, so a change in one half of
+    it -- a key saved, a model downloaded -- can be redrawn with the other. */
+let aiStatus: AiStatus | null = null;
 /** Whether the chosen model's weights are here, which is a setup step. */
 let modelInstalled = false;
 /** How big the chosen model's download is, for the step that offers it. */
@@ -176,6 +186,7 @@ async function bootstrap(): Promise<void> {
 
 function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
+  host().onPolishModelEvent(showPolishDownloadProgress);
   host().onUpdateEvent(handleUpdateEvent);
   host().onLogLine(handleLogLine);
   host().onSettingsChanged(applySettings);
@@ -271,6 +282,32 @@ function wireEvents(): void {
     if (row?.getAttribute("aria-disabled") === "true") return;
     void host().selectModel(id);
   });
+  element.polishEngine.addEventListener("click", (event) => {
+    const engine = (event.target as HTMLElement).closest<HTMLElement>("[data-engine]")
+      ?.dataset.engine;
+    if (engine === "local" || engine === "openrouter") {
+      void patchSettings({ polishEngine: engine });
+    }
+  });
+
+  // The same two acts as the speech rows, for the same reason: a model that is
+  // here is chosen, and one that is not is fetched.
+  element.polishModelList.addEventListener("click", (event) => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-card]");
+    if (card?.dataset.card) {
+      void host().openUrl(card.dataset.card);
+      return;
+    }
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
+    const id = row?.dataset.model;
+    if (!id || !isPolishModelId(id)) return;
+    if (row?.dataset.download === "true") {
+      void downloadPolishModel(id);
+      return;
+    }
+    void patchSettings({ localModelId: id });
+  });
+
   element.speechLanguage.addEventListener("change", () => {
     const value = element.speechLanguage.value;
     if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
@@ -427,6 +464,9 @@ function showSettingsPage(page: string): void {
   // Runtimes and weights arrive from a terminal, not from here, so the list is
   // re-read each time the page is opened rather than trusted from startup.
   if (page === "models") void renderModels();
+  // Downloading a polish model is the same kind of act, and the same reason to
+  // re-read: the page may have been open since before it finished.
+  if (page === "ai") void renderPolishModels();
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }
@@ -502,6 +542,7 @@ function applySettings(next: AppSettings): void {
     element.aiModel.append(new Option(next.openRouterModel, next.openRouterModel));
   }
   element.aiModel.value = next.openRouterModel;
+  renderPolishEngine(next.polishEngine);
   element.transformToggle.checked = next.transformOnDictate;
   element.transformPrompt.value = next.transformPrompt;
   element.polishPrompt.value = next.polishPrompt;
@@ -586,6 +627,7 @@ function describeAccelerator(accelerator: string): string {
 const KEY_MASK = "•".repeat(20);
 
 function renderAiStatus(status: AiStatus): void {
+  aiStatus = status;
   // Never overwrite an edit in progress: reopening settings used to discard a
   // key that had been typed but not yet saved.
   if (element.keyInput.dataset.pristine !== "false") {
@@ -606,16 +648,170 @@ function renderAiStatus(status: AiStatus): void {
 
   // Nothing to fetch once there is a key, and the row is long enough already.
   element.openOpenRouter.hidden = status.hasApiKey;
-  // The switch has nothing to turn on without one, so the row says why rather
-  // than sitting there greyed out with no explanation.
-  element.transformHint.textContent = status.hasApiKey
+  // The switch has nothing to turn on until the chosen engine can answer, so
+  // the row says what is missing rather than sitting there greyed out with no
+  // explanation -- and what is missing depends on which engine that is.
+  const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
+  element.transformHint.textContent = ready
     ? "Adds a second or two before your words appear."
-    : "Needs an OpenRouter key, below.";
+    : status.engine === "local"
+      ? "Needs a model on this Mac, below."
+      : "Needs an OpenRouter key, below.";
 
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
 
-  element.transformToggle.disabled = !status.hasApiKey;
+  element.transformToggle.disabled = !ready;
+}
+
+/**
+ * Which engine is selected, and therefore which half of the page applies.
+ *
+ * The two halves are not alternatives to read side by side: a key is nothing to
+ * a local model and a download is nothing to a hosted one. So the other half is
+ * hidden rather than dimmed.
+ */
+function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
+  for (const button of Array.from(
+    element.polishEngine.querySelectorAll<HTMLElement>("[data-engine]"),
+  )) {
+    button.setAttribute("aria-checked", String(button.dataset.engine === engine));
+  }
+  for (const section of Array.from(
+    document.querySelectorAll<HTMLElement>("[data-engine-only]"),
+  )) {
+    section.hidden = section.dataset.engineOnly !== engine;
+  }
+  element.engineHint.textContent =
+    engine === "local"
+      ? "On this Mac. Nothing leaves it, and no account is needed."
+      : "Through OpenRouter. The text being tidied leaves this Mac.";
+  if (engine === "local") void renderPolishModels();
+  // Switching engines changes what "ready" means, and the rows that say so were
+  // drawn for the other one.
+  if (aiStatus && aiStatus.engine !== engine) {
+    void host().getAiStatus().then(renderAiStatus);
+  }
+}
+
+/**
+ * The models the local engine can run, and what it would take to have one.
+ *
+ * The same rows as the speech catalogue, with fewer numbers on them: there is
+ * no runtime to install and no error rate to compare, so what is left is how
+ * big the download is and what keeping it loaded costs.
+ */
+async function renderPolishModels(): Promise<void> {
+  const catalog = await host().getPolishModelCatalog().catch(() => []);
+  element.polishModelList.replaceChildren(...catalog.map(polishModelRow));
+}
+
+function polishModelRow(model: PolishModelStatus): HTMLElement {
+  const size = formatBytes(model.downloadBytes);
+  const facts = `${size} · ${formatMemory(model.memoryMb)} in memory`;
+
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "model-pick";
+  pick.dataset.model = model.id;
+  if (!model.installed) pick.dataset.download = "true";
+  // A radio only where there is something to choose. Pressing a row whose
+  // weights are missing starts a download, and calling that "selected" would be
+  // the interface saying a thing that is not true.
+  if (model.installed) {
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", String(model.selected));
+    pick.setAttribute("aria-label", `${model.label} — ${facts}`);
+  } else {
+    pick.setAttribute("aria-label", `Download ${model.label}, ${size} — ${facts}`);
+  }
+
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "model-card";
+  card.dataset.card = model.cardUrl;
+  card.textContent = "↗";
+  card.setAttribute("aria-label", `Open ${model.label} on Hugging Face`);
+  card.title = `Open ${model.label} on Hugging Face`;
+
+  const name = document.createElement("span");
+  name.className = "model-name";
+  const title = document.createElement("strong");
+  title.textContent = model.label;
+  name.append(title, card);
+
+  const factLine = document.createElement("small");
+  factLine.className = "model-facts";
+  factLine.textContent = facts;
+
+  const body = document.createElement("span");
+  body.className = "model-body";
+  body.append(name, factLine);
+  if (model.detail !== "") {
+    const detail = document.createElement("small");
+    detail.className = "model-detail";
+    detail.textContent = model.detail;
+    body.append(detail);
+  }
+
+  const row = document.createElement("div");
+  row.className = "model-row";
+  row.setAttribute("role", "presentation");
+  row.dataset.state = model.installed ? "here" : "download";
+  row.append(pick, body);
+
+  if (model.installed) {
+    const tag = document.createElement("span");
+    tag.className = "model-tag";
+    tag.dataset.ready = String(model.selected);
+    tag.textContent = model.selected ? "In use" : "Downloaded";
+    row.append(tag);
+  } else {
+    const action = document.createElement("span");
+    action.className = "model-action";
+    action.append(icon("cloud-download", CLOUD_DOWNLOAD));
+    action.title = `Download ${model.label} — ${size}`;
+    row.append(action);
+  }
+
+  return row;
+}
+
+/**
+ * Fetches a polish model, with the row saying how far it has got.
+ *
+ * One at a time, and the list is rebuilt afterwards either way -- and so is the
+ * AI status, because a model arriving is what turns the tidy-everything switch
+ * from unavailable into off.
+ */
+async function downloadPolishModel(id: string): Promise<void> {
+  if (polishDownloading) return;
+  polishDownloading = id;
+  try {
+    await host().downloadPolishModel(id);
+  } catch {
+    // The failure already arrived as an event, which is what says why.
+  } finally {
+    polishDownloading = null;
+    await renderPolishModels();
+    renderAiStatus(await host().getAiStatus());
+  }
+}
+
+/** Progress written into the row, for the reason the speech list has one. */
+function showPolishDownloadProgress(event: ModelEvent): void {
+  const pick = element.polishModelList.querySelector<HTMLElement>(
+    `[data-model="${event.modelId}"]`,
+  );
+  const row = pick?.closest(".model-row");
+  if (!row) return;
+  const facts = row.querySelector(".model-facts");
+  if (facts) facts.textContent = event.message;
+  const action = row.querySelector<HTMLElement>(".model-action");
+  if (action && event.progress !== undefined) {
+    action.dataset.progress = "true";
+    action.textContent = `${Math.round(event.progress * 100)}%`;
+  }
 }
 
 /** Saves, replaces or removes the key depending on what the field holds. */

@@ -1526,6 +1526,13 @@ kbd {
   padding: 14px 0;
 }
 
+/* The rows that belong to one polish engine, while the other is selected.
+   `hidden` alone would not do it: the rule above gives every row a display,
+   and a class beats the attribute. */
+.row[hidden] {
+  display: none;
+}
+
 .row + .row {
   border-top: 1px solid var(--hairline);
 }

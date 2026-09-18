@@ -6,7 +6,7 @@
 
 - Apple Silicon Mac, macOS 13 or newer
 - Rust and Cargo
-- CMake, which Cargo uses to build whisper.cpp (`brew install cmake`)
+- CMake, which Cargo uses to build whisper.cpp and llama.cpp (`brew install cmake`)
 - Xcode Command Line Tools, for the native hotkey helper (`xcode-select --install`)
 - Node.js 22 LTS and pnpm 9.4.0 (pinned in `package.json`)
 - Python 3 for version/release scripts; optional Qwen setup has its own runtime requirements
@@ -69,7 +69,9 @@ both lists in System Settings and add it again once.
 
 ## The optional engines
 
-whisper.cpp needs no setup. The other two do:
+whisper.cpp needs no setup, and neither do the local AI Polish models: both
+engines are linked into the binary, and the app fetches their weights itself
+from Settings. The other two speech engines do:
 
 ```bash
 pnpm setup:model        # Parakeet

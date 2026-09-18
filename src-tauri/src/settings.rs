@@ -83,7 +83,14 @@ pub struct AppSettings {
     pub overlay_cx: Option<f64>,
     pub overlay_cy: Option<f64>,
     pub theme: String,
+    /// Where a rewrite runs: "openrouter" for the hosted models, or "local"
+    /// for a model downloaded onto this Mac.
+    pub polish_engine: String,
     pub open_router_model: String,
+    /// Which downloaded model rewrites when the engine is "local". Kept
+    /// whether or not that engine is selected, so switching back does not
+    /// forget the choice.
+    pub local_model_id: String,
     pub transform_on_dictate: bool,
     pub transform_prompt: String,
     pub polish_prompt: String,
@@ -125,7 +132,13 @@ impl Default for AppSettings {
             overlay_cx: None,
             overlay_cy: None,
             theme: "system".to_string(),
+            // The hosted engine, because this field arrived after the app did:
+            // a settings file written before it exists takes the default, and
+            // for everyone already polishing through OpenRouter that has to be
+            // the engine they were already using.
+            polish_engine: "openrouter".to_string(),
             open_router_model: DEFAULT_OPENROUTER_MODEL.to_string(),
+            local_model_id: crate::local_llm::DEFAULT_LOCAL_MODEL_ID.to_string(),
             transform_on_dictate: false,
             transform_prompt: DEFAULT_TRANSFORM_PROMPT.trim().to_string(),
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
@@ -167,6 +180,15 @@ impl AppSettings {
         }
         if !matches!(self.theme.as_str(), "system" | "light" | "dark") {
             self.theme = base.theme.clone();
+        }
+        if !matches!(self.polish_engine.as_str(), "openrouter" | "local") {
+            self.polish_engine = base.polish_engine.clone();
+        }
+        // Read from the engine's own table rather than repeated here, for the
+        // same reason as the speech models: a copy that fell behind would
+        // silently revert every attempt to choose a model it had not heard of.
+        if !crate::local_llm::is_known(&self.local_model_id) {
+            self.local_model_id = base.local_model_id.clone();
         }
         self.hold_ms = self.hold_ms.clamp(120, 900);
         self.double_tap_ms = self.double_tap_ms.clamp(180, 900);
@@ -272,6 +294,37 @@ mod tests {
         stored.polish_prompt = RETIRED_POLISH_PROMPTS[0].trim().to_string();
         let loaded = stored.normalize(&AppSettings::default());
         assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
+    }
+
+    /// Polish meant OpenRouter and nothing else until the local engine existed,
+    /// so a file written before the setting has to go on meaning that.
+    #[test]
+    fn a_file_without_an_engine_keeps_polishing_where_it_was() {
+        let stored: AppSettings =
+            serde_json::from_str(r#"{"openRouterModel":"openai/gpt-4.1-mini"}"#)
+                .expect("a settings file missing the new fields still parses");
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_engine, "openrouter");
+        assert_eq!(loaded.local_model_id, crate::local_llm::DEFAULT_LOCAL_MODEL_ID);
+    }
+
+    /// A model id the engine has never heard of would resolve to the default at
+    /// load time, so the choice is rejected here instead of loading something
+    /// else under the name that was picked.
+    #[test]
+    fn only_a_local_model_the_engine_has_can_be_chosen() {
+        let mut stored = AppSettings::default();
+        stored.polish_engine = "local".into();
+        stored.local_model_id = "qwen3-1.7b-q4".into();
+        let loaded = stored.clone().normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_engine, "local");
+        assert_eq!(loaded.local_model_id, "qwen3-1.7b-q4");
+
+        stored.polish_engine = "ollama".into();
+        stored.local_model_id = "gpt2-large".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_engine, "openrouter");
+        assert_eq!(loaded.local_model_id, crate::local_llm::DEFAULT_LOCAL_MODEL_ID);
     }
 
     /// A prompt the user wrote is theirs, however close to an old default.

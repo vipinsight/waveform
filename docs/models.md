@@ -335,12 +335,15 @@ prefix, its own `remote_id`, and the hashes of the other thirteen — the same
 hash against two files is the mistake a table this size invites, and a user
 would find it as a checksum failure on a model they did not ask for.
 
-`download_weights` refuses a second concurrent download, streams the body in
-chunks with `Response::chunk()`, hashes as it writes, and writes to
+`download_weights` refuses a second concurrent download and hands the file to
+`download::fetch` ([download.rs](../src-tauri/src/download.rs)), which streams
+the body in chunks with `Response::chunk()`, hashes as it writes, and writes to
 `<file>.partial` — renaming into place only once the length and the hash both
 match. A rename within one directory is atomic, so the file is either absent or
 complete, and `weights_present` looks for the final name, so an interrupted
-transfer reads as absent.
+transfer reads as absent. That module is shared with the local polish models
+below; what stays in `model_server` is where Whisper keeps its weights and who
+is told about the progress.
 
 Progress rides on the `downloading` stage, throttled by `PROGRESS_INTERVAL` to
 one event every 250 ms: an event per chunk would be tens of thousands of
@@ -371,6 +374,33 @@ Everything else, with `catalog()` naming the command:
   fetches weights the table does not offer, through
   `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the URL the Rust side
   hard-codes. The app no longer tells anyone to run it.
+
+## The other catalogue: local polish models
+
+[local_llm.rs](../src-tauri/src/local_llm.rs) holds a second, much smaller table
+— three Qwen3 builds, mirrored in
+[src/shared/polish-models.ts](../src/shared/polish-models.ts) and compared by
+[tests/polish-model-registry.test.ts](../tests/polish-model-registry.test.ts) in
+the same way, for the same reason. They are rewriting models rather than speech
+ones, run through llama.cpp linked in beside whisper.cpp, and reached from
+Settings → AI Polish rather than the models page.
+
+The parts they share with the speech catalogue are the download (`Download`,
+checked by length and SHA-256, moved into place only when both match), the
+progress events (`ModelEvent`, on `polish-model-event` rather than `model-event`),
+the `Fit` figures, and the row that is a download button until the weights are
+here and a radio afterwards. The parts they do not share: there is no runtime to
+install, so no `setup_command`; no word error rate, because none of these
+transcribe anything; and their weights live in
+`~/Library/Application Support/Waveform/llm`, apart from Whisper's.
+
+Each URL names the commit it was checked against rather than `main`. A file on a
+branch is whatever the repository holds today, and the recorded hash is not.
+
+Everything else about them — which is to say, the prompt, the fence, and the
+check that the reply is a rewrite of what went in — is
+[rewrite.rs](../src-tauri/src/rewrite.rs), shared with OpenRouter. The engine
+setting decides which of the two answers; nothing else in the path differs.
 
 ## Known gaps
 

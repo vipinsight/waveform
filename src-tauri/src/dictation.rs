@@ -734,8 +734,10 @@ impl Dictation {
             return;
         }
         if !self.rewriter.is_configured().await {
-            self.report_error("Add an OpenRouter API key in Settings first.")
-                .await;
+            // What is missing depends on which engine is selected, so the
+            // rewriter says it rather than this.
+            let reason = self.rewriter.not_ready_message().await;
+            self.report_error(&reason).await;
             self.show_overlay().await;
             self.send_to_overlay("fail", "insert", "hold").await;
             return;
