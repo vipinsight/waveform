@@ -83,14 +83,12 @@ differently signed build, remove Waveform from both lists and add it again once.
 
 **Models**, in the window's own menu, says what is on this Mac and what is not. A filled row is
 downloaded; an outlined one with a **Download** button is not, and pressing that button
-fetches the weights. While a download runs it becomes **Cancel**. Hover a downloaded Whisper
-for **Remove** to free the space. The two engines the app cannot fetch show a prompt instead,
-with the command to run; once their weights are present, **Remove** clears those caches too.
-Only whisper.cpp can be set up without a terminal, which is why it is the
-default — an install from the disk image cannot assume one. Because it is linked
-in, every size and quantization of Whisper is one press away. The models page
-lists Parakeet and Qwen first — the most accurate of the catalogue on the same
-LibriSpeech figure the rows show.
+fetches the weights (and, for Parakeet and Qwen, their runtimes). While a download
+runs it becomes **Cancel**. Hover a downloaded model for **Remove** to free the space.
+Whisper is still the default — it is linked into the app and needs no extra runtime —
+and every size of it is one press away. Parakeet and Qwen install the same way from
+the Models page (Qwen needs Python 3 on the Mac). The list puts them first — the most
+accurate of the catalogue on the same LibriSpeech figure the rows show.
 
 Qwen3-ASR takes roughly 20–40 seconds to load the first time. Parakeet is
 quicker once its runtime is warm.
@@ -163,7 +161,7 @@ consumer of both.
 
 The **Transcripts** view keeps every dictation, newest first, with when it was
 said and how long it was. Each one can be copied or deleted, and the whole list
-cleared. It holds the most recent 300 and is readable only by you.
+cleared. It holds the most recent 10,000 and is readable only by you.
 
 ## AI Polish
 

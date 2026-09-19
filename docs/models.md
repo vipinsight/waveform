@@ -97,9 +97,9 @@ appears in `runtime_installed`, `catalog`, `start` and `transcribe`.
 
 | id | engine | runtime | weights |
 | --- | --- | --- | --- |
-| `whisper-cpp-*` (14 of them) | `WhisperCpp` | `InProcess` — linked in | `~/Library/Application Support/Waveform/whisper.cpp/<remote_id>` |
-| `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `~/Library/Caches/NeMoSpeech/models/<remote_id>` |
-| `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `~/.cache/huggingface/hub/models--Qwen--Qwen3-ASR-0.6B/snapshots` |
+| `whisper-cpp-*` (14 of them) | `WhisperCpp` | `InProcess` — linked in | `…/Waveform/models/whisper/<remote_id>` |
+| `parakeet-tdt-0.6b-v3` | `Nemo` | `Http` — subprocess serving HTTP | `…/Waveform/models/parakeet/<remote_id>` |
+| `qwen3-asr-0.6b` | `Qwen` | `Worker` — Python over NDJSON | `…/Waveform/models/qwen/hub/models--Qwen--Qwen3-ASR-0.6B/` |
 
 For a Whisper entry `remote_id` is the GGML file's own name, which is all that
 engine needs, so it appears as both the weight path and the thing loaded.
@@ -201,10 +201,9 @@ is single-threaded and overlapping calls would only queue anyway.
 
 `ModelStatus` — `{ id, label, group, detail, selected, runtimeInstalled,
 weightsInstalled, setupCommand, downloadBytes, memoryMb, fit }` —
-reports the runtime and the weights separately on purpose:
-having a runtime is not the same as having a model, `setup:model` installs
-nemo-speech and pulls Parakeet in two steps, and either can be done without the
-other. Saying only "not ready" would not tell anyone what to do.
+reports the runtime and the weights separately on purpose: having a runtime is
+not the same as having a model. Download installs both for Parakeet and Qwen;
+`setupCommand` is empty for every catalogue row because the app does the work.
 
 `ModelEvent` is `{ stage, message, modelId }`, with `ModelStage` declared as
 `idle | starting | downloading | loading | ready | error`
@@ -305,60 +304,30 @@ variant. For the two cache-directory layouts, a directory that exists but is
 empty counts as absent (`has_contents`) — that is a download that did not
 finish.
 
-### The app fetches them
+### The app installs them
 
-Every `whisper-cpp-*` entry, and nothing else. `Weights::GgmlFile` carries a
-`Download` — file name, URL, byte length and SHA-256 — because whisper.cpp is
-linked into the binary, so a model there is nothing but one file. Every other
-engine needs an installer or a virtual environment wrapped around its weights,
-which is not something to run on a user's behalf.
-`only_the_ggml_weights_download_themselves` ties the two together: a model
-downloads itself exactly when its engine is `WhisperCpp`.
+Every catalogue row has a Download button. Whisper is still one checked GGML
+file via `download::fetch`. Parakeet and Qwen run multi-step installers in
+[`install.rs`](../src-tauri/src/install.rs) (nemo-speech + pull; venv + pip +
+HF snapshot), writing under `Application Support/Waveform/models/` and
+`runtimes/`. `only_the_ggml_weights_download_themselves` still means only Whisper
+uses the single-file `Download` struct; `every_model_installs_from_the_app`
+requires every row to expose `downloadBytes` and an empty `setupCommand`.
 
-`every_download_describes_the_file_it_names` checks each row against the URL
-prefix, its own `remote_id`, and the hashes of the other thirteen — the same
-hash against two files is the mistake a table this size invites, and a user
-would find it as a checksum failure on a model they did not ask for.
+`every_download_describes_the_file_it_names` checks each Whisper row against the
+URL prefix, its own `remote_id`, and the hashes of the other thirteen.
 
-`download_weights` refuses a second concurrent download and hands the file to
-`download::fetch` ([download.rs](../src-tauri/src/download.rs)), which streams
-the body in chunks with `Response::chunk()`, hashes as it writes, and writes to
-`<file>.partial` — renaming into place only once the length and the hash both
-match. A rename within one directory is atomic, so the file is either absent or
-complete, and `weights_present` looks for the final name, so an interrupted
-transfer reads as absent. That module is shared with the local polish models
-below; what stays in `model_server` is where Whisper keeps its weights and who
-is told about the progress.
+`download_weights` refuses a second concurrent install and dispatches by weight
+kind. Whisper streams through `download::fetch` as before. Parakeet/Qwen report
+coarse progress messages on the `downloading` stage and honour Cancel by
+killing the child process.
 
-Progress rides on the `downloading` stage, throttled by `PROGRESS_INTERVAL` to
-one event every 250 ms: an event per chunk would be tens of thousands of
-messages across the IPC bridge for one file. `ModelEvent.progress` carries the
-fraction. On success the stage is `idle`, not `ready` — downloaded is not
-loaded, and the engine still waits for a first session.
+Developer scripts (`pnpm setup:model`, `setup:qwen`, `setup:whisper-cpp`) write
+to the same directories so a checkout and the app stay congruent. Qwen still
+needs system Python 3.
 
-The row is the button. A model whose weights the app can fetch is not
-`aria-disabled`; pressing it starts the download and the row reports the
-percentage in place, rather than the list rebuilding four times a second and
-replacing the button under the pointer.
-
-### A terminal fetches them
-
-Everything else, with `catalog()` naming the command:
-
-| runtime | setup command |
-| --- | --- |
-| `Http` | `pnpm setup:model` |
-| `Worker` | `pnpm setup:qwen` |
-
-- `setup-model.sh` curls NVIDIA's `install.sh` for a pinned version, then
-  `nemo-speech pull nvidia/parakeet-tdt-0.6b-v3`.
-- `setup-qwen.sh` builds a virtual environment, pip installs, and pre-fetches
-  the weights — "rather than on the first phrase, which would otherwise stall
-  behind a download with no way to say so".
-- `setup-whisper-cpp.sh` still exists, and still works. It is how a checkout
-  fetches weights the table does not offer, through
-  `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the URL the Rust side
-  hard-codes. The app no longer tells anyone to run it.
+The Download control is its own button on the row (not the row press), so a
+press never starts a multi-gigabyte transfer by accident.
 
 ## The other catalogue: local polish models
 
@@ -389,19 +358,12 @@ setting decides which of the two answers; nothing else in the path differs.
 
 ## Known gaps
 
-### Parakeet and Qwen still need a checkout
+### Qwen needs system Python 3
 
-`resources` in [tauri.conf.json](../src-tauri/tauri.conf.json) bundles
-`waveform-hotkey` and `qwen-worker.py`. It does not bundle the `setup-*.sh`
-scripts, and it could not usefully do so: a user who installed
-from the disk image has no checkout and no pnpm, so `pnpm setup:model` and
-`pnpm setup:qwen` name commands that cannot exist on their machine.
-
-That install can now reach fourteen working models — every Whisper size
-downloads itself — so this is no longer a dead end, and it is a much smaller
-limit on choice than it was when Whisper meant one file. Closing it properly
-would mean running NVIDIA's installer and building a 2.5 GB virtual environment
-from inside the app, neither of which reduces to a download.
+Parakeet and Qwen install from the Models page like Whisper. Qwen’s runtime is
+still a venv created with the Mac’s `python3` — Waveform does not bundle
+CPython. If Python is missing, Download fails with a clear error pointing at
+python.org (or Xcode CLT).
 
 ### The memory figures are estimates
 

@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Older dictations are dropped past this point. A transcript is cheap, but an
 /// unbounded file that is read at every launch is not.
-const MAX_ENTRIES: usize = 300;
+const MAX_ENTRIES: usize = 10_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,8 +242,18 @@ mod tests {
     #[test]
     fn history_is_capped() {
         let mut history = store();
+        // Cap without writing the file on every insert: at 10_000 entries that
+        // would be tens of millions of serialised bytes for no extra coverage.
         for index in 0..MAX_ENTRIES + 25 {
-            history.add(&format!("entry {index}"));
+            history.entries.insert(
+                0,
+                Dictation {
+                    id: format!("{index}"),
+                    text: format!("entry {index}"),
+                    created_at: index as u64,
+                },
+            );
+            history.entries.truncate(MAX_ENTRIES);
         }
         let entries = history.entries();
         assert_eq!(entries.len(), MAX_ENTRIES);

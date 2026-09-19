@@ -83,26 +83,31 @@ both lists in System Settings and add it again once.
 
 ## The optional engines
 
-whisper.cpp needs no setup, and neither do the local AI Polish models: both
-engines are linked into the binary, and the app fetches their weights itself
-from the AI Polish section. The other two speech engines do:
+Every speech model installs from the Models page Download button — Whisper as a
+single weight file, Parakeet via NVIDIA’s `nemo-speech`, Qwen via a Python venv
+plus Hugging Face weights. Developers can still run the same steps from a
+checkout:
 
 ```bash
-pnpm setup:model        # Parakeet
-pnpm setup:qwen         # Qwen3-ASR
-pnpm setup:whisper-cpp  # the same weights the app fetches, for a checkout
+pnpm setup:model        # Parakeet (same as in-app install)
+pnpm setup:qwen         # Qwen3-ASR (needs system Python 3)
+pnpm setup:whisper-cpp  # Whisper weights for a checkout
 ```
 
-`setup:model` installs NVIDIA's `nemo-speech` Metal runtime and the Parakeet
-model. `setup:qwen` creates an isolated runtime in
-`~/Library/Application Support/Waveform/qwen`, installs Qwen's official
-`qwen-asr` runtime, and downloads Qwen3-ASR 0.6B. `setup:whisper-cpp` downloads
-GGML weights to `~/Library/Application Support/Waveform/whisper.cpp` and
-installs nothing else.
+Everything lands under Application Support:
 
-Install only the engines you intend to use. Model weights stay in local Hugging
-Face and NeMo caches. [models.md](models.md) traces how a model id becomes a
-running engine and where each one's weights are looked for.
+| What | Path |
+| --- | --- |
+| Whisper weights | `~/Library/Application Support/Waveform/models/whisper/` |
+| Parakeet weights | `~/Library/Application Support/Waveform/models/parakeet/` |
+| Qwen weights | `~/Library/Application Support/Waveform/models/qwen/` |
+| Qwen venv | `~/Library/Application Support/Waveform/runtimes/qwen/` |
+| nemo-speech binary | `~/Library/Application Support/Waveform/runtimes/bin/nemo-speech` |
+
+Qwen’s install needs a system `python3` (Xcode CLT or python.org). Older
+installs may still have weights in `whisper.cpp/`, NeMo’s platform cache, or
+`~/.cache/huggingface` — the app reads those too. [models.md](models.md) traces
+how a model id becomes a running engine.
 
 OpenAI's own `openai-whisper` package used to be a fourth entry, running the
 same Whisper `small`. It wanted a 2.5 GB virtual environment to be slower at it,

@@ -11,7 +11,7 @@
 //! catalogue is one of these files: the size and quantization a user picks is
 //! nothing more than which name is handed to `load`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// What whisper.cpp wants, and the only rate it is trained on.
@@ -19,16 +19,11 @@ const WHISPER_RATE: u32 = 16_000;
 
 /// Where the GGML weights live, whether the app fetched them or the script did.
 pub fn weights_dir() -> Option<PathBuf> {
-    std::env::var_os("WAVEFORM_WHISPER_CPP_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(|home| Path::new(&home).join("Library/Application Support/Waveform/whisper.cpp"))
-        })
+    crate::paths::whisper_dir()
 }
 
 pub fn weights_path(file: &str) -> Option<PathBuf> {
-    weights_dir().map(|dir| dir.join(file))
+    crate::paths::whisper_file(file)
 }
 
 /// Loads a model. Blocking and slow enough to belong on a worker thread.

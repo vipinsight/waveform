@@ -803,10 +803,8 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
     row.append(cancelDownloadButton());
   } else if (!model.installed) {
     row.append(fetchButton(model.id, model.label, size));
-  }
-
-  if (model.installed) {
-    row.append(removeButton(model.id, model.label, size));
+  } else {
+    row.append(installedControls(model.id, model.label, size));
   }
 
   return row;
@@ -1224,6 +1222,24 @@ function removeButton(id: string, label: string, size: string): HTMLButtonElemen
   return button;
 }
 
+/**
+ * Installed at rest; Remove on hover / focus. Keeps the slot filled so a
+ * downloaded row does not look like a missing Download, and only offers
+ * destructive action when the pointer is on this control.
+ */
+function installedControls(id: string, label: string, size: string): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.className = "model-installed-controls";
+
+  const installed = document.createElement("span");
+  installed.className = "pill-button model-installed";
+  installed.textContent = "Installed";
+  installed.setAttribute("aria-hidden", "true");
+
+  wrap.append(installed, removeButton(id, label, size));
+  return wrap;
+}
+
 /** Starts a fetch the row itself no longer does. */
 function fetchButton(id: string, label: string, size: string): HTMLButtonElement {
   const button = document.createElement("button");
@@ -1367,10 +1383,10 @@ function modelRow(model: ModelStatus): HTMLElement {
     row.append(action);
   }
 
-  // Any installed weights: Whisper files the app fetched, or Parakeet / Qwen
-  // caches named by model id under NeMo / Hugging Face.
-  if (model.weightsInstalled) {
-    row.append(removeButton(model.id, model.label, size));
+  // Installed slot (Remove on hover). weightsInstalled alone covers a runtime
+  // that is still missing — Remove clears the cache; Download finishes setup.
+  if (model.weightsInstalled && !busy) {
+    row.append(installedControls(model.id, model.label, size));
   }
 
   return row;
