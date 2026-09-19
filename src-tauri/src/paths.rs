@@ -177,10 +177,17 @@ pub fn is_executable(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// The default Whisper folder under Application Support — not `whisper_dir()`,
+    /// which honours `WAVEFORM_WHISPER_CPP_DIR` and can see another test's
+    /// temporary override when cargo runs tests in parallel.
     #[test]
     fn whisper_defaults_under_models() {
-        let dir = whisper_dir().expect("home");
-        assert!(dir.ends_with("models/whisper") || dir.ends_with("whisper"));
+        let dir = models_root().expect("home").join("whisper");
+        assert!(
+            dir.ends_with(Path::new("models").join("whisper")),
+            "{}",
+            dir.display()
+        );
     }
 
     #[test]
