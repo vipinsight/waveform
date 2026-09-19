@@ -87,11 +87,11 @@ rm -f dist/native/waveform-hotkey
 
 # Without these the build machine's absolute paths -- and so the builder's home
 # directory and username -- are readable with `strings` in the published binary.
-# Rust's flag covers our own crates and the registry; whisper.cpp is compiled by
-# the cc crate, so its __FILE__ strings need the C compiler's own flag.
-# Cargo's `trim-paths` would replace both, but it is still nightly-only.
+# Remap only the checkout: remapping `$CARGO_HOME` to `/cargo` breaks proc-macro
+# resolution on current rustc (phf cannot find phf_macros). Registry crates still
+# appear as crates.io coordinates in panic paths; the username does not.
+# Cargo's `trim-paths` would cover both, but it is still nightly-only.
 REMAP="--remap-path-prefix=$ROOT=/waveform"
-REMAP="$REMAP --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
 export RUSTFLAGS="${RUSTFLAGS:-} $REMAP"
 export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
 export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
