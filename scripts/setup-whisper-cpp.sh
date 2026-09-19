@@ -12,7 +12,7 @@
 #   WAVEFORM_WHISPER_CPP_MODEL=large-v3-turbo-q5_0 ./scripts/setup-whisper-cpp.sh
 set -eu
 
-dir="${WAVEFORM_WHISPER_CPP_DIR:-$HOME/Library/Application Support/Waveform/whisper.cpp}"
+dir="${WAVEFORM_WHISPER_CPP_DIR:-$HOME/Library/Application Support/Waveform/models/whisper}"
 model="${WAVEFORM_WHISPER_CPP_MODEL:-small}"
 file="ggml-$model.bin"
 url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$file"

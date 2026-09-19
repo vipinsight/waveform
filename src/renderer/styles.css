@@ -1330,6 +1330,7 @@ kbd {
 .model-card,
 .model-remove,
 .model-fetch,
+.model-installed-controls,
 .model-download-controls {
   pointer-events: auto;
 }
@@ -1713,20 +1714,21 @@ select {
   cursor: default;
 }
 
-/* Model Download / Cancel / Remove: smaller than a settings pill, and a pointer
-   so they read as the act. Double class beats `.pill-button` alone — that rule
-   sits above and would otherwise keep them 32px with the default cursor.
-   Background is `--surface`, not `--surface-hover`: the row lights with the
-   latter on hover, and a matching pill would vanish into it. */
+/* Model Download / Cancel / Installed / Remove: smaller than a settings pill,
+   and a pointer so they read as the act. Double class beats `.pill-button`
+   alone — that rule sits above and would otherwise keep them 32px with the
+   default cursor. Background is `--surface`, not `--surface-hover`: the row
+   lights with the latter on hover, and a matching pill would vanish into it. */
 .pill-button.model-fetch,
 .pill-button.model-cancel,
-.pill-button.model-remove {
+.pill-button.model-remove,
+.pill-button.model-installed {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 72px;
+  width: 76px;
   height: 22px;
   min-height: 22px;
   padding: 0;
@@ -1735,6 +1737,15 @@ select {
   background: var(--surface);
   font-size: 11px;
   cursor: pointer;
+}
+
+/* Installed is a label in the Download slot, not an action — quieter fill,
+   no pointer, so it cannot be mistaken for another Download. */
+.pill-button.model-installed {
+  border-color: var(--hairline);
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  cursor: default;
 }
 
 .pill-button.model-fetch:hover,
@@ -1750,16 +1761,36 @@ select {
   color: var(--danger);
 }
 
-/* Revealed on hover: a Remove on every downloaded row would compete with the
-   numbers the choice is actually made on. */
-.model-row .model-remove {
-  opacity: 0;
+/* Same footprint as Download: Installed at rest, Remove when the control
+   (not the whole row) is hovered or focused. */
+.model-installed-controls {
+  position: relative;
+  flex: 0 0 auto;
+  width: 76px;
+  height: 22px;
+}
+
+.model-installed-controls .model-installed,
+.model-installed-controls .model-remove {
+  position: absolute;
+  inset: 0;
   transition: opacity 130ms ease, background 130ms ease, border-color 130ms ease, color 130ms ease;
 }
 
-.model-row:hover .model-remove,
-.model-row:focus-within .model-remove {
+.model-installed-controls .model-remove {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.model-installed-controls:hover .model-installed,
+.model-installed-controls:focus-within .model-installed {
+  opacity: 0;
+}
+
+.model-installed-controls:hover .model-remove,
+.model-installed-controls:focus-within .model-remove {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .text-input {

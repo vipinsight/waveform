@@ -159,12 +159,11 @@ pub enum Fit {
 /// something useful about a model that is not ready.
 #[derive(Clone, Copy)]
 pub enum Weights {
-    /// A GGML `.bin` beside the app's own data. Unrelated to the Python
-    /// package's `.pt` files, and the only weights the app fetches itself.
+    /// A GGML `.bin` under Application Support/models/whisper.
     GgmlFile(&'static Download),
-    /// nemo-speech caches by repository under the platform cache directory.
+    /// nemo-speech caches by repository under models/parakeet.
     NemoCache,
-    /// The Hugging Face hub layout, `models--<org>--<name>`.
+    /// The Hugging Face hub layout under models/qwen.
     HuggingFace,
 }
 
@@ -465,7 +464,6 @@ struct WorkerSpec {
     /// Overrides the interpreter, for running against another install.
     env_var: &'static str,
     script: &'static str,
-    setup_command: &'static str,
 }
 
 const QWEN_WORKER: WorkerSpec = WorkerSpec {
@@ -474,7 +472,6 @@ const QWEN_WORKER: WorkerSpec = WorkerSpec {
     project_venv: ".venv-qwen",
     env_var: "QWEN_ASR_PYTHON",
     script: "qwen-worker.py",
-    setup_command: "pnpm setup:qwen",
 };
 
 fn runtime(engine: Engine) -> Runtime {
@@ -485,10 +482,12 @@ fn runtime(engine: Engine) -> Runtime {
     }
 }
 
-/// The download a model's weights come from, if the app can fetch them.
+/// The download a model's weights come from, if they are a single checked file.
 ///
-/// A property of the weights rather than of the engine: whether something can
-/// be downloaded is about what it is, not about how it is run.
+/// Parakeet and Qwen install through a multi-step pipeline instead; see
+/// [`install_bytes`]. Kept for the unit tests that pin which engines use the
+/// single-file path.
+#[cfg_attr(not(test), allow(dead_code))]
 fn downloadable(definition: &ModelDefinition) -> Option<&'static Download> {
     match definition.weights {
         Weights::GgmlFile(spec) => Some(spec),
@@ -496,19 +495,22 @@ fn downloadable(definition: &ModelDefinition) -> Option<&'static Download> {
     }
 }
 
+/// Approximate bytes the Models page shows for Download, including runtime
+/// where the engine needs one.
+fn install_bytes(definition: &ModelDefinition) -> Option<u64> {
+    match definition.weights {
+        Weights::GgmlFile(spec) => Some(spec.bytes),
+        Weights::NemoCache => Some(crate::install::PARAKEET_INSTALL_BYTES),
+        Weights::HuggingFace => Some(crate::install::QWEN_INSTALL_BYTES),
+    }
+}
+
 /// What the user would have to run to get a model's weights.
 ///
-/// Empty when the app fetches them itself: pressing the row is enough, which is
-/// the only way a disk-image install can get to a working model at all.
-fn setup_command(definition: &ModelDefinition) -> &'static str {
-    if downloadable(definition).is_some() {
-        return "";
-    }
-    match runtime(definition.engine) {
-        Runtime::Http => "pnpm setup:model",
-        Runtime::Worker(spec) => spec.setup_command,
-        Runtime::InProcess => "pnpm setup:whisper-cpp",
-    }
+/// Empty for every catalogue model: the app installs them itself. Kept as a
+/// field so an engine that truly cannot be fetched can still name a command.
+fn setup_command(_definition: &ModelDefinition) -> &'static str {
+    ""
 }
 
 pub fn model(id: &str) -> &'static ModelDefinition {
@@ -593,14 +595,13 @@ pub struct ModelServer {
     cancel_download: AtomicBool,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
-    user_data: PathBuf,
     project_root: PathBuf,
     emit: Box<dyn Fn(ModelEvent) + Send + Sync>,
 }
 
 impl ModelServer {
     pub fn new(
-        user_data: PathBuf,
+        _user_data: PathBuf,
         project_root: PathBuf,
         resource_dir: Option<PathBuf>,
         selected: String,
@@ -624,7 +625,6 @@ impl ModelServer {
             cancel_download: AtomicBool::new(false),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
-            user_data,
             project_root,
             emit,
         }
@@ -686,8 +686,8 @@ impl ModelServer {
                 selected: definition.id == selected,
                 runtime_installed: self.runtime_installed(definition),
                 weights_installed: weights_present(definition),
+                download_bytes: install_bytes(definition),
                 setup_command: setup_command(definition).into(),
-                download_bytes: downloadable(definition).map(|spec| spec.bytes),
                 group: definition.group.heading().into(),
                 detail: definition.detail.into(),
                 card_url: definition.card_url.into(),
@@ -851,23 +851,27 @@ impl ModelServer {
 
     async fn start_parakeet(&self, definition: &ModelDefinition, id: &str) -> Result<(), String> {
         let binary = find_nemo_runtime()
-            .ok_or("nemo-speech is not installed. Run `pnpm setup:model`, then try again.")?;
+            .ok_or("nemo-speech is not installed. Download Parakeet from Models, then try again.")?;
 
         self.emit_stage("loading", "Loading Parakeet on Metal…", id).await;
         let device = if cfg!(target_arch = "aarch64") { "metal" } else { "cpu" };
-        let child = Command::new(binary)
-            .args([
-                "serve",
-                "--asr-model",
-                definition.remote_id,
-                "--device",
-                device,
-                "--host",
-                "127.0.0.1",
-                "--port",
-                &self.port().to_string(),
-                "--no-ui",
-            ])
+        let mut command = Command::new(binary);
+        command.args([
+            "serve",
+            "--asr-model",
+            definition.remote_id,
+            "--device",
+            device,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &self.port().to_string(),
+            "--no-ui",
+        ]);
+        if let Some(models) = crate::paths::parakeet_models_root() {
+            command.env("NEMO_SPEECH_MODEL_DIR", models);
+        }
+        let child = command
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true)
@@ -902,8 +906,8 @@ impl ModelServer {
     ) -> Result<(), String> {
         let python = self.find_worker_runtime(spec).ok_or_else(|| {
             format!(
-                "{} is not installed. Run `{}`, then try again.",
-                spec.label, spec.setup_command
+                "{} is not installed. Download it from Models, then try again.",
+                spec.label
             )
         })?;
 
@@ -914,11 +918,16 @@ impl ModelServer {
         )
         .await;
 
-        let mut child = Command::new(python)
+        let mut command = Command::new(&python);
+        command
             .arg(self.worker_script(spec))
             .args(["--model", definition.remote_id])
             .env("PYTHONUNBUFFERED", "1")
-            .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+            .env("PYTORCH_ENABLE_MPS_FALLBACK", "1");
+        if let Some(hf_home) = crate::paths::qwen_hf_home() {
+            command.env("HF_HOME", hf_home);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -1000,16 +1009,25 @@ impl ModelServer {
         self.project_root.join("scripts").join(spec.script)
     }
 
-    /// The interpreter for an engine: an override, the environment the setup
-    /// script builds, or one beside the checkout.
+    /// The interpreter for an engine: an override, the Application Support
+    /// venv, or one beside the checkout.
     fn find_worker_runtime(&self, spec: &WorkerSpec) -> Option<PathBuf> {
-        let mut candidates: Vec<PathBuf> = Vec::new();
         if let Ok(configured) = std::env::var(spec.env_var) {
-            candidates.push(PathBuf::from(configured));
+            let path = PathBuf::from(configured);
+            if crate::paths::is_executable(&path) {
+                return Some(path);
+            }
         }
-        candidates.push(self.user_data.join(spec.venv).join("bin/python3"));
-        candidates.push(self.project_root.join(spec.project_venv).join("bin/python3"));
-        candidates.into_iter().find(|path| is_executable(path))
+        if spec.venv == "qwen" {
+            if let Some(python) = crate::paths::qwen_python() {
+                return Some(python);
+            }
+        }
+        let beside_checkout = self.project_root.join(spec.project_venv).join("bin/python3");
+        if crate::paths::is_executable(&beside_checkout) {
+            return Some(beside_checkout);
+        }
+        None
     }
 
     async fn parakeet_ready(&self) -> bool {
@@ -1123,20 +1141,18 @@ impl ModelServer {
         }
     }
 
-    /// Fetches a model's weights, if they are the kind the app can fetch.
+    /// Fetches or installs a model so a disk-image user never needs a terminal.
     ///
-    /// The one path to a working model that does not need a terminal, which is
-    /// the whole point: an app installed from the disk image has no checkout
-    /// and no pnpm, so every `setup:` command it could be told to run is one
-    /// that cannot exist on that machine.
+    /// Whisper is one checked file. Parakeet and Qwen run the same steps the
+    /// old `pnpm setup:*` scripts did, writing into Application Support.
     pub async fn download_weights(&self, id: &str) -> Result<(), String> {
         let definition = model(id);
-        let Some(spec) = downloadable(definition) else {
+        if install_bytes(definition).is_none() {
             return Err(format!(
                 "{} does not download on its own.",
                 definition.short_label
             ));
-        };
+        }
 
         {
             let mut running = self.downloading.lock().await;
@@ -1147,7 +1163,11 @@ impl ModelServer {
         }
         self.cancel_download.store(false, Ordering::SeqCst);
 
-        let outcome = self.fetch(spec, definition, id).await;
+        let outcome = match definition.weights {
+            Weights::GgmlFile(spec) => self.fetch(spec, definition, id).await,
+            Weights::NemoCache => self.install_parakeet(definition, id).await,
+            Weights::HuggingFace => self.install_qwen(definition, id).await,
+        };
         *self.downloading.lock().await = None;
 
         match &outcome {
@@ -1170,6 +1190,49 @@ impl ModelServer {
             Err(error) => self.emit_stage("error", error, id).await,
         }
         outcome
+    }
+
+    async fn install_parakeet(
+        &self,
+        definition: &ModelDefinition,
+        id: &str,
+    ) -> Result<(), String> {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<(String, f32)>();
+        let report = move |message: &str, fraction: f32| {
+            let _ = sender.send((message.to_string(), fraction));
+        };
+        let install = crate::install::install_parakeet(
+            definition.remote_id,
+            &self.cancel_download,
+            &report,
+        );
+        tokio::pin!(install);
+        loop {
+            tokio::select! {
+                outcome = &mut install => return outcome,
+                Some((message, fraction)) = receiver.recv() => {
+                    self.emit_event("downloading", &message, id, Some(fraction)).await;
+                }
+            }
+        }
+    }
+
+    async fn install_qwen(&self, definition: &ModelDefinition, id: &str) -> Result<(), String> {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<(String, f32)>();
+        let report = move |message: &str, fraction: f32| {
+            let _ = sender.send((message.to_string(), fraction));
+        };
+        let install =
+            crate::install::install_qwen(definition.remote_id, &self.cancel_download, &report);
+        tokio::pin!(install);
+        loop {
+            tokio::select! {
+                outcome = &mut install => return outcome,
+                Some((message, fraction)) = receiver.recv() => {
+                    self.emit_event("downloading", &message, id, Some(fraction)).await;
+                }
+            }
+        }
     }
 
     /// Stops the in-flight Whisper download, if any.
@@ -1264,24 +1327,58 @@ fn remove_downloaded_weights(id: &str) -> Result<(), String> {
         .ok_or_else(|| format!("{id} is not a model Waveform knows about."))?;
     match definition.weights {
         Weights::GgmlFile(spec) => {
-            let path = crate::whisper_cpp::weights_path(spec.file)
-                .ok_or("Could not work out where Whisper's weights live.")?;
-            if path.is_file() {
-                std::fs::remove_file(&path).map_err(|error| {
-                    format!("Could not delete {}: {error}", definition.short_label)
-                })?;
+            // Clear both new and legacy Whisper locations so Remove never
+            // leaves a file that a later launch would treat as installed.
+            for dir in [
+                crate::paths::whisper_dir(),
+                crate::paths::waveform_home().map(|home| home.join("whisper.cpp")),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let path = dir.join(spec.file);
+                if path.is_file() {
+                    std::fs::remove_file(&path).map_err(|error| {
+                        format!("Could not delete {}: {error}", definition.short_label)
+                    })?;
+                }
             }
         }
         Weights::NemoCache => {
-            let path = nemo_model_dir(definition)
-                .ok_or("Could not work out where Parakeet's weights live.")?;
-            remove_dir_if_present(&path, definition.short_label)?;
+            remove_dir_if_present_all(
+                &[
+                    crate::paths::parakeet_models_root()
+                        .map(|root| root.join(definition.remote_id)),
+                    std::env::var_os("HOME").map(|home| {
+                        Path::new(&home)
+                            .join("Library/Caches/NeMoSpeech/models")
+                            .join(definition.remote_id)
+                    }),
+                ],
+                definition.short_label,
+            )?;
         }
         Weights::HuggingFace => {
-            let path = huggingface_model_dir(definition)
-                .ok_or("Could not work out where Qwen's weights live.")?;
-            remove_dir_if_present(&path, definition.short_label)?;
+            let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
+            remove_dir_if_present_all(
+                &[
+                    crate::paths::qwen_hf_home().map(|home| home.join("hub").join(&folder)),
+                    std::env::var_os("HOME").map(|home| {
+                        Path::new(&home)
+                            .join(".cache/huggingface/hub")
+                            .join(&folder)
+                    }),
+                ],
+                definition.short_label,
+            )?;
         }
+    }
+    Ok(())
+}
+
+fn remove_dir_if_present_all(paths: &[Option<PathBuf>], label: &str) -> Result<(), String> {
+    for path in paths.iter().flatten() {
+        remove_dir_if_present(path, label)?;
     }
     Ok(())
 }
@@ -1294,36 +1391,17 @@ fn remove_dir_if_present(path: &Path, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// NeMo's per-model folder under its speech cache.
-fn nemo_model_dir(definition: &ModelDefinition) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let root = std::env::var_os("NEMO_SPEECH_MODEL_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join("Library/Caches/NeMoSpeech/models"));
-    Some(root.join(definition.remote_id))
-}
-
-/// Hugging Face hub folder for one remote id (`models--org--name`).
-fn huggingface_model_dir(definition: &ModelDefinition) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    let cache = std::env::var_os("HF_HOME")
-        .map(|value| PathBuf::from(value).join("hub"))
-        .unwrap_or_else(|| home.join(".cache/huggingface/hub"));
-    let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
-    Some(cache.join(folder))
-}
-
 /// Whether a model's weights are already on this machine.
 ///
 /// Each engine keeps them somewhere of its own choosing, so this asks each in
 /// its own terms rather than pretending there is one cache.
 fn weights_present(definition: &ModelDefinition) -> bool {
     match definition.weights {
-        Weights::NemoCache => nemo_model_dir(definition)
-            .map(|path| has_contents(&path))
+        Weights::NemoCache => crate::paths::parakeet_model_dir(definition.remote_id)
+            .map(|path| crate::paths::dir_has_contents(&path))
             .unwrap_or(false),
-        Weights::HuggingFace => huggingface_model_dir(definition)
-            .map(|path| has_contents(&path.join("snapshots")))
+        Weights::HuggingFace => crate::paths::qwen_model_dir(definition.remote_id)
+            .map(|path| crate::paths::dir_has_contents(&path.join("snapshots")))
             .unwrap_or(false),
         // The partial file a download writes to is a different name, so an
         // interrupted transfer reads as absent rather than as installed.
@@ -1333,34 +1411,8 @@ fn weights_present(definition: &ModelDefinition) -> bool {
     }
 }
 
-/// A directory that exists but is empty is a download that did not finish.
-fn has_contents(path: &Path) -> bool {
-    std::fs::read_dir(path)
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false)
-}
-
 fn find_nemo_runtime() -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(configured) = std::env::var("NEMO_SPEECH_BIN") {
-        candidates.push(PathBuf::from(configured));
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(Path::new(&home).join(".local/bin/nemo-speech"));
-    }
-    // A bundle launched from Finder gets a minimal PATH, so the explicit
-    // candidate above matters more than this does.
-    if let Ok(path) = std::env::var("PATH") {
-        candidates.extend(path.split(':').map(|dir| Path::new(dir).join("nemo-speech")));
-    }
-    candidates.into_iter().find(|path| is_executable(path))
-}
-
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    crate::paths::find_nemo_speech()
 }
 
 #[cfg(test)]
@@ -1450,12 +1502,12 @@ mod tests {
                     definition.id
                 ),
                 Weights::NemoCache => assert!(
-                    nemo_model_dir(definition).is_some(),
+                    crate::paths::parakeet_model_dir(definition.remote_id).is_some(),
                     "{} should resolve a NeMo cache path",
                     definition.id
                 ),
                 Weights::HuggingFace => assert!(
-                    huggingface_model_dir(definition).is_some(),
+                    crate::paths::qwen_model_dir(definition.remote_id).is_some(),
                     "{} should resolve a Hugging Face cache path",
                     definition.id
                 ),
@@ -1544,25 +1596,21 @@ mod tests {
         assert_eq!(wer_of("whisper-cpp-large-v3-q5"), wer_of("whisper-cpp-large-v3"));
     }
 
-    /// A model the app fetches must not also tell the user to run something,
-    /// and one it cannot fetch must always say what to run. The interface picks
-    /// between those two states, so a model in neither would render as nothing.
+    /// Every catalogue model installs from the app. Setup commands are gone:
+    /// a disk-image user has no checkout to run them in.
     #[test]
-    fn every_model_says_exactly_one_way_to_get_its_weights() {
+    fn every_model_installs_from_the_app() {
         for definition in MODELS.iter() {
-            let command = setup_command(definition);
-            match downloadable(definition) {
-                Some(_) => assert!(
-                    command.is_empty(),
-                    "{} both downloads itself and names {command}",
-                    definition.id
-                ),
-                None => assert!(
-                    !command.is_empty(),
-                    "{} neither downloads itself nor says what to run",
-                    definition.id
-                ),
-            }
+            assert!(
+                install_bytes(definition).is_some(),
+                "{} should expose an install size",
+                definition.id
+            );
+            assert!(
+                setup_command(definition).is_empty(),
+                "{} should not name a terminal setup command",
+                definition.id
+            );
         }
     }
 }

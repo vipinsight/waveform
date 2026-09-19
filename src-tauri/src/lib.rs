@@ -7,6 +7,7 @@
 mod download;
 mod gestures;
 mod history;
+mod install;
 mod logs;
 mod hotkey;
 mod dictation;
@@ -14,6 +15,7 @@ mod local_llm;
 mod mic;
 mod model_server;
 mod panel;
+mod paths;
 mod resources;
 mod rewrite;
 mod settings;

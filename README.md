@@ -11,7 +11,7 @@ engines. No account or subscription is required.
 
 - **Local transcription:** whisper.cpp is linked into the app, so every Whisper
   size downloads and runs with nothing else installed. Parakeet and Qwen3-ASR
-  need a source checkout and a `pnpm setup:*` step.
+  install from the Models page the same way (Qwen needs Python 3 on the Mac).
 - **Dictation controls:** hold to speak, double-tap to lock, and Escape to cancel.
 - **Menu bar and Wave Bar:** keep dictation available while working in other apps.
 - **Optional AI Polish:** tidy dictated or selected text with a small model
@@ -60,13 +60,12 @@ Model downloads and update checks also use the network; see [Privacy](#privacy).
   [Whisper](https://github.com/ggml-org/whisper.cpp) — Tiny through Large v3,
   quantized or not, multilingual or English-only — runs inside the app and needs
   nothing installed; the Models section marks the one that fits the memory your
-  Mac has. Pressing a row fetches its weights, and for an installed copy of the
-  app that is the whole story.
+  Mac has. Pressing **Download** fetches its weights, and for an installed copy
+  of the app that is the whole story.
   [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and
-  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) are listed as well,
-  but each runs outside the app — Parakeet over HTTP, Qwen through a Python
-  worker — so they need a source checkout and their `pnpm setup:*` step first.
-  [Models](docs/models.md) has the details.
+  [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) install from the same
+  button (Qwen needs Python 3 on the Mac). [Models](docs/models.md) has the
+  details.
 - **Polish without an account.** AI Polish can run
   [Qwen3](https://huggingface.co/Qwen/Qwen3-0.6B) 0.6B or 1.7B on your Mac
   through llama.cpp, downloaded from the AI Polish section the same way a speech
