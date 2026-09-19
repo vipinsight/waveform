@@ -85,16 +85,12 @@ echo "release: building $VERSION"
 # Recompile the helper so a cached development helper cannot bypass signing.
 rm -f dist/native/waveform-hotkey
 
-# Without these the build machine's absolute paths -- and so the builder's home
-# directory and username -- are readable with `strings` in the published binary.
-# Remap only the checkout: remapping `$CARGO_HOME` to `/cargo` breaks proc-macro
-# resolution on current rustc (phf cannot find phf_macros). Registry crates still
-# appear as crates.io coordinates in panic paths; the username does not.
-# Cargo's `trim-paths` would cover both, but it is still nightly-only.
-REMAP="--remap-path-prefix=$ROOT=/waveform"
-export RUSTFLAGS="${RUSTFLAGS:-} $REMAP"
-export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
-export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$ROOT=/waveform"
+# Path remapping used to strip the checkout path from panic/`strings` output,
+# but `--remap-path-prefix` breaks proc-macro resolution on current rustc
+# (dependents cannot find `*_derive` / `*_macros` crates). Prefer a shippable
+# build; revisit when Cargo `trim-paths` is stable on the release toolchain.
+export CFLAGS="${CFLAGS:-}"
+export CXXFLAGS="${CXXFLAGS:-}"
 
 pnpm exec tauri build --features dist --bundles app,dmg
 [ -x dist/native/waveform-hotkey ] || fail "native hotkey helper was not built"
