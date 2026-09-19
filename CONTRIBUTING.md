@@ -45,10 +45,10 @@ or upload an app.
 Waveform's premise is that audio stays on this Mac. A change that sends audio
 anywhere is not a feature this app can take, however good it is.
 
-Text is different. AI Polish already leaves the machine, and does so only when
+Text is different. Hosted AI Polish leaves the machine, and does so only when
 pressed — that is the line: a request the user made, not one the app decided to
-make. The update check is the single exception, which is why it can be switched
-off.
+make. A model on this Mac sends nothing. The update check is the single
+exception, which is why it can be switched off.
 
 For anything large, open an issue before writing it. A dictation path touches a
 webview, a Rust host, a Swift helper and whatever app has focus, so the shape of

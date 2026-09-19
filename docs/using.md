@@ -82,13 +82,15 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
 **Models**, in the window's own menu, says what is on this Mac and what is not. A filled row is
-downloaded; an outlined one with a cloud beside it is not, and pressing it
-fetches the weights. The two engines the app cannot fetch show a prompt instead,
-with the command to run.
+downloaded; an outlined one with a **Download** button is not, and pressing that button
+fetches the weights. While a download runs it becomes **Cancel**. Hover a downloaded Whisper
+for **Remove** to free the space. The two engines the app cannot fetch show a prompt instead,
+with the command to run; once their weights are present, **Remove** clears those caches too.
 Only whisper.cpp can be set up without a terminal, which is why it is the
 default — an install from the disk image cannot assume one. Because it is linked
-in, every size and quantization of Whisper is one press away, and the models
-page marks the one **recommended** for the Mac it is running on.
+in, every size and quantization of Whisper is one press away. The models page
+lists Parakeet and Qwen first — the most accurate of the catalogue on the same
+LibriSpeech figure the rows show.
 
 Qwen3-ASR takes roughly 20–40 seconds to load the first time. Parakeet is
 quicker once its runtime is warm.
@@ -127,27 +129,26 @@ while it is loaded, and it is approximate.
 The **English only** group is the same sizes trained on English alone. Each is
 more accurate than its multilingual twin at the same memory — Base · English is
 close to multilingual Small — and useless for anything else, so it is never the
-recommended model. Pick one deliberately, and only if you never dictate in
+default suggestion. Pick one deliberately, and only if you never dictate in
 another language.
 
 ### What to run on which Mac
 
-Waveform reads how much memory the Mac has and marks the most capable
-multilingual Whisper that fits in an eighth of it. That eighth is the point:
-these weights stay resident between phrases, so a model that merely *fits* is
-one that pushes everything else towards swap while you are not even dictating.
-A row saying **tight on this Mac** will still run, and will still be the largest
-thing on the machine.
+Each Whisper row is graded against how much memory this Mac has. These weights
+stay resident between phrases, so a model that merely *fits* is one that pushes
+everything else towards swap while you are not even dictating. A row saying
+**tight on this Mac** will still run, and will still be the largest thing on the
+machine.
 
-| This Mac | Recommended | If you want more |
+| This Mac | Whisper that fits | If you want more |
 | --- | --- | --- |
 | 8 GB | Small | Medium · Q5, or Small · English if you only dictate English |
 | 16 GB | Large v3 Turbo · Q5 | Large v3 Turbo, at about 2.2 GB resident |
 | 24 GB or more | Large v3 Turbo | Large v3, if you would rather wait than reread |
 
-Large v3 is never the recommendation. Turbo comes within a hair of its accuracy
-at a fraction of the time, and for dictation — where the wait is in front of you
-— that is the better trade.
+Large v3 is never the Whisper to pick first. Turbo comes within a hair of its
+accuracy at a fraction of the time, and for dictation — where the wait is in
+front of you — that is the better trade.
 
 Any Apple Silicon Mac runs any of these; the chip decides how long you wait, not
 whether it works. A model that has to be paged in from disk on every phrase is
@@ -175,6 +176,7 @@ chooses where it runs.
 A small instruction-tuned model, run through llama.cpp in the app the way
 whisper.cpp runs the speech model. Nothing leaves the Mac and no account is
 needed; the model is one file, downloaded from that page by pressing its row.
+Hover a downloaded one for **Remove** to free the space.
 
 | Model | Download | Memory while loaded |
 | --- | --- | --- |
@@ -184,17 +186,19 @@ needed; the model is one file, downloaded from that page by pressing its row.
 
 The weights land in `~/Library/Application Support/Waveform/llm`, and each file
 is checked against its length and SHA-256 before it is put there. The model
-loads on the first rewrite and stays loaded until you switch engines, so the
-first polish after launch is a second or two slower than the ones after it.
+loads on the first rewrite and stays loaded until you switch engines or models,
+so the first polish after launch is a second or two slower than the ones after it.
 
 These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
 discused the timeline" becomes "we discussed the timeline", "how r u doing"
-becomes "how are you doing" — and it is shown three worked corrections before
-your text, because a model this size follows an example better than it follows a
-page of rules. A single word on its own is handed back untouched: there is no
-sentence around it to read it against, and a model that guesses pastes a word
-you never wrote. A hosted model has neither limit. Local polish also takes up to
-4,000 characters at a time, against 12,000 for OpenRouter.
+becomes "how are you doing" — and on selected text it is shown three worked
+corrections first, because a model this size follows an example better than it
+follows a page of rules. Dictation cleanup is not: those examples are typed
+fixes, and would teach it to proofread speech instead of stripping filler. A
+single word on its own is handed back untouched: there is no sentence around it
+to read it against, and a model that guesses pastes a word you never wrote. A
+hosted model has neither limit. Local polish also takes up to 4,000 characters
+at a time, against 12,000 for OpenRouter.
 
 A reply that is not a rewrite of what went in — the model answering instead of
 correcting, or stopping halfway through the sentence — is dropped and your text

@@ -51,6 +51,7 @@ const element = {
   sidebarToggle: requireElement<HTMLButtonElement>("sidebar-toggle"),
   scrim: requireElement<HTMLElement>("scrim"),
   versionLine: requireElement<HTMLElement>("version-line"),
+  appBrand: requireElement<HTMLElement>("app-brand"),
   modelList: requireElement<HTMLElement>("model-list"),
   openOpenRouter: requireElement<HTMLButtonElement>("open-openrouter"),
   overlayPreview: requireElement<HTMLButtonElement>("overlay-preview"),
@@ -109,12 +110,17 @@ const element = {
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
   transformToggle: requireElement<HTMLInputElement>("transform-toggle"),
-  transformPrompt: requireElement<HTMLTextAreaElement>("transform-prompt"),
-  polishPrompt: requireElement<HTMLTextAreaElement>("polish-prompt"),
+  transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
+  polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
   polishEngine: requireElement<HTMLElement>("polish-engine"),
   polishModelList: requireElement<HTMLElement>("polish-model-list"),
-  engineHint: requireElement<HTMLElement>("engine-hint"),
+  promptEditor: requireElement<HTMLElement>("prompt-editor"),
+  promptEditorTitle: requireElement<HTMLElement>("prompt-editor-title"),
+  promptEditorWhere: requireElement<HTMLElement>("prompt-editor-where"),
+  promptEditorBody: requireElement<HTMLTextAreaElement>("prompt-editor-body"),
+  promptEditorReset: requireElement<HTMLButtonElement>("prompt-editor-reset"),
+  promptEditorSave: requireElement<HTMLButtonElement>("prompt-editor-save"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
@@ -148,6 +154,8 @@ let updateAction: "check" | "install" = "check";
 /** Everything the log has said this session, oldest first. */
 let logLines: LogLine[] = [];
 let settingsOpen = false;
+/** Which instruction the popup is editing, if any. */
+let promptEditorKind: "transform" | "polish" | null = null;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
 let lifetimeSessions = 0;
@@ -172,8 +180,11 @@ async function bootstrap(): Promise<void> {
   // Falls back to the bare name: a version that failed to load should not be
   // rendered as "Waveform null".
   appVersion = await host().getAppVersion().catch(() => "");
-  element.versionLine.textContent = appVersion ? `Waveform ${appVersion}` : "Waveform";
-  element.aboutVersion.textContent = appVersion || "Waveform";
+  const appName = await host().getAppName().catch(() => "Waveform");
+  document.title = appName;
+  element.appBrand.textContent = appName;
+  element.versionLine.textContent = appVersion ? `${appName} ${appVersion}` : appName;
+  element.aboutVersion.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -248,7 +259,10 @@ function wireEvents(): void {
     renderSidebarCollapsed();
     void patchSettings({ sidebarCollapsed: collapsed });
   });
-  element.scrim.addEventListener("click", () => toggleSettings(false));
+  element.scrim.addEventListener("click", () => {
+    if (promptEditorKind) togglePromptEditor(false);
+    else toggleSettings(false);
+  });
   element.deckSettings.addEventListener("click", () => {
     toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
   });
@@ -262,26 +276,38 @@ function wireEvents(): void {
     });
   }
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && settingsOpen) toggleSettings(false);
+    if (event.key !== "Escape") return;
+    if (promptEditorKind) togglePromptEditor(false);
+    else if (settingsOpen) toggleSettings(false);
   });
 
   element.modelList.addEventListener("click", (event) => {
     // The card link sits inside the row, so it is checked first: otherwise
-    // reading about a model would also switch to it.
+    // reading about a model would also switch to it. Download, cancel and
+    // delete are the same kind of exception.
     const card = (event.target as HTMLElement).closest<HTMLElement>("[data-card]");
     if (card?.dataset.card) {
       void host().openUrl(card.dataset.card);
       return;
     }
+    const remove = (event.target as HTMLElement).closest<HTMLElement>("[data-remove]");
+    if (remove?.dataset.remove && isSpeechModelId(remove.dataset.remove)) {
+      void deleteModel(remove.dataset.remove);
+      return;
+    }
+    const fetch = (event.target as HTMLElement).closest<HTMLElement>("[data-fetch]");
+    if (fetch?.dataset.fetch && isSpeechModelId(fetch.dataset.fetch)) {
+      void downloadModel(fetch.dataset.fetch);
+      return;
+    }
+    const cancel = (event.target as HTMLElement).closest<HTMLElement>("[data-cancel-download]");
+    if (cancel) {
+      void host().cancelModelDownload();
+      return;
+    }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
     const id = row?.dataset.model;
     if (!id || !isSpeechModelId(id)) return;
-    // A row whose weights the app can fetch is a download button until it has
-    // them, and only then the radio it looks like.
-    if (row?.dataset.download === "true") {
-      void downloadModel(id);
-      return;
-    }
     if (row?.getAttribute("aria-disabled") === "true") return;
     void host().selectModel(id);
   });
@@ -293,21 +319,33 @@ function wireEvents(): void {
     }
   });
 
-  // The same two acts as the speech rows, for the same reason: a model that is
-  // here is chosen, and one that is not is fetched.
+  // Installed polish models are chosen by the row; missing ones only by their
+  // Download button, so a press meant for the HF link cannot start a fetch.
   element.polishModelList.addEventListener("click", (event) => {
     const card = (event.target as HTMLElement).closest<HTMLElement>("[data-card]");
     if (card?.dataset.card) {
       void host().openUrl(card.dataset.card);
       return;
     }
+    const remove = (event.target as HTMLElement).closest<HTMLElement>("[data-remove]");
+    if (remove?.dataset.remove && isPolishModelId(remove.dataset.remove)) {
+      void deletePolishModel(remove.dataset.remove);
+      return;
+    }
+    const fetch = (event.target as HTMLElement).closest<HTMLElement>("[data-fetch]");
+    if (fetch?.dataset.fetch && isPolishModelId(fetch.dataset.fetch)) {
+      void downloadPolishModel(fetch.dataset.fetch);
+      return;
+    }
+    const cancel = (event.target as HTMLElement).closest<HTMLElement>("[data-cancel-download]");
+    if (cancel) {
+      void host().cancelPolishModelDownload();
+      return;
+    }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
     const id = row?.dataset.model;
     if (!id || !isPolishModelId(id)) return;
-    if (row?.dataset.download === "true") {
-      void downloadPolishModel(id);
-      return;
-    }
+    if (row?.getAttribute("aria-disabled") === "true") return;
     void patchSettings({ localModelId: id });
   });
 
@@ -349,26 +387,30 @@ function wireEvents(): void {
   element.transformToggle.addEventListener("change", () => {
     void patchSettings({ transformOnDictate: element.transformToggle.checked });
   });
-  element.transformPrompt.addEventListener("change", () => {
-    void patchSettings({ transformPrompt: element.transformPrompt.value });
-  });
-  element.polishPrompt.addEventListener("change", () => {
-    void patchSettings({ polishPrompt: element.polishPrompt.value });
-  });
   element.polishShortcut.addEventListener("change", () => {
     void patchSettings({ polishShortcut: element.polishShortcut.value });
   });
-  for (const button of Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-reset]"),
+  for (const card of Array.from(
+    document.querySelectorAll<HTMLButtonElement>(".prompt-card[data-prompt]"),
   )) {
-    button.addEventListener("click", () => {
-      if (button.dataset.reset === "transform") {
-        void patchSettings({ transformPrompt: DEFAULT_TRANSFORM_PROMPT });
-      } else {
-        void patchSettings({ polishPrompt: DEFAULT_POLISH_PROMPT });
-      }
+    card.addEventListener("click", () => {
+      const kind = card.dataset.prompt;
+      if (kind === "transform" || kind === "polish") togglePromptEditor(true, kind);
     });
   }
+  element.promptEditorReset.addEventListener("click", () => {
+    if (!promptEditorKind) return;
+    element.promptEditorBody.value =
+      promptEditorKind === "transform" ? DEFAULT_TRANSFORM_PROMPT : DEFAULT_POLISH_PROMPT;
+    element.promptEditorBody.focus();
+  });
+  element.promptEditorSave.addEventListener("click", () => {
+    if (!promptEditorKind) return;
+    const value = element.promptEditorBody.value;
+    const patch =
+      promptEditorKind === "transform" ? { transformPrompt: value } : { polishPrompt: value };
+    void patchSettings(patch).then(() => togglePromptEditor(false));
+  });
 
   element.menubarToggle.addEventListener("change", () => {
     void patchSettings({ menuBarIcon: element.menubarToggle.checked });
@@ -549,8 +591,7 @@ function applySettings(next: AppSettings): void {
   element.aiModel.value = next.openRouterModel;
   renderPolishEngine(next.polishEngine);
   element.transformToggle.checked = next.transformOnDictate;
-  element.transformPrompt.value = next.transformPrompt;
-  element.polishPrompt.value = next.polishPrompt;
+  renderPromptPreviews(next);
   element.polishShortcut.value = next.polishShortcut;
   renderThemeToggle(next.theme);
 
@@ -581,8 +622,12 @@ function populateSelects(): void {
   }
 }
 
-/** Browser media APIs own device enumeration; Rust receives this list for tray controls. */
-async function refreshMicrophones(requestLabels = false): Promise<void> {
+/**
+ * Browser media APIs own device enumeration; Rust receives this list for tray
+ * controls. When `requestLabels` is true, getUserMedia is what surfaces the
+ * macOS microphone prompt — opening Privacy settings alone never asks.
+ */
+async function refreshMicrophones(requestLabels = false): Promise<boolean> {
   try {
     if (requestLabels) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -592,9 +637,11 @@ async function refreshMicrophones(requestLabels = false): Promise<void> {
     microphones = microphoneDevices(devices);
     renderMicrophoneSelect();
     await host().setAvailableMicrophones(microphones);
+    return true;
   } catch {
     // Device enumeration is unavailable until WebKit can access media devices.
     // The system-default option remains usable and capture will request access.
+    return false;
   }
 }
 
@@ -641,27 +688,16 @@ function renderAiStatus(status: AiStatus): void {
   }
   element.keyState.classList.toggle("key-saved", status.hasApiKey && !status.memoryOnly);
 
-  if (!status.hasApiKey) {
-    element.keyState.textContent =
-      "Waveform reaches the AI through OpenRouter. Your key is kept in the login keychain, never in plain text.";
-  } else if (status.memoryOnly) {
-    element.keyState.textContent =
-      "Saved for this session only: the keychain was unavailable.";
-  } else {
-    element.keyState.textContent = "Saved in your login keychain.";
-  }
+  element.keyState.textContent = status.memoryOnly ? "This session only" : "";
 
   // Nothing to fetch once there is a key, and the row is long enough already.
   element.openOpenRouter.hidden = status.hasApiKey;
-  // The switch has nothing to turn on until the chosen engine can answer, so
-  // the row says what is missing rather than sitting there greyed out with no
-  // explanation -- and what is missing depends on which engine that is.
   const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
   element.transformHint.textContent = ready
-    ? "Adds a second or two before your words appear."
+    ? ""
     : status.engine === "local"
-      ? "Needs a model on this Mac, below."
-      : "Needs an OpenRouter key, below.";
+      ? "Download a model first."
+      : "Add a key first.";
 
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
@@ -687,10 +723,6 @@ function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
   )) {
     section.hidden = section.dataset.engineOnly !== engine;
   }
-  element.engineHint.textContent =
-    engine === "local"
-      ? "On this Mac. Nothing leaves it, and no account is needed."
-      : "Through OpenRouter. The text being tidied leaves this Mac.";
   if (engine === "local") void renderPolishModels();
   // Switching engines changes what "ready" means, and the rows that say so were
   // drawn for the other one.
@@ -713,22 +745,22 @@ async function renderPolishModels(): Promise<void> {
 
 function polishModelRow(model: PolishModelStatus): HTMLElement {
   const size = formatBytes(model.downloadBytes);
-  const facts = `${size} · ${formatMemory(model.memoryMb)} in memory`;
+  const facts = `${size} · ${formatMemory(model.memoryMb)} RAM`;
+  const busy = polishDownloading === model.id;
 
   const pick = document.createElement("button");
   pick.type = "button";
   pick.className = "model-pick";
   pick.dataset.model = model.id;
-  if (!model.installed) pick.dataset.download = "true";
-  // A radio only where there is something to choose. Pressing a row whose
-  // weights are missing starts a download, and calling that "selected" would be
-  // the interface saying a thing that is not true.
+  // A radio only where there is something to choose. Missing weights are
+  // fetched by their own button, so the row itself must not start a download.
   if (model.installed) {
     pick.setAttribute("role", "radio");
     pick.setAttribute("aria-checked", String(model.selected));
     pick.setAttribute("aria-label", `${model.label} — ${facts}`);
   } else {
-    pick.setAttribute("aria-label", `Download ${model.label}, ${size} — ${facts}`);
+    pick.setAttribute("aria-disabled", "true");
+    pick.setAttribute("aria-label", `${model.label} — ${facts}`);
   }
 
   const card = document.createElement("button");
@@ -752,31 +784,29 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
   const body = document.createElement("span");
   body.className = "model-body";
   body.append(name, factLine);
-  if (model.detail !== "") {
-    const detail = document.createElement("small");
-    detail.className = "model-detail";
-    detail.textContent = model.detail;
-    body.append(detail);
-  }
 
   const row = document.createElement("div");
   row.className = "model-row";
   row.setAttribute("role", "presentation");
-  row.dataset.state = model.installed ? "here" : "download";
+  row.dataset.state = model.installed ? "here" : busy ? "busy" : "download";
   row.append(pick, body);
 
-  if (model.installed) {
+  if (model.installed && model.selected) {
     const tag = document.createElement("span");
     tag.className = "model-tag";
-    tag.dataset.ready = String(model.selected);
-    tag.textContent = model.selected ? "In use" : "Downloaded";
+    tag.dataset.ready = "true";
+    tag.textContent = "In use";
     row.append(tag);
-  } else {
-    const action = document.createElement("span");
-    action.className = "model-action";
-    action.append(icon("cloud-download", CLOUD_DOWNLOAD));
-    action.title = `Download ${model.label} — ${size}`;
-    row.append(action);
+  }
+
+  if (busy) {
+    row.append(cancelDownloadButton());
+  } else if (!model.installed) {
+    row.append(fetchButton(model.id, model.label, size));
+  }
+
+  if (model.installed) {
+    row.append(removeButton(model.id, model.label, size));
   }
 
   return row;
@@ -792,10 +822,12 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
 async function downloadPolishModel(id: string): Promise<void> {
   if (polishDownloading) return;
   polishDownloading = id;
+  await renderPolishModels();
   try {
     await host().downloadPolishModel(id);
   } catch {
-    // The failure already arrived as an event, which is what says why.
+    // Cancelled or failed: the event already said which, and the rebuild below
+    // puts the Download button back.
   } finally {
     polishDownloading = null;
     await renderPolishModels();
@@ -803,19 +835,16 @@ async function downloadPolishModel(id: string): Promise<void> {
   }
 }
 
-/** Progress written into the row, for the reason the speech list has one. */
+/** Progress written next to Cancel — the facts line stays as size and RAM. */
 function showPolishDownloadProgress(event: ModelEvent): void {
   const pick = element.polishModelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
   );
   const row = pick?.closest(".model-row");
   if (!row) return;
-  const facts = row.querySelector(".model-facts");
-  if (facts) facts.textContent = event.message;
-  const action = row.querySelector<HTMLElement>(".model-action");
-  if (action && event.progress !== undefined) {
-    action.dataset.progress = "true";
-    action.textContent = `${Math.round(event.progress * 100)}%`;
+  const progress = row.querySelector<HTMLElement>(".model-progress");
+  if (progress && event.progress !== undefined) {
+    progress.textContent = `${Math.round(event.progress * 100)}%`;
   }
 }
 
@@ -1132,17 +1161,19 @@ async function renderModels(): Promise<void> {
   }, []);
 
   const sections = groups.flatMap(({ heading, models }) => {
-    const title = document.createElement("h2");
-    title.className = "model-group";
-    title.textContent = heading;
-
     const rows = document.createElement("div");
     rows.className = "model-list";
     // One radio group per heading: arrow keys then move within a group rather
-    // than sweeping through fourteen Whisper sizes to reach Parakeet.
+    // than sweeping from Parakeet through fourteen Whisper sizes.
     rows.setAttribute("role", "radiogroup");
-    rows.setAttribute("aria-label", heading);
+    rows.setAttribute("aria-label", heading || models.map((model) => model.label).join(", "));
     rows.append(...models.map(modelRow));
+    // Parakeet and Qwen sit at the top unnamed: a heading here used to say
+    // "Other engines", which made them sound like leftovers.
+    if (heading === "") return [rows];
+    const title = document.createElement("h2");
+    title.className = "model-group";
+    title.textContent = heading;
     return [title, rows];
   });
 
@@ -1175,15 +1206,55 @@ function icon(name: string, paths: string[]): SVGSVGElement {
   return svg;
 }
 
-/** Lucide `cloud-download`: what macOS draws beside a thing not yet on the disk. */
-const CLOUD_DOWNLOAD = [
-  "M12 13v8l-4-4",
-  "m12 21 4-4",
-  "M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284",
-];
-
 /** Lucide `terminal`: the two models the app cannot fetch for you. */
 const TERMINAL = ["M12 19h8", "m4 17 6-6-6-6"];
+
+/** Frees installed weights — same pill shape as Download. */
+function removeButton(id: string, label: string, size: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pill-button model-remove";
+  button.dataset.remove = id;
+  button.textContent = "Remove";
+  button.title = size === "" ? `Remove ${label}` : `Remove ${label} — free ${size}`;
+  button.setAttribute(
+    "aria-label",
+    size === "" ? `Remove ${label}` : `Remove ${label} to free ${size}`,
+  );
+  return button;
+}
+
+/** Starts a fetch the row itself no longer does. */
+function fetchButton(id: string, label: string, size: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pill-button model-fetch";
+  button.dataset.fetch = id;
+  button.textContent = "Download";
+  button.title = `Download ${label} — ${size}`;
+  button.setAttribute("aria-label", `Download ${label}, ${size}`);
+  return button;
+}
+
+/** Stops the in-flight fetch; progress sits beside it while it runs. */
+function cancelDownloadButton(): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.className = "model-download-controls";
+
+  const progress = document.createElement("span");
+  progress.className = "model-progress";
+  progress.textContent = "0%";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pill-button model-cancel";
+  button.dataset.cancelDownload = "true";
+  button.textContent = "Cancel";
+  button.setAttribute("aria-label", "Cancel download");
+
+  wrap.append(progress, button);
+  return wrap;
+}
 
 /**
  * One model: the numbers to choose on, and what it would take to have it.
@@ -1192,55 +1263,47 @@ const TERMINAL = ["M12 19h8", "m4 17 6-6-6-6"];
  * different acts, and a link inside a button is not a thing a browser will
  * render -- so the press target is a transparent layer over the whole row, and
  * everything visible sits on top of it and lets clicks through. The arrow out
- * to Hugging Face is the one exception, and takes its own.
+ * to Hugging Face, the Download / Cancel controls, and delete are exceptions.
  *
- * What that press does depends on what is on the disk, because there is nothing
- * else it could sensibly do: a model whose weights are here is chosen, and one
- * whose weights are not is fetched. The two are not the same act, so they are
- * not the same control either -- the first is a radio, the second a button --
- * and the row says which it is with a cloud, the way the Finder does.
+ * A model whose weights are here is chosen by pressing the row. One whose
+ * weights are not is fetched only by its Download button -- pressing the row
+ * must not start a gigabyte transfer by accident.
  */
 function modelRow(model: ModelStatus): HTMLElement {
   const ready = model.runtimeInstalled && model.weightsInstalled;
   const fetchable = !ready && model.downloadBytes !== null;
+  const busy = downloading === model.id;
   const size = model.downloadBytes === null ? "" : formatBytes(model.downloadBytes);
 
-  // The numbers the choice is made on, in the order they get used: is it good
-  // enough, will it fit, and what does keeping it cost. Spelled "word errors"
-  // rather than "WER", because the abbreviation is one more thing to know
-  // before the row can be read.
+  // The numbers the choice is made on. A third line of prose is dropped: the
+  // group heading and the figures already say what the model is for.
   const facts = [
-    model.wer === null ? "" : `${model.wer.toFixed(1)}% word errors`,
+    model.wer === null ? "" : `${model.wer.toFixed(1)}% errors`,
     size,
-    `${formatMemory(model.memoryMb)} in memory`,
+    `${formatMemory(model.memoryMb)} RAM`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  // Only where there is something the numbers do not say: what a quantization
-  // is, which languages an engine adds, and -- for the two the app cannot fetch
-  // -- the command that brings them. Most rows have none of it.
-  const aside = [model.detail, ready || fetchable ? "" : `Run ${model.setupCommand}`]
-    .filter((part) => part !== "")
-    .join(" ");
+  // Only when the app cannot fetch the weights: that command is the next act,
+  // not a description.
+  const aside = ready || fetchable ? "" : `Run ${model.setupCommand}`;
 
   const pick = document.createElement("button");
   pick.type = "button";
   pick.className = "model-pick";
   pick.dataset.model = model.id;
-  if (fetchable) pick.dataset.download = "true";
-  // A radio only where there is something to choose. Pressing a row whose
-  // weights are missing starts a download, and calling that "selected" would
-  // be the interface saying a thing that is not true.
   if (ready) {
     pick.setAttribute("role", "radio");
     pick.setAttribute("aria-checked", String(model.selected));
     pick.setAttribute("aria-label", `${model.label} — ${facts}`);
-  } else if (fetchable) {
-    pick.setAttribute("aria-label", `Download ${model.label}, ${size} — ${facts}`);
   } else {
-    // Nothing the button could do: the weights arrive through a terminal.
+    // Nothing the row press does: Download has its own button, and a terminal
+    // model needs a command typed elsewhere.
     pick.setAttribute("aria-disabled", "true");
-    pick.setAttribute("aria-label", `${model.label} — run ${model.setupCommand}`);
+    pick.setAttribute(
+      "aria-label",
+      fetchable ? `${model.label} — ${facts}` : `${model.label} — run ${model.setupCommand}`,
+    );
   }
 
   const card = document.createElement("button");
@@ -1262,6 +1325,9 @@ function modelRow(model: ModelStatus): HTMLElement {
   const factLine = document.createElement("small");
   factLine.className = "model-facts";
   factLine.textContent = facts;
+  if (model.wer !== null) {
+    factLine.title = "Word error rate — lower is more accurate";
+  }
 
   const body = document.createElement("span");
   body.className = "model-body";
@@ -1278,41 +1344,63 @@ function modelRow(model: ModelStatus): HTMLElement {
   row.setAttribute("role", "presentation");
   // What the row is, in one word, so the stylesheet can say the rest: a model
   // that is not here reads dimmer than one that is.
-  row.dataset.state = ready ? "here" : fetchable ? "download" : "terminal";
+  row.dataset.state = ready ? "here" : busy ? "busy" : fetchable ? "download" : "terminal";
   row.append(pick, body);
 
-  // Recommended stands beside the state rather than replacing it: "the one to
-  // pick on this Mac" and "not downloaded yet" are both worth saying, and the
-  // row used to have to choose between them.
-  if (model.recommended && !model.selected) {
-    const suggestion = document.createElement("span");
-    suggestion.className = "model-tag";
-    suggestion.dataset.recommended = "true";
-    suggestion.textContent = "Recommended";
-    row.append(suggestion);
-  }
-
-  if (ready) {
+  if (ready && model.selected) {
     const tag = document.createElement("span");
     tag.className = "model-tag";
-    tag.dataset.ready = String(model.selected);
-    tag.textContent = model.selected ? "In use" : "Downloaded";
+    tag.dataset.ready = "true";
+    tag.textContent = "In use";
     row.append(tag);
-  } else {
-    // Not a button: the whole row already is one, and two nested targets for
-    // the same act is two ways to get it slightly wrong.
+  }
+
+  if (busy) {
+    row.append(cancelDownloadButton());
+  } else if (fetchable) {
+    row.append(fetchButton(model.id, model.label, size));
+  } else if (!ready) {
     const action = document.createElement("span");
     action.className = "model-action";
-    action.append(
-      fetchable ? icon("cloud-download", CLOUD_DOWNLOAD) : icon("terminal", TERMINAL),
-    );
-    action.title = fetchable
-      ? `Download ${model.label} — ${size}`
-      : `Run ${model.setupCommand}`;
+    action.append(icon("terminal", TERMINAL));
+    action.title = `Run ${model.setupCommand}`;
     row.append(action);
   }
 
+  // Any installed weights: Whisper files the app fetched, or Parakeet / Qwen
+  // caches named by model id under NeMo / Hugging Face.
+  if (model.weightsInstalled) {
+    row.append(removeButton(model.id, model.label, size));
+  }
+
   return row;
+}
+
+/**
+ * Frees the weight file, so a model that is no longer wanted is not occupying
+ * a gigabyte. The list is rebuilt afterwards: the row's whole text depends on
+ * whether the file is there now.
+ */
+async function deleteModel(id: SpeechModelId): Promise<void> {
+  try {
+    await host().deleteModel(id);
+  } catch {
+    // The failure already arrived as an error, or there was nothing to delete.
+  } finally {
+    await renderModels();
+    await refreshModelInstalled();
+  }
+}
+
+async function deletePolishModel(id: string): Promise<void> {
+  try {
+    await host().deletePolishModel(id);
+  } catch {
+    // Same as speech: the row rebuild is what says whether the file is gone.
+  } finally {
+    await renderPolishModels();
+    renderAiStatus(await host().getAiStatus());
+  }
 }
 
 /**
@@ -1324,10 +1412,12 @@ function modelRow(model: ModelStatus): HTMLElement {
 async function downloadModel(id: SpeechModelId): Promise<void> {
   if (downloading) return;
   downloading = id;
+  await renderModels();
   try {
     await host().downloadModel(id);
   } catch {
-    // The failure already arrived as an error event, which is what says why.
+    // Cancelled or failed: the event already said which, and the rebuild below
+    // puts the Download button back.
   } finally {
     downloading = null;
     await renderModels();
@@ -1338,10 +1428,11 @@ async function downloadModel(id: SpeechModelId): Promise<void> {
 }
 
 /**
- * Writes progress into the row itself rather than rebuilding the list.
+ * Writes progress next to Cancel rather than rebuilding the list.
  *
  * A rebuild four times a second would ask the host for the whole catalogue
- * each time, and replace the button under the pointer that started it.
+ * each time, and replace the button under the pointer that started it. The
+ * facts line keeps size and RAM — the percent beside Cancel is enough.
  */
 function showDownloadProgress(event: ModelEvent): void {
   // The onboarding card offers the same download without the models page ever
@@ -1358,13 +1449,9 @@ function showDownloadProgress(event: ModelEvent): void {
   );
   const row = pick?.closest(".model-row");
   if (!row) return;
-  const facts = row.querySelector(".model-facts");
-  if (facts) facts.textContent = event.message;
-  // The cloud gives way to the figure it would otherwise be standing in for.
-  const action = row.querySelector<HTMLElement>(".model-action");
-  if (action) {
-    action.dataset.progress = "true";
-    action.textContent = `${Math.round((event.progress ?? 0) * 100)}%`;
+  const progress = row.querySelector<HTMLElement>(".model-progress");
+  if (progress) {
+    progress.textContent = `${percent}%`;
   }
 }
 
@@ -1477,7 +1564,11 @@ function resolveSetupStep(id: string): void {
     return;
   }
   if (id === "microphone") {
-    void host().openPrivacySettings("microphone");
+    // Same path as opening Dictation: getUserMedia shows the allow prompt.
+    // If macOS already refused, only System Settings can flip it back on.
+    void refreshMicrophones(true).then((ok) => {
+      if (!ok) void host().openPrivacySettings("microphone");
+    });
     return;
   }
   if (id !== "accessibility" && id !== "input-monitoring") return;
@@ -1847,9 +1938,10 @@ function formatDay(timestamp: number): string {
 
 
 function toggleSettings(open: boolean, page = "general"): void {
+  if (open && promptEditorKind) togglePromptEditor(false);
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
-  element.scrim.hidden = !open;
+  element.scrim.hidden = !open && !promptEditorKind;
   if (!open) return;
   showSettingsPage(page);
   void host().getHotkeyStatus().then((status) => {
@@ -1857,6 +1949,46 @@ function toggleSettings(open: boolean, page = "general"): void {
     renderHotkeyStatus();
   });
   void host().getAiStatus().then(renderAiStatus);
+}
+
+/**
+ * Opens or closes the instruction editor over the AI Polish page.
+ *
+ * The cards only show a preview; editing happens here so two long prompts do
+ * not take the whole page. Reset puts the default back into the field; Save
+ * is what writes it. Closing without Save leaves the stored prompt alone.
+ */
+function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "transform"): void {
+  if (!open) {
+    promptEditorKind = null;
+    element.promptEditor.hidden = true;
+    element.scrim.hidden = !settingsOpen;
+    return;
+  }
+  if (settingsOpen) toggleSettings(false);
+  promptEditorKind = kind;
+  element.promptEditorTitle.textContent = kind === "transform" ? "Dictation" : "Selection";
+  element.promptEditorWhere.textContent =
+    kind === "transform"
+      ? "Used when every dictation is tidied automatically."
+      : "Used when you polish selected text with the shortcut.";
+  element.promptEditorBody.value =
+    kind === "transform" ? settings.transformPrompt : settings.polishPrompt;
+  element.promptEditor.hidden = false;
+  element.scrim.hidden = false;
+  element.promptEditorBody.focus();
+}
+
+/** First lines of each prompt on the cards, so the page stays scannable. */
+function renderPromptPreviews(next: AppSettings = settings): void {
+  element.transformPromptPreview.textContent = promptPreview(next.transformPrompt);
+  element.polishPromptPreview.textContent = promptPreview(next.polishPrompt);
+}
+
+function promptPreview(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= 140) return compact;
+  return `${compact.slice(0, 139).trimEnd()}…`;
 }
 
 function setStatus(message: string): void {

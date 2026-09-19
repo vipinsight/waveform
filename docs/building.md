@@ -19,9 +19,13 @@ pnpm install --frozen-lockfile
 WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 ```
 
-`pnpm app` quits any running copy, rebuilds, assembles `release/Waveform.app`
-and opens it. It is a release build by default; set `WAVEFORM_PROFILE=debug`
-for a faster Rust iteration.
+`pnpm app` quits any running checkout copy, rebuilds, assembles
+`release/Waveform Dev.app` and opens it. It is a release build by default; set
+`WAVEFORM_PROFILE=debug` for a faster Rust iteration.
+
+That bundle is **Waveform Dev** (`com.webtiara.waveform.dev`), not the released
+app: a different name and identifier so the two can keep their own Accessibility,
+Input Monitoring and microphone grants.
 
 The bundle is put together by hand rather than by the Tauri CLI, and not just
 for convenience: WKWebView refuses microphone access to a bare binary, so the
@@ -49,6 +53,16 @@ signature is a hash of the bundle, so every rebuild looks like a new app and
 both permissions need granting again. `pnpm app` therefore signs with a real
 certificate.
 
+It also uses a different bundle identifier (`com.webtiara.waveform.dev`) from
+the released app. TCC keys those grants by identifier as well as signature, so
+a checkout build that shared `com.webtiara.waveform` with the copy in
+`/Applications` stole that copy's grants on every launch — and giving them
+back meant removing the released app from Accessibility and Input Monitoring
+first. The two appear as **Waveform** and **Waveform Dev** in System Settings.
+Settings, history and model weights still live under
+`~/Library/Application Support/Waveform`; that path is the app name, not the
+bundle id.
+
 The team is pinned rather than the certificate name. The name carries a
 per-certificate suffix that changes when the certificate is renewed, while the
 team stays put — and so does the identity macOS grants permissions to.
@@ -71,7 +85,7 @@ both lists in System Settings and add it again once.
 
 whisper.cpp needs no setup, and neither do the local AI Polish models: both
 engines are linked into the binary, and the app fetches their weights itself
-from Settings. The other two speech engines do:
+from the AI Polish section. The other two speech engines do:
 
 ```bash
 pnpm setup:model        # Parakeet
@@ -122,7 +136,7 @@ directly when you need to override a path:
 NEMO_SPEECH_BIN=/path/to/nemo-speech \
 QWEN_ASR_PYTHON=/path/to/python3 \
 WAVEFORM_PORT=8178 \
-release/Waveform.app/Contents/MacOS/Waveform
+release/"Waveform Dev.app"/Contents/MacOS/Waveform
 ```
 
 ## Releasing

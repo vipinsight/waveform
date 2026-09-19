@@ -108,21 +108,27 @@ impl Rewriter {
                 model.label
             );
         }
-        "Add an OpenRouter API key in Settings first.".to_string()
+        "Add an OpenRouter API key in AI Polish first.".to_string()
     }
 
-    /// Follows a change of engine: the local model is loaded when it becomes
-    /// the one that answers, and dropped when it stops being, so an unused
-    /// gigabyte does not sit there until the app is quit.
+    /// Follows a change of engine or of local model: whatever is loaded is
+    /// dropped first, then the new one is warmed if the engine is still local.
+    /// Switching 1.7B for 0.6B would otherwise leave a gigabyte resident until
+    /// the next rewrite.
     ///
     /// Loading happens in the background. It takes a few seconds, and the point
     /// of doing it here is that nobody is waiting on those seconds yet.
     pub async fn engine_changed(self: &Arc<Self>, engine: &str) {
-        if engine != "local" {
-            self.local.unload().await;
-            return;
+        self.local.unload().await;
+        if engine == "local" {
+            self.warm_local().await;
         }
-        self.warm_local().await;
+    }
+
+    /// Drops the loaded polish model if it is still `id`, so its weight file
+    /// can be deleted without a mapping holding the bytes.
+    pub async fn unload_local_if(&self, id: &str) {
+        self.local.drop_if(id).await;
     }
 
     /// Loads the local model at launch, when every dictation is going to use it
@@ -147,6 +153,13 @@ impl Rewriter {
         let rewriter = self.clone();
         tokio::spawn(async move {
             let _ = rewriter.local.warm(&model_id).await;
+            // The load outlives the choice that started it: switching away
+            // while the weights are still being read would otherwise store
+            // them after unload had already run.
+            let settings = rewriter.settings.lock().await.value();
+            if settings.polish_engine != "local" || settings.local_model_id != model_id {
+                rewriter.local.drop_if(&model_id).await;
+            }
         });
     }
 
@@ -174,12 +187,16 @@ impl Rewriter {
         if !settings.transform_on_dictate || !self.is_configured().await {
             return Ok(None);
         }
-        self.run(&settings.transform_prompt, text).await.map(Some)
+        // No worked examples: those are typed corrections, and this prompt is
+        // for spoken filler. A 0.6B model follows the examples.
+        self.run(&settings.transform_prompt, text, false)
+            .await
+            .map(Some)
     }
 
     pub async fn polish(&self, text: &str) -> Result<String, String> {
         let prompt = self.settings.lock().await.value().polish_prompt;
-        self.run(&prompt, text).await
+        self.run(&prompt, text, true).await
     }
 
     /// Rewrites `text`, with `style_prompt` describing how.
@@ -193,7 +210,12 @@ impl Rewriter {
     ///
     /// Which engine answers changes none of that. It changes only how far the
     /// text travels, and how much of it can be sent at once.
-    async fn run(&self, style_prompt: &str, text: &str) -> Result<String, String> {
+    async fn run(
+        &self,
+        style_prompt: &str,
+        text: &str,
+        show_examples: bool,
+    ) -> Result<String, String> {
         if text.trim().is_empty() {
             return Ok(String::new());
         }
@@ -232,6 +254,7 @@ impl Rewriter {
                         &system_prompt_for(LOCAL_CORE_PROMPT, style_prompt),
                         &fence(text, &nonce),
                         reply_budget(text),
+                        show_examples,
                     )
                     .await?;
                 if let Some(rewritten) = accept(text, &reply, &nonce) {
@@ -262,7 +285,7 @@ impl Rewriter {
             .lock()
             .await
             .clone()
-            .ok_or("Add an OpenRouter API key in Settings first.")?;
+            .ok_or("Add an OpenRouter API key in AI Polish first.")?;
 
         let response = reqwest::Client::new()
             .post(ENDPOINT)
@@ -296,10 +319,6 @@ impl Rewriter {
     }
 }
 
-/// The instructions the model gets: ours, then the ones a person wrote.
-///
-/// Order matters less than the framing in `CORE_PROMPT`, which casts whatever
-/// follows as preferences about rewriting rather than a fresh brief.
 /// What a refused reply is called, wherever it came from. The text it was given
 /// is kept instead, so this is the whole of what anybody sees.
 const NOT_A_REWRITE: &str = "The reply was not a rewrite of the text, so it was ignored.";
@@ -315,6 +334,10 @@ fn accept(text: &str, reply: &str, nonce: &str) -> Option<String> {
     Some(rewritten)
 }
 
+/// The instructions the model gets: ours, then the ones a person wrote.
+///
+/// Order matters less than the framing in `CORE_PROMPT`, which casts whatever
+/// follows as preferences about rewriting rather than a fresh brief.
 fn system_prompt(style_prompt: &str) -> String {
     system_prompt_for(CORE_PROMPT, style_prompt)
 }

@@ -14,6 +14,7 @@ use crate::download::Download;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -56,9 +57,6 @@ pub struct ModelStatus {
     /// How that sits on this particular Mac. `None` when the installed memory
     /// could not be read, in which case nothing is claimed about it.
     pub fit: Option<Fit>,
-    /// Whether this is the model to suggest on this Mac. Exactly one entry
-    /// carries it, unless the installed memory is unknown.
-    pub recommended: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -98,9 +96,10 @@ pub struct ModelDefinition {
     /// audiobook speech, so it flatters every model here in the same
     /// direction; what it is good for is ordering them.
     ///
-    /// `None` for the quantized builds, which nobody has benchmarked
-    /// separately. Their full-precision figure is not theirs, and printed in
-    /// this column it would read as measured.
+    /// A quantization uses the figure from the model it is a quantization of:
+    /// nobody publishes a separate LibriSpeech number for the q5 file, and the
+    /// card this row already links is that model's. Inventing a slightly worse
+    /// number would be a guess, not a measurement.
     pub wer: Option<f32>,
     /// Roughly what the model adds to resident memory once loaded, in MB.
     ///
@@ -129,7 +128,9 @@ impl Group {
         match self {
             Group::Whisper => "Whisper",
             Group::WhisperEnglish => "Whisper, English only",
-            Group::Other => "Other engines",
+            // Named in the rows themselves. A heading here used to say "Other
+            // engines", which made them sound like leftovers.
+            Group::Other => "",
         }
     }
 }
@@ -234,13 +235,12 @@ enum Runtime {
 }
 
 /// Every model the app knows about, in the order the interface lists them:
-/// lightest first within each group.
+/// Parakeet and Qwen first, then Whisper lightest-first within each group.
 ///
-/// Whisper fills most of it because whisper.cpp is the only engine that needs
-/// nothing installed alongside the app -- no interpreter, no virtual
+/// Whisper still fills most of the table because whisper.cpp is the only engine
+/// that needs nothing installed alongside the app -- no interpreter, no virtual
 /// environment, no second process -- so every size of it is a model a new Mac
-/// can have by pressing a row, and choosing between them is the only real
-/// choice most people have here.
+/// can have by pressing a row.
 ///
 /// Not every file in the whisper.cpp repository is listed. `large-v1` and
 /// `large-v2` are superseded by `large-v3` at the same size, the `q8_0`
@@ -249,6 +249,30 @@ enum Runtime {
 /// need either. `scripts/setup-whisper-cpp.sh` can still fetch any of them into
 /// a checkout by name.
 pub const MODELS: &[ModelDefinition] = &[
+    ModelDefinition {
+        id: "parakeet-tdt-0.6b-v3",
+        short_label: "Parakeet 0.6B",
+        remote_id: "nvidia/parakeet-tdt-0.6b-v3",
+        engine: Engine::Nemo,
+        weights: Weights::NemoCache,
+        group: Group::Other,
+        memory_mb: 2_600,
+        card_url: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        wer: Some(1.93),
+        detail: "25 European languages.",
+    },
+    ModelDefinition {
+        id: "qwen3-asr-0.6b",
+        short_label: "Qwen3-ASR 0.6B",
+        remote_id: "Qwen/Qwen3-ASR-0.6B",
+        engine: Engine::Qwen,
+        weights: Weights::HuggingFace,
+        group: Group::Other,
+        memory_mb: 2_800,
+        card_url: "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
+        wer: Some(2.11),
+        detail: "52 languages, strongest on Chinese.",
+    },
     whisper! {
         id: "whisper-cpp-tiny",
         label: "Whisper Tiny",
@@ -294,8 +318,8 @@ pub const MODELS: &[ModelDefinition] = &[
         group: Group::Whisper,
         memory_mb: 440,
         card: "openai/whisper-small",
-        wer: None,
-        detail: "Whisper Small at 5 bits a weight. Not separately benchmarked.",
+        wer: Some(3.43),
+        detail: "Whisper Small at 5 bits a weight.",
     },
     whisper! {
         id: "whisper-cpp-medium",
@@ -318,8 +342,8 @@ pub const MODELS: &[ModelDefinition] = &[
         group: Group::Whisper,
         memory_mb: 1_050,
         card: "openai/whisper-medium",
-        wer: None,
-        detail: "Whisper Medium at 5 bits a weight. Not separately benchmarked.",
+        wer: Some(2.90),
+        detail: "Whisper Medium at 5 bits a weight.",
     },
     whisper! {
         id: "whisper-cpp-large-v3-turbo",
@@ -342,8 +366,8 @@ pub const MODELS: &[ModelDefinition] = &[
         group: Group::Whisper,
         memory_mb: 1_150,
         card: "openai/whisper-large-v3-turbo",
-        wer: None,
-        detail: "Large v3 Turbo at 5 bits a weight. Not separately benchmarked.",
+        wer: Some(2.10),
+        detail: "Large v3 Turbo at 5 bits a weight.",
     },
     whisper! {
         id: "whisper-cpp-large-v3-q5",
@@ -354,8 +378,8 @@ pub const MODELS: &[ModelDefinition] = &[
         group: Group::Whisper,
         memory_mb: 1_800,
         card: "openai/whisper-large-v3",
-        wer: None,
-        detail: "Large v3 at 5 bits a weight. Not separately benchmarked.",
+        wer: Some(2.01),
+        detail: "Large v3 at 5 bits a weight.",
     },
     whisper! {
         id: "whisper-cpp-large-v3",
@@ -417,63 +441,16 @@ pub const MODELS: &[ModelDefinition] = &[
         wer: Some(3.02),
         detail: "",
     },
-    ModelDefinition {
-        id: "parakeet-tdt-0.6b-v3",
-        short_label: "Parakeet 0.6B",
-        remote_id: "nvidia/parakeet-tdt-0.6b-v3",
-        engine: Engine::Nemo,
-        weights: Weights::NemoCache,
-        group: Group::Other,
-        memory_mb: 2_600,
-        card_url: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
-        wer: Some(1.93),
-        detail: "25 European languages.",
-    },
-    ModelDefinition {
-        id: "qwen3-asr-0.6b",
-        short_label: "Qwen3-ASR 0.6B",
-        remote_id: "Qwen/Qwen3-ASR-0.6B",
-        engine: Engine::Qwen,
-        weights: Weights::HuggingFace,
-        group: Group::Other,
-        memory_mb: 2_800,
-        card_url: "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
-        wer: Some(2.11),
-        detail: "52 languages, strongest on Chinese.",
-    },
 ];
 
 /// The model a fresh install starts on, and the fallback for a stored id that
 /// no longer names anything.
 ///
-/// Named rather than positional -- it used to be `MODELS[0]` -- because the
-/// table is now ordered for the interface to read, lightest first, and the
-/// lightest Whisper is not a model anyone should be given without asking. Small
-/// is: it runs on every Apple Silicon Mac, and it is accurate enough that a
-/// first dictation is not a bad first impression.
+/// Named rather than positional -- the table is ordered for the interface to
+/// read, Parakeet first, and that is not a model a fresh install can run
+/// without a terminal. Small is: it runs on every Apple Silicon Mac, and it is
+/// accurate enough that a first dictation is not a bad first impression.
 pub const DEFAULT_MODEL_ID: &str = "whisper-cpp-small";
-
-/// What to suggest, best first, with the machine's memory deciding how far down
-/// the list it gets: the first entry that sits comfortably wins.
-///
-/// Hand-ordered rather than derived from size, because size is not the same as
-/// desirability. Large v3 is the most accurate model here and is deliberately
-/// absent -- Turbo is within a hair of it and several times faster, which for
-/// dictation is the trade to take. The English-only weights are absent for a
-/// different reason: they are the better choice for someone who only ever
-/// dictates English, and silently wrong for anyone else, so they are never
-/// suggested.
-///
-/// The last entry is the answer when nothing fits, so this must not be empty.
-const SUGGESTION_ORDER: &[&str] = &[
-    "whisper-cpp-large-v3-turbo",
-    "whisper-cpp-large-v3-turbo-q5",
-    "whisper-cpp-medium-q5",
-    "whisper-cpp-small",
-    "whisper-cpp-small-q5",
-    "whisper-cpp-base",
-    "whisper-cpp-tiny",
-];
 
 /// Everything that differs between the two Python engines.
 ///
@@ -579,24 +556,6 @@ pub fn fit(memory_mb: u32, installed_mb: u32) -> Fit {
     }
 }
 
-/// The model to suggest on this Mac: the first suggestion that fits
-/// comfortably, or the lightest one if none of them do.
-///
-/// `None` when the installed memory could not be read, which is the honest
-/// answer -- a suggestion made without knowing what the machine has would be a
-/// guess wearing the word "recommended".
-fn suggested_id() -> Option<&'static str> {
-    let installed = installed_memory_mb()?;
-    let fits = |id: &str| fit(model(id).memory_mb, installed) == Fit::Comfortable;
-    Some(
-        SUGGESTION_ORDER
-            .iter()
-            .copied()
-            .find(|id| fits(id))
-            .unwrap_or_else(|| SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1]),
-    )
-}
-
 struct WorkerState {
     child: Child,
     /// Which engine this worker serves. Qwen and Whisper share the one slot, so
@@ -629,6 +588,9 @@ pub struct ModelServer {
     /// writers at one partial file would interleave into something that only
     /// fails its checksum after the whole transfer.
     downloading: Mutex<Option<String>>,
+    /// Raised by `cancel_download` and polled by the stream. Cleared when a
+    /// fetch starts so a previous cancel cannot kill the next one.
+    cancel_download: AtomicBool,
     pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
     transcribe_lock: Mutex<()>,
     user_data: PathBuf,
@@ -659,6 +621,7 @@ impl ModelServer {
             parakeet: Mutex::new(None),
             whisper_cpp: Mutex::new(None),
             downloading: Mutex::new(None),
+            cancel_download: AtomicBool::new(false),
             pending: Arc::new(Mutex::new(Vec::new())),
             transcribe_lock: Mutex::new(()),
             user_data,
@@ -715,7 +678,6 @@ impl ModelServer {
     pub async fn catalog(&self) -> Vec<ModelStatus> {
         let selected = self.selected.lock().await.clone();
         let installed = installed_memory_mb();
-        let suggested = suggested_id();
         MODELS
             .iter()
             .map(|definition| ModelStatus {
@@ -732,7 +694,6 @@ impl ModelServer {
                 wer: definition.wer,
                 memory_mb: definition.memory_mb,
                 fit: installed.map(|total| fit(definition.memory_mb, total)),
-                recommended: Some(definition.id) == suggested,
             })
             .collect()
     }
@@ -1184,6 +1145,7 @@ impl ModelServer {
             }
             *running = Some(id.to_string());
         }
+        self.cancel_download.store(false, Ordering::SeqCst);
 
         let outcome = self.fetch(spec, definition, id).await;
         *self.downloading.lock().await = None;
@@ -1199,9 +1161,36 @@ impl ModelServer {
                 )
                 .await
             }
+            // Cancelled is not a failure: the row goes back to Download, and
+            // painting "error" would look like something broke.
+            Err(error) if error == crate::download::CANCELLED => {
+                self.emit_stage("idle", "Loads when you start listening", id)
+                    .await
+            }
             Err(error) => self.emit_stage("error", error, id).await,
         }
         outcome
+    }
+
+    /// Stops the in-flight Whisper download, if any.
+    pub fn cancel_download(&self) {
+        self.cancel_download.store(true, Ordering::SeqCst);
+    }
+
+    /// Deletes a model's weights from disk so they stop occupying space.
+    ///
+    /// Whisper files live under Application Support; Parakeet and Qwen live in
+    /// their own caches. Each path is named by the model id, so this is not
+    /// guessing which bytes belong to Waveform. If this is the model currently
+    /// loaded, it is unloaded first so the mapping is gone before the file is.
+    pub async fn delete_weights(&self, id: &str) -> Result<(), String> {
+        if self.downloading.lock().await.as_deref() == Some(id) {
+            return Err("That model is still downloading.".into());
+        }
+        if *self.selected.lock().await == id {
+            self.stop().await;
+        }
+        remove_downloaded_weights(id)
     }
 
     /// Streams a weight file down, with the interface told how far it has got.
@@ -1223,7 +1212,7 @@ impl ModelServer {
         let report = move |fraction: f32| {
             let _ = sender.send(fraction);
         };
-        let download = crate::download::fetch(spec, &dir, &report);
+        let download = crate::download::fetch(spec, &dir, &report, &self.cancel_download);
         tokio::pin!(download);
 
         loop {
@@ -1263,28 +1252,79 @@ impl ModelServer {
     }
 }
 
+/// Removes a model's weights from the place that engine keeps them.
+///
+/// Named by id rather than by a resolved `ModelDefinition`: `model()` falls
+/// back to the default, and deleting Small because someone typed a typo is
+/// the wrong kind of helpful.
+fn remove_downloaded_weights(id: &str) -> Result<(), String> {
+    let definition = MODELS
+        .iter()
+        .find(|candidate| candidate.id == id)
+        .ok_or_else(|| format!("{id} is not a model Waveform knows about."))?;
+    match definition.weights {
+        Weights::GgmlFile(spec) => {
+            let path = crate::whisper_cpp::weights_path(spec.file)
+                .ok_or("Could not work out where Whisper's weights live.")?;
+            if path.is_file() {
+                std::fs::remove_file(&path).map_err(|error| {
+                    format!("Could not delete {}: {error}", definition.short_label)
+                })?;
+            }
+        }
+        Weights::NemoCache => {
+            let path = nemo_model_dir(definition)
+                .ok_or("Could not work out where Parakeet's weights live.")?;
+            remove_dir_if_present(&path, definition.short_label)?;
+        }
+        Weights::HuggingFace => {
+            let path = huggingface_model_dir(definition)
+                .ok_or("Could not work out where Qwen's weights live.")?;
+            remove_dir_if_present(&path, definition.short_label)?;
+        }
+    }
+    Ok(())
+}
+
+fn remove_dir_if_present(path: &Path, label: &str) -> Result<(), String> {
+    if path.exists() {
+        std::fs::remove_dir_all(path)
+            .map_err(|error| format!("Could not delete {label}: {error}"))?;
+    }
+    Ok(())
+}
+
+/// NeMo's per-model folder under its speech cache.
+fn nemo_model_dir(definition: &ModelDefinition) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let root = std::env::var_os("NEMO_SPEECH_MODEL_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("Library/Caches/NeMoSpeech/models"));
+    Some(root.join(definition.remote_id))
+}
+
+/// Hugging Face hub folder for one remote id (`models--org--name`).
+fn huggingface_model_dir(definition: &ModelDefinition) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    let cache = std::env::var_os("HF_HOME")
+        .map(|value| PathBuf::from(value).join("hub"))
+        .unwrap_or_else(|| home.join(".cache/huggingface/hub"));
+    let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
+    Some(cache.join(folder))
+}
+
 /// Whether a model's weights are already on this machine.
 ///
 /// Each engine keeps them somewhere of its own choosing, so this asks each in
 /// its own terms rather than pretending there is one cache.
 fn weights_present(definition: &ModelDefinition) -> bool {
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
-        return false;
-    };
     match definition.weights {
-        Weights::NemoCache => {
-            let root = std::env::var_os("NEMO_SPEECH_MODEL_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join("Library/Caches/NeMoSpeech/models"));
-            has_contents(&root.join(definition.remote_id))
-        }
-        Weights::HuggingFace => {
-            let cache = std::env::var_os("HF_HOME")
-                .map(|value| PathBuf::from(value).join("hub"))
-                .unwrap_or_else(|| home.join(".cache/huggingface/hub"));
-            let folder = format!("models--{}", definition.remote_id.replace('/', "--"));
-            has_contents(&cache.join(folder).join("snapshots"))
-        }
+        Weights::NemoCache => nemo_model_dir(definition)
+            .map(|path| has_contents(&path))
+            .unwrap_or(false),
+        Weights::HuggingFace => huggingface_model_dir(definition)
+            .map(|path| has_contents(&path.join("snapshots")))
+            .unwrap_or(false),
         // The partial file a download writes to is a different name, so an
         // interrupted transfer reads as absent rather than as installed.
         Weights::GgmlFile(spec) => crate::whisper_cpp::weights_path(spec.file)
@@ -1389,40 +1429,69 @@ mod tests {
         assert_eq!(model("no-such-model").id, DEFAULT_MODEL_ID);
     }
 
-    /// A suggestion naming a model that is not in the table would be offered
-    /// as a row the interface cannot find.
+    /// Parakeet leads the catalogue. The page used to mark it recommended; the
+    /// list order is what remains of that preference.
     #[test]
-    fn every_suggestion_is_a_model_the_app_can_fetch() {
-        assert!(!SUGGESTION_ORDER.is_empty(), "the last entry is the fallback");
-        for id in SUGGESTION_ORDER {
-            let definition = MODELS
-                .iter()
-                .find(|candidate| candidate.id == *id)
-                .unwrap_or_else(|| panic!("{id} is suggested but not listed"));
-            assert!(
-                downloadable(definition).is_some(),
-                "{id} is suggested but needs a terminal"
-            );
-            assert_eq!(definition.group, Group::Whisper, "{id}");
-        }
+    fn parakeet_leads_the_catalogue() {
+        assert_eq!(MODELS[0].id, "parakeet-tdt-0.6b-v3");
+        assert_eq!(MODELS[0].group, Group::Other);
+        assert_eq!(MODELS[0].group.heading(), "");
     }
 
-    /// The suggestion is what the models page calls "recommended", so it has
-    /// to move with the machine rather than being the same answer everywhere.
+    /// Every catalogue entry has a place its weights live, so Remove can clear
+    /// that place rather than only Whisper's Application Support files.
     #[test]
-    fn the_suggestion_follows_the_memory_the_machine_has() {
-        let suggest = |installed_mb: u32| {
-            SUGGESTION_ORDER
-                .iter()
-                .copied()
-                .find(|id| fit(model(id).memory_mb, installed_mb) == Fit::Comfortable)
-                .unwrap_or_else(|| SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1])
-        };
-        assert_eq!(suggest(8 * 1024), "whisper-cpp-small");
-        assert_eq!(suggest(16 * 1024), "whisper-cpp-large-v3-turbo-q5");
-        assert_eq!(suggest(32 * 1024), "whisper-cpp-large-v3-turbo");
-        // Nothing fits, so the lightest model is the answer rather than none.
-        assert_eq!(suggest(512), SUGGESTION_ORDER[SUGGESTION_ORDER.len() - 1]);
+    fn every_model_has_removable_weights() {
+        for definition in MODELS {
+            match definition.weights {
+                Weights::GgmlFile(_) => assert!(
+                    downloadable(definition).is_some(),
+                    "{} should be a file the app can fetch",
+                    definition.id
+                ),
+                Weights::NemoCache => assert!(
+                    nemo_model_dir(definition).is_some(),
+                    "{} should resolve a NeMo cache path",
+                    definition.id
+                ),
+                Weights::HuggingFace => assert!(
+                    huggingface_model_dir(definition).is_some(),
+                    "{} should resolve a Hugging Face cache path",
+                    definition.id
+                ),
+            }
+        }
+        let error = remove_downloaded_weights("no-such-model").expect_err("unknown");
+        assert!(error.contains("not a model"), "{error}");
+    }
+
+    /// The file is what occupies the disk, so deleting it has to leave nothing
+    /// a later launch would treat as installed.
+    #[test]
+    fn deleting_whisper_weights_removes_the_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "waveform-delete-whisper-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = "ggml-tiny.bin";
+        std::fs::write(dir.join(file), b"not-weights").expect("plant a file");
+
+        let previous = std::env::var_os("WAVEFORM_WHISPER_CPP_DIR");
+        std::env::set_var("WAVEFORM_WHISPER_CPP_DIR", &dir);
+        let outcome = remove_downloaded_weights("whisper-cpp-tiny");
+        match previous {
+            Some(value) => std::env::set_var("WAVEFORM_WHISPER_CPP_DIR", value),
+            None => std::env::remove_var("WAVEFORM_WHISPER_CPP_DIR"),
+        }
+
+        outcome.expect("tiny should delete");
+        assert!(!dir.join(file).exists(), "the weight file should be gone");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1440,34 +1509,39 @@ mod tests {
     /// a row with nothing to check the number against, and a wild figure is one
     /// that silently reorders the list.
     ///
-    /// The quantized builds are the ones with no figure, and they are named
-    /// here rather than counted: the point is that a `None` is a deliberate
-    /// gap, not an entry someone forgot to fill in.
+    /// Quantized builds reuse the parent model's published figure: inventing a
+    /// worse number would look measured. This names the pairs so a future row
+    /// cannot quietly pick a different one.
     #[test]
-    fn every_model_links_a_card_and_only_quantizations_lack_a_figure() {
-        let mut unmeasured: Vec<&str> = Vec::new();
+    fn every_model_links_a_card_and_has_a_published_figure() {
         for definition in MODELS.iter() {
             assert!(
                 definition.card_url.starts_with("https://huggingface.co/"),
                 "{} does not link a Hugging Face page",
                 definition.id
             );
-            match definition.wer {
-                // Nothing here is under 1% on LibriSpeech test-clean, and
-                // nothing usable is over 20%.
-                Some(wer) => assert!((1.0..20.0).contains(&wer), "{} claims {wer}%", definition.id),
-                None => unmeasured.push(definition.id),
-            }
+            let wer = definition
+                .wer
+                .unwrap_or_else(|| panic!("{} has no word error rate", definition.id));
+            // Nothing here is under 1% on LibriSpeech test-clean, and
+            // nothing usable is over 20%.
+            assert!((1.0..20.0).contains(&wer), "{} claims {wer}%", definition.id);
         }
+
+        let wer_of = |id: &str| {
+            MODELS
+                .iter()
+                .find(|definition| definition.id == id)
+                .unwrap_or_else(|| panic!("{id} is not listed"))
+                .wer
+        };
+        assert_eq!(wer_of("whisper-cpp-small-q5"), wer_of("whisper-cpp-small"));
+        assert_eq!(wer_of("whisper-cpp-medium-q5"), wer_of("whisper-cpp-medium"));
         assert_eq!(
-            unmeasured,
-            [
-                "whisper-cpp-small-q5",
-                "whisper-cpp-medium-q5",
-                "whisper-cpp-large-v3-turbo-q5",
-                "whisper-cpp-large-v3-q5",
-            ]
+            wer_of("whisper-cpp-large-v3-turbo-q5"),
+            wer_of("whisper-cpp-large-v3-turbo")
         );
+        assert_eq!(wer_of("whisper-cpp-large-v3-q5"), wer_of("whisper-cpp-large-v3"));
     }
 
     /// A model the app fetches must not also tell the user to run something,

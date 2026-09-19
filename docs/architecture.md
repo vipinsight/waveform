@@ -69,9 +69,11 @@ each one's weights are looked for.
 
 ## The bundle is assembled by hand
 
-`pnpm app` builds `release/Waveform.app` itself rather than calling the Tauri
+`pnpm app` builds `release/Waveform Dev.app` itself rather than calling the Tauri
 CLI. WKWebView refuses microphone access to a bare binary, so the executable
-has to sit inside a real `.app` carrying `NSMicrophoneUsageDescription`.
+has to sit inside a real `.app` carrying `NSMicrophoneUsageDescription`. The
+checkout bundle uses a different identifier and display name from a release so
+the two do not share TCC grants.
 
 Updater artifacts come only from a real `tauri build`, so the release path and
 the everyday path diverge there. [building.md](building.md) covers both.

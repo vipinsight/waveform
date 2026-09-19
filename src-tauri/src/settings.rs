@@ -292,14 +292,17 @@ mod tests {
         }
     }
 
-    /// The copy-editor polish default rewrote wording; it is replaced the same
-    /// way, so a default nobody edited is not kept as a preference.
+    /// The copy-editor polish default rewrote wording; the next one tidied
+    /// dictation rather than fixing typed text. Both are replaced the same way,
+    /// so a default nobody edited is not kept as a preference.
     #[test]
     fn a_retired_polish_prompt_is_replaced_on_load() {
-        let mut stored = AppSettings::default();
-        stored.polish_prompt = RETIRED_POLISH_PROMPTS[0].trim().to_string();
-        let loaded = stored.normalize(&AppSettings::default());
-        assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
+        for retired in RETIRED_POLISH_PROMPTS {
+            let mut stored = AppSettings::default();
+            stored.polish_prompt = retired.trim().to_string();
+            let loaded = stored.normalize(&AppSettings::default());
+            assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
+        }
     }
 
     /// Polish meant OpenRouter and nothing else until the local engine existed,

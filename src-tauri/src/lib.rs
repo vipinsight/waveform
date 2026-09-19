@@ -31,8 +31,7 @@ use settings::{AppSettings, SettingsStore};
 use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex as StdMutex;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
@@ -151,6 +150,41 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// The name on the Dock, the menu bar and the window. The checkout build is
+/// "Waveform Dev" so it is not the copy in /Applications; a release is
+/// "Waveform". Read from the bundle rather than compiled in, because the two
+/// share this binary and disagree only in the Info.plist `pnpm app` writes.
+#[tauri::command]
+fn app_name() -> String {
+    app_display_name()
+}
+
+/// Display name from this bundle's Info.plist, or "Waveform" when there is none
+/// — tests, and a binary launched outside an `.app`.
+fn app_display_name() -> String {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        bundle_plist_string("CFBundleDisplayName")
+            .or_else(|| bundle_plist_string("CFBundleName"))
+            .unwrap_or_else(|| "Waveform".into())
+    })
+    .clone()
+}
+
+fn bundle_plist_string(key: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let plist = exe.parent()?.parent()?.join("Info.plist");
+    plist_string(&std::fs::read_to_string(plist).ok()?, key)
+}
+
+fn plist_string(body: &str, key: &str) -> Option<String> {
+    let marker = format!("<key>{key}</key>");
+    let rest = body.split_once(&marker)?.1.trim_start();
+    let rest = rest.strip_prefix("<string>")?;
+    let (value, _) = rest.split_once("</string>")?;
+    Some(value.to_string())
 }
 
 /// Opens an address in the system browser. The settings window must not
@@ -273,7 +307,9 @@ async fn update_settings(
         let _ = app.set_activation_policy(ActivationPolicy::Regular);
     }
 
-    if next.polish_engine != previous.polish_engine {
+    if next.polish_engine != previous.polish_engine
+        || (next.polish_engine == "local" && next.local_model_id != previous.local_model_id)
+    {
         state.rewriter.engine_changed(&next.polish_engine).await;
     }
 
@@ -371,6 +407,27 @@ async fn download_model(
         refresh_tray_menu(&app);
     }
     outcome
+}
+
+/// Deletes a model's weight files from disk.
+#[tauri::command]
+async fn delete_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<(), String> {
+    let outcome = state.models.delete_weights(&model_id).await;
+    if outcome.is_ok() && state.settings.lock().await.value().menu_bar_icon {
+        refresh_tray_menu(&app);
+    }
+    outcome
+}
+
+/// Stops an in-flight Whisper download.
+#[tauri::command]
+async fn cancel_model_download(state: State<'_, AppState>) -> Result<(), String> {
+    state.models.cancel_download();
+    Ok(())
 }
 
 /// Asks whether there is a newer version. `None` means this is the newest.
@@ -614,7 +671,31 @@ async fn polish_model_catalog(state: State<'_, AppState>) -> Result<Vec<LocalMod
 /// Fetches one, with the row saying how far it has got.
 #[tauri::command]
 async fn download_polish_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
-    state.polish_downloads.download(&model_id).await
+    let outcome = state.polish_downloads.download(&model_id).await;
+    if outcome.is_ok() {
+        let settings = state.settings.lock().await.value();
+        // The launch warm skipped this file because it was not here yet. Doing
+        // it now puts the wait on the download they just watched, rather than
+        // on the first dictation.
+        if settings.polish_engine == "local" && settings.local_model_id == model_id {
+            state.rewriter.engine_changed("local").await;
+        }
+    }
+    outcome
+}
+
+/// Deletes a polish weight file the app fetched.
+#[tauri::command]
+async fn delete_polish_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    state.rewriter.unload_local_if(&model_id).await;
+    local_llm::delete_weights(&model_id)
+}
+
+/// Stops an in-flight polish download.
+#[tauri::command]
+async fn cancel_polish_model_download(state: State<'_, AppState>) -> Result<(), String> {
+    state.polish_downloads.cancel();
+    Ok(())
 }
 
 #[tauri::command]
@@ -908,6 +989,7 @@ pub fn run() {
             // Closing the window must not end the process: the whole point is
             // that the shortcut keeps working with no window on screen.
             if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+                let _ = window.set_title(&app_display_name());
                 let handle = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
@@ -972,6 +1054,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             show_main_window,
             app_version,
+            app_name,
             open_url,
             get_settings,
             update_settings,
@@ -990,6 +1073,8 @@ pub fn run() {
             toggle_dictation,
             model_catalog,
             download_model,
+            delete_model,
+            cancel_model_download,
             get_logs,
             clear_logs,
             append_log,
@@ -1008,6 +1093,8 @@ pub fn run() {
             get_ai_status,
             polish_model_catalog,
             download_polish_model,
+            delete_polish_model,
+            cancel_polish_model_download,
             set_openrouter_key,
             clear_openrouter_key,
             polish_selection,
@@ -1063,8 +1150,9 @@ pub fn run() {
 /// nothing in a text field -- which matters most in the one field where typing
 /// by hand is least likely, the API key.
 fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let name = app_display_name();
     let about = AboutMetadata {
-        name: Some("Waveform".into()),
+        name: Some(name.clone()),
         version: Some(env!("CARGO_PKG_VERSION").into()),
         comments: Some("Private, on-device voice transcription.".into()),
         ..Default::default()
@@ -1079,13 +1167,14 @@ fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         Some("CmdOrCtrl+D"),
     )?;
     let polish = MenuItem::with_id(app, "polish", "Polish Selection", true, None::<&str>)?;
+    let about_title = format!("About {name}");
 
     let app_menu = Submenu::with_items(
         app,
-        "Waveform",
+        &name,
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("About Waveform"), Some(about))?,
+            &PredefinedMenuItem::about(app, Some(&about_title), Some(about))?,
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &PredefinedMenuItem::separator(app)?,
@@ -1319,9 +1408,10 @@ fn build_model_menu(
 
 /// Builds menu contents independently of the persistent menu bar icon.
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let open = MenuItem::with_id(app, "open", "Open Waveform", true, None::<&str>)?;
+    let name = app_display_name();
+    let open = MenuItem::with_id(app, "open", format!("Open {name}"), true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Waveform", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
     let microphone_menu = Submenu::new(app, "Microphone", true)?;
     let state = app.state::<AppState>();
     let settings = state
@@ -1646,7 +1736,7 @@ fn build_overlay_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         OVERLAY_LABEL,
         WebviewUrl::App("overlay.html".into()),
     )
-    .title("Waveform listening")
+    .title(format!("{} listening", app_display_name()))
     .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
     .decorations(false)
     .transparent(true)
@@ -1754,6 +1844,22 @@ mod tests {
             theme: "light".into(),
             ..AppSettings::default()
         }
+    }
+
+    #[test]
+    fn reads_a_display_name_from_the_plist() {
+        let body = "\
+            <key>CFBundleIdentifier</key><string>com.webtiara.waveform.dev</string>\n\
+            <key>CFBundleDisplayName</key><string>Waveform Dev</string>\n";
+        assert_eq!(
+            plist_string(body, "CFBundleDisplayName").as_deref(),
+            Some("Waveform Dev")
+        );
+        assert_eq!(
+            plist_string(body, "CFBundleIdentifier").as_deref(),
+            Some("com.webtiara.waveform.dev")
+        );
+        assert_eq!(plist_string(body, "CFBundleName"), None);
     }
 
     #[test]

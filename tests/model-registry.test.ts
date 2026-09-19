@@ -32,8 +32,8 @@ describe("speech model registry", () => {
   });
 
   it("defaults to Whisper Small, which runs on any Apple Silicon Mac", () => {
-    // Named rather than positional: the list is ordered lightest first for the
-    // models page to read, and Tiny is not a model to hand anyone unasked.
+    // Named rather than positional: the list is ordered Parakeet first for the
+    // models page to read, and that is not a model to hand anyone unasked.
     expect(DEFAULT_SPEECH_MODEL_ID).toBe("whisper-cpp-small");
     expect(isSpeechModelId(DEFAULT_SPEECH_MODEL_ID)).toBe(true);
   });

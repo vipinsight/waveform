@@ -8,8 +8,15 @@
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::AsyncWriteExt;
 use tokio::time::{Duration, Instant};
+
+/// What `fetch` returns when the flag it was given is raised mid-stream.
+///
+/// Distinct from a network error so the interface can put the row back as a
+/// download rather than paint a failure nobody asked to see.
+pub const CANCELLED: &str = "Download cancelled.";
 
 /// How often a download reports itself. An event per chunk would be tens of
 /// thousands of messages across the IPC bridge for one file.
@@ -31,10 +38,14 @@ pub struct Download {
 ///
 /// A file already there is left alone: the hash was checked when it arrived,
 /// and fetching it again would cost a gigabyte to learn the same thing.
+///
+/// `cancel` is polled between chunks. Raising it leaves no partial file behind,
+/// and returns [`CANCELLED`] rather than a network error.
 pub async fn fetch(
     spec: &Download,
     dir: &Path,
     on_progress: &(dyn Fn(f32) + Send + Sync),
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     let path = dir.join(spec.file);
     if path.is_file() {
@@ -48,7 +59,7 @@ pub async fn fetch(
     // interrupted download cannot leave a truncated file that looks
     // installed. A rename within one directory is atomic.
     let partial = dir.join(format!("{}.partial", spec.file));
-    let outcome = stream(spec, &partial, on_progress).await;
+    let outcome = stream(spec, &partial, on_progress, cancel).await;
     if outcome.is_err() {
         let _ = tokio::fs::remove_file(&partial).await;
         return outcome;
@@ -63,6 +74,7 @@ async fn stream(
     spec: &Download,
     partial: &Path,
     on_progress: &(dyn Fn(f32) + Send + Sync),
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     on_progress(0.0);
 
@@ -89,6 +101,9 @@ async fn stream(
         .await
         .map_err(|error| format!("The download stopped: {error}"))?
     {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(CANCELLED.into());
+        }
         hasher.update(&chunk);
         file.write_all(&chunk)
             .await
@@ -147,7 +162,8 @@ mod tests {
         };
 
         let dir = std::env::temp_dir().join(format!("waveform-fetch-{}", std::process::id()));
-        fetch(&SMALL, &dir, &|_| {})
+        let cancel = AtomicBool::new(false);
+        fetch(&SMALL, &dir, &|_| {}, &cancel)
             .await
             .expect("the download should succeed");
         assert!(dir.join("README.md").is_file());
@@ -161,7 +177,7 @@ mod tests {
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
             ..SMALL
         };
-        let error = fetch(&WRONG, &dir, &|_| {})
+        let error = fetch(&WRONG, &dir, &|_| {}, &cancel)
             .await
             .expect_err("a wrong checksum should fail");
         assert!(error.contains("checksum"), "{error}");

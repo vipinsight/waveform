@@ -134,8 +134,8 @@ export interface ModelStatus {
   cardUrl: string;
   /**
    * Word error rate on LibriSpeech test-clean, in percent, as Hugging Face
-   * publishes it. `null` where no such figure exists -- the quantized builds,
-   * which nobody has benchmarked apart from the weights they came from.
+   * publishes it. A quantization carries the figure from the model it is a
+   * quantization of: nobody publishes a separate number for the q5 file.
    */
   wer: number | null;
   /** Roughly what it adds to resident memory once loaded, in MB. */
@@ -146,8 +146,6 @@ export interface ModelStatus {
    * installed memory could not be read, so nothing is claimed about it.
    */
   fit: ModelFit | null;
-  /** The one model to suggest on this Mac, given what it has to spare. */
-  recommended: boolean;
 }
 
 export type ModelFit = "comfortable" | "tight" | "too-large";
@@ -260,6 +258,10 @@ export interface DesktopApi {
   selectModel(modelId: SpeechModelId): Promise<void>;
   /** Resolves when the download has finished, or rejects with why it did not. */
   downloadModel(modelId: SpeechModelId): Promise<void>;
+  /** Removes a Whisper weight file the app fetched. */
+  deleteModel(modelId: SpeechModelId): Promise<void>;
+  /** Stops an in-flight Whisper download. */
+  cancelModelDownload(): Promise<void>;
   /** `null` means this is already the newest version. */
   checkForUpdate(): Promise<UpdateInfo | null>;
   /** Installs the newer version and relaunches, so this never resolves. */
@@ -314,6 +316,10 @@ export interface DesktopApi {
   getPolishModelCatalog(): Promise<PolishModelStatus[]>;
   /** Resolves when the download has finished, or rejects with why it did not. */
   downloadPolishModel(modelId: string): Promise<void>;
+  /** Removes a polish weight file the app fetched. */
+  deletePolishModel(modelId: string): Promise<void>;
+  /** Stops an in-flight polish download. */
+  cancelPolishModelDownload(): Promise<void>;
   onPolishModelEvent(listener: (event: ModelEvent) => void): () => void;
   polishSelection(): Promise<void>;
   /** The application menu asking for the settings dialog. */
@@ -323,6 +329,8 @@ export interface DesktopApi {
   onOpenModelSettings(listener: () => void): () => void;
   onOpenShortcutSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
+  /** Dock and window name: "Waveform" in a release, "Waveform Dev" from `pnpm app`. */
+  getAppName(): Promise<string>;
   /** Opens an http(s) address in the system browser. The webview must not navigate. */
   openUrl(url: string): Promise<void>;
   getHistory(): Promise<SavedDictation[]>;

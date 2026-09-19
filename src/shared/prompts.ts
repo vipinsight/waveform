@@ -1,7 +1,7 @@
 /**
  * Default system prompts for the two rewrite paths.
  *
- * Both are overridable in Settings. They are written to constrain the model to
+ * Both are overridable in AI Polish. They are written to constrain the model to
  * tidying only: a dictation tool that answers questions, paraphrases, or adds
  * commentary would paste nonsense into the user's document.
  */
