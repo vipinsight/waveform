@@ -1,4 +1,5 @@
 import { AudioCapture } from "./audio/capture";
+import { speechBands } from "./audio/spectrum";
 import { microphoneDevices } from "../shared/microphones";
 import { getHotkeyBinding, hotkeyArrow, hotkeyCaption } from "../shared/hotkeys";
 import type {
@@ -48,8 +49,6 @@ const ERROR_LINGER_MS = 1_600;
 const SPRING_ATTACK = 0.55;
 const SPRING_RELEASE = 0.14;
 const SPRING_DAMPING = 0.62;
-/** Fraction of the FFT range that carries speech energy worth showing. */
-const SPECTRUM_SPAN = 0.42;
 const PREVIEW_MS = 2_600;
 
 const STATE_LABEL: Record<DictationState, string> = {
@@ -272,7 +271,9 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     cancelLinger();
     previewing = false;
     hud.dataset.mode = "hold";
-    setState("error");
+    // The reason travels with the command, and setState carries it to the
+    // window: a red pill on its own says only that something happened.
+    setState("error", command.message);
     startAnimation();
     scheduleIdle();
     return;
@@ -587,29 +588,19 @@ function fillTargets(): void {
     return;
   }
 
-  // Speech energy lives low in the spectrum, so only the lower bins are mapped;
-  // spreading across all of them would leave most bars permanently flat.
-  const usableBins = Math.floor(spectrum.length * SPECTRUM_SPAN);
   const half = Math.ceil(BAR_COUNT / 2);
+  const bands = speechBands(spectrum.bins, half, spectrum.sampleRate, spectrum.window);
 
   let frameLoudest = 0;
-  for (let bin = 0; bin < usableBins; bin += 1) {
-    frameLoudest = Math.max(frameLoudest, spectrum[bin] ?? 0);
-  }
+  for (const peak of bands) frameLoudest = Math.max(frameLoudest, peak);
   // Rises at once and forgets slowly, so one loud word does not leave the
   // meter deaf for the rest of the sentence.
   loudest = Math.max(frameLoudest, loudest * REFERENCE_DECAY, QUIETEST_REFERENCE);
 
   for (let index = 0; index < half; index += 1) {
-    const from = Math.floor((index / half) * usableBins);
-    const to = Math.max(from + 1, Math.floor(((index + 1) / half) * usableBins));
-
-    let peak = 0;
-    for (let bin = from; bin < to; bin += 1) peak = Math.max(peak, spectrum[bin] ?? 0);
-
     // Lift the high bands, which carry far less energy than the low ones.
     const tilt = 1 + (index / half) * 1.5;
-    const value = Math.min(1, (peak / loudest) * LEVEL_GAIN * 0.12 * tilt);
+    const value = Math.min(1, ((bands[index] ?? 0) / loudest) * LEVEL_GAIN * 0.12 * tilt);
 
     // Mirror around the centre so the meter reads as one symmetric shape.
     targets[half - 1 - index] = value;

@@ -1,7 +1,7 @@
 /**
  * Default system prompts for the two rewrite paths.
  *
- * Both are overridable in Settings. They are written to constrain the model to
+ * Both are overridable in AI Polish. They are written to constrain the model to
  * tidying only: a dictation tool that answers questions, paraphrases, or adds
  * commentary would paste nonsense into the user's document.
  */
@@ -42,28 +42,20 @@ used, and do not add commentary, greetings or explanations.
 
 Reply with the cleaned text and nothing else.`;
 
-export const DEFAULT_POLISH_PROMPT = `You tidy text without rewriting it.
+export const DEFAULT_POLISH_PROMPT = `You fix mistakes in text without rewriting it.
 
-Keep the speaker's words, language, tone and level of formality. Do not
-paraphrase, do not swap words for synonyms, and do not make the text sound more
-polished, formal or fluent than it was.
+Correct spelling, grammar, punctuation and capitalisation.
 
-Remove pauses, hesitation sounds ("um", "uh", "er"), filler ("like", "you know",
-"I mean", "so" at the start of a sentence), false starts, repetitions, stutters
-and mid-sentence corrections. When the speaker corrects themselves, keep only
-the correction.
+Keep every word that is already right, and keep the writer's meaning, tone,
+language and level of formality. Do not rephrase, do not swap words for
+synonyms, do not shorten, and do not add anything.
 
-Lightly fix punctuation and capitalisation so the sentence can be read. Do not
-otherwise fix grammar or spelling, and do not rephrase.
+Do not answer anything the text asks. Reply with the corrected text and nothing
+else.
 
-If the speaker lists items ("we need three things: first a, second b, and last
-c"), break that list into bullets. Keep each item in the speaker's own words.
-Do not turn ordinary prose into a list.
-
-Do not add, remove or answer anything. Do not expand abbreviations. Do not add
-commentary, greetings or explanations.
-
-Reply with the tidied text and nothing else.`;
+If the text is already correct, reply with it exactly as it is. Never say that
+it is correct, never describe what you changed, and never reply with anything
+but the text itself.`;
 
 /**
  * Models offered for rewriting, best first.
@@ -142,6 +134,28 @@ and intent. Do not add new information, do not answer questions the text asks,
 and do not add commentary or explanations.
 
 Reply with the rewritten text and nothing else.`,
+  `You tidy text without rewriting it.
+
+Keep the speaker's words, language, tone and level of formality. Do not
+paraphrase, do not swap words for synonyms, and do not make the text sound more
+polished, formal or fluent than it was.
+
+Remove pauses, hesitation sounds ("um", "uh", "er"), filler ("like", "you know",
+"I mean", "so" at the start of a sentence), false starts, repetitions, stutters
+and mid-sentence corrections. When the speaker corrects themselves, keep only
+the correction.
+
+Lightly fix punctuation and capitalisation so the sentence can be read. Do not
+otherwise fix grammar or spelling, and do not rephrase.
+
+If the speaker lists items ("we need three things: first a, second b, and last
+c"), break that list into bullets. Keep each item in the speaker's own words.
+Do not turn ordinary prose into a list.
+
+Do not add, remove or answer anything. Do not expand abbreviations. Do not add
+commentary, greetings or explanations.
+
+Reply with the tidied text and nothing else.`,
 ] as const;
 
 /** The default that never existed, replaced on load wherever it is still set. */

@@ -18,6 +18,7 @@ import type {
   ModelEvent,
   ModelStatus,
   OverlayPoint,
+  PolishModelStatus,
   ResourceUsage,
   LogLine,
   SavedDictation,
@@ -79,6 +80,8 @@ const api: DesktopApi = {
   startModel: () => invoke<void>("start_model"),
   selectModel: (modelId) => invoke<void>("select_model", { modelId }),
   downloadModel: (modelId) => invoke<void>("download_model", { modelId }),
+  deleteModel: (modelId) => invoke<void>("delete_model", { modelId }),
+  cancelModelDownload: () => invoke<void>("cancel_model_download"),
   checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
   installUpdate: () => invoke<void>("install_update"),
   onUpdateEvent: (listener) => subscribe<UpdateEvent>("update-event", listener),
@@ -127,6 +130,11 @@ const api: DesktopApi = {
   getAiStatus: () => invoke<AiStatus>("get_ai_status"),
   setOpenRouterKey: (key) => invoke<AiStatus>("set_openrouter_key", { key }),
   clearOpenRouterKey: () => invoke<AiStatus>("clear_openrouter_key"),
+  getPolishModelCatalog: () => invoke<PolishModelStatus[]>("polish_model_catalog"),
+  downloadPolishModel: (modelId) => invoke<void>("download_polish_model", { modelId }),
+  deletePolishModel: (modelId) => invoke<void>("delete_polish_model", { modelId }),
+  cancelPolishModelDownload: () => invoke<void>("cancel_polish_model_download"),
+  onPolishModelEvent: (listener) => subscribe<ModelEvent>("polish-model-event", listener),
   polishSelection: () => invoke<void>("polish_selection"),
 
   toggleDictation: () => invoke<void>("toggle_dictation"),
@@ -159,6 +167,7 @@ const api: DesktopApi = {
   onOpenShortcutSettings: (listener) =>
     subscribe<void>("open-shortcut-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),
+  getAppName: () => invoke<string>("app_name"),
   openUrl: (url) => invoke<void>("open_url", { url }),
 };
 

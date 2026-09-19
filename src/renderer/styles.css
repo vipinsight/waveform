@@ -407,10 +407,29 @@ kbd {
   scrollbar-width: none;
 }
 
-/* Only the list runs to the edge. The overview is ordinary content and keeps
-   its bottom inset. */
-#view-overview {
+/* Only the list runs to the edge. The overview, the models and the polish
+   settings are ordinary content and keep their bottom inset. */
+#view-overview,
+#view-models,
+#view-ai {
   padding-bottom: 26px;
+}
+
+/* Models and AI Polish were pages of the settings panel until they became
+   sections of the window. Their heading keeps the size it had there: it labels
+   a page of controls, not a list with a toolbar beside it. */
+#view-models .display,
+#view-ai .display {
+  margin-bottom: 22px;
+  font-size: 26px;
+}
+
+#view-models .view-head {
+  margin-bottom: 18px;
+}
+
+#view-models .view-head .display {
+  margin-bottom: 0;
 }
 
 .view[hidden] {
@@ -1199,27 +1218,51 @@ kbd {
   margin-top: 0;
 }
 
+/* Local polish models sit under Run on in the same card, not as a second
+   heading that looks like a different subject. */
+.polish-local-models {
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+.polish-local-models[hidden] {
+  display: none;
+}
+
+.polish-local-models .model-list {
+  padding: 0;
+  border-radius: 10px;
+}
+
 /* ----------------------------------------------------------------- models */
 
-.model-groups,
+.model-groups {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One surface per family, the same sunken card the settings rows sit on, so
+   sixteen models read as a list instead of sixteen separate tiles. */
 .model-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-sunken);
 }
 
 /* The language picker leads the page, so the list needs the gap under it that
    .card does not carry: everywhere else a card is the first thing under a
    heading. */
-.card + .note {
+.card + .note,
+.card + .model-groups {
   margin-top: 18px;
 }
 
-/* Fourteen Whisper sizes and two other engines in one column read as one
-   undifferentiated list, when the choice is really "which Whisper" followed by
-   "or something else entirely". */
+/* Parakeet and Qwen sit unnamed at the top; Whisper then needs a heading so
+   fourteen sizes do not read as a continuation of those two. */
 .model-group {
-  margin: 14px 2px 2px;
+  margin: 16px 10px 6px;
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 620;
@@ -1245,11 +1288,12 @@ kbd {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
   border: 1px solid transparent;
-  border-radius: 12px;
-  background: var(--surface-sunken);
+  border-radius: 10px;
+  background: none;
   transition: border-color 130ms ease, background 130ms ease;
 }
 
@@ -1275,7 +1319,7 @@ kbd {
 
 /* Lifted out of the stacking order the press layer sits in, so everything is
    drawn over it rather than under. None of it takes the pointer: the row is one
-   target, and the only thing that wants its own is the arrow. */
+   target, and Download, Cancel, the arrow and delete take their own. */
 .model-body,
 .model-tag,
 .model-action {
@@ -1283,28 +1327,30 @@ kbd {
   pointer-events: none;
 }
 
-.model-card {
+.model-card,
+.model-remove,
+.model-fetch,
+.model-download-controls {
   pointer-events: auto;
 }
 
-/* Filled is here, outlined is not: the page answers "which of these do I
-   actually have?" before a word of it is read. Dimming the text was the other
-   way to say it, and it made eleven of sixteen rows hard to read in order to
-   say something about all eleven at once. */
-.model-row[data-state="download"],
-.model-row[data-state="terminal"] {
-  border-color: var(--hairline);
-  background: none;
-}
-
-.model-row[data-state="download"]:hover {
-  background: var(--surface-sunken);
-}
-
+/* Not downloaded yet: the name steps back. Fetchable rows have a Download
+   button; terminal ones keep the glyph that says a command is needed. */
 .model-row[data-state="download"] .model-body strong,
+.model-row[data-state="busy"] .model-body strong,
 .model-row[data-state="terminal"] .model-body strong {
   color: var(--ink-soft);
   font-weight: 520;
+}
+
+/* Hover lights the row so a Download among a plain list has a clear target.
+   Installed rows already got this; undownloaded ones were skipped because
+   their pick is aria-disabled (pressing the row does not fetch). Busy is the
+   same shape while Cancel is up. Terminal stays flat — nothing to press. */
+.model-row:hover:has(.model-pick:not([aria-disabled="true"])),
+.model-row[data-state="download"]:hover,
+.model-row[data-state="busy"]:hover {
+  background: var(--surface-hover);
 }
 
 /* After the state rules above, so the accent wins the border on equal
@@ -1312,14 +1358,20 @@ kbd {
 .model-row:has(.model-pick[aria-checked="true"]),
 .model-row:has(.model-pick:focus-visible) {
   border-color: var(--accent);
+  background: var(--surface);
+}
+
+.model-row:has(.model-pick[aria-checked="true"]):hover {
+  background: var(--surface);
 }
 
 .model-body {
   display: flex;
   min-width: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
 }
 
 /* The arrow rides with the name rather than sitting at the far end of the row,
@@ -1327,32 +1379,40 @@ kbd {
 .model-name {
   display: flex;
   min-width: 0;
+  flex: 0 1 auto;
   align-items: baseline;
   gap: 5px;
+  white-space: nowrap;
 }
 
 .model-body strong {
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 560;
 }
 
 .model-body small {
   color: var(--ink-faint);
   font-size: 11.5px;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 /* The line the choice is actually made on: accuracy, size, memory. Carried in
    tabular figures so the numbers line up down sixteen rows. */
 .model-facts {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Only where the numbers leave something unsaid -- what a quantization is, and
    which engines want a terminal -- so most rows do not have one. */
 .model-detail {
+  flex: 1 0 100%;
   color: var(--ink-faint);
 }
 
@@ -1360,12 +1420,12 @@ kbd {
   flex: 0 0 auto;
   /* The transparent border keeps every tag one size, whether or not it is the
      outlined one below. */
-  padding: 2px 8px;
+  padding: 1px 7px;
   border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--surface-hover);
+  background: var(--surface);
   color: var(--ink-soft);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1382,8 +1442,8 @@ kbd {
    it is a state, and pressing the row is what acts on it. */
 .model-action {
   display: flex;
-  width: 30px;
-  height: 22px;
+  width: 22px;
+  height: 18px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -1395,34 +1455,30 @@ kbd {
 }
 
 .model-action svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* The cloud is the one thing on an undownloaded row that is not dimmed, and
-   it colours under the pointer: the row is pressable, and this is what says
-   what pressing it does. */
-.model-row[data-state="download"]:hover .model-action {
-  color: var(--accent);
-}
-
-/* Mid-download the cloud is replaced by how far it has got, which is a number
-   and wants none of the icon's sizing. */
-.model-action[data-progress="true"] {
-  color: var(--accent);
+  width: 15px;
+  height: 15px;
 }
 
 /* Nothing the app can do about it, so it does not invite a press. */
+.model-row[data-state="download"] .model-pick,
+.model-row[data-state="busy"] .model-pick,
 .model-row[data-state="terminal"] .model-pick {
   cursor: default;
 }
 
-/* Outlined rather than filled: a recommendation is a suggestion, and it sits
-   beside rows whose filled tag means the model is actually there. */
-.model-tag[data-recommended="true"] {
-  border-color: var(--accent);
-  background: none;
+.model-download-controls {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-progress {
   color: var(--accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 /* The same cloud, inline in the sentence that explains it, so the paragraph
@@ -1526,6 +1582,13 @@ kbd {
   padding: 14px 0;
 }
 
+/* The rows that belong to one polish engine, while the other is selected.
+   `hidden` alone would not do it: the rule above gives every row a display,
+   and a class beats the attribute. */
+.row[hidden] {
+  display: none;
+}
+
 .row + .row {
   border-top: 1px solid var(--hairline);
 }
@@ -1545,6 +1608,10 @@ kbd {
   font-size: 12px;
   font-weight: 440;
   line-height: 1.45;
+}
+
+.row-label small:empty {
+  display: none;
 }
 
 .row-actions {
@@ -1646,6 +1713,55 @@ select {
   cursor: default;
 }
 
+/* Model Download / Cancel / Remove: smaller than a settings pill, and a pointer
+   so they read as the act. Double class beats `.pill-button` alone — that rule
+   sits above and would otherwise keep them 32px with the default cursor.
+   Background is `--surface`, not `--surface-hover`: the row lights with the
+   latter on hover, and a matching pill would vanish into it. */
+.pill-button.model-fetch,
+.pill-button.model-cancel,
+.pill-button.model-remove {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pill-button.model-fetch:hover,
+.pill-button.model-cancel:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pill-button.model-remove:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Revealed on hover: a Remove on every downloaded row would compete with the
+   numbers the choice is actually made on. */
+.model-row .model-remove {
+  opacity: 0;
+  transition: opacity 130ms ease, background 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.model-row:hover .model-remove,
+.model-row:focus-within .model-remove {
+  opacity: 1;
+}
+
 .text-input {
   height: 32px;
   width: 150px;
@@ -1663,6 +1779,137 @@ select {
 
 .text-input::placeholder {
   color: var(--ink-faint);
+}
+
+.prompt-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.section-label + .note {
+  margin: -2px 2px 12px;
+}
+
+.prompt-card {
+  display: flex;
+  min-height: 112px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 15px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.prompt-card:hover {
+  border-color: var(--hairline-strong);
+  background: var(--surface-hover);
+}
+
+.prompt-card strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.prompt-card-where {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 480;
+  line-height: 1.35;
+}
+
+.prompt-card small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 440;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+@media (max-width: 640px) {
+  .prompt-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prompt-dialog {
+  position: fixed;
+  z-index: 12;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: min(560px, 92vw);
+  height: min(520px, 84vh);
+  flex-direction: column;
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  transform: translate(-50%, -50%);
+  animation: modal-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.prompt-dialog[hidden] {
+  display: none;
+}
+
+.prompt-dialog-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.prompt-dialog-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.prompt-dialog-where {
+  flex: 0 0 auto;
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 440;
+  line-height: 1.4;
+}
+
+.prompt-dialog-input {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  padding: 12px 13px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  resize: none;
+}
+
+.prompt-dialog-foot {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .prompt-block {

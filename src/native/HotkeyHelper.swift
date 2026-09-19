@@ -37,7 +37,12 @@ private let deviceFlagForKeyCode: [Int64: UInt64] = [
 
 private let virtualKeyV: CGKeyCode = 0x09
 private let virtualKeyC: CGKeyCode = 0x08
+private let virtualKeyA: CGKeyCode = 0x00
 private let selectionCopyDelay = 0.16
+/// Between ⌘A and the copy that follows it. The two are separate events, and an
+/// app that updates its selection asynchronously would otherwise copy what was
+/// selected before the select-all -- which is nothing, the case we are in.
+private let selectAllSettleDelay = 0.06
 private let pasteboardRestoreDelay = 0.25
 
 private let outputLock = NSLock()
@@ -145,6 +150,12 @@ private func pasteIntoFrontmostApp(_ text: String) {
 /// selection has to be copied. The pasteboard's change count tells us whether
 /// the app actually responded, which distinguishes "nothing was selected" from
 /// "the user's existing clipboard".
+///
+/// Nothing selected is the ordinary case rather than a mistake: someone
+/// finishes typing a message and reaches for polish without going back to
+/// select what they just wrote. So a copy that comes back empty is followed by
+/// ⌘A and a second copy, which takes the field they are in. The selection that
+/// leaves behind is the point -- the polished text is pasted over it.
 private func readSelection() {
   guard hasAccessibility(prompt: false) else {
     emit(["type": "selection", "ok": false, "reason": "accessibility"])
@@ -158,21 +169,89 @@ private func readSelection() {
   postCommandKey(virtualKeyC)
 
   DispatchQueue.main.asyncAfter(deadline: .now() + selectionCopyDelay) {
-    let changed = pasteboard.changeCount != changeCountBefore
-    let copied = changed ? pasteboard.string(forType: .string) : nil
-
-    if let copied, !copied.isEmpty {
-      emit(["type": "selection", "ok": true, "text": copied])
-    } else {
-      emit(["type": "selection", "ok": false, "reason": "empty"])
+    if let copied = copiedText(pasteboard, since: changeCountBefore) {
+      finishSelection(pasteboard, text: copied, restoring: restored)
+      return
     }
 
-    // Put the user's clipboard back; the copy was only a means of reading.
-    if changed {
-      pasteboard.clearContents()
-      if let restored { pasteboard.setString(restored, forType: .string) }
+    // Only where the focus is somewhere text is typed. ⌘A in a file list
+    // selects every file in it, and what follows would be a copy of those
+    // rather than of anything anybody wanted rewritten.
+    guard focusIsTextInput() else {
+      finishSelection(pasteboard, text: nil, restoring: restored)
+      return
+    }
+
+    postCommandKey(virtualKeyA)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + selectAllSettleDelay) {
+      postCommandKey(virtualKeyC)
+
+      DispatchQueue.main.asyncAfter(deadline: .now() + selectionCopyDelay) {
+        let copied = copiedText(pasteboard, since: changeCountBefore)
+        finishSelection(pasteboard, text: copied, restoring: restored)
+      }
     }
   }
+}
+
+/// Whether the keyboard focus is on something text is typed into.
+///
+/// Asked through the accessibility API, which is the only thing that can answer
+/// it, and answered conservatively: an element that will not say what it is
+/// does not get ⌘A posted at it.
+private func focusIsTextInput() -> Bool {
+  var focused: CFTypeRef?
+  let system = AXUIElementCreateSystemWide()
+  guard
+    AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
+      == .success,
+    let element = focused,
+    CFGetTypeID(element) == AXUIElementGetTypeID()
+  else { return false }
+
+  let target = element as! AXUIElement
+  var role: CFTypeRef?
+  AXUIElementCopyAttributeValue(target, kAXRoleAttribute as CFString, &role)
+  switch role as? String {
+  case kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole:
+    return true
+  default:
+    break
+  }
+
+  // A web view or an Electron app reports a role of its own making, and still
+  // answers for the text it holds. That answer is the test.
+  var value: CFTypeRef?
+  guard
+    AXUIElementCopyAttributeValue(target, kAXValueAttribute as CFString, &value) == .success
+  else { return false }
+  return value as? String != nil
+}
+
+/// What the focused app put on the pasteboard, or nil if it put nothing there.
+private func copiedText(_ pasteboard: NSPasteboard, since changeCount: Int) -> String? {
+  guard pasteboard.changeCount != changeCount else { return nil }
+  guard let copied = pasteboard.string(forType: .string), !copied.isEmpty else { return nil }
+  return copied
+}
+
+private func finishSelection(
+  _ pasteboard: NSPasteboard,
+  text: String?,
+  restoring restored: String?
+) {
+  if let text {
+    emit(["type": "selection", "ok": true, "text": text])
+  } else {
+    emit(["type": "selection", "ok": false, "reason": "empty"])
+  }
+
+  // Put the user's clipboard back; the copy was only a means of reading. The
+  // change count is not consulted again: a copy that produced nothing readable
+  // can still have emptied the pasteboard.
+  pasteboard.clearContents()
+  if let restored { pasteboard.setString(restored, forType: .string) }
 }
 
 private func postCommandKey(_ key: CGKeyCode) {

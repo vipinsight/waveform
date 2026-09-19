@@ -1,6 +1,6 @@
 import { InputGain } from "./gain";
 import { SpeechSegmenter, rootMeanSquare } from "./segmenter";
-import { spectrumFromBlock } from "./spectrum";
+import { SPECTRUM_WINDOW, spectrumFromBlock } from "./spectrum";
 import { encodeMonoPcm16Wav } from "./wav";
 
 /**
@@ -58,6 +58,8 @@ export class AudioCapture {
   private running = false;
   private sampleRate = 48_000;
   private spectrum: Uint8Array<ArrayBuffer> | null = null;
+  /** DFT window the current spectrum was taken from, so the meter can map Hz. */
+  private spectrumWindow = SPECTRUM_WINDOW;
   private segmenter: SpeechSegmenter | null = null;
   private pending = 0;
   private discarding = false;
@@ -117,6 +119,7 @@ export class AudioCapture {
       this.segmenter = new SpeechSegmenter({ sampleRate });
     }
     this.spectrum = spectrumFromBlock(samples);
+    this.spectrumWindow = Math.min(samples.length, SPECTRUM_WINDOW);
     this.handleBlock(samples);
   }
 
@@ -131,6 +134,7 @@ export class AudioCapture {
     this.sampleRate = 48_000;
     this.segmenter = new SpeechSegmenter({ sampleRate: this.sampleRate });
     this.spectrum = new Uint8Array(128);
+    this.spectrumWindow = SPECTRUM_WINDOW;
 
     const opened = performance.now();
     const epoch = this.epoch;
@@ -184,14 +188,25 @@ export class AudioCapture {
   }
 
   /**
-   * Current frequency magnitudes, 0..1 per bin.
+   * Current frequency magnitudes, and the rate they were taken at.
    *
-   * Driving each bar from its own band is what makes the meter look like it is
-   * listening; one RMS value moving every bar together reads as a loading
-   * spinner, not a voice.
+   * Driving each bar from its own speech band is what makes the meter look
+   * like it is listening; one RMS value moving every bar together reads as a
+   * loading spinner, not a voice. The sample rate travels with the bins
+   * because speech occupies a different slice of the DFT at 16 kHz than at
+   * 48 kHz, and mapping bars without it leaves the outer ones still.
    */
-  sampleSpectrum(): Uint8Array<ArrayBuffer> | null {
-    return this.running ? this.spectrum : null;
+  sampleSpectrum(): {
+    bins: Uint8Array<ArrayBuffer>;
+    sampleRate: number;
+    window: number;
+  } | null {
+    if (!this.running || !this.spectrum) return null;
+    return {
+      bins: this.spectrum,
+      sampleRate: this.sampleRate,
+      window: this.spectrumWindow,
+    };
   }
 
   private release(): void {

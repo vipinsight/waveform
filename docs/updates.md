@@ -113,7 +113,7 @@ its password have to be in the environment. `release.sh` sources
 `.env.notarization` itself for the same reason.
 
 **`pnpm app` never touches the bundler.** `run-tauri.sh` assembles
-`release/Waveform.app` by hand, because WKWebView refuses microphone access to a
+`release/Waveform Dev.app` by hand, because WKWebView refuses microphone access to a
 bare binary. Updater artifacts come only from a real `tauri build`, so the
 release path and the everyday path diverge here.
 

@@ -16,8 +16,8 @@ loaded at runtime. Each carries a `data-icon` attribute naming its source icon
 at https://lucide.dev/icons. The exact source is pinned by the `lucide-static`
 devDependency.
 
-Icons in use: audio-lines, box, check, house, mic, monitor, panel-left,
-scroll-text, search, settings, shield-check, sliders-horizontal, wand, x.
+Icons in use: audio-lines, check, house, mic, monitor, panel-left,
+scroll-text, search, settings, shield-check, sliders-horizontal, sparkle, wand, x.
 
     ISC License
 

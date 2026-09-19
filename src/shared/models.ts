@@ -1,6 +1,6 @@
 /**
  * Every model the interface knows about, in the order the models page lists
- * them: lightest first within each group.
+ * them: Parakeet and Qwen first, then Whisper lightest-first within each group.
  *
  * Whisper fills most of it because whisper.cpp is linked into the app, so each
  * size and quantization of it is a model the app can fetch by itself.
@@ -15,6 +15,18 @@
  * 0.6B" on one page and "NVIDIA Parakeet TDT 0.6B v3" on another.
  */
 export const SPEECH_MODELS = [
+  {
+    id: "parakeet-tdt-0.6b-v3",
+    label: "Parakeet 0.6B",
+    modelId: "nvidia/parakeet-tdt-0.6b-v3",
+    engine: "nemo",
+  },
+  {
+    id: "qwen3-asr-0.6b",
+    label: "Qwen3-ASR 0.6B",
+    modelId: "Qwen/Qwen3-ASR-0.6B",
+    engine: "qwen",
+  },
   { id: "whisper-cpp-tiny", label: "Whisper Tiny", modelId: "ggml-tiny.bin", engine: "whisper-cpp" },
   { id: "whisper-cpp-base", label: "Whisper Base", modelId: "ggml-base.bin", engine: "whisper-cpp" },
   { id: "whisper-cpp-small", label: "Whisper Small", modelId: "ggml-small.bin", engine: "whisper-cpp" },
@@ -84,18 +96,6 @@ export const SPEECH_MODELS = [
     modelId: "ggml-medium.en.bin",
     engine: "whisper-cpp",
   },
-  {
-    id: "parakeet-tdt-0.6b-v3",
-    label: "Parakeet 0.6B",
-    modelId: "nvidia/parakeet-tdt-0.6b-v3",
-    engine: "nemo",
-  },
-  {
-    id: "qwen3-asr-0.6b",
-    label: "Qwen3-ASR 0.6B",
-    modelId: "Qwen/Qwen3-ASR-0.6B",
-    engine: "qwen",
-  },
 ] as const;
 
 export type SpeechModelDefinition = (typeof SPEECH_MODELS)[number];
@@ -107,9 +107,9 @@ export type SpeechEngine = SpeechModelDefinition["engine"];
  * back to. `DEFAULT_MODEL_ID` in model_server.rs is the same choice.
  *
  * Named rather than "the first entry", because the table is ordered for the
- * models page to read and the lightest Whisper is not a model to hand anyone
- * unasked. Small runs on every Apple Silicon Mac and is accurate enough that a
- * first dictation is not a bad first impression.
+ * models page to read, Parakeet first, and that is not a model a fresh install
+ * can run without a terminal. Small runs on every Apple Silicon Mac and is
+ * accurate enough that a first dictation is not a bad first impression.
  */
 export const DEFAULT_SPEECH_MODEL_ID: SpeechModelId = "whisper-cpp-small";
 

@@ -40,7 +40,7 @@
             <rect x="60.55" y="24.20" width="7.81" height="51.60" rx="3.91" fill="currentColor" />
             <rect x="75.00" y="35.55" width="7.81" height="28.90" rx="3.91" fill="currentColor" />
           </svg>
-          <span class="brand-name">Waveform</span>
+          <span class="brand-name" id="app-brand">Waveform</span>
         </div>
 
         <nav class="nav" aria-label="Sections">
@@ -61,6 +61,18 @@
               <path d="M22 10v3" />
             </svg>
             <span>Transcripts</span>
+          </button>
+          <button class="nav-item" type="button" data-view="models">
+            <svg data-icon="sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
+            </svg>
+            <span>Models</span>
+          </button>
+          <button class="nav-item" type="button" data-view="ai">
+            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
+            </svg>
+            <span>AI Polish</span>
           </button>
         </nav>
 
@@ -211,15 +223,130 @@
               Recording and transcription happen on this Mac, and no audio is ever
               uploaded or kept. Dictations are saved on this Mac so you can find them
               again, and you can delete any of them, or all of them, from the
-              Transcripts list. Text leaves the machine only when you use AI&nbsp;Polish, and only
-              the words you asked it to rewrite.
+              Transcripts list. Text leaves the machine only when you polish through
+              OpenRouter, and only the words you asked it to rewrite. A model on this Mac
+              sends nothing.
             </p>
           </div>
         </section>
+        <section class="view" id="view-models" hidden>
+          <div class="view-head">
+            <h1 class="display">Models</h1>
+            <div class="head-tools">
+              <label class="view-note" for="speech-language">Language</label>
+              <select id="speech-language" aria-label="Dictation language"></select>
+            </div>
+          </div>
+
+          <div class="model-groups" id="model-list"></div>
+        </section>
+
+        <section class="view" id="view-ai" hidden>
+          <h1 class="display">AI Polish</h1>
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="transform-toggle">
+                Tidy every dictation automatically
+                <small id="transform-hint"></small>
+              </label>
+              <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
+            </div>
+            <div class="row">
+              <label class="row-label" for="polish-shortcut">Shortcut</label>
+              <span class="row-actions">
+                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
+              </span>
+            </div>
+          </div>
+
+          <h2 class="section-label">Where it runs</h2>
+          <div class="card">
+            <div class="row">
+              <span class="row-label">Run on</span>
+              <span class="row-actions">
+                <div class="segmented" id="polish-engine" role="radiogroup" aria-label="Where polish runs">
+                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                </div>
+              </span>
+            </div>
+            <div class="row is-stacked" data-engine-only="openrouter">
+              <span class="row-label">
+                API key
+                <small id="key-state"></small>
+                <button type="button" class="link" id="open-openrouter">Get a key</button>
+              </span>
+              <span class="row-actions">
+                <input
+                  id="key-input"
+                  type="password"
+                  class="text-input"
+                  placeholder="sk-or-v1-…"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button id="key-save" class="pill-button is-primary" type="button" disabled>Save</button>
+                <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
+              </span>
+            </div>
+            <div class="row" data-engine-only="openrouter">
+              <label class="row-label" for="ai-model">Model</label>
+              <span class="row-actions">
+                <select id="ai-model" aria-label="OpenRouter model"></select>
+              </span>
+            </div>
+            <div class="polish-local-models" data-engine-only="local">
+              <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
+            </div>
+          </div>
+
+          <h2 class="section-label">Instructions</h2>
+          <p class="note">
+            How polish rewrites text — one for spoken dictation, one for a selection.
+          </p>
+          <div class="prompt-cards">
+            <button type="button" class="prompt-card" data-prompt="transform">
+              <strong>Dictation</strong>
+              <span class="prompt-card-where">When every dictation is tidied automatically</span>
+              <small id="transform-prompt-preview"></small>
+            </button>
+            <button type="button" class="prompt-card" data-prompt="polish">
+              <strong>Selection</strong>
+              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
+              <small id="polish-prompt-preview"></small>
+            </button>
+          </div>
+
+        </section>
+
       </main>
     </div>
 
     <div id="scrim" class="scrim" hidden></div>
+
+    <div
+      id="prompt-editor"
+      class="prompt-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="prompt-editor-title"
+      hidden
+    >
+      <div class="prompt-dialog-head">
+        <h2 id="prompt-editor-title">Dictation</h2>
+        <button id="prompt-editor-reset" class="pill-button" type="button">Reset</button>
+      </div>
+      <p id="prompt-editor-where" class="prompt-dialog-where"></p>
+      <textarea
+        id="prompt-editor-body"
+        class="prompt-dialog-input"
+        spellcheck="false"
+        aria-label="Custom instruction"
+      ></textarea>
+      <div class="prompt-dialog-foot">
+        <button id="prompt-editor-save" class="pill-button is-primary" type="button">Save</button>
+      </div>
+    </div>
 
     <div id="settings-panel" class="modal" role="dialog" aria-modal="true" aria-label="Settings" hidden>
       <nav class="modal-nav">
@@ -244,18 +371,6 @@
               <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
             <span>Dictation</span></button>
-        <button class="nav-item" type="button" data-page="models">
-            <svg data-icon="box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-              <path d="m3.3 7 8.7 5 8.7-5" />
-              <path d="M12 22V12" />
-            </svg>
-            <span>Models</span></button>
-        <button class="nav-item" type="button" data-page="ai">
-            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
-            </svg>
-            <span>AI Polish</span></button>
         <button class="nav-item" type="button" data-page="setup">
             <svg data-icon="monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -423,108 +538,6 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
-        </section>
-
-        <section class="settings-page" data-page="models" hidden>
-          <h1 class="display">Models</h1>
-
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="speech-language">Language<small>Naming it beats letting the model guess from the first second of audio</small></label>
-              <span class="row-actions">
-                <select id="speech-language" aria-label="Dictation language"></select>
-              </span>
-            </div>
-          </div>
-
-          <p class="note">
-            Speech runs on this Mac, so a model has to be downloaded before it can be
-            used — press a row marked with <span class="note-icon"><svg data-icon="cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="the cloud icon"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></svg></span> to fetch one. Memory is
-            what it costs while loaded, and accuracy is the word error rate its Hugging
-            Face page publishes on LibriSpeech test-clean: lower is better, and
-            comparable down the column.
-          </p>
-          <div class="model-groups" id="model-list"></div>
-        </section>
-
-        <section class="settings-page" data-page="ai" hidden>
-          <h1 class="display">AI Polish</h1>
-          <p class="lede">
-            Optional. Speech comes out the way it was spoken — with the ums, the repeated
-            words, the missing commas. Polish hands that text to an AI to tidy before it
-            lands. <strong>It is the only part of Waveform that sends anything off this
-            Mac</strong>; the transcription itself never does.
-          </p>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="transform-toggle">
-                Tidy every dictation
-                <small id="transform-hint">Adds a second or two before your words appear.</small>
-              </label>
-              <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
-            </div>
-            <div class="row is-stacked">
-              <span class="row-label">
-                OpenRouter key
-                <small id="key-state">Waveform reaches the AI through OpenRouter. Kept in your login keychain, never in plain text.</small>
-                <button type="button" class="link" id="open-openrouter">Get a key at openrouter.ai</button>
-              </span>
-              <span class="row-actions">
-                <input
-                  id="key-input"
-                  type="password"
-                  class="text-input"
-                  placeholder="sk-or-v1-…"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <button id="key-save" class="pill-button is-primary" type="button" disabled>Save</button>
-                <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
-              </span>
-            </div>
-            <div class="row">
-              <label class="row-label" for="ai-model">
-                AI model
-                <small>Which model does the tidying. Cheaper ones are quicker and rarely worse at this.</small>
-              </label>
-              <span class="row-actions">
-                <select id="ai-model" aria-label="OpenRouter model"></select>
-              </span>
-            </div>
-            <div class="row">
-              <label class="row-label" for="polish-shortcut">
-                Tidy text you have selected
-                <small>Select words in any app, press this, and they are rewritten in place.</small>
-              </label>
-              <span class="row-actions">
-                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
-              </span>
-            </div>
-          </div>
-
-          <h2 class="section-label">What to tell the AI</h2>
-          <p class="note">
-            These steer how text is tidied. Waveform holds the reply to a rewrite of that
-            same text, so a reply that answers it or wanders off is dropped and your
-            original is kept.
-          </p>
-
-          <div class="prompt-block">
-            <div class="prompt-head">
-              <label class="row-label" for="transform-prompt">Dictation polish instructions</label>
-              <button class="pill-button" type="button" data-reset="transform">Reset</button>
-            </div>
-            <textarea id="transform-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
-          </div>
-
-          <div class="prompt-block">
-            <div class="prompt-head">
-              <label class="row-label" for="polish-prompt">Selected text polish instructions</label>
-              <button class="pill-button" type="button" data-reset="polish">Reset</button>
-            </div>
-            <textarea id="polish-prompt" class="prompt-input" rows="5" spellcheck="false"></textarea>
-          </div>
-
         </section>
 
         <section class="settings-page" data-page="about" hidden>

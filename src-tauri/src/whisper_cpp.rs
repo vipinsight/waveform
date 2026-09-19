@@ -36,7 +36,7 @@ pub fn load(file: &str) -> Result<WhisperContext, String> {
     let path = weights_path(file).ok_or("Could not work out where Whisper's weights live.")?;
     if !path.is_file() {
         return Err(format!(
-            "{} is missing. Download it from Settings -> Models, then try again.",
+            "{} is missing. Download it from the Models section, then try again.",
             path.display()
         ));
     }

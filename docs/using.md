@@ -81,14 +81,16 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
-**Settings → Models** says what is on this Mac and what is not. A filled row is
-downloaded; an outlined one with a cloud beside it is not, and pressing it
-fetches the weights. The two engines the app cannot fetch show a prompt instead,
-with the command to run.
+**Models**, in the window's own menu, says what is on this Mac and what is not. A filled row is
+downloaded; an outlined one with a **Download** button is not, and pressing that button
+fetches the weights. While a download runs it becomes **Cancel**. Hover a downloaded Whisper
+for **Remove** to free the space. The two engines the app cannot fetch show a prompt instead,
+with the command to run; once their weights are present, **Remove** clears those caches too.
 Only whisper.cpp can be set up without a terminal, which is why it is the
 default — an install from the disk image cannot assume one. Because it is linked
-in, every size and quantization of Whisper is one press away, and the models
-page marks the one **recommended** for the Mac it is running on.
+in, every size and quantization of Whisper is one press away. The models page
+lists Parakeet and Qwen first — the most accurate of the catalogue on the same
+LibriSpeech figure the rows show.
 
 Qwen3-ASR takes roughly 20–40 seconds to load the first time. Parakeet is
 quicker once its runtime is warm.
@@ -127,27 +129,26 @@ while it is loaded, and it is approximate.
 The **English only** group is the same sizes trained on English alone. Each is
 more accurate than its multilingual twin at the same memory — Base · English is
 close to multilingual Small — and useless for anything else, so it is never the
-recommended model. Pick one deliberately, and only if you never dictate in
+default suggestion. Pick one deliberately, and only if you never dictate in
 another language.
 
 ### What to run on which Mac
 
-Waveform reads how much memory the Mac has and marks the most capable
-multilingual Whisper that fits in an eighth of it. That eighth is the point:
-these weights stay resident between phrases, so a model that merely *fits* is
-one that pushes everything else towards swap while you are not even dictating.
-A row saying **tight on this Mac** will still run, and will still be the largest
-thing on the machine.
+Each Whisper row is graded against how much memory this Mac has. These weights
+stay resident between phrases, so a model that merely *fits* is one that pushes
+everything else towards swap while you are not even dictating. A row saying
+**tight on this Mac** will still run, and will still be the largest thing on the
+machine.
 
-| This Mac | Recommended | If you want more |
+| This Mac | Whisper that fits | If you want more |
 | --- | --- | --- |
 | 8 GB | Small | Medium · Q5, or Small · English if you only dictate English |
 | 16 GB | Large v3 Turbo · Q5 | Large v3 Turbo, at about 2.2 GB resident |
 | 24 GB or more | Large v3 Turbo | Large v3, if you would rather wait than reread |
 
-Large v3 is never the recommendation. Turbo comes within a hair of its accuracy
-at a fraction of the time, and for dictation — where the wait is in front of you
-— that is the better trade.
+Large v3 is never the Whisper to pick first. Turbo comes within a hair of its
+accuracy at a fraction of the time, and for dictation — where the wait is in
+front of you — that is the better trade.
 
 Any Apple Silicon Mac runs any of these; the chip decides how long you wait, not
 whether it works. A model that has to be paged in from disk on every phrase is
@@ -166,22 +167,72 @@ cleared. It holds the most recent 300 and is readable only by you.
 
 ## AI Polish
 
-Optional rewriting through [OpenRouter](https://openrouter.ai). This is the one
-feature that sends anything off the Mac, it sends text rather than audio, and it
-runs only when you ask.
+Optional rewriting, which runs only when you ask, and which sends text rather
+than audio if it sends anything at all. **AI Polish**, in the window's own menu,
+chooses where it runs.
 
-Paste a key into **Settings → AI Polish**. It goes to your login keychain as a
+### On this Mac
+
+A small instruction-tuned model, run through llama.cpp in the app the way
+whisper.cpp runs the speech model. Nothing leaves the Mac and no account is
+needed; the model is one file, downloaded from that page by pressing its row.
+Hover a downloaded one for **Remove** to free the space.
+
+| Model | Download | Memory while loaded |
+| --- | --- | --- |
+| **Qwen3 0.6B · Q4** | 397 MB | ~0.9 GB |
+| **Qwen3 0.6B · Q8** | 639 MB | ~1.2 GB |
+| **Qwen3 1.7B · Q4** | 1.1 GB | ~1.9 GB |
+
+The weights land in `~/Library/Application Support/Waveform/llm`, and each file
+is checked against its length and SHA-256 before it is put there. The model
+loads on the first rewrite and stays loaded until you switch engines or models,
+so the first polish after launch is a second or two slower than the ones after it.
+
+These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
+discused the timeline" becomes "we discussed the timeline", "how r u doing"
+becomes "how are you doing" — and on selected text it is shown three worked
+corrections first, because a model this size follows an example better than it
+follows a page of rules. Dictation cleanup is not: those examples are typed
+fixes, and would teach it to proofread speech instead of stripping filler. A
+single word on its own is handed back untouched: there is no sentence around it
+to read it against, and a model that guesses pastes a word you never wrote. A
+hosted model has neither limit. Local polish also takes up to 4,000 characters
+at a time, against 12,000 for OpenRouter.
+
+A reply that is not a rewrite of what went in — the model answering instead of
+correcting, or stopping halfway through the sentence — is dropped and your text
+is kept. Locally that is retried once first, since the second attempt is a
+different prompt and usually a better answer.
+
+Base models — GPT-2, and others like it — are not offered. They continue text
+rather than follow an instruction, so handed a rewrite prompt they write more
+prompt.
+
+### Through OpenRouter
+
+The hosted option. This is the one feature that sends anything off the Mac.
+
+Paste a key into **AI Polish**. It goes to your login keychain as a
 generic password under `com.webtiara.waveform`, never to a file Waveform owns,
 and is never handed back to the interface — the screen can report that a key
 exists and replace it, but cannot read it.
 
+### Either way
+
 | Feature | What it does |
 | --- | --- |
 | **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
-| **Polish shortcut** (`⌥1`) | Tidies whatever text is selected in the focused app, in place, without rewriting it. |
+| **Polish shortcut** (`⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
 
-Both run on system prompts you can edit, with **Reset** to restore the defaults.
-Pick any OpenRouter model id; the field suggests a few fast ones.
+Both run on system prompts you can edit, with **Reset** to restore the defaults,
+and both engines take the same prompts. With OpenRouter selected you can pick
+any model id; the field suggests a few fast ones.
+
+Whichever engine answers, the reply is checked against the text that went in: a
+rewrite runs to a similar length and reuses most of the words it started with, so
+an answer to a question buried in a selected paragraph does not pass. Anything
+that fails the check is dropped and your original text is kept.
 
 Pressing polish on the indicator tidies that dictation even when **Clean up
 dictation** is switched off. After you stop speaking, the pill gathers into a
@@ -190,6 +241,17 @@ circle with a spinner — blue while polish runs, grey while it only transcribes
 Polishing has to copy the selection to read it, since no API exposes another
 app's selection, so it needs Accessibility. Your clipboard is restored
 afterwards.
+
+With nothing selected, it takes the field you are typing in: the copy comes back
+empty, so Waveform selects all of it and copies again, and the polished text is
+pasted over that selection. Only where the keyboard focus is somewhere text is
+typed — a ⌘A in a file list would select files, so a focus that is not a text
+field is left alone and the shortcut reports that there was nothing to polish.
+
+When a polish goes wrong the pill turns red and the reason is written to
+**Settings → Logs**, which is where to look if a press seems to do nothing. Text
+that was already tidy comes back unchanged and nothing is pasted; that is the
+one case where a press really does leave everything as it was.
 
 ## Living in the menu bar
 

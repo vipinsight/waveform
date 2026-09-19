@@ -200,7 +200,7 @@ is single-threaded and overlapping calls would only queue anyway.
 ## Status and events
 
 `ModelStatus` — `{ id, label, group, detail, selected, runtimeInstalled,
-weightsInstalled, setupCommand, downloadBytes, memoryMb, fit, recommended }` —
+weightsInstalled, setupCommand, downloadBytes, memoryMb, fit }` —
 reports the runtime and the weights separately on purpose:
 having a runtime is not the same as having a model, `setup:model` installs
 nemo-speech and pulls Parakeet in two steps, and either can be done without the
@@ -219,10 +219,10 @@ model named two ways in one app. The long field is gone. TypeScript now carries
 one `label` per model, matching `short_label`, which is also fourteen fewer
 strings to keep in step.
 
-## What the models page recommends, and why
+## Memory fit
 
-`ModelStatus` carries three fields the interface does not compute for itself:
-`memoryMb`, `fit`, and `recommended`.
+`ModelStatus` carries two fields the interface does not compute for itself:
+`memoryMb` and `fit`.
 
 `memory_mb` is an estimate on each table row — the weight file plus the working
 state around it — not a measurement. It exists to be compared against what the
@@ -245,36 +245,22 @@ loads — macOS will find the pages either way, by swapping something else out �
 but whether leaving it resident between phrases is something the rest of the
 machine notices.
 
-`recommended` is the first entry of `SUGGESTION_ORDER` that comes out
-`Comfortable`, or the last entry if none do. The order is hand-written, not
-derived from size, because size is not desirability:
+`fit` is graded against installed memory, so a row can say comfortable, tight,
+or too large. When `sysctl` cannot be read, `fit` is `None`.
 
-- **Large v3 is deliberately absent.** It is the most accurate model in the
-  table. Turbo is within a hair of it and several times faster, which for
-  dictation — where the wait is in front of you — is the trade to take.
-- **The English-only weights are absent too**, for the opposite reason: they are
-  the better choice for someone who only ever dictates English, and silently
-  wrong for anyone else. That is a choice to make deliberately.
-
-So an 8 GB Mac is pointed at Small, a 16 GB Mac at Large v3 Turbo · Q5, and
-anything from 24 GB up at Large v3 Turbo.
-`the_suggestion_follows_the_memory_the_machine_has` pins exactly those three,
-against a passed-in figure rather than the machine running the test — a test
-that agreed with whatever laptop ran it would assert nothing.
-
-When `sysctl` cannot be read, `fit` is `None` and nothing is recommended. That
-is the honest answer: a suggestion made without knowing what the machine has
-would be a guess wearing the word "recommended".
+Parakeet leads the catalogue (`parakeet_leads_the_catalogue` pins that). The
+page used to mark it with a Recommended badge; list order is what remains.
 
 `Group` decides which heading a row is listed under — `Whisper`, `Whisper,
-English only`, `Other engines` — and the renderer builds its groups from the
-order the catalogue arrives in, so the interface holds no second opinion about
-which groups exist. Each heading gets its own `role="radiogroup"`, so arrow keys
-move within a group instead of sweeping through fourteen Whisper sizes to reach
-Parakeet.
+English only`, or none. Parakeet and Qwen sit at the top unnamed: a heading
+there used to say "Other engines", which made them sound like leftovers. The
+renderer builds its groups from the order the catalogue arrives in, so the
+interface holds no second opinion about which groups exist. Each heading gets
+its own `role="radiogroup"`, so arrow keys move within a group instead of
+sweeping from Parakeet through fourteen Whisper sizes.
 
 `renderModels` lists all sixteen. It used to open folded, showing only the
-recommended model, the one in use, anything downloaded and anything the app
+first model, the one in use, anything downloaded and anything the app
 could not fetch, with the rest behind a **Show every size** button — which meant
 the page opened having already decided the question it exists to ask. What makes
 the full list readable instead is that a row is four facts on one line: `wer`,
@@ -289,23 +275,22 @@ something a browser will render, which is what forced the split. The wrapper is
 `role="presentation"` so the radio group still sees radios as its children.
 
 What that press does depends on `weightsInstalled`, and the row says which:
-a model that is here is filled, carries a `Downloaded` or `In use` tag, and its
-press target is a `role="radio"`; one that is not is outlined, carries Lucide's
-`cloud-download` — the glyph macOS puts beside a file that is not on the disk —
-and its press target is a plain button labelled `Download …`. Calling the second
-one a radio was the interface saying a thing that is not true: you cannot select
-what you do not have. The two engines the app cannot fetch get `terminal` and
-the command instead. `data-state` on the row (`here`, `download`, `terminal`)
-is what the stylesheet reads for all of it.
+a model that is here is filled, carries an `In use` tag when selected, and its
+press target is a `role="radio"`; one the app can fetch carries a **Download**
+button of its own — pressing the row itself does not start the transfer — and
+while that runs the button becomes **Cancel**. Calling an undownloaded row a
+radio was the interface saying a thing that is not true: you cannot select what
+you do not have. The two engines the app cannot fetch get `terminal` and the
+command instead. `data-state` on the row (`here`, `download`, `busy`,
+`terminal`) is what the stylesheet reads for all of it.
 
 `wer` is word error rate on LibriSpeech test-clean, in percent, as published on
 each model's own Hugging Face page. One benchmark down the whole column rather
 than the best figure each project quotes — it is read audiobook speech, so it
 flatters everything here in the same direction, and what it is good for is
-ordering. It is `None` for the four quantized builds, which nobody has
-benchmarked separately: their full-precision figure is not theirs, and printed
-in that column it would read as measured. Those rows say so in a line of their
-own instead.
+ordering. A quantized build uses the figure from the model it is a quantization
+of: nobody publishes a separate LibriSpeech number for the q5 file, and the
+card that row already links is the parent model's.
 
 ## How weights arrive
 
@@ -335,12 +320,15 @@ prefix, its own `remote_id`, and the hashes of the other thirteen — the same
 hash against two files is the mistake a table this size invites, and a user
 would find it as a checksum failure on a model they did not ask for.
 
-`download_weights` refuses a second concurrent download, streams the body in
-chunks with `Response::chunk()`, hashes as it writes, and writes to
+`download_weights` refuses a second concurrent download and hands the file to
+`download::fetch` ([download.rs](../src-tauri/src/download.rs)), which streams
+the body in chunks with `Response::chunk()`, hashes as it writes, and writes to
 `<file>.partial` — renaming into place only once the length and the hash both
 match. A rename within one directory is atomic, so the file is either absent or
 complete, and `weights_present` looks for the final name, so an interrupted
-transfer reads as absent.
+transfer reads as absent. That module is shared with the local polish models
+below; what stays in `model_server` is where Whisper keeps its weights and who
+is told about the progress.
 
 Progress rides on the `downloading` stage, throttled by `PROGRESS_INTERVAL` to
 one event every 250 ms: an event per chunk would be tens of thousands of
@@ -371,6 +359,33 @@ Everything else, with `catalog()` naming the command:
   fetches weights the table does not offer, through
   `WAVEFORM_WHISPER_CPP_MODEL`, and it documents the URL the Rust side
   hard-codes. The app no longer tells anyone to run it.
+
+## The other catalogue: local polish models
+
+[local_llm.rs](../src-tauri/src/local_llm.rs) holds a second, much smaller table
+— three Qwen3 builds, mirrored in
+[src/shared/polish-models.ts](../src/shared/polish-models.ts) and compared by
+[tests/polish-model-registry.test.ts](../tests/polish-model-registry.test.ts) in
+the same way, for the same reason. They are rewriting models rather than speech
+ones, run through llama.cpp linked in beside whisper.cpp, and reached from
+the AI Polish section rather than the models page.
+
+The parts they share with the speech catalogue are the download (`Download`,
+checked by length and SHA-256, moved into place only when both match), the
+progress events (`ModelEvent`, on `polish-model-event` rather than `model-event`),
+the `Fit` figures, and the row that is a download button until the weights are
+here and a radio afterwards. The parts they do not share: there is no runtime to
+install, so no `setup_command`; no word error rate, because none of these
+transcribe anything; and their weights live in
+`~/Library/Application Support/Waveform/llm`, apart from Whisper's.
+
+Each URL names the commit it was checked against rather than `main`. A file on a
+branch is whatever the repository holds today, and the recorded hash is not.
+
+Everything else about them — which is to say, the prompt, the fence, and the
+check that the reply is a rewrite of what went in — is
+[rewrite.rs](../src-tauri/src/rewrite.rs), shared with OpenRouter. The engine
+setting decides which of the two answers; nothing else in the path differs.
 
 ## Known gaps
 

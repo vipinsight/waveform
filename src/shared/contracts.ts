@@ -89,7 +89,7 @@ export type DictationState =
   | "idle"
   | "listening"
   | "transcribing"
-  /** Waiting on an OpenRouter rewrite. */
+  /** Waiting on a rewrite, here or through OpenRouter. */
   | "rewriting"
   | "error";
 
@@ -99,6 +99,8 @@ export interface DictationCommand {
   action: "start" | "stop" | "cancel" | "preview" | "idle" | "busy" | "fail";
   sink: DictationSink;
   mode: DictationMode;
+  /** Why it failed, for the actions where something did. */
+  message?: string;
 }
 
 /**
@@ -132,8 +134,8 @@ export interface ModelStatus {
   cardUrl: string;
   /**
    * Word error rate on LibriSpeech test-clean, in percent, as Hugging Face
-   * publishes it. `null` where no such figure exists -- the quantized builds,
-   * which nobody has benchmarked apart from the weights they came from.
+   * publishes it. A quantization carries the figure from the model it is a
+   * quantization of: nobody publishes a separate number for the q5 file.
    */
   wer: number | null;
   /** Roughly what it adds to resident memory once loaded, in MB. */
@@ -144,8 +146,6 @@ export interface ModelStatus {
    * installed memory could not be read, so nothing is claimed about it.
    */
   fit: ModelFit | null;
-  /** The one model to suggest on this Mac, given what it has to spare. */
-  recommended: boolean;
 }
 
 export type ModelFit = "comfortable" | "tight" | "too-large";
@@ -193,6 +193,35 @@ export interface AiStatus {
   hasApiKey: boolean;
   /** True when the key could not be encrypted and lives only in memory. */
   memoryOnly: boolean;
+  /** Which engine rewrites: a hosted model, or one on this Mac. */
+  engine: PolishEngine;
+  /** The local model chosen, downloaded or not. */
+  localModelId: string;
+  /** Whether that model's weights are on this machine. */
+  localReady: boolean;
+}
+
+export type PolishEngine = "openrouter" | "local";
+
+/**
+ * One model the local polish engine can run.
+ *
+ * Fewer facts than a speech model carries: there is no runtime to install and
+ * no word error rate to read down a column, so what is left is the size of the
+ * download, what it costs to keep loaded, and whether it is here yet.
+ */
+export interface PolishModelStatus {
+  id: string;
+  label: string;
+  selected: boolean;
+  installed: boolean;
+  downloadBytes: number;
+  memoryMb: number;
+  detail: string;
+  /** The model's own page on Hugging Face. */
+  cardUrl: string;
+  /** How that memory sits on this Mac, or `null` when it could not be read. */
+  fit: ModelFit | null;
 }
 
 export interface SavedDictation {
@@ -229,6 +258,10 @@ export interface DesktopApi {
   selectModel(modelId: SpeechModelId): Promise<void>;
   /** Resolves when the download has finished, or rejects with why it did not. */
   downloadModel(modelId: SpeechModelId): Promise<void>;
+  /** Removes a Whisper weight file the app fetched. */
+  deleteModel(modelId: SpeechModelId): Promise<void>;
+  /** Stops an in-flight Whisper download. */
+  cancelModelDownload(): Promise<void>;
   /** `null` means this is already the newest version. */
   checkForUpdate(): Promise<UpdateInfo | null>;
   /** Installs the newer version and relaunches, so this never resolves. */
@@ -279,6 +312,15 @@ export interface DesktopApi {
   getAiStatus(): Promise<AiStatus>;
   setOpenRouterKey(key: string): Promise<AiStatus>;
   clearOpenRouterKey(): Promise<AiStatus>;
+  /** Every local polish model, and what is on this machine for each. */
+  getPolishModelCatalog(): Promise<PolishModelStatus[]>;
+  /** Resolves when the download has finished, or rejects with why it did not. */
+  downloadPolishModel(modelId: string): Promise<void>;
+  /** Removes a polish weight file the app fetched. */
+  deletePolishModel(modelId: string): Promise<void>;
+  /** Stops an in-flight polish download. */
+  cancelPolishModelDownload(): Promise<void>;
+  onPolishModelEvent(listener: (event: ModelEvent) => void): () => void;
   polishSelection(): Promise<void>;
   /** The application menu asking for the settings dialog. */
   onOpenSettings(listener: () => void): () => void;
@@ -287,6 +329,8 @@ export interface DesktopApi {
   onOpenModelSettings(listener: () => void): () => void;
   onOpenShortcutSettings(listener: () => void): () => void;
   getAppVersion(): Promise<string>;
+  /** Dock and window name: "Waveform" in a release, "Waveform Dev" from `pnpm app`. */
+  getAppName(): Promise<string>;
   /** Opens an http(s) address in the system browser. The webview must not navigate. */
   openUrl(url: string): Promise<void>;
   getHistory(): Promise<SavedDictation[]>;

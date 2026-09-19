@@ -27,7 +27,8 @@ segments do.
 
 **The Rust host** owns everything the page cannot do for itself: the speech
 engines, the dictation state machine, the overlay window, the global shortcuts,
-the OpenRouter calls and the keychain.
+the rewriting -- llama.cpp in-process for the local models, HTTP for OpenRouter --
+and the keychain.
 
 **The Swift helper** is neither, and exists because no API lets an app see Fn
 pressed while another app is frontmost, or type into one. That needs a
@@ -52,7 +53,10 @@ afterwards.
 
 whisper.cpp is linked into the app and runs in-process, which is what makes it
 the default: no interpreter, no subprocess, and the weights stay loaded between
-phrases.
+phrases. The local polish models are the same bargain made twice: llama.cpp is
+linked in beside it (`src-tauri/src/local_llm.rs`), so a rewriting model is also
+one file the app can fetch, check and load by itself. Both crates vendor ggml
+and share one Metal build in the final binary.
 
 Parakeet and Qwen3-ASR are not. Each brings its own runtime of several hundred
 megabytes and runs as a child process, which is also why `install_update` stops
@@ -65,9 +69,11 @@ each one's weights are looked for.
 
 ## The bundle is assembled by hand
 
-`pnpm app` builds `release/Waveform.app` itself rather than calling the Tauri
+`pnpm app` builds `release/Waveform Dev.app` itself rather than calling the Tauri
 CLI. WKWebView refuses microphone access to a bare binary, so the executable
-has to sit inside a real `.app` carrying `NSMicrophoneUsageDescription`.
+has to sit inside a real `.app` carrying `NSMicrophoneUsageDescription`. The
+checkout bundle uses a different identifier and display name from a release so
+the two do not share TCC grants.
 
 Updater artifacts come only from a real `tauri build`, so the release path and
 the everyday path diverge there. [building.md](building.md) covers both.
