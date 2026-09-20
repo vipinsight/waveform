@@ -460,7 +460,7 @@ function wireEvents(): void {
     void checkForUpdate();
   });
   element.openRepository.addEventListener("click", () => {
-    void host().openUrl("https://github.com/vipiny35/waveform");
+    void host().openUrl("https://github.com/vipinsight/waveform");
   });
   element.openProfile.addEventListener("click", () => {
     void host().openUrl("https://x.com/vip_iny");

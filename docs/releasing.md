@@ -7,7 +7,7 @@ that draft is a separate maintainer action.
 ## One-time setup
 
 Follow [Building](building.md). Install GitHub CLI (`brew install gh`) and confirm
-it can access `vipiny35/waveform`. You need a Developer ID Application certificate
+it can access `vipinsight/waveform`. You need a Developer ID Application certificate
 with its private key, notarisation credentials, and the **existing** updater
 private key matching `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`.
 An Apple Development certificate used for local builds is not a distribution certificate.

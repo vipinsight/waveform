@@ -290,7 +290,7 @@ impl Rewriter {
         let response = reqwest::Client::new()
             .post(ENDPOINT)
             .bearer_auth(&key)
-            .header("HTTP-Referer", "https://github.com/vipiny35/waveform")
+            .header("HTTP-Referer", "https://github.com/vipinsight/waveform")
             .header("X-Title", "Waveform")
             .json(&serde_json::json!({
                 "model": model,

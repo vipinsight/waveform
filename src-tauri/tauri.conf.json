@@ -37,7 +37,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4NEM2MkM1M0UyMEU2ODIKUldTQzVpQSt4V0pNS0VuZ2x4MFlNOTQ5UDZzK3F1VVkvdDJ1ZXl2L2xaMEpKNXQwWWhSZjlXUEEK",
       "endpoints": [
-        "https://github.com/vipiny35/waveform/releases/latest/download/latest.json"
+        "https://github.com/vipinsight/waveform/releases/latest/download/latest.json"
       ]
     }
   },
