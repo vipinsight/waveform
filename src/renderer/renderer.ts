@@ -153,6 +153,12 @@ const element = {
   wizardEngine: requireElement<HTMLElement>("wizard-engine"),
   wizardEngineNote: requireElement<HTMLElement>("wizard-engine-note"),
   wizardKeyRow: requireElement<HTMLElement>("wizard-key-row"),
+  wizardLocalRow: requireElement<HTMLElement>("wizard-local-row"),
+  wizardLocalName: requireElement<HTMLElement>("wizard-local-name"),
+  wizardLocalState: requireElement<HTMLElement>("wizard-local-state"),
+  wizardLocalTrack: requireElement<HTMLElement>("wizard-local-track"),
+  wizardLocalBar: requireElement<HTMLElement>("wizard-local-bar"),
+  wizardEngineIdle: requireElement<HTMLElement>("wizard-engine-idle"),
   wizardKeyInput: requireElement<HTMLInputElement>("wizard-key-input"),
   wizardKeySave: requireElement<HTMLButtonElement>("wizard-key-save"),
   wizardKeyState: requireElement<HTMLElement>("wizard-key-state"),
@@ -963,6 +969,18 @@ async function downloadPolishModel(id: string): Promise<void> {
 
 /** Progress written next to Cancel — the facts line stays as size and RAM. */
 function showPolishDownloadProgress(event: ModelEvent): void {
+  // The wizard shows this model arriving on its polish page, which is where
+  // the choice that started the download was made.
+  if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
+    const percent = Math.round((event.progress ?? 0) * 100);
+    element.wizardLocalTrack.hidden = event.stage !== "downloading";
+    element.wizardLocalBar.style.width = `${percent}%`;
+    element.wizardLocalState.textContent =
+      event.stage === "downloading" ? `Downloading… ${percent}%` : "Ready";
+    element.wizardLocalState.dataset.state =
+      event.stage === "downloading" ? "working" : "ready";
+  }
+
   const pick = element.polishModelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
   );
@@ -2874,13 +2892,16 @@ function renderWizardPolish(): void {
  * box, and an empty box beside "OpenRouter" reads as work still to do.
  */
 function renderWizardKey(): void {
-  // Reserved rather than removed, for the same reason the Fn note is: this is
-  // the tallest thing on the page, and letting it collapse moved everything
-  // above it every time the engine was switched.
-  const wanted = settings.polishLevel !== "none" && settings.polishEngine === "openrouter";
-  element.wizardKeyRow.classList.toggle("is-reserved", !wanted);
-  element.wizardKeyInput.disabled = !wanted;
-  element.wizardKeySave.disabled = !wanted;
+  // Three occupants of one slot. Hidden outright rather than reserved with
+  // `visibility`, because the slot itself holds the height -- and a slot that
+  // is always occupied does not need anything reserving.
+  const off = settings.polishLevel === "none";
+  const wanted = !off && settings.polishEngine === "openrouter";
+  const local = !off && settings.polishEngine === "local";
+  element.wizardEngineIdle.hidden = !off;
+  element.wizardLocalRow.hidden = !local;
+  element.wizardKeyRow.hidden = !wanted;
+  if (local) void renderWizardLocal();
   if (!wanted) return;
 
   const saved = aiStatus?.hasApiKey === true;
@@ -2897,6 +2918,39 @@ function renderWizardKey(): void {
     element.wizardKeyInput.dataset.pristine = "true";
   }
   syncWizardKeyButton();
+}
+
+/**
+ * What choosing "This Mac" costs and how far along it is.
+ *
+ * The slot used to be blank here: the key field is only for the hosted
+ * engine, so picking the local one left a rectangle of nothing where the
+ * setup for it should be. There is something to say -- a second model is
+ * being fetched on the strength of that choice -- and not saying it made the
+ * download invisible on the one page it is relevant to.
+ */
+async function renderWizardLocal(): Promise<void> {
+  const catalog = await host().getPolishModelCatalog().catch(() => []);
+  const model =
+    catalog.find((one) => one.id === settings.localModelId) ??
+    catalog.find((one) => one.id === DEFAULT_POLISH_MODEL_ID);
+  if (!model) return;
+
+  element.wizardLocalName.textContent = `${model.label} · ${formatBytes(model.downloadBytes)}`;
+  const downloading = polishDownloading === model.id;
+  element.wizardLocalState.textContent = model.installed
+    ? "Ready"
+    : downloading
+      ? "Downloading…"
+      : "Downloads in the background";
+  element.wizardLocalState.dataset.state = model.installed
+    ? "ready"
+    : downloading
+      ? "working"
+      : "waiting";
+  // The bar is only honest while something is moving; a full or empty one
+  // sitting under a finished download is a progress bar lying.
+  element.wizardLocalTrack.hidden = !downloading;
 }
 
 function syncWizardKeyButton(): void {
@@ -2946,6 +3000,7 @@ async function prefetchPolishModel(): Promise<void> {
     catalog.find((model) => model.id === settings.localModelId) ??
     catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID);
   if (!wanted || wanted.installed) return;
+  void renderWizardLocal();
   // Not awaited by the caller and not reported: nobody asked for it, so a
   // failure is not theirs to answer. The AI polish page still offers it.
   await downloadPolishModel(wanted.id).catch(() => {});

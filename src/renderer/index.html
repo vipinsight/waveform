@@ -533,12 +533,15 @@
               -->
               <p class="wizard-engine-note" id="wizard-engine-note"></p>
               <!--
-                Asked here rather than left for Settings. OpenRouter cannot
-                rewrite a word without a key, so choosing it and walking on
-                means choosing something that does nothing -- and the page
-                that explains why is one nobody has a reason to open.
+                One slot, three occupants, one height.
+                Whichever engine is chosen has something worth saying here --
+                a key to paste, or a model arriving -- so the slot is never
+                the blank reserved space it used to be under "This Mac". Its
+                min-height is the tallest of the three, which is what keeps
+                the page from moving when the answer changes.
               -->
-              <div class="wizard-key is-reserved" id="wizard-key-row">
+              <div class="wizard-engine-detail">
+              <div class="wizard-key" id="wizard-key-row" hidden>
                 <label class="wizard-key-label" for="wizard-key-input">
                   OpenRouter API key
                   <small id="wizard-key-state"></small>
@@ -559,6 +562,28 @@
                   — it is free to create one. You can also skip this and add it
                   later in Settings; polish simply will not run until you do.
                 </p>
+              </div>
+
+              <!-- What "This Mac" actually means: a second model, arriving. -->
+              <div class="wizard-local" id="wizard-local-row" hidden>
+                <div class="wizard-local-head">
+                  <span class="wizard-local-name" id="wizard-local-name">—</span>
+                  <span class="wizard-local-state" id="wizard-local-state"></span>
+                </div>
+                <div class="wizard-local-track" id="wizard-local-track" hidden>
+                  <span id="wizard-local-bar"></span>
+                </div>
+                <p class="note wizard-local-note">
+                  A small language model that runs here beside the speech one.
+                  Nothing you dictate is sent anywhere, and it works offline.
+                </p>
+              </div>
+
+              <!-- At None nothing runs, so the slot says so rather than sitting empty. -->
+              <p class="wizard-engine-idle" id="wizard-engine-idle">
+                Pick Light or Medium above and this is where you set up whatever
+                does the rewriting.
+              </p>
               </div>
             </div>
           </section>

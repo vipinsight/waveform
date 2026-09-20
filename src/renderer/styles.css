@@ -3054,6 +3054,10 @@ select {
 /* Says which of the two Commands, or which of the two Options, is chosen --
    the glyphs cannot, because they are the same glyph. */
 .keyboard-caption {
+  /* Two lines, held whichever key is chosen. The six sentences are different
+     lengths, so without this the caption was one line for some keys and two
+     for others -- and the Continue button below it moved as you tried them. */
+  min-height: 39px;
   max-width: 520px;
   margin: 16px auto 0;
   text-align: center;
@@ -3098,17 +3102,89 @@ select {
 }
 
 /* Divided off rather than stacked: the choice above is answered, and this is
-   the consequence of one of the two answers. */
-.wizard-key {
+   the consequence of whichever answer it was. The min-height is the tallest
+   of the three occupants, so swapping between them -- or turning polish off
+   entirely -- cannot change the height of the page. */
+.wizard-engine-detail {
+  min-height: 150px;
   padding-top: 14px;
   border-top: 1px solid var(--hairline);
   margin-top: 14px;
 }
 
-/* Holds its height while it does not apply, so switching engines -- or
-   picking a level at all -- does not shove the cards above it up the page. */
-.wizard-key.is-reserved {
-  visibility: hidden;
+.wizard-key[hidden],
+.wizard-local[hidden] {
+  display: none;
+}
+
+/* ----- "This Mac": the model that will do the rewriting ----- */
+
+.wizard-local-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wizard-local-name {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wizard-local-state {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 560;
+}
+
+.wizard-local-state[data-state="ready"] {
+  color: var(--positive);
+}
+
+.wizard-local-state[data-state="working"] {
+  color: var(--accent);
+}
+
+.wizard-local-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  margin-top: 10px;
+  background: var(--hairline-strong);
+}
+
+.wizard-local-track[hidden] {
+  display: none;
+}
+
+.wizard-local-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.wizard-local-note {
+  margin-top: 10px;
+}
+
+/* ----- None: the slot still has something to say ----- */
+
+.wizard-engine-idle {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 460;
+  line-height: 1.55;
+}
+
+.wizard-engine-idle[hidden] {
+  display: none;
 }
 
 .wizard-key-label {
