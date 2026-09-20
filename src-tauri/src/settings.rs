@@ -9,6 +9,9 @@ use std::fs;
 use std::path::PathBuf;
 
 pub const POLISH_SHORTCUTS: [&str; 5] = ["none", "Alt+1", "Alt+2", "Alt+3", "Alt+P"];
+/// How much a dictation may be changed before it is inserted. Kept in step
+/// with src/shared/polish-levels.ts, which is where what each one means lives.
+pub const POLISH_LEVELS: [&str; 3] = ["none", "light", "medium"];
 const HOTKEY_IDS: [&str; 7] = [
     "none",
     "fn",
@@ -97,7 +100,24 @@ pub struct AppSettings {
     /// whether or not that engine is selected, so switching back does not
     /// forget the choice.
     pub local_model_id: String,
+    /// How much the model may change a dictation: "none", "light" or "medium".
+    ///
+    /// Defaulted to empty rather than to a level, because empty is how a
+    /// settings file written before levels existed is recognised -- and such a
+    /// file has a `transform_on_dictate` that has to decide the level instead.
+    /// `normalize` never leaves it empty.
+    #[serde(default)]
+    pub polish_level: String,
+    /// Whether a dictation is run through the model at all.
+    ///
+    /// Derived from `polish_level` by `normalize` rather than set, so the two
+    /// cannot disagree. It is kept because it is the question the dictation
+    /// and rewrite paths actually ask, and because it is all an older settings
+    /// file carries.
     pub transform_on_dictate: bool,
+    /// The instruction the dictation path runs, at whichever level is
+    /// selected. Choosing a level writes that level's default here; the
+    /// Instructions editor overwrites it.
     pub transform_prompt: String,
     pub polish_prompt: String,
     pub polish_shortcut: String,
@@ -145,6 +165,9 @@ impl Default for AppSettings {
             polish_engine: "openrouter".to_string(),
             open_router_model: DEFAULT_OPENROUTER_MODEL.to_string(),
             local_model_id: crate::local_llm::DEFAULT_LOCAL_MODEL_ID.to_string(),
+            // Off, because this is the one setting that changes the words
+            // somebody is about to paste into their own document.
+            polish_level: "none".to_string(),
             transform_on_dictate: false,
             transform_prompt: DEFAULT_TRANSFORM_PROMPT.trim().to_string(),
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
@@ -196,6 +219,21 @@ impl AppSettings {
         if !crate::local_llm::is_known(&self.local_model_id) {
             self.local_model_id = base.local_model_id.clone();
         }
+        // A file written before levels existed names no level, only the switch
+        // this replaced. Switched on, that switch removed filler and fixed
+        // punctuation, which is the light level -- so that is what it becomes,
+        // rather than everyone who had polish on losing it to the default.
+        if self.polish_level.is_empty() {
+            let was_on = self.transform_on_dictate;
+            self.polish_level = if was_on { "light" } else { "none" }.to_string();
+        }
+        if !POLISH_LEVELS.contains(&self.polish_level.as_str()) {
+            self.polish_level = base.polish_level.clone();
+        }
+        // Derived, never taken from the input: the level is the setting, and
+        // this is what it means to everything that only needs to know whether
+        // a model runs.
+        self.transform_on_dictate = self.polish_level != "none";
         self.hold_ms = self.hold_ms.clamp(120, 900);
         self.double_tap_ms = self.double_tap_ms.clamp(180, 900);
         self.open_router_model = non_empty(&self.open_router_model, &base.open_router_model, 200);
@@ -303,6 +341,50 @@ mod tests {
             let loaded = stored.normalize(&AppSettings::default());
             assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
         }
+    }
+
+    /// The level replaced an on/off switch, and a file written while that
+    /// switch existed names no level at all. Switched on, it did what the
+    /// light level does, so that is the level it has to load as -- anything
+    /// else silently turns polish off for everyone who had it on.
+    #[test]
+    fn a_file_without_a_level_keeps_the_switch_it_had() {
+        let on: AppSettings = serde_json::from_str(r#"{"transformOnDictate":true}"#)
+            .expect("a settings file missing the level still parses");
+        let on = on.normalize(&AppSettings::default());
+        assert_eq!(on.polish_level, "light");
+        assert!(on.transform_on_dictate);
+
+        let off: AppSettings = serde_json::from_str(r#"{"transformOnDictate":false}"#)
+            .expect("a settings file missing the level still parses");
+        let off = off.normalize(&AppSettings::default());
+        assert_eq!(off.polish_level, "none");
+        assert!(!off.transform_on_dictate);
+    }
+
+    /// The switch is a view of the level, so it cannot be set against it --
+    /// a stale window or a hand-edited file must not end up with polish off
+    /// at a level that asked for it, or on at "none".
+    #[test]
+    fn the_switch_follows_the_level_it_is_stored_with() {
+        for (level, running) in [("none", false), ("light", true), ("medium", true)] {
+            let mut stored = AppSettings::default();
+            stored.polish_level = level.into();
+            stored.transform_on_dictate = !running;
+            let loaded = stored.normalize(&AppSettings::default());
+            assert_eq!(loaded.polish_level, level);
+            assert_eq!(loaded.transform_on_dictate, running);
+        }
+    }
+
+    /// A level from a later version, or a typed-in one, is not a level this
+    /// build can run.
+    #[test]
+    fn rejects_a_level_it_does_not_have() {
+        let mut stored = AppSettings::default();
+        stored.polish_level = "heavy".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_level, "none");
     }
 
     /// Polish meant OpenRouter and nothing else until the local engine existed,

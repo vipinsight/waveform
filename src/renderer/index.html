@@ -243,80 +243,46 @@
 
         <section class="view" id="view-ai" hidden>
           <h1 class="display">AI Polish</h1>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="transform-toggle">
-                Tidy every dictation automatically
-                <small id="transform-hint"></small>
-              </label>
-              <span class="row-actions"><input id="transform-toggle" type="checkbox" class="switch" /></span>
-            </div>
-            <div class="row">
-              <label class="row-label" for="polish-shortcut">Shortcut</label>
-              <span class="row-actions">
-                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
-              </span>
-            </div>
-          </div>
-
-          <h2 class="section-label">Where it runs</h2>
-          <div class="card">
-            <div class="row">
-              <span class="row-label">Run on</span>
-              <span class="row-actions">
-                <div class="segmented" id="polish-engine" role="radiogroup" aria-label="Where polish runs">
-                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
-                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
-                </div>
-              </span>
-            </div>
-            <div class="row is-stacked" data-engine-only="openrouter">
-              <span class="row-label">
-                API key
-                <small id="key-state"></small>
-                <button type="button" class="link" id="open-openrouter">Get a key</button>
-              </span>
-              <span class="row-actions">
-                <input
-                  id="key-input"
-                  type="password"
-                  class="text-input"
-                  placeholder="sk-or-v1-…"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <button id="key-save" class="pill-button is-primary" type="button" disabled>Save</button>
-                <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
-              </span>
-            </div>
-            <div class="row" data-engine-only="openrouter">
-              <label class="row-label" for="ai-model">Model</label>
-              <span class="row-actions">
-                <select id="ai-model" aria-label="OpenRouter model"></select>
-              </span>
-            </div>
-            <div class="polish-local-models" data-engine-only="local">
-              <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
-            </div>
-          </div>
-
-          <h2 class="section-label">Instructions</h2>
-          <p class="note">
-            How polish rewrites text — one for spoken dictation, one for a selection.
+          <p class="lede">
+            How much Waveform may change what you dictate before it lands where
+            your cursor is.
           </p>
-          <div class="prompt-cards">
-            <button type="button" class="prompt-card" data-prompt="transform">
-              <strong>Dictation</strong>
-              <span class="prompt-card-where">When every dictation is tidied automatically</span>
-              <small id="transform-prompt-preview"></small>
+
+          <!--
+            Three worked examples of one sentence, rather than three labels.
+            What separates "cleans up filler" from "edits for clarity" is not
+            something a description settles; seeing the same dictation come out
+            three ways is.
+          -->
+          <div class="polish-levels" id="polish-levels" role="radiogroup" aria-label="How much polish">
+            <button type="button" class="polish-level" role="radio" data-level="none" aria-checked="true">
+              <span class="polish-level-name">None</span>
+              <span class="polish-level-what">Transcribes exactly what you said, including mistakes</span>
+              <span class="polish-level-example">
+                hey joey, we still on for coffee or? I think we maybe should
+                leave earlier to make it there in time there might um be
+                traffic. What are you thinking?
+              </span>
             </button>
-            <button type="button" class="prompt-card" data-prompt="polish">
-              <strong>Selection</strong>
-              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
-              <small id="polish-prompt-preview"></small>
+            <button type="button" class="polish-level" role="radio" data-level="light" aria-checked="false">
+              <span class="polish-level-name">Light</span>
+              <span class="polish-level-what">Cleans up filler words and grammar</span>
+              <span class="polish-level-example">
+                Hey Joey, are we still on for coffee? I think we should leave
+                earlier to make it there in time. There might be traffic. What
+                are you thinking?
+              </span>
+            </button>
+            <button type="button" class="polish-level" role="radio" data-level="medium" aria-checked="false">
+              <span class="polish-level-name">Medium</span>
+              <span class="polish-level-what">Edits for clarity and conciseness</span>
+              <span class="polish-level-example">
+                Hey Joey, are we still on for coffee? We should leave earlier;
+                there might be traffic. What do you think?
+              </span>
             </button>
           </div>
-
+          <p class="note polish-level-hint" id="polish-level-hint" hidden></p>
         </section>
 
       </main>
@@ -371,6 +337,11 @@
               <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
             <span>Dictation</span></button>
+        <button class="nav-item" type="button" data-page="ai">
+            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
+            </svg>
+            <span>AI polish</span></button>
         <button class="nav-item" type="button" data-page="setup">
             <svg data-icon="monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -449,17 +420,11 @@
               </span>
             </div>
             <label class="row">
-              <span class="row-label">
-                Always show the Wave Bar
-                <small>The small floating bar that shows Waveform is listening. Off, it appears only while you dictate.</small>
-              </span>
+              <span class="row-label">Always show the Wave Bar</span>
               <span class="row-actions"><input id="flow-bar-toggle" type="checkbox" class="switch" /></span>
             </label>
             <div class="row">
-              <span class="row-label">
-                Where the Wave Bar sits
-                <small>Drag it anywhere on screen and it stays there.</small>
-              </span>
+              <span class="row-label">Where the Wave Bar sits</span>
               <span class="row-actions">
                 <button id="overlay-preview" class="pill-button" type="button">Show me</button>
                 <button id="overlay-reset" class="pill-button" type="button">Reset</button>
@@ -470,24 +435,15 @@
           <h2 class="section-label">Where Waveform lives</h2>
           <div class="card">
             <label class="row">
-              <span class="row-label">
-                Show the menu bar icon
-                <small>Switch voice or microphone, and paste your last dictation, without opening this window.</small>
-              </span>
+              <span class="row-label">Show the menu bar icon</span>
               <span class="row-actions"><input id="menubar-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
-              <span class="row-label">
-                Keep the Dock icon when the window closes
-                <small>Off, closing the window leaves Waveform in the menu bar only. The shortcut keeps working either way.</small>
-              </span>
+              <span class="row-label">Keep the Dock icon when the window closes</span>
               <span class="row-actions"><input id="dock-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
-              <span class="row-label">
-                Start Waveform when you log in
-                <small>Opens in the background, ready for your shortcut. No window appears.</small>
-              </span>
+              <span class="row-label">Start Waveform when you log in</span>
               <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
@@ -495,10 +451,7 @@
           <h2 class="section-label">Updates</h2>
           <div class="card">
             <label class="row">
-              <span class="row-label">
-                Check for updates automatically
-                <small>The only request Waveform makes that you did not ask for.</small>
-              </span>
+              <span class="row-label">Check for updates automatically</span>
               <span class="row-actions"><input id="update-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
@@ -511,17 +464,11 @@
           </p>
           <div class="card">
             <div class="row">
-              <label class="row-label" for="hotkey-select">
-                Key to hold
-                <small>Pick one you never type with. Waveform watches it everywhere, not just here.</small>
-              </label>
+              <label class="row-label" for="hotkey-select">Key to hold</label>
               <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
             </div>
             <div class="row">
-              <label class="row-label" for="microphone-select">
-                Microphone
-                <small>Auto-detect follows whatever macOS is using, including headphones you plug in later.</small>
-              </label>
+              <label class="row-label" for="microphone-select">Microphone</label>
               <span class="row-actions">
                 <select id="microphone-select" aria-label="Microphone"></select>
               </span>
@@ -538,6 +485,79 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
+        </section>
+
+        <section class="settings-page" data-page="ai" hidden>
+          <h1 class="display">AI polish</h1>
+
+          <h2 class="section-label">Where it runs</h2>
+          <p class="note">
+            This Mac keeps every word here. OpenRouter sends your text to a
+            model that does not.
+          </p>
+          <div class="card">
+            <div class="row">
+              <span class="row-label">Run on</span>
+              <span class="row-actions">
+                <div class="segmented" id="polish-engine" role="radiogroup" aria-label="Where polish runs">
+                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                </div>
+              </span>
+            </div>
+            <div class="row is-stacked" data-engine-only="openrouter">
+              <span class="row-label">
+                API key
+                <small id="key-state"></small>
+                <button type="button" class="link" id="open-openrouter">Get a key</button>
+              </span>
+              <span class="row-actions">
+                <input
+                  id="key-input"
+                  type="password"
+                  class="text-input"
+                  placeholder="sk-or-v1-…"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button id="key-save" class="pill-button is-primary" type="button" disabled>Save</button>
+                <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
+              </span>
+            </div>
+            <div class="row" data-engine-only="openrouter">
+              <label class="row-label" for="ai-model">Model</label>
+              <span class="row-actions">
+                <select id="ai-model" aria-label="OpenRouter model"></select>
+              </span>
+            </div>
+            <div class="polish-local-models" data-engine-only="local">
+              <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
+            </div>
+          </div>
+
+          <h2 class="section-label">Text you have selected</h2>
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="polish-shortcut">Shortcut</label>
+              <span class="row-actions">
+                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
+              </span>
+            </div>
+          </div>
+
+          <h2 class="section-label">Instructions</h2>
+          <div class="prompt-cards">
+            <button type="button" class="prompt-card" data-prompt="transform">
+              <strong>Dictation</strong>
+              <span class="prompt-card-where" id="transform-prompt-where"></span>
+              <small id="transform-prompt-preview"></small>
+            </button>
+            <button type="button" class="prompt-card" data-prompt="polish">
+              <strong>Selection</strong>
+              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
+              <small id="polish-prompt-preview"></small>
+            </button>
+          </div>
         </section>
 
         <section class="settings-page" data-page="about" hidden>

@@ -1929,11 +1929,11 @@ mod tests {
     fn patching_several_fields_at_once_keeps_all_of_them() {
         let current = customised();
         let patch = serde_json::json!({
-            "transformOnDictate": true,
+            "polishLevel": "medium",
             "polishShortcut": "Alt+2",
         });
         let merged = merge_settings(&current, &patch).expect("merges");
-        assert!(merged.transform_on_dictate);
+        assert_eq!(merged.polish_level, "medium");
         assert_eq!(merged.polish_shortcut, "Alt+2");
         assert_eq!(merged.hotkey_id, "right-option");
     }

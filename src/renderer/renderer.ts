@@ -27,11 +27,12 @@ import {
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { isPolishModelId } from "../shared/polish-models";
 import {
   DEFAULT_POLISH_PROMPT,
-  DEFAULT_TRANSFORM_PROMPT,
   SUGGESTED_MODELS,
+  transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -56,7 +57,6 @@ const element = {
   openOpenRouter: requireElement<HTMLButtonElement>("open-openrouter"),
   overlayPreview: requireElement<HTMLButtonElement>("overlay-preview"),
   overlayReset: requireElement<HTMLButtonElement>("overlay-reset"),
-  transformHint: requireElement<HTMLElement>("transform-hint"),
   onboard: requireElement<HTMLElement>("onboard"),
   onboardSteps: requireElement<HTMLElement>("onboard-steps"),
   onboardCount: requireElement<HTMLElement>("onboard-count"),
@@ -109,7 +109,9 @@ const element = {
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
-  transformToggle: requireElement<HTMLInputElement>("transform-toggle"),
+  polishLevels: requireElement<HTMLElement>("polish-levels"),
+  polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
+  transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
   transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
   polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
   polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
@@ -156,6 +158,8 @@ let logLines: LogLine[] = [];
 let settingsOpen = false;
 /** Which instruction the popup is editing, if any. */
 let promptEditorKind: "transform" | "polish" | null = null;
+/** Whether closing the popup should put the settings panel back where it was. */
+let promptEditorFromSettings = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
 let lifetimeSessions = 0;
@@ -384,8 +388,19 @@ function wireEvents(): void {
   element.aiModel.addEventListener("change", () => {
     void patchSettings({ openRouterModel: element.aiModel.value });
   });
-  element.transformToggle.addEventListener("change", () => {
-    void patchSettings({ transformOnDictate: element.transformToggle.checked });
+  // A level is also an instruction, so choosing one writes that instruction.
+  // An edit made to the previous level's text is not carried across: it was
+  // written about a different amount of rewriting. None writes nothing, so
+  // turning polish off and on again leaves an edited instruction alone.
+  element.polishLevels.addEventListener("click", (event) => {
+    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
+    const level = card?.dataset.level;
+    if (!isPolishLevel(level) || level === settings.polishLevel) return;
+    void patchSettings(
+      level === "none"
+        ? { polishLevel: level }
+        : { polishLevel: level, transformPrompt: transformPromptFor(level) },
+    );
   });
   element.polishShortcut.addEventListener("change", () => {
     void patchSettings({ polishShortcut: element.polishShortcut.value });
@@ -401,7 +416,9 @@ function wireEvents(): void {
   element.promptEditorReset.addEventListener("click", () => {
     if (!promptEditorKind) return;
     element.promptEditorBody.value =
-      promptEditorKind === "transform" ? DEFAULT_TRANSFORM_PROMPT : DEFAULT_POLISH_PROMPT;
+      promptEditorKind === "transform"
+        ? transformPromptFor(settings.polishLevel)
+        : DEFAULT_POLISH_PROMPT;
     element.promptEditorBody.focus();
   });
   element.promptEditorSave.addEventListener("click", () => {
@@ -494,10 +511,9 @@ function showView(view: string): void {
   // closed -- from a download here, or from a terminal -- so each is re-read on
   // the way in rather than trusted from startup.
   if (view === "models") void renderModels();
-  if (view === "ai") {
-    void renderPolishModels();
-    void host().getAiStatus().then(renderAiStatus);
-  }
+  // The levels say what they need before they can run, and what they need is
+  // a key or a download that could have arrived while the section was closed.
+  if (view === "ai") void host().getAiStatus().then(renderAiStatus);
 }
 
 function showSettingsPage(page: string): void {
@@ -514,6 +530,9 @@ function showSettingsPage(page: string): void {
     section.hidden = section.dataset.page !== page;
   }
   if (page === "dictation") void refreshMicrophones(true);
+  // Weights arrive while the page is closed -- from a download here, or from a
+  // terminal -- so the list is re-read on the way in rather than trusted.
+  if (page === "ai") void renderPolishModels();
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }
@@ -590,7 +609,7 @@ function applySettings(next: AppSettings): void {
   }
   element.aiModel.value = next.openRouterModel;
   renderPolishEngine(next.polishEngine);
-  element.transformToggle.checked = next.transformOnDictate;
+  renderPolishLevel(next.polishLevel);
   renderPromptPreviews(next);
   element.polishShortcut.value = next.polishShortcut;
   renderThemeToggle(next.theme);
@@ -692,17 +711,32 @@ function renderAiStatus(status: AiStatus): void {
 
   // Nothing to fetch once there is a key, and the row is long enough already.
   element.openOpenRouter.hidden = status.hasApiKey;
-  const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
-  element.transformHint.textContent = ready
-    ? ""
-    : status.engine === "local"
-      ? "Download a model first."
-      : "Add a key first.";
-
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
 
-  element.transformToggle.disabled = !ready;
+  // Nothing above None can run until there is something to run it with, so
+  // the levels that need one say where to get it rather than being selectable
+  // and then quietly doing nothing.
+  const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
+  element.polishLevelHint.textContent = ready
+    ? ""
+    : status.engine === "local"
+      ? "Download a model in Settings → AI polish to use these."
+      : "Add an OpenRouter key in Settings → AI polish to use these.";
+  element.polishLevelHint.hidden = ready;
+  for (const card of polishLevelCards()) {
+    card.disabled = !ready && card.dataset.level !== "none";
+  }
+}
+
+function polishLevelCards(): HTMLButtonElement[] {
+  return Array.from(element.polishLevels.querySelectorAll<HTMLButtonElement>("[data-level]"));
+}
+
+function renderPolishLevel(level: PolishLevel): void {
+  for (const card of polishLevelCards()) {
+    card.setAttribute("aria-checked", String(card.dataset.level === level));
+  }
 }
 
 /**
@@ -1968,25 +2002,36 @@ function toggleSettings(open: boolean, page = "general"): void {
 }
 
 /**
- * Opens or closes the instruction editor over the AI Polish page.
+ * Opens or closes the instruction editor over the settings panel.
  *
  * The cards only show a preview; editing happens here so two long prompts do
- * not take the whole page. Reset puts the default back into the field; Save
- * is what writes it. Closing without Save leaves the stored prompt alone.
+ * not take the whole page. Reset puts the selected level's default back into
+ * the field; Save is what writes it. Closing without Save leaves the stored
+ * prompt alone.
+ *
+ * The panel is closed underneath rather than stacked with, because two dialogs
+ * deep is one too many to find the way out of -- and put back on the way out,
+ * since the cards that open this are on one of its pages.
  */
 function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "transform"): void {
   if (!open) {
     promptEditorKind = null;
     element.promptEditor.hidden = true;
+    if (promptEditorFromSettings) {
+      promptEditorFromSettings = false;
+      toggleSettings(true, "ai");
+      return;
+    }
     element.scrim.hidden = !settingsOpen;
     return;
   }
+  promptEditorFromSettings = settingsOpen;
   if (settingsOpen) toggleSettings(false);
   promptEditorKind = kind;
   element.promptEditorTitle.textContent = kind === "transform" ? "Dictation" : "Selection";
   element.promptEditorWhere.textContent =
     kind === "transform"
-      ? "Used when every dictation is tidied automatically."
+      ? transformPromptWhere(settings.polishLevel)
       : "Used when you polish selected text with the shortcut.";
   element.promptEditorBody.value =
     kind === "transform" ? settings.transformPrompt : settings.polishPrompt;
@@ -1995,8 +2040,20 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
   element.promptEditorBody.focus();
 }
 
+/**
+ * Which level the dictation instruction belongs to.
+ *
+ * At None nothing runs it, and the card says so rather than showing an
+ * instruction that reads as though it were in force.
+ */
+function transformPromptWhere(level: PolishLevel): string {
+  if (level === "none") return "Not in use: polish is set to None.";
+  return `Used on every dictation, at ${level === "medium" ? "Medium" : "Light"}.`;
+}
+
 /** First lines of each prompt on the cards, so the page stays scannable. */
 function renderPromptPreviews(next: AppSettings = settings): void {
+  element.transformPromptWhere.textContent = transformPromptWhere(next.polishLevel);
   element.transformPromptPreview.textContent = promptPreview(next.transformPrompt);
   element.polishPromptPreview.textContent = promptPreview(next.polishPrompt);
 }

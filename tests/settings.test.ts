@@ -114,8 +114,33 @@ describe("normalizeSettings", () => {
 
   it("patches over a previous value without losing the rest", () => {
     const previous = { ...DEFAULT_SETTINGS, openRouterModel: "openai/gpt-4o-mini" };
-    const result = normalizeSettings({ ...previous, transformOnDictate: true }, previous);
+    const result = normalizeSettings({ ...previous, polishLevel: "medium" }, previous);
     expect(result.openRouterModel).toBe("openai/gpt-4o-mini");
-    expect(result.transformOnDictate).toBe(true);
+    expect(result.polishLevel).toBe("medium");
+  });
+
+  // The level replaced an on/off switch, and a settings file written while
+  // that switch existed names no level at all. Switched on, it did what Light
+  // does, so anything else silently turns polish off for everyone who had it.
+  it("gives a file that predates the levels the one its switch meant", () => {
+    expect(normalizeSettings({ transformOnDictate: true }).polishLevel).toBe("light");
+    expect(normalizeSettings({ transformOnDictate: false }).polishLevel).toBe("none");
+    expect(normalizeSettings({}).polishLevel).toBe("none");
+  });
+
+  // The switch is a view of the level, so it cannot be stored against it.
+  it("keeps the old switch in step with the level", () => {
+    expect(normalizeSettings({ polishLevel: "none" }).transformOnDictate).toBe(false);
+    expect(normalizeSettings({ polishLevel: "light" }).transformOnDictate).toBe(true);
+    expect(normalizeSettings({ polishLevel: "medium" }).transformOnDictate).toBe(true);
+    // A stale window sending both: the level wins.
+    const conflicted = normalizeSettings({ polishLevel: "none", transformOnDictate: true });
+    expect(conflicted.transformOnDictate).toBe(false);
+  });
+
+  it("rejects a level it does not have", () => {
+    expect(normalizeSettings({ polishLevel: "heavy" }).polishLevel).toBe(
+      DEFAULT_SETTINGS.polishLevel,
+    );
   });
 });
