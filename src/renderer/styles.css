@@ -2590,3 +2590,638 @@ select {
   .deck-gestures { flex-wrap: wrap; gap: 8px 16px; }
   .deck-settings { justify-self: start; }
 }
+
+/* ------------------------------------------------------ first-run wizard */
+
+/* Opaque and edge to edge, rather than a card on a scrim. There is nothing
+   behind it worth seeing on a first run -- an empty transcript list and a
+   sidebar of pages with nothing in them -- and dimming it would be showing
+   someone a greyed-out app they have not used yet and asking them to look
+   past it. Above .modal so a settings panel left open underneath cannot
+   surface through. */
+.wizard {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  background: var(--paper);
+  animation: fade-in 180ms ease both;
+}
+
+.wizard[hidden] {
+  display: none;
+}
+
+.wizard-frame {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* The titlebar is underneath this, so the head carries the drag region --
+   otherwise the window could not be moved while the wizard is up. */
+/* The left padding clears the traffic lights, which sit at x:25 y:22 with no
+   title bar of their own to push content aside -- the same 112px the app's
+   own title bar uses. Without it the mark sat underneath the close button. */
+.wizard-head {
+  display: flex;
+  height: var(--titlebar);
+  align-items: center;
+  padding: 0 20px 0 112px;
+  gap: 10px;
+}
+
+.wizard-mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  color: var(--ink);
+}
+
+.wizard-brand {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+
+.wizard-body {
+  display: flex;
+  overflow-y: auto;
+  justify-content: center;
+  padding: 8px 20px 28px;
+}
+
+/* Centred with an auto margin rather than `align-items: center`, which on a
+   short window clips the top of an overflowing block and leaves no way to
+   scroll back up to it. The polish page is three tall cards, a row and a key
+   field, and a laptop with the Dock showing is not a tall window. */
+.wizard-stack {
+  width: min(660px, 100%);
+  margin: auto 0;
+}
+
+.wizard-step {
+  width: 100%;
+}
+
+/* The heading and its one sentence are centred over whatever the step is
+   asking with; the controls below stay left-aligned, because a checklist or
+   a row of cards read down an edge. */
+.wizard-step .display,
+.wizard-step .lede {
+  text-align: center;
+}
+
+.wizard-step .lede {
+  margin-inline: auto;
+}
+
+.wizard-step .display {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.wizard-step .lede {
+  max-width: 52ch;
+  margin: 12px 0 28px;
+}
+
+/* One button, directly under the step rather than at the foot of the window.
+   There is no Back beside it to balance against. */
+.wizard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-top: 28px;
+}
+
+.wizard-buttons {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.wizard-buttons .pill-button {
+  height: 42px;
+  min-width: 190px;
+  padding: 0 28px;
+  border-radius: 12px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* ----- the welcome page ----- */
+
+/* Centred, unlike every other step. Nothing is being chosen here, so there is
+   no control for the text to be left-aligned against. */
+.intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.intro .lede {
+  max-width: 44ch;
+  margin: 12px 0 0;
+}
+
+/* The three beats of one gesture, in order. A numbered row reads as a
+   sequence, which is what using this is; three sentences in a list read as
+   three unrelated claims about it. */
+.intro-cards {
+  display: grid;
+  width: 100%;
+  padding: 0;
+  margin: 26px 0 0;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  text-align: left;
+}
+
+.intro-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 16px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  gap: 7px;
+}
+
+/* In the corner rather than in the flow: it numbers the card without taking
+   a line away from what the card says. */
+.intro-card-step {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-card-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+.intro-card strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.intro-card span:not(.intro-card-step) {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 460;
+  line-height: 1.5;
+}
+
+/* The one thing that is not a step, so it sits apart from the row. */
+.intro-privacy {
+  display: flex;
+  max-width: 52ch;
+  align-items: flex-start;
+  margin: 22px 0 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 460;
+  gap: 8px;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.intro-privacy svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--positive);
+}
+
+@media (max-width: 700px) {
+  .intro-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ----- the speed/accuracy slider ----- */
+
+.ladder {
+  padding: 22px 24px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface-sunken);
+}
+
+.ladder-ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+}
+
+.ladder-control {
+  padding: 4px 0 0;
+  margin: 0 0 20px;
+}
+
+/* The stock control, stripped and rebuilt. A default macOS range slider in
+   the middle of a page of serif headings and drawn keycaps looks like a
+   browser form that wandered in -- and it gives no way to shade the part
+   behind the thumb, which is the half that says "you are here". `--fill` is
+   written by the renderer on every move. */
+.ladder-slider {
+  width: 100%;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+
+.ladder-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) 0 / var(--fill, 50%) 100% no-repeat,
+    var(--hairline-strong);
+}
+
+.ladder-slider::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 50%;
+  appearance: none;
+  background: var(--paper);
+  box-shadow: 0 1px 3px rgb(28 27 24 / 26%);
+  /* (track height - thumb height) / 2, which a webkit thumb does not do. */
+  margin-top: -8px;
+}
+
+.ladder-slider:active::-webkit-slider-thumb {
+  border-color: var(--accent);
+}
+
+/* The shared focus rule draws a 2px accent rectangle around the whole
+   control, which on a 22px-tall slider is a box floating around a line. The
+   ring goes on the thumb instead: same "this has the keyboard" signal, on the
+   part that actually moves. */
+.ladder-slider:focus-visible {
+  outline: none;
+}
+
+.ladder-slider:focus-visible::-webkit-slider-thumb {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 1px 3px rgb(28 27 24 / 26%);
+}
+
+/* Aligned to the thumb's travel, not the track's width: the first and last
+   notches sit under the centre of the thumb at either end, which is half a
+   thumb in from each edge. */
+.ladder-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  margin: 2px 0 0;
+  list-style: none;
+}
+
+.ladder-tick {
+  width: 2px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--hairline-strong);
+}
+
+.ladder-tick[data-state="below"] {
+  background: var(--accent);
+}
+
+.ladder-tick[data-state="here"] {
+  height: 8px;
+  background: var(--accent);
+}
+
+/* The name and the model are two different facts and only one of them is the
+   answer: the name is where the slider is, the model is what that gets you.
+   The name leads because it is the thing being chosen. */
+.ladder-pick {
+  display: grid;
+  gap: 5px;
+}
+
+/* Name and model on one line: they are one answer, and stacking them read as
+   two separate facts about two separate things. */
+.ladder-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.ladder-headline strong {
+  color: var(--ink);
+  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.ladder-headline span {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 620;
+}
+
+.ladder-facts {
+  display: grid;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--hairline);
+  margin: 12px 0 0;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ladder-fact dt {
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ladder-fact dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.ladder-pick small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 440;
+  line-height: 1.5;
+}
+
+/* Only ever about one thing: the rung asked for does not fit this Mac. */
+.ladder-note {
+  margin: 14px 0 0;
+}
+
+/* ----- the key ----- */
+
+/* ----- the keyboard ----- */
+
+.keyboard {
+  display: grid;
+  max-width: 520px;
+  margin-inline: auto;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  gap: 6px;
+}
+
+/* A fixed column count that every row fills exactly, so the rows are the same
+   width however many keys each holds. Keys span columns; the gaps inside a
+   span are absorbed by it, which is what keeps the two rows aligned. */
+.keyboard-row {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(60, minmax(0, 1fr));
+}
+
+.keyboard-key {
+  display: flex;
+  height: 40px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.keyboard-key:hover[data-hotkey]:not([aria-checked="true"]) {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+/* Drawn so the offered keys can be found relative to them, and no more. */
+.keyboard-key[data-available="false"] {
+  border-color: var(--hairline);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.keyboard-key[data-filler="true"] {
+  border-color: var(--hairline);
+  background: transparent;
+  opacity: 0.32;
+}
+
+.keyboard-key[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Says which of the two Commands, or which of the two Options, is chosen --
+   the glyphs cannot, because they are the same glyph. */
+.keyboard-caption {
+  max-width: 520px;
+  margin: 16px auto 0;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 460;
+  line-height: 1.55;
+}
+
+.keyboard-caption strong {
+  color: var(--ink);
+  font-weight: 620;
+}
+
+/* ----- where polish runs ----- */
+
+/* Not a .row: it hangs under the three cards rather than sitting in a card of
+   its own, and it is only on screen at all above None. */
+.wizard-engine {
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  margin-top: 16px;
+  background: var(--surface-sunken);
+}
+
+.wizard-engine-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Two lines' worth, held whichever sentence is in it. */
+.wizard-engine-note {
+  min-height: 36px;
+  margin: 8px 0 0;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 460;
+  line-height: 1.55;
+}
+
+/* Divided off rather than stacked: the choice above is answered, and this is
+   the consequence of one of the two answers. */
+.wizard-key {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  margin-top: 14px;
+}
+
+/* Holds its height while it does not apply, so switching engines -- or
+   picking a level at all -- does not shove the cards above it up the page. */
+.wizard-key.is-reserved {
+  visibility: hidden;
+}
+
+.wizard-key-label {
+  display: flex;
+  align-items: baseline;
+  color: var(--ink-label);
+  font-size: 12.5px;
+  font-weight: 560;
+  gap: 8px;
+}
+
+.wizard-key-label small {
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.wizard-key-label .key-saved {
+  color: var(--positive);
+}
+
+.wizard-key-entry {
+  display: flex;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.wizard-key-entry .text-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.wizard-key-entry .pill-button {
+  height: 32px;
+  min-width: 0;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.wizard-key-note {
+  margin-top: 10px;
+}
+
+.wizard-engine[hidden] {
+  display: none;
+}
+
+/* Sits under the keyboard it is about, so it is measured against the keyboard
+   rather than against the width of the step. */
+.wizard-fn-note {
+  max-width: 520px;
+  margin-inline: auto;
+  text-align: center;
+}
+
+/* Kept in the layout, taken out of the picture and out of the accessibility
+   tree. `display: none` here is two lines of height appearing and vanishing
+   under the pointer as you try keys. */
+.wizard-fn-note.is-reserved {
+  visibility: hidden;
+}
+
+/* ----- the last page ----- */
+
+.ready-gestures {
+  display: grid;
+  padding: 8px 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  margin: 0;
+  background: var(--surface-sunken);
+  gap: 0;
+  list-style: none;
+}
+
+.ready-gestures li {
+  display: flex;
+  align-items: center;
+  padding: 16px 0;
+  gap: 16px;
+}
+
+.ready-gestures li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.ready-gestures kbd {
+  min-width: 62px;
+  flex: none;
+  padding: 7px 10px;
+  font-size: 15px;
+}
+
+.ready-gestures span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 460;
+  line-height: 1.5;
+}
+
+.ready-gestures strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .wizard-step .display {
+    font-size: 24px;
+  }
+
+  .wizard-engine {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
