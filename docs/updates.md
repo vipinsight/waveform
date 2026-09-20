@@ -25,7 +25,7 @@ download the app by hand.
 `plugins.updater.endpoints` names one URL:
 
 ```
-https://github.com/vipiny35/waveform/releases/latest/download/latest.json
+https://github.com/vipinsight/waveform/releases/latest/download/latest.json
 ```
 
 `releases/latest/download/…` always resolves to the newest release, so the
@@ -39,7 +39,7 @@ manifest has to be attached to each one. It looks like this:
   "platforms": {
     "darwin-aarch64": {
       "signature": "…",
-      "url": "https://github.com/vipiny35/waveform/releases/download/v0.2.0/Waveform_0.2.0.app.tar.gz"
+      "url": "https://github.com/vipinsight/waveform/releases/download/v0.2.0/Waveform_0.2.0.app.tar.gz"
     }
   }
 }

@@ -14,7 +14,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-REPO="vipiny35/waveform"
+REPO="vipinsight/waveform"
 
 fail() {
   echo "release: $1" >&2

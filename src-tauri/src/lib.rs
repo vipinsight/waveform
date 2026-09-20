@@ -310,9 +310,10 @@ async fn update_settings(
     }
 
     if next.polish_engine != previous.polish_engine
+        || next.polish_level != previous.polish_level
         || (next.polish_engine == "local" && next.local_model_id != previous.local_model_id)
     {
-        state.rewriter.engine_changed(&next.polish_engine).await;
+        state.rewriter.engine_changed().await;
     }
 
     if next.polish_shortcut != previous.polish_shortcut {
@@ -680,7 +681,7 @@ async fn download_polish_model(state: State<'_, AppState>, model_id: String) -> 
         // it now puts the wait on the download they just watched, rather than
         // on the first dictation.
         if settings.polish_engine == "local" && settings.local_model_id == model_id {
-            state.rewriter.engine_changed("local").await;
+            state.rewriter.engine_changed().await;
         }
     }
     outcome
@@ -1929,11 +1930,11 @@ mod tests {
     fn patching_several_fields_at_once_keeps_all_of_them() {
         let current = customised();
         let patch = serde_json::json!({
-            "transformOnDictate": true,
+            "polishLevel": "medium",
             "polishShortcut": "Alt+2",
         });
         let merged = merge_settings(&current, &patch).expect("merges");
-        assert!(merged.transform_on_dictate);
+        assert_eq!(merged.polish_level, "medium");
         assert_eq!(merged.polish_shortcut, "Alt+2");
         assert_eq!(merged.hotkey_id, "right-option");
     }

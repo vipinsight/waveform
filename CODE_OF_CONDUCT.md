@@ -7,7 +7,7 @@ people's privacy and boundaries.
 Harassment, threats, discriminatory language, sexual harassment, personal
 attacks, and publishing another person's private information are not acceptable.
 
-The maintainer, [@vipiny35](https://github.com/vipiny35), moderates project spaces
+The maintainer, [@vipinsight](https://github.com/vipinsight), moderates project spaces
 and may edit or remove content, close or lock discussions, or restrict participation.
 Responses should be proportionate to the conduct and its impact; repeated or
 severe violations may lead to a ban.

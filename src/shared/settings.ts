@@ -14,6 +14,11 @@ import {
   type SpeechModelId,
 } from "./models";
 import {
+  DEFAULT_POLISH_LEVEL,
+  isPolishLevel,
+  type PolishLevel,
+} from "./polish-levels";
+import {
   DEFAULT_POLISH_MODEL_ID,
   isPolishModelId,
   type PolishModelId,
@@ -66,9 +71,27 @@ export interface AppSettings {
    * by trying the hosted one.
    */
   localModelId: PolishModelId;
-  /** Run every dictated phrase through the model before inserting it. */
+  /**
+   * How much the model may change a dictation. `none` runs no model on the
+   * dictation path at all.
+   */
+  polishLevel: PolishLevel;
+  /**
+   * Whether a dictation is run through the model before it is inserted.
+   *
+   * A view of `polishLevel`, not a setting of its own: normalization derives
+   * it, so the two cannot disagree. It stays because it is the question the
+   * dictation and rewrite paths actually ask, and because a settings file
+   * written before levels existed carries only this.
+   */
   transformOnDictate: boolean;
-  /** System prompt for the dictation cleanup path. */
+  /**
+   * System prompt for the dictation path, at whichever level is selected.
+   *
+   * Choosing a level writes that level's default here, and the Instructions
+   * editor overwrites it. So an edit belongs to the level that was selected
+   * when it was made, and choosing a level again puts its default back.
+   */
   transformPrompt: string;
   /** System prompt for the polish shortcut. */
   polishPrompt: string;
@@ -113,6 +136,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   polishEngine: "openrouter",
   openRouterModel: DEFAULT_OPENROUTER_MODEL,
   localModelId: DEFAULT_POLISH_MODEL_ID,
+  polishLevel: DEFAULT_POLISH_LEVEL,
   transformOnDictate: false,
   transformPrompt: DEFAULT_TRANSFORM_PROMPT,
   polishPrompt: DEFAULT_POLISH_PROMPT,
@@ -160,10 +184,10 @@ export function normalizeSettings(
     polishEngine: isPolishEngine(input.polishEngine) ? input.polishEngine : base.polishEngine,
     openRouterModel: text(input.openRouterModel, base.openRouterModel, 200),
     localModelId: isPolishModelId(input.localModelId) ? input.localModelId : base.localModelId,
-    transformOnDictate:
-      typeof input.transformOnDictate === "boolean"
-        ? input.transformOnDictate
-        : base.transformOnDictate,
+    polishLevel: polishLevel(input, base),
+    // Derived, never read from the input: it is what `polishLevel` means for
+    // the paths that only need to know whether a model runs.
+    transformOnDictate: polishLevel(input, base) !== "none",
     transformPrompt: text(input.transformPrompt, base.transformPrompt, 8_000),
     polishPrompt: text(input.polishPrompt, base.polishPrompt, 8_000),
     polishShortcut: isAccelerator(input.polishShortcut)
@@ -231,6 +255,22 @@ function clampNumber(
 ): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(range.max, Math.max(range.min, Math.round(value)));
+}
+
+/**
+ * The level, or the one the old on/off switch meant.
+ *
+ * A settings file written before levels existed names no level at all, only
+ * `transformOnDictate`. Switched on, it removed filler and fixed punctuation,
+ * which is the light level -- so that is what it becomes, rather than
+ * everyone who had polish on losing it to the default.
+ */
+function polishLevel(input: Record<string, unknown>, base: AppSettings): PolishLevel {
+  if (isPolishLevel(input.polishLevel)) return input.polishLevel;
+  if (input.polishLevel === undefined && typeof input.transformOnDictate === "boolean") {
+    return input.transformOnDictate ? "light" : "none";
+  }
+  return base.polishLevel;
 }
 
 function isPolishEngine(value: unknown): value is PolishEngine {

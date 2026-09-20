@@ -22,7 +22,7 @@ are not currently supported. Waveform is pre-1.0; behavior may change between re
 
 ## Install
 
-Download the disk image from [the latest release](https://github.com/vipiny35/waveform/releases/latest)
+Download the disk image from [the latest release](https://github.com/vipinsight/waveform/releases/latest)
 and drag Waveform to Applications. Official release builds are signed and notarised.
 If no release is available yet, follow the [source build guide](docs/building.md).
 
@@ -95,7 +95,7 @@ Network activity includes:
 Install the [toolchain prerequisites](docs/building.md#toolchain), then:
 
 ```sh
-git clone https://github.com/vipiny35/waveform.git
+git clone https://github.com/vipinsight/waveform.git
 cd waveform
 pnpm install --frozen-lockfile
 WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
