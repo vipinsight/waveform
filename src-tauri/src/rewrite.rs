@@ -15,7 +15,7 @@
 //! one request that needs it, and the local engine never sees it at all.
 
 use crate::local_llm::{self, LocalPolisher};
-use crate::settings::SettingsStore;
+use crate::settings::{AppSettings, SettingsStore};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -65,6 +65,18 @@ pub struct Rewriter {
     local: LocalPolisher,
 }
 
+/// Whether the local weights are worth holding.
+///
+/// Only when the engine is local *and* a dictation is actually going to be run
+/// through it. At None nothing on the dictation path reaches a model, and the
+/// polish shortcut is not reason enough on its own: the weights are most of a
+/// gigabyte and nothing gives them back until the app quits, so they are not
+/// worth holding on the chance of a press later. That first press pays for the
+/// load itself, once.
+fn warms_for_dictation(settings: &AppSettings) -> bool {
+    settings.polish_engine == "local" && settings.polish_level != "none"
+}
+
 impl Rewriter {
     pub fn new(settings: Arc<Mutex<SettingsStore>>) -> Arc<Self> {
         Arc::new(Self {
@@ -112,15 +124,15 @@ impl Rewriter {
     }
 
     /// Follows a change of engine or of local model: whatever is loaded is
-    /// dropped first, then the new one is warmed if the engine is still local.
-    /// Switching 1.7B for 0.6B would otherwise leave a gigabyte resident until
-    /// the next rewrite.
+    /// dropped first, then the new one is warmed if a dictation is going to
+    /// use it. Switching 1.7B for 0.6B would otherwise leave a gigabyte
+    /// resident until the next rewrite.
     ///
     /// Loading happens in the background. It takes a few seconds, and the point
     /// of doing it here is that nobody is waiting on those seconds yet.
-    pub async fn engine_changed(self: &Arc<Self>, engine: &str) {
+    pub async fn engine_changed(self: &Arc<Self>) {
         self.local.unload().await;
-        if engine == "local" {
+        if warms_for_dictation(&self.settings.lock().await.value()) {
             self.warm_local().await;
         }
     }
@@ -133,14 +145,8 @@ impl Rewriter {
 
     /// Loads the local model at launch, when every dictation is going to use it
     /// anyway.
-    ///
-    /// Only then. The weights are most of a gigabyte and nothing gives them
-    /// back until the app quits, so they are not worth holding on the chance
-    /// somebody presses the polish shortcut later -- that first press pays for
-    /// the load itself, once.
     pub async fn warm_at_launch(self: &Arc<Self>) {
-        let settings = self.settings.lock().await.value();
-        if settings.polish_engine == "local" && settings.transform_on_dictate {
+        if warms_for_dictation(&self.settings.lock().await.value()) {
             self.warm_local().await;
         }
     }
@@ -652,6 +658,46 @@ mod keychain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// None means no model runs on a dictation, so there is nothing for the
+    /// local weights to be resident for.
+    ///
+    /// Switching the engine to This Mac, or finishing a download, used to warm
+    /// them whatever the level was -- most of a gigabyte held for a path that
+    /// cannot reach a model.
+    #[test]
+    fn local_weights_are_only_held_for_a_level_that_uses_them() {
+        let mut settings = AppSettings::default();
+        settings.polish_engine = "local".into();
+        for (level, warms) in [("none", false), ("light", true), ("medium", true)] {
+            settings.polish_level = level.into();
+            assert_eq!(warms_for_dictation(&settings), warms, "at {level}");
+        }
+    }
+
+    /// The hosted engine has no weights to hold at any level.
+    #[test]
+    fn nothing_is_held_for_the_hosted_engine() {
+        let mut settings = AppSettings::default();
+        settings.polish_engine = "openrouter".into();
+        for level in ["none", "light", "medium"] {
+            settings.polish_level = level.into();
+            assert!(!warms_for_dictation(&settings), "at {level}");
+        }
+    }
+
+    /// What actually stops a dictation reaching a model: `clean_up_dictation`
+    /// returns before it looks at an engine at all. The flag it reads is
+    /// derived from the level by `normalize`, so this is the far end of the
+    /// same guarantee the settings tests make at the near end.
+    #[test]
+    fn none_leaves_nothing_for_the_dictation_path_to_run() {
+        let mut settings = AppSettings::default();
+        settings.polish_level = "none".into();
+        let settings = settings.normalize(&AppSettings::default());
+        assert!(!settings.transform_on_dictate);
+        assert!(!warms_for_dictation(&settings));
+    }
 
     #[test]
     fn strips_a_wrapping_fence() {
