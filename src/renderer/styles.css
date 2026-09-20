@@ -9,8 +9,13 @@
  * than a parallel set of rules.
  */
 :root {
-  --paper: #f5f4f1;
+  --paper: #ffffff;
   --surface: #fcfcfb;
+  /* The rail carries the same surface as the window behind it: the sidebar is
+     not a panel floating on the page, it *is* the page, and the content card
+     is the only thing raised off it. Kept as its own token so the two can be
+     pulled apart again without hunting for which rules meant which. */
+  --rail: #ffffff;
   --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --ink: #1a1a1a;
@@ -49,8 +54,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #161513;
+    --paper: #1b1a17;
     --surface: #1f1e1a;
+    --rail: #1b1a17;
     --surface-sunken: #26241f;
     --surface-hover: #302e28;
     --ink: #f2efe8;
@@ -78,8 +84,9 @@
 }
 
 :root[data-theme="dark"] {
-  --paper: #161513;
+  --paper: #1b1a17;
   --surface: #1f1e1a;
+  --rail: #1b1a17;
   --surface-sunken: #26241f;
   --surface-hover: #302e28;
   --ink: #f2efe8;
@@ -196,6 +203,14 @@ kbd {
  * beside the traffic lights is where a Mac window expects to be grabbed. */
 .titlebar {
   display: flex;
+  /* Placed explicitly. The rail spans both rows now, so a title bar left to
+     auto-placement cannot find a free full-width row and lands in an implicit
+     one below the content -- which puts the rail toggle at the foot of the
+     window. Explicit placement is also what lets it share row 1 with the rail
+     and sit above it. */
+  position: relative;
+  z-index: 1;
+  grid-row: 1;
   align-items: center;
   justify-content: space-between;
   /* The bottom inset belongs to the title bar rather than to the panels below,
@@ -210,10 +225,18 @@ kbd {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  /* One surface from the traffic lights down, rather than a column starting
+     below the title bar: the lights sit on the rail, the way Finder and Mail
+     put them on theirs. */
+  grid-row: 1 / -1;
+  grid-column: 1;
   /* Clipped, because the column it sits in animates to nothing and its
      contents keep their own width the whole way. */
   overflow: hidden;
-  padding: 0 var(--inset) var(--inset);
+  /* The top inset is exactly the title bar's height, so the brand sits where
+     it did when the rail began underneath it. */
+  padding: var(--titlebar) var(--inset) var(--inset);
+  background: var(--rail);
 }
 
 /*
@@ -388,6 +411,8 @@ kbd {
   display: flex;
   min-width: 0;
   flex-direction: column;
+  grid-row: 2;
+  grid-column: 2;
   padding: 0 var(--inset) var(--inset) 0;
 }
 
