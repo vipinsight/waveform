@@ -43,7 +43,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 tokio = { version = "1", features = ["fs", "process", "io-util", "time", "sync", "rt-multi-thread", "macros", "signal"] }
 # Input-only HAL capture. An AudioContext in the webview attaches to the
 # speakers, which is what makes Music hitch when the mic opens.
-cpal = "0.15"
+cpal = "0.18"
 # whisper.cpp, linked in rather than run as a subprocess. The metal feature
 # also embeds the GGML Metal library into the binary, so a bundled .app has no
 # shader file to lose.
