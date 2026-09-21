@@ -36,6 +36,29 @@ describe("the wizard's permissions page", () => {
     }
   });
 
+  it("waits on a refusal, never on silence", () => {
+    // The three booleans start false and are filled in by the helper, so
+    // "denied" and "nobody has said yet" look identical. Gating on the
+    // second holds somebody on a page with no way past it and every switch
+    // already flipped -- which happened, when a dev build's grants were
+    // attributed elsewhere and the helper reported false for real ones.
+    expect(renderer).toContain("function permissionsAreKnown()");
+    const gate = renderer.slice(
+      renderer.indexOf("function wizardCanAdvance("),
+      renderer.indexOf("function wizardCanAdvance(") + 500,
+    );
+    expect(gate).toMatch(/if \(!permissionsAreKnown\(\)\) return true;/);
+
+    // Known means: a helper that is running, and a microphone status that is
+    // an answer rather than a shrug.
+    const known = renderer.slice(
+      renderer.indexOf("function permissionsAreKnown()"),
+      renderer.indexOf("function permissionsAreKnown()") + 400,
+    );
+    expect(known).toContain("hotkeyStatus.running");
+    expect(known).toContain('hotkeyStatus.microphone !== "unknown"');
+  });
+
   it("asks for the polish model only when something here will run it", () => {
     // At None nothing rewrites, and through OpenRouter the rewriting happens
     // somewhere else -- a missing local model stops neither, so a checklist

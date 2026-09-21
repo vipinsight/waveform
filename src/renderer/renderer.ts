@@ -2506,15 +2506,41 @@ function wizardNextLabel(step: WizardStep): string {
 }
 
 /**
+ * Whether the permissions are being reported at all.
+ *
+ * The three booleans start false and are filled in by the native helper, so
+ * "not granted" and "nobody has told us yet" arrive looking identical. That
+ * matters because the page they gate has no way past it: a helper that is
+ * not running, or one that cannot read the microphone's status, would hold
+ * somebody on page four of a wizard with a disabled button and no
+ * explanation -- and every switch already flipped in System Settings.
+ *
+ * Which is not hypothetical. It happened here: a dev build launched outside
+ * LaunchServices had its permissions attributed elsewhere, so the helper
+ * reported false for grants that were real, and the wizard would not move.
+ */
+function permissionsAreKnown(): boolean {
+  if (hotkeyStatus === null) return false;
+  // `running` is the helper process; without it the two booleans are stale
+  // defaults rather than answers.
+  if (!hotkeyStatus.running) return false;
+  return hotkeyStatus.microphone !== "unknown";
+}
+
+/**
  * Whether this step has been answered well enough to leave.
  *
- * Only the permissions can fail it. The voice has a model selected from the
- * moment the page opens, the key has one too, and None is a real answer to
- * the polish question rather than an unanswered one -- so those three pages
- * cannot be in a state worth stopping on.
+ * Only the permissions can fail it, and only when they are refusing rather
+ * than silent. The model has one selected from the moment the page opens,
+ * the key has one too, and None is a real answer to the polish question
+ * rather than an unanswered one.
  */
 function wizardCanAdvance(step: WizardStep): boolean {
-  return step !== "permissions" || permissionSteps().every((one) => one.done);
+  if (step !== "permissions") return true;
+  // Gate on denial, never on ignorance. Refusing to advance because nothing
+  // answered is the difference between a firm wizard and a trapped one.
+  if (!permissionsAreKnown()) return true;
+  return permissionSteps().every((one) => one.done);
 }
 
 /**
@@ -2882,7 +2908,9 @@ function renderWizardChecklist(): void {
   element.wizardPermissionsNote.textContent =
     outstanding.length === 0
       ? "macOS ties these to the app's signature. If one looks granted but is refused, remove Waveform from the list and add it again."
-      : "All three are needed before Waveform can dictate, so this is the one page that waits for you.";
+      : permissionsAreKnown()
+        ? "All three are needed before Waveform can dictate, so this is the one page that waits for you."
+        : "These cannot be read just now, so this page will not hold you up. The card on Transcripts will keep offering them.";
 
   element.wizardChecklist.replaceChildren(
     ...permissionSteps().map((step) => {
