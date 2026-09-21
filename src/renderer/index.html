@@ -545,6 +545,7 @@
                 <label class="wizard-key-label" for="wizard-key-input">
                   OpenRouter API key
                   <small id="wizard-key-state"></small>
+                  <button type="button" class="link" id="wizard-open-openrouter">Get a key</button>
                 </label>
                 <div class="wizard-key-entry">
                   <input
@@ -557,11 +558,6 @@
                   />
                   <button id="wizard-key-save" class="pill-button is-primary" type="button" disabled>Save</button>
                 </div>
-                <p class="note wizard-key-note">
-                  <button type="button" class="link" id="wizard-open-openrouter">Get a key</button>
-                  — it is free to create one. You can also skip this and add it
-                  later in Settings; polish simply will not run until you do.
-                </p>
               </div>
 
               <!-- What "This Mac" actually means: a second model, arriving. -->
@@ -570,7 +566,7 @@
                   <span class="wizard-local-name" id="wizard-local-name">—</span>
                   <span class="wizard-local-state" id="wizard-local-state"></span>
                 </div>
-                <div class="wizard-local-track" id="wizard-local-track" hidden>
+                <div class="wizard-local-track is-reserved" id="wizard-local-track">
                   <span id="wizard-local-bar"></span>
                 </div>
                 <p class="note wizard-local-note">
@@ -580,10 +576,16 @@
               </div>
 
               <!-- At None nothing runs, so the slot says so rather than sitting empty. -->
-              <p class="wizard-engine-idle" id="wizard-engine-idle">
-                Pick Light or Medium above and this is where you set up whatever
-                does the rewriting.
-              </p>
+              <dl class="wizard-engine-idle" id="wizard-engine-idle">
+                <div>
+                  <dt>This Mac</dt>
+                  <dd>A second small model, downloaded here. Private and offline.</dd>
+                </div>
+                <div>
+                  <dt>OpenRouter</dt>
+                  <dd>A hosted model. Faster and larger, and it needs an API key.</dd>
+                </div>
+              </dl>
               </div>
             </div>
           </section>

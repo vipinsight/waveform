@@ -3103,10 +3103,11 @@ select {
 
 /* Divided off rather than stacked: the choice above is answered, and this is
    the consequence of whichever answer it was. The min-height is the tallest
-   of the three occupants, so swapping between them -- or turning polish off
-   entirely -- cannot change the height of the page. */
+   of the three occupants -- measured, not guessed, and kept close to them so
+   the other two are not left sitting in a hole -- which is what stops
+   swapping between them changing the height of the page. */
 .wizard-engine-detail {
-  min-height: 150px;
+  min-height: 76px;
   padding-top: 14px;
   border-top: 1px solid var(--hairline);
   margin-top: 14px;
@@ -3155,8 +3156,8 @@ select {
   background: var(--hairline-strong);
 }
 
-.wizard-local-track[hidden] {
-  display: none;
+.wizard-local-track.is-reserved {
+  visibility: hidden;
 }
 
 .wizard-local-track span {
@@ -3172,15 +3173,34 @@ select {
   margin-top: 10px;
 }
 
-/* ----- None: the slot still has something to say ----- */
+/* ----- None: the two answers, described rather than an empty box ----- */
 
 .wizard-engine-idle {
-  max-width: 46ch;
+  display: grid;
+  margin: 0;
+  gap: 12px;
+}
+
+.wizard-engine-idle > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.wizard-engine-idle dt {
+  min-width: 86px;
+  flex: none;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.wizard-engine-idle dd {
   margin: 0;
   color: var(--ink-faint);
   font-size: 12px;
   font-weight: 460;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .wizard-engine-idle[hidden] {
@@ -3223,10 +3243,6 @@ select {
   padding: 0 16px;
   border-radius: 9px;
   font-size: 12.5px;
-}
-
-.wizard-key-note {
-  margin-top: 10px;
 }
 
 .wizard-engine[hidden] {

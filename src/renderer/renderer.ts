@@ -973,7 +973,7 @@ function showPolishDownloadProgress(event: ModelEvent): void {
   // the choice that started the download was made.
   if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
     const percent = Math.round((event.progress ?? 0) * 100);
-    element.wizardLocalTrack.hidden = event.stage !== "downloading";
+    element.wizardLocalTrack.classList.toggle("is-reserved", event.stage !== "downloading");
     element.wizardLocalBar.style.width = `${percent}%`;
     element.wizardLocalState.textContent =
       event.stage === "downloading" ? `Downloading… ${percent}%` : "Ready";
@@ -2878,8 +2878,8 @@ function renderWizardPolish(): void {
     settings.polishLevel === "none"
       ? "Nothing rewrites at None; this is what would run it."
       : settings.polishEngine === "local"
-        ? "A second, smaller model to download. Your words stay on this Mac."
-        : "A hosted model. Your dictated text is sent to it, and it needs a key.";
+        ? "A second, smaller model, downloaded here. Your words never leave this Mac."
+        : "A hosted model; your dictated text is sent to it. The key is free to create, and can wait until Settings.";
 
   renderWizardKey();
 }
@@ -2950,7 +2950,7 @@ async function renderWizardLocal(): Promise<void> {
       : "waiting";
   // The bar is only honest while something is moving; a full or empty one
   // sitting under a finished download is a progress bar lying.
-  element.wizardLocalTrack.hidden = !downloading;
+  element.wizardLocalTrack.classList.toggle("is-reserved", !downloading);
 }
 
 function syncWizardKeyButton(): void {
