@@ -133,7 +133,7 @@
               <div class="onboard-head">
                 <h2 class="onboard-title">Let's get you dictating</h2>
                 <p class="onboard-lede">
-                  A few one-time permissions and a voice to download. About a minute,
+                  A few one-time permissions and a model to download. About a minute,
                   and nothing you say ever leaves this Mac.
                 </p>
                 <div class="onboard-progress">
@@ -289,6 +289,345 @@
     </div>
 
     <div id="scrim" class="scrim" hidden></div>
+
+    <!--
+      The first run, and only the first run.
+      ==========================================================================
+      Everything in here is also reachable from Settings, and a checklist on the
+      Transcripts page already nags until dictation works. That checklist is the
+      right shape for coming back to a half-finished setup and the wrong one for
+      arriving: it lists four permissions and says nothing about the two choices
+      -- which key, and how much the model may rewrite you -- that decide what
+      the app feels like. Someone who never opens Settings never makes them.
+
+      So this asks, once, in the order the answers matter, and then never
+      appears again. There is no way past it: the three macOS permissions are
+      not preferences, they are the difference between an app that dictates
+      and an app that cannot, and a first run that walks around them ends at a
+      window with no working shortcut and no explanation. The checklist stays
+      for the install that was set up before this existed.
+    -->
+    <div id="wizard" class="wizard" role="dialog" aria-modal="true" aria-label="Set up Waveform" hidden>
+      <div class="wizard-frame">
+        <header class="wizard-head" data-tauri-drag-region="deep">
+          <svg class="wizard-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <rect x="17.20" y="35.55" width="7.81" height="28.90" rx="3.91" fill="currentColor" />
+            <rect x="31.64" y="24.20" width="7.81" height="51.60" rx="3.91" fill="currentColor" />
+            <rect x="46.09" y="35.55" width="7.81" height="28.90" rx="3.91" fill="var(--mark-accent, #3284d0)" />
+            <rect x="60.55" y="24.20" width="7.81" height="51.60" rx="3.91" fill="currentColor" />
+            <rect x="75.00" y="35.55" width="7.81" height="28.90" rx="3.91" fill="currentColor" />
+          </svg>
+          <span class="wizard-brand" id="wizard-brand">Waveform</span>
+        </header>
+
+        <div class="wizard-body">
+          <!--
+            Steps and button in one column. The footer used to be pinned to
+            the bottom of the window by the frame's grid, which on a short
+            page left the button stranded half a screen below the thing it
+            continued from. It now sits directly under whichever step is up,
+            and the pair centre together.
+          -->
+          <div class="wizard-stack">
+          <!--
+            0. What this is.
+            A first run that opens on "Pick a speech model" is a question
+            asked of somebody who has not been told what the thing does. This
+            page costs one click and is the only place the app gets to say
+            what it is before it starts asking for permissions.
+          -->
+          <section class="wizard-step" data-step="welcome">
+            <div class="intro">
+              <h1 class="display">Type with your voice</h1>
+              <p class="lede">
+                Waveform turns speech into text, anywhere in macOS, without
+                sending it anywhere.
+              </p>
+
+              <!--
+                Three cards, in the order the thing actually happens, rather
+                than three sentences about it. What a dictation app does is a
+                sequence -- hold, speak, and the words are there -- and a
+                paragraph makes you assemble that yourself.
+              -->
+              <ol class="intro-cards">
+                <li class="intro-card">
+                  <span class="intro-card-step">1</span>
+                  <svg class="intro-card-icon" data-icon="keyboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path d="M18 8h.01" /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" />
+                    <rect width="20" height="16" x="2" y="4" rx="2" />
+                  </svg>
+                  <strong>Hold a key</strong>
+                  <span>One key you pick, held down in whatever app you are already in.</span>
+                </li>
+                <li class="intro-card">
+                  <span class="intro-card-step">2</span>
+                  <svg class="intro-card-icon" data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19v3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <rect x="9" y="2" width="6" height="13" rx="3" />
+                  </svg>
+                  <strong>Say it</strong>
+                  <span>Talk normally. A model on this Mac listens and writes it down.</span>
+                </li>
+                <li class="intro-card">
+                  <span class="intro-card-step">3</span>
+                  <svg class="intro-card-icon" data-icon="text-cursor-input" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 4h1a3 3 0 0 1 3 3 3 3 0 0 1 3-3h1" />
+                    <path d="M13 20h-1a3 3 0 0 1-3-3 3 3 0 0 1-3 3H5" />
+                    <path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1" />
+                    <path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7" />
+                    <path d="M9 7v10" />
+                  </svg>
+                  <strong>Let go</strong>
+                  <span>The text appears where your cursor already was.</span>
+                </li>
+              </ol>
+
+              <p class="intro-privacy">
+                <svg data-icon="shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+                Your voice is transcribed on this Mac and never uploaded.
+              </p>
+            </div>
+          </section>
+
+          <!-- 1. The model. First, because the download runs while the rest is answered. -->
+          <section class="wizard-step" data-step="voice">
+            <h1 class="display">Pick a speech model</h1>
+            <p class="lede">
+              Waveform transcribes on this Mac, so the model lives here. Bigger
+              models hear you better and take longer to answer.
+            </p>
+
+            <div class="ladder">
+              <div class="ladder-ends" aria-hidden="true">
+                <span>Faster</span>
+                <span>More accurate</span>
+              </div>
+              <div class="ladder-control">
+                <input
+                  class="ladder-slider"
+                  id="ladder-slider"
+                  type="range"
+                  min="0"
+                  max="4"
+                  step="any"
+                  aria-label="Speed against accuracy"
+                />
+                <ol class="ladder-ticks" id="ladder-ticks" aria-hidden="true"></ol>
+              </div>
+              <div class="ladder-pick">
+                <div class="ladder-headline">
+                  <strong id="ladder-name">Accurate</strong>
+                  <span id="ladder-model">—</span>
+                </div>
+                <small id="ladder-trade"></small>
+                <!--
+                  The three numbers the catalogue already holds. Without them
+                  the card is a name and an adjective, and "more accurate" is
+                  a promise with nothing behind it; with them the slider is a
+                  trade you can actually see the two ends of.
+                -->
+                <dl class="ladder-facts" id="ladder-facts"></dl>
+              </div>
+              <p class="note ladder-note" id="ladder-note" hidden></p>
+            </div>
+
+          </section>
+
+          <!-- 2. The key. Chosen before the permission that watches for it. -->
+          <section class="wizard-step" data-step="shortcut" hidden>
+            <h1 class="display">Choose the key you hold to speak</h1>
+            <p class="lede">
+              Hold it anywhere in macOS and talk; let go and the words land at
+              your cursor. It has to be a key that types nothing on its own.
+            </p>
+            <!--
+              A keyboard, not a list.
+              Left Option and Right Option differ only in which thumb reaches
+              them, and six rows of names made you read all six to find that
+              out. Here the difference is where the key is, which is the thing
+              it actually is. The keys Waveform cannot use are drawn anyway
+              and dimmed, because a keyboard missing its space bar is not a
+              keyboard you can find your way around.
+            -->
+            <div class="keyboard" id="keyboard" role="radiogroup" aria-label="Key to hold"></div>
+            <p class="keyboard-caption" id="keyboard-caption"></p>
+            <!--
+              Reserved rather than removed. This only applies to Fn, and
+              hiding it with `hidden` collapsed two lines out of the page the
+              moment you picked any other key -- which, on a step whose
+              content is centred, jumped the whole grid up under the pointer
+              mid-click. `visibility` keeps the box and its exact wrapped
+              height at every window width, so nothing moves.
+            -->
+            <p class="note wizard-fn-note is-reserved" id="wizard-fn-note">
+              Fn also switches input source by default. Set
+              <strong>System Settings → Keyboard → Press 🌐 to</strong> to
+              <strong>Do Nothing</strong> so a tap does not do both.
+            </p>
+          </section>
+
+          <!-- 3. The three things macOS will not grant on the app's behalf. -->
+          <section class="wizard-step" data-step="permissions" hidden>
+            <h1 class="display">Let macOS in on it</h1>
+            <p class="lede">
+              Three permissions, each asked for once. macOS grants them to you,
+              not to us, and revoking them is the same three switches.
+            </p>
+            <ol class="checklist" id="wizard-checklist"></ol>
+            <p class="note" id="wizard-permissions-note"></p>
+          </section>
+
+          <!-- 4. The only choice that changes the words themselves. -->
+          <section class="wizard-step" data-step="polish" hidden>
+            <h1 class="display">How much should it tidy you up?</h1>
+            <p class="lede">
+              The same dictated sentence, three ways. You can change this any
+              time, and None needs nothing else set up.
+            </p>
+            <div class="polish-levels" id="wizard-polish-levels" role="radiogroup" aria-label="How much polish">
+              <button type="button" class="polish-level" role="radio" data-level="none" aria-checked="true">
+                <span class="polish-level-name">None</span>
+                <span class="polish-level-what">Transcribes exactly what you said, including mistakes</span>
+                <span class="polish-level-example">
+                  so um i was thinking maybe we could push the demo to thursday
+                  the API stuff isn't isn't quite done and i'd rather not show
+                  something half broken you know
+                </span>
+              </button>
+              <button type="button" class="polish-level" role="radio" data-level="light" aria-checked="false">
+                <span class="polish-level-name">Light</span>
+                <span class="polish-level-what">Cleans up filler words and grammar</span>
+                <span class="polish-level-example">
+                  I was thinking maybe we could push the demo to Thursday. The
+                  API stuff isn't quite done, and I'd rather not show something
+                  half broken.
+                </span>
+              </button>
+              <button type="button" class="polish-level" role="radio" data-level="medium" aria-checked="false">
+                <span class="polish-level-name">Medium</span>
+                <span class="polish-level-what">Edits for clarity and conciseness</span>
+                <span class="polish-level-example">
+                  Can we push the demo to Thursday? The API isn't done, and I'd
+                  rather not show something half broken.
+                </span>
+              </button>
+            </div>
+            <div class="wizard-engine" id="wizard-engine-row">
+              <div class="wizard-engine-head">
+                <span class="row-label">Run the rewrite on</span>
+                <div class="segmented" id="wizard-engine" role="radiogroup" aria-label="Where polish runs">
+                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                </div>
+              </div>
+              <!--
+                Full width and a reserved height. Squeezed into the label
+                column beside the control it had about fifteen characters a
+                line, so the three sentences came out three, four and five
+                lines tall and the page changed height on every click.
+              -->
+              <p class="wizard-engine-note" id="wizard-engine-note"></p>
+              <!--
+                One slot, three occupants, one height.
+                Whichever engine is chosen has something worth saying here --
+                a key to paste, or a model arriving -- so the slot is never
+                the blank reserved space it used to be under "This Mac". Its
+                min-height is the tallest of the three, which is what keeps
+                the page from moving when the answer changes.
+              -->
+              <div class="wizard-engine-detail" id="wizard-engine-detail">
+              <div class="wizard-key" id="wizard-key-row" hidden>
+                <label class="wizard-key-label" for="wizard-key-input">
+                  OpenRouter API key
+                  <small id="wizard-key-state"></small>
+                  <button type="button" class="link" id="wizard-open-openrouter">Get a key</button>
+                </label>
+                <div class="wizard-key-entry">
+                  <input
+                    id="wizard-key-input"
+                    type="password"
+                    class="text-input"
+                    placeholder="sk-or-v1-…"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <button id="wizard-key-save" class="pill-button is-primary" type="button" disabled>Save</button>
+                </div>
+              </div>
+
+              <!-- What "This Mac" actually means: a second model, arriving. -->
+              <div class="wizard-local" id="wizard-local-row" hidden>
+                <div class="wizard-local-head">
+                  <span class="wizard-local-name" id="wizard-local-name">—</span>
+                  <span class="wizard-local-state" id="wizard-local-state"></span>
+                </div>
+                <div class="wizard-local-track is-reserved" id="wizard-local-track">
+                  <span id="wizard-local-bar"></span>
+                </div>
+                <p class="note wizard-local-note">
+                  A small language model that runs here beside the speech one.
+                  Nothing you dictate is sent anywhere, and it works offline.
+                </p>
+              </div>
+
+              </div>
+            </div>
+          </section>
+
+          <!-- 5. The gesture, and whatever is left of the download. -->
+          <section class="wizard-step" data-step="ready" hidden>
+            <h1 class="display" id="ready-title">That's everything</h1>
+
+            <!--
+              What is still arriving, and only while something is. The models
+              were asked for pages ago and fetched without a word; this is the
+              one moment where the answer to "can I use it yet" depends on
+              them, so it is the one place they are shown.
+            -->
+            <div class="ready-progress" id="ready-progress" hidden>
+              <div class="ready-progress-row" id="ready-speech-row" hidden>
+                <span class="ready-progress-name" id="ready-speech-name">—</span>
+                <span class="ready-progress-state" id="ready-speech-state"></span>
+                <div class="ready-progress-track"><span id="ready-speech-bar"></span></div>
+              </div>
+              <div class="ready-progress-row" id="ready-polish-row" hidden>
+                <span class="ready-progress-name" id="ready-polish-name">—</span>
+                <span class="ready-progress-state" id="ready-polish-state"></span>
+                <div class="ready-progress-track"><span id="ready-polish-bar"></span></div>
+              </div>
+            </div>
+
+            <ul class="ready-gestures">
+              <li>
+                <kbd id="ready-key">—</kbd>
+                <strong>Hold and speak</strong>
+                <span>Let go and the words land at your cursor.</span>
+              </li>
+              <li>
+                <kbd id="ready-key-tap">—</kbd>
+                <strong>Tap twice</strong>
+                <span>Keeps listening without holding the key down.</span>
+              </li>
+              <li>
+                <kbd>esc</kbd>
+                <strong>Escape</strong>
+                <span>Throws the phrase away without inserting it.</span>
+              </li>
+            </ul>
+          </section>
+            <footer class="wizard-foot">
+              <span class="wizard-buttons">
+                <button class="pill-button is-primary" id="wizard-next" type="button">Continue</button>
+              </span>
+            </footer>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div
       id="prompt-editor"

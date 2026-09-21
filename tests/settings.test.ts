@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings";
 import { DEFAULT_POLISH_PROMPT } from "../src/shared/prompts";
@@ -141,6 +142,37 @@ describe("normalizeSettings", () => {
   it("rejects a level it does not have", () => {
     expect(normalizeSettings({ polishLevel: "heavy" }).polishLevel).toBe(
       DEFAULT_SETTINGS.polishLevel,
+    );
+  });
+
+  // Light, not "system". The default lives twice -- here and in Rust's
+  // AppSettings::default -- and the window is painted from whichever answers
+  // first, so the two disagreeing would show as a flash of the wrong theme.
+  it("starts a fresh install on the light theme, and leaves a stored one alone", () => {
+    expect(DEFAULT_SETTINGS.theme).toBe("light");
+    expect(normalizeSettings({}).theme).toBe("light");
+
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain('theme: "light".to_string()');
+
+    // Anybody already running keeps what they chose, including "system".
+    expect(normalizeSettings({ theme: "system" }).theme).toBe("system");
+    expect(normalizeSettings({ theme: "dark" }).theme).toBe("dark");
+  });
+
+  // The wizard writes this once and then never opens again, so it has to
+  // survive every later write. A settings file that predates it reads as a
+  // fresh install here, which is deliberate -- the window checks the lifetime
+  // dictation count as well before showing anybody a first-run wizard.
+  it("remembers that the first-run wizard has been through", () => {
+    expect(DEFAULT_SETTINGS.onboardingCompleted).toBe(false);
+    expect(normalizeSettings({}).onboardingCompleted).toBe(false);
+    expect(normalizeSettings({ onboardingCompleted: true }).onboardingCompleted).toBe(true);
+
+    const done = normalizeSettings({ onboardingCompleted: true });
+    expect(normalizeSettings({ theme: "dark" }, done).onboardingCompleted).toBe(true);
+    expect(normalizeSettings({ onboardingCompleted: "yes" }, done).onboardingCompleted).toBe(
+      true,
     );
   });
 });

@@ -114,6 +114,16 @@ export interface AppSettings {
    */
   automaticUpdateCheck: boolean;
   sidebarCollapsed: boolean;
+  /**
+   * Whether the first-run wizard has been through, or been dismissed.
+   *
+   * False on a fresh install, which is the only state that opens the wizard.
+   * An install that has already dictated is marked done without ever seeing
+   * it: this field arrived after the app did, so every existing settings file
+   * reads as a fresh install, and dropping a five-page wizard in front of
+   * someone mid-sentence is worse than never showing it at all.
+   */
+  onboardingCompleted: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -129,7 +139,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlayY: null,
   overlayCx: null,
   overlayCy: null,
-  theme: "system",
+  // Light rather than following macOS. Only a fresh install takes this: a
+  // settings file that names a theme keeps the one it names.
+  theme: "light",
   // The hosted engine, because this setting arrived after the app did: a
   // settings file written before it exists takes the default, and for anyone
   // already polishing through OpenRouter that has to be what they had.
@@ -147,6 +159,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hideDockWhenClosed: false,
   automaticUpdateCheck: true,
   sidebarCollapsed: false,
+  onboardingCompleted: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -213,6 +226,10 @@ export function normalizeSettings(
       typeof input.sidebarCollapsed === "boolean"
         ? input.sidebarCollapsed
         : base.sidebarCollapsed,
+    onboardingCompleted:
+      typeof input.onboardingCompleted === "boolean"
+        ? input.onboardingCompleted
+        : base.onboardingCompleted,
   };
 }
 

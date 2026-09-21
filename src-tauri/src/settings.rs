@@ -140,6 +140,14 @@ pub struct AppSettings {
     /// Whether the sidebar is folded away. A window preference rather than a
     /// dictation one, but it belongs with the rest so it survives a restart.
     pub sidebar_collapsed: bool,
+    /// Whether the first-run wizard has been through, or been dismissed.
+    ///
+    /// False on a fresh install, and false in every settings file written
+    /// before this field existed -- which reads the same way round here and
+    /// is why the window checks the lifetime dictation count as well before
+    /// opening the wizard on anybody.
+    #[serde(default)]
+    pub onboarding_completed: bool,
 }
 
 impl Default for AppSettings {
@@ -157,7 +165,9 @@ impl Default for AppSettings {
             overlay_y: None,
             overlay_cx: None,
             overlay_cy: None,
-            theme: "system".to_string(),
+            // Light rather than following macOS. Only a fresh install takes
+            // this; a settings file that names a theme keeps the one it names.
+            theme: "light".to_string(),
             // The hosted engine, because this field arrived after the app did:
             // a settings file written before it exists takes the default, and
             // for everyone already polishing through OpenRouter that has to be
@@ -178,6 +188,7 @@ impl Default for AppSettings {
             hide_dock_when_closed: false,
             automatic_update_check: true,
             sidebar_collapsed: false,
+            onboarding_completed: false,
         }
     }
 }
@@ -464,6 +475,40 @@ mod tests {
             let loaded = stored.normalize(&AppSettings::default());
             assert_eq!(loaded.model_id, model.id);
         }
+    }
+
+    /// Light, not "system". A settings file that names a theme keeps it, so
+    /// this only reaches a fresh install -- and the window is painted from
+    /// whichever side answers first, so it has to match the TypeScript
+    /// default that `settings.test.ts` pins.
+    #[test]
+    fn a_fresh_install_starts_light() {
+        assert_eq!(AppSettings::default().theme, "light");
+        let mut stored = AppSettings::default();
+        stored.theme = "system".to_string();
+        assert_eq!(stored.normalize(&AppSettings::default()).theme, "system");
+    }
+
+    /// The wizard shows once. If this did not survive a reload it would show
+    /// on every launch, which is the worst version of a first-run wizard
+    /// there is.
+    #[test]
+    fn the_first_run_wizard_stays_done() {
+        assert!(!AppSettings::default().onboarding_completed);
+        let mut stored = AppSettings::default();
+        stored.onboarding_completed = true;
+        assert!(stored.normalize(&AppSettings::default()).onboarding_completed);
+    }
+
+    /// A settings file written before the field existed carries no key for
+    /// it. Serde has to read that as a fresh install rather than refusing the
+    /// whole file, which would reset every other setting in it.
+    #[test]
+    fn a_settings_file_without_the_flag_still_loads() {
+        let stored: AppSettings =
+            serde_json::from_str(r#"{"theme":"dark"}"#).expect("loads");
+        assert!(!stored.onboarding_completed);
+        assert_eq!(stored.theme, "dark");
     }
 
     /// Off must survive a reload, or the switch is decorative. On is the

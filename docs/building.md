@@ -59,9 +59,12 @@ a checkout build that shared `com.webtiara.waveform` with the copy in
 `/Applications` stole that copy's grants on every launch — and giving them
 back meant removing the released app from Accessibility and Input Monitoring
 first. The two appear as **Waveform** and **Waveform Dev** in System Settings.
-Settings, history and model weights still live under
-`~/Library/Application Support/Waveform`; that path is the app name, not the
-bundle id.
+The data is separated too. `scripts/run-tauri.sh` builds with the `dev-data`
+feature, which moves settings, history, stats and every downloaded weight to
+`~/Library/Application Support/Waveform Dev`. Only that script sets it, so a
+published build can never read a folder only developers have. Before it
+existed, `pnpm app` wrote over the installed app's profile — a wizard or a
+migration tried out in a checkout landed on real dictation history.
 
 The team is pinned rather than the certificate name. The name carries a
 per-certificate suffix that changes when the certificate is renewed, while the
@@ -98,7 +101,7 @@ Everything lands under Application Support:
 
 | What | Path |
 | --- | --- |
-| Whisper weights | `~/Library/Application Support/Waveform/models/whisper/` |
+| Whisper weights | `~/Library/Application Support/Waveform/models/whisper/` (`Waveform Dev/…` from `pnpm app`) |
 | Parakeet weights | `~/Library/Application Support/Waveform/models/parakeet/` |
 | Qwen weights | `~/Library/Application Support/Waveform/models/qwen/` |
 | Qwen venv | `~/Library/Application Support/Waveform/runtimes/qwen/` |
