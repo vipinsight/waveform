@@ -2517,9 +2517,21 @@ function wizardCanAdvance(step: WizardStep): boolean {
   return step !== "permissions" || permissionSteps().every((one) => one.done);
 }
 
-/** The three macOS permissions: the setup list without the download in it. */
+/**
+ * The three macOS permissions, named rather than filtered by exception.
+ *
+ * This used to be the setup list minus "model", which quietly took in every
+ * step added afterwards: the polish model turned up on the permissions page
+ * -- and, because this list is also the page's gate, made Continue wait on a
+ * 397 MB download before it would let anyone past. A download is not a
+ * permission, and neither is anything else that might be added here later.
+ */
+const WIZARD_PERMISSIONS = ["microphone", "accessibility", "input-monitoring"] as const;
+
 function permissionSteps(): SetupStep[] {
-  return setupSteps().filter((step) => step.id !== "model");
+  return setupSteps().filter((step) =>
+    WIZARD_PERMISSIONS.some((id) => id === step.id),
+  );
 }
 
 /* -------------------------------------------------------------------------
