@@ -22,6 +22,10 @@ custom-protocol = ["tauri/custom-protocol"]
 # Published builds. Drops the compiled-in path to this checkout; see
 # project_root() in src/lib.rs. scripts/release.sh turns it on.
 dist = []
+# Keeps a checkout build's settings, history and weights out of the installed
+# app's. Opt-in, and only scripts/run-tauri.sh turns it on -- a published
+# build must never read from a folder only developers have. See paths.rs.
+dev-data = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

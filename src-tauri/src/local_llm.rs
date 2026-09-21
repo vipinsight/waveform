@@ -157,11 +157,7 @@ pub fn is_known(id: &str) -> bool {
 pub fn weights_dir() -> Option<PathBuf> {
     std::env::var_os("WAVEFORM_LLM_DIR")
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| {
-                PathBuf::from(home).join("Library/Application Support/Waveform/llm")
-            })
-        })
+        .or_else(|| crate::paths::waveform_home().map(|home| home.join("llm")))
 }
 
 pub fn weights_path(model: &LocalModel) -> Option<PathBuf> {

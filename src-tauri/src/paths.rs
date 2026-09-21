@@ -8,11 +8,28 @@
 
 use std::path::{Path, PathBuf};
 
-/// `~/Library/Application Support/Waveform`.
+/// The folder under Application Support, which the dev build does not share.
+///
+/// A checkout build and an installed one are the same app to this path, so
+/// running `pnpm app` used to write settings, dictation history and stats
+/// over the copy in /Applications -- and a wizard or a migration tried out
+/// here landed on the real profile. The `dev-data` feature moves the whole
+/// tree aside; `scripts/run-tauri.sh` is the only thing that sets it, so a
+/// published build cannot end up reading a folder only developers have.
+///
+/// One constant rather than the string in five files: settings, history,
+/// stats, model weights and the polish weights all have to move together, and
+/// four of them being moved is worse than none.
+pub const DATA_DIR: &str = if cfg!(feature = "dev-data") {
+    "Waveform Dev"
+} else {
+    "Waveform"
+};
+
+/// `~/Library/Application Support/Waveform`, or the dev build's own.
 pub fn waveform_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| {
-        Path::new(&home).join("Library/Application Support/Waveform")
-    })
+    std::env::var_os("HOME")
+        .map(|home| Path::new(&home).join("Library/Application Support").join(DATA_DIR))
 }
 
 pub fn models_root() -> Option<PathBuf> {

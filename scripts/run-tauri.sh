@@ -27,8 +27,8 @@ PROFILE="${WAVEFORM_PROFILE:-release}"
 # bundle id, so a checkout build that shared `com.webtiara.waveform` with the
 # copy in /Applications stole that copy's grants on every launch -- and giving
 # them back meant removing the released app from the list first. `.dev` is a
-# separate client. Settings and model weights still live under Application
-# Support/Waveform; that path is the app name, not this id.
+# separate client. The data is separated too, by the `dev-data` feature below:
+# this build reads and writes Application Support/Waveform Dev.
 #
 # Several certificates can be installed at once -- one per Apple developer team
 # -- and the first one `security` happens to list is not necessarily the right
@@ -61,7 +61,14 @@ cd "$ROOT"
 pnpm build
 
 cd src-tauri
-if [ "$PROFILE" = "release" ]; then cargo build --release; else cargo build; fi
+# `dev-data` keeps this build's settings, history and weights in
+# "Application Support/Waveform Dev" rather than over the installed app's.
+# Only here: a published build must never read a folder only developers have.
+if [ "$PROFILE" = "release" ]; then
+  cargo build --release --features dev-data
+else
+  cargo build --features dev-data
+fi
 cd "$ROOT"
 
 # Every Waveform belonging to this checkout has to go, not just the bundle

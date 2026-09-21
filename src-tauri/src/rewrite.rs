@@ -869,9 +869,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn polishes_the_way_the_app_does() {
-        let dir = std::env::var_os("HOME")
-            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
-            .expect("a home directory");
+        let dir = crate::paths::waveform_home().expect("a home directory");
         let store = SettingsStore::load(dir);
         let settings = store.value();
         println!(
@@ -908,9 +906,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn shows_local_replies() {
-        let dir = std::env::var_os("HOME")
-            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
-            .expect("a home directory");
+        let dir = crate::paths::waveform_home().expect("a home directory");
         let store = SettingsStore::load(dir);
         let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));
 
@@ -946,9 +942,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn polishes_beside_whisper() {
-        let dir = std::env::var_os("HOME")
-            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support/Waveform"))
-            .expect("a home directory");
+        let dir = crate::paths::waveform_home().expect("a home directory");
         let store = SettingsStore::load(dir);
         let model_file = crate::model_server::model(&store.value().model_id).remote_id;
         let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));

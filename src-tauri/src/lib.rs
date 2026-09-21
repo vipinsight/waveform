@@ -1795,9 +1795,8 @@ fn merge_settings(
 /// one downloaded runtime serve either host.
 fn user_data_dir(app: &tauri::AppHandle) -> PathBuf {
     if cfg!(target_os = "macos") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return Path::new(&home)
-                .join("Library/Application Support/Waveform");
+        if let Some(home) = crate::paths::waveform_home() {
+            return home;
         }
     }
     app.path()
