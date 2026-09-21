@@ -2264,8 +2264,39 @@ function openWizard(): void {
   if (promptEditorKind) togglePromptEditor(false);
 
   void readWizardFits().then(startPrefetch);
+  startPolishDefault();
   renderKeypick();
   showWizardStep("welcome");
+}
+
+/**
+ * Starts a first run on Light, rewriting here on this Mac.
+ *
+ * The stored defaults stay where they are, and this is set on the way into
+ * the wizard instead, because the two cannot be moved for the same reasons.
+ * `polishLevel` could be: a settings file older than the levels carries
+ * `transformOnDictate`, so it never falls through to the default. But
+ * `polishEngine` has no such fallback -- a file written before that field
+ * existed takes whatever the default is, and moving it to "local" would
+ * quietly switch everybody already polishing through OpenRouter onto a model
+ * they have not downloaded. So the new answer is given to new installs only,
+ * which is exactly who is looking at this wizard.
+ *
+ * Doing it here rather than on the polish page is what gets the model moving:
+ * it is a 397 MB download, and starting it four pages early is the same trick
+ * the speech models get.
+ *
+ * Only from the factory settings. Somebody who reached the polish page, chose
+ * None and quit has answered this, and reopening must not overrule them.
+ */
+function startPolishDefault(): void {
+  if (settings.polishLevel !== DEFAULT_SETTINGS.polishLevel) return;
+  if (settings.polishEngine !== DEFAULT_SETTINGS.polishEngine) return;
+  void patchSettings({
+    polishLevel: "light",
+    transformPrompt: transformPromptFor("light"),
+    polishEngine: "local",
+  }).then(prefetchPolishModel);
 }
 
 /**
