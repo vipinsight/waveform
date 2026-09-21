@@ -2668,23 +2668,19 @@ select {
 /* The heading and its one sentence are centred over whatever the step is
    asking with; the controls below stay left-aligned, because a checklist or
    a row of cards read down an edge. */
-.wizard-step .display,
-.wizard-step .lede {
-  text-align: center;
-}
-
-.wizard-step .lede {
-  margin-inline: auto;
-}
-
 .wizard-step .display {
   font-size: 30px;
   line-height: 1.15;
+  text-align: center;
 }
 
+/* One rule, because the `margin` shorthand in a second one was resetting the
+   `margin-inline: auto` that centres the box -- so the text was centred
+   inside a paragraph still sitting against the left edge of the step. */
 .wizard-step .lede {
   max-width: 52ch;
-  margin: 12px 0 28px;
+  margin: 12px auto 28px;
+  text-align: center;
 }
 
 /* One button, directly under the step rather than at the foot of the window.
@@ -3106,6 +3102,10 @@ select {
    of the three occupants -- measured, not guessed, and kept close to them so
    the other two are not left sitting in a hole -- which is what stops
    swapping between them changing the height of the page. */
+.wizard-engine-detail[hidden] {
+  display: none;
+}
+
 .wizard-engine-detail {
   min-height: 76px;
   padding-top: 14px;
@@ -3173,39 +3173,7 @@ select {
   margin-top: 10px;
 }
 
-/* ----- None: the two answers, described rather than an empty box ----- */
-
-.wizard-engine-idle {
-  display: grid;
-  margin: 0;
-  gap: 12px;
-}
-
-.wizard-engine-idle > div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.wizard-engine-idle dt {
-  min-width: 86px;
-  flex: none;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 620;
-}
-
-.wizard-engine-idle dd {
-  margin: 0;
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-weight: 460;
-  line-height: 1.5;
-}
-
-.wizard-engine-idle[hidden] {
-  display: none;
-}
+/* ----- the key field ----- */
 
 .wizard-key-label {
   display: flex;
@@ -3245,75 +3213,121 @@ select {
   font-size: 12.5px;
 }
 
-.wizard-engine[hidden] {
-  display: none;
-}
-
 /* Sits under the keyboard it is about, so it is measured against the keyboard
-   rather than against the width of the step. */
+   rather than against the width of the step. Reserved when it does not apply:
+   `display: none` here is two lines of height appearing and vanishing under
+   the pointer as you try keys. */
 .wizard-fn-note {
   max-width: 520px;
   margin-inline: auto;
   text-align: center;
 }
 
-/* Kept in the layout, taken out of the picture and out of the accessibility
-   tree. `display: none` here is two lines of height appearing and vanishing
-   under the pointer as you try keys. */
 .wizard-fn-note.is-reserved {
   visibility: hidden;
 }
 
 /* ----- the last page ----- */
 
+/* Three beats of one gesture across a row, the same shape as the welcome
+   page's three cards -- the last page of the wizard answers the first. */
 .ready-gestures {
   display: grid;
-  padding: 8px 24px;
-  border: 1px solid var(--hairline);
-  border-radius: 16px;
+  width: 100%;
+  padding: 0;
   margin: 0;
-  background: var(--surface-sunken);
-  gap: 0;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   list-style: none;
 }
 
 .ready-gestures li {
   display: flex;
-  align-items: center;
-  padding: 16px 0;
-  gap: 16px;
-}
-
-.ready-gestures li + li {
-  border-top: 1px solid var(--hairline);
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  gap: 8px;
 }
 
 .ready-gestures kbd {
-  min-width: 62px;
-  flex: none;
-  padding: 7px 10px;
-  font-size: 15px;
-}
-
-.ready-gestures span {
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 460;
-  line-height: 1.5;
+  min-width: 52px;
+  padding: 6px 10px;
+  font-size: 14px;
 }
 
 .ready-gestures strong {
   color: var(--ink);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 620;
 }
 
-@media (max-width: 760px) {
-  .wizard-step .display {
-    font-size: 24px;
-  }
+.ready-gestures span {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 460;
+  line-height: 1.5;
+}
 
-  .wizard-engine {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+/* ----- what is still arriving ----- */
+
+.ready-progress {
+  display: grid;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  margin: 0 0 20px;
+  background: var(--surface-sunken);
+  gap: 14px;
+}
+
+.ready-progress[hidden] {
+  display: none;
+}
+
+/* Name and percentage on one line, the bar spanning both under them. */
+.ready-progress-row {
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ready-progress-row[hidden] {
+  display: none;
+}
+
+.ready-progress-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ready-progress-state {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+
+.ready-progress-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+  grid-column: 1 / -1;
+}
+
+.ready-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 200ms ease;
 }

@@ -539,7 +539,7 @@
                 min-height is the tallest of the three, which is what keeps
                 the page from moving when the answer changes.
               -->
-              <div class="wizard-engine-detail">
+              <div class="wizard-engine-detail" id="wizard-engine-detail">
               <div class="wizard-key" id="wizard-key-row" hidden>
                 <label class="wizard-key-label" for="wizard-key-input">
                   OpenRouter API key
@@ -574,17 +574,6 @@
                 </p>
               </div>
 
-              <!-- At None nothing runs, so the slot says so rather than sitting empty. -->
-              <dl class="wizard-engine-idle" id="wizard-engine-idle">
-                <div>
-                  <dt>This Mac</dt>
-                  <dd>A second small model, downloaded here. Private and offline.</dd>
-                </div>
-                <div>
-                  <dt>OpenRouter</dt>
-                  <dd>A hosted model. Faster and larger, and it needs an API key.</dd>
-                </div>
-              </dl>
               </div>
             </div>
           </section>
@@ -592,22 +581,41 @@
           <!-- 5. The gesture, and whatever is left of the download. -->
           <section class="wizard-step" data-step="ready" hidden>
             <h1 class="display" id="ready-title">That's everything</h1>
-            <p class="lede" id="ready-lede">
-              Put your cursor in any text field and try it. Nothing you say
-              leaves this Mac.
-            </p>
+
+            <!--
+              What is still arriving, and only while something is. The models
+              were asked for pages ago and fetched without a word; this is the
+              one moment where the answer to "can I use it yet" depends on
+              them, so it is the one place they are shown.
+            -->
+            <div class="ready-progress" id="ready-progress" hidden>
+              <div class="ready-progress-row" id="ready-speech-row" hidden>
+                <span class="ready-progress-name" id="ready-speech-name">—</span>
+                <span class="ready-progress-state" id="ready-speech-state"></span>
+                <div class="ready-progress-track"><span id="ready-speech-bar"></span></div>
+              </div>
+              <div class="ready-progress-row" id="ready-polish-row" hidden>
+                <span class="ready-progress-name" id="ready-polish-name">—</span>
+                <span class="ready-progress-state" id="ready-polish-state"></span>
+                <div class="ready-progress-track"><span id="ready-polish-bar"></span></div>
+              </div>
+            </div>
+
             <ul class="ready-gestures">
               <li>
                 <kbd id="ready-key">—</kbd>
-                <span><strong>Hold and speak.</strong> Let go and the words land at your cursor.</span>
+                <strong>Hold and speak</strong>
+                <span>Let go and the words land at your cursor.</span>
               </li>
               <li>
                 <kbd id="ready-key-tap">—</kbd>
-                <span><strong>Tap twice</strong> to keep listening without holding.</span>
+                <strong>Tap twice</strong>
+                <span>Keeps listening without holding the key down.</span>
               </li>
               <li>
                 <kbd>esc</kbd>
-                <span><strong>Escape</strong> throws the phrase away without inserting it.</span>
+                <strong>Escape</strong>
+                <span>Throws the phrase away without inserting it.</span>
               </li>
             </ul>
           </section>

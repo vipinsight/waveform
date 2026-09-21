@@ -152,19 +152,27 @@ const element = {
   wizardEngineRow: requireElement<HTMLElement>("wizard-engine-row"),
   wizardEngine: requireElement<HTMLElement>("wizard-engine"),
   wizardEngineNote: requireElement<HTMLElement>("wizard-engine-note"),
+  wizardEngineDetail: requireElement<HTMLElement>("wizard-engine-detail"),
   wizardKeyRow: requireElement<HTMLElement>("wizard-key-row"),
   wizardLocalRow: requireElement<HTMLElement>("wizard-local-row"),
   wizardLocalName: requireElement<HTMLElement>("wizard-local-name"),
   wizardLocalState: requireElement<HTMLElement>("wizard-local-state"),
   wizardLocalTrack: requireElement<HTMLElement>("wizard-local-track"),
   wizardLocalBar: requireElement<HTMLElement>("wizard-local-bar"),
-  wizardEngineIdle: requireElement<HTMLElement>("wizard-engine-idle"),
   wizardKeyInput: requireElement<HTMLInputElement>("wizard-key-input"),
   wizardKeySave: requireElement<HTMLButtonElement>("wizard-key-save"),
   wizardKeyState: requireElement<HTMLElement>("wizard-key-state"),
   wizardOpenOpenRouter: requireElement<HTMLButtonElement>("wizard-open-openrouter"),
   readyTitle: requireElement<HTMLElement>("ready-title"),
-  readyLede: requireElement<HTMLElement>("ready-lede"),
+  readyProgress: requireElement<HTMLElement>("ready-progress"),
+  readySpeechRow: requireElement<HTMLElement>("ready-speech-row"),
+  readySpeechName: requireElement<HTMLElement>("ready-speech-name"),
+  readySpeechState: requireElement<HTMLElement>("ready-speech-state"),
+  readySpeechBar: requireElement<HTMLElement>("ready-speech-bar"),
+  readyPolishRow: requireElement<HTMLElement>("ready-polish-row"),
+  readyPolishName: requireElement<HTMLElement>("ready-polish-name"),
+  readyPolishState: requireElement<HTMLElement>("ready-polish-state"),
+  readyPolishBar: requireElement<HTMLElement>("ready-polish-bar"),
   readyKey: requireElement<HTMLElement>("ready-key"),
   readyKeyTap: requireElement<HTMLElement>("ready-key-tap"),
 };
@@ -184,6 +192,10 @@ let aiStatus: AiStatus | null = null;
 let modelInstalled = false;
 /** How big the chosen model's download is, for the step that offers it. */
 let modelDownloadSize = "";
+/** The same three facts for the polish model, which is a step of its own. */
+let polishInstalled = false;
+let polishLabel = "";
+let polishDownloadSize = "";
 /**
  * Whether the catalogue has been read once.
  *
@@ -247,6 +259,11 @@ let ladderPointerMoved = false;
 let ladderShownRung = -1;
 /** Whether the slider has been moved, which turns a default into a choice. */
 let ladderTouched = false;
+/** The polish model's last known state, for the pages that report on it. */
+let wizardPolishModel: PolishModelStatus | null = null;
+/** Latest percent for each download, so the last page can draw a bar. */
+let speechPercent = 0;
+let polishPercent = 0;
 /**
  * Where the slider sits, which is not yet what has been chosen.
  *
@@ -964,6 +981,8 @@ async function downloadPolishModel(id: string): Promise<void> {
     polishDownloading = null;
     await renderPolishModels();
     renderAiStatus(await host().getAiStatus());
+    // It is a setup step now, so its arrival is what closes that row.
+    await refreshModelInstalled();
   }
 }
 
@@ -971,8 +990,19 @@ async function downloadPolishModel(id: string): Promise<void> {
 function showPolishDownloadProgress(event: ModelEvent): void {
   // The wizard shows this model arriving on its polish page, which is where
   // the choice that started the download was made.
+  polishPercent = Math.round((event.progress ?? 0) * 100);
+  if (wizardStep === "ready") renderReadyProgress();
+  // The onboarding card carries this model as a step, so it shows the same
+  // percentage the speech row does rather than a button that says Download
+  // while the file is already arriving.
+  const step = element.onboardSteps.querySelector<HTMLElement>('[data-step="polish-model"]');
+  const action = step?.querySelector("button");
+  if (action) {
+    action.textContent = `${polishPercent}%`;
+    action.disabled = true;
+  }
   if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
-    const percent = Math.round((event.progress ?? 0) * 100);
+    const percent = polishPercent;
     element.wizardLocalTrack.classList.toggle("is-reserved", event.stage !== "downloading");
     element.wizardLocalBar.style.width = `${percent}%`;
     element.wizardLocalState.textContent =
@@ -1076,8 +1106,13 @@ interface SetupStep {
 /**
  * Everything that has to be true before dictation works end to end.
  *
- * Ordered the way a person hits them: hear you, notice the shortcut, type the
- * result, and have something to do the listening with.
+ * Ordered the way a person meets them: hear you, put the words somewhere, see
+ * the key that starts it, and have something to do the listening with.
+ *
+ * Typing comes before the shortcut because it is the half people recognise --
+ * "it types for you" is the app, while Input Monitoring is the plumbing that
+ * notices a key -- and a list that opens with two pieces of plumbing reads as
+ * more suspicious than it is.
  *
  * The model is a step like any other because it is one. Weights are not
  * bundled -- the disk image would be half a gigabyte heavier and most of it
@@ -1098,20 +1133,20 @@ function setupSteps(): SetupStep[] {
       label: "microphone access",
     },
     {
-      id: "input-monitoring",
-      done: status?.inputMonitoring === true,
-      title: "Let it watch for your shortcut",
-      detail: "Input Monitoring — so your key works in every app, not just this one",
-      action: "Allow",
-      label: "Input Monitoring",
-    },
-    {
       id: "accessibility",
       done: status?.accessibility === true,
       title: "Let it type for you",
       detail: "Accessibility — so your words land wherever your cursor is",
       action: "Allow",
       label: "Accessibility",
+    },
+    {
+      id: "input-monitoring",
+      done: status?.inputMonitoring === true,
+      title: "Let it watch for your shortcut",
+      detail: "Input Monitoring — so your key works in every app, not just this one",
+      action: "Allow",
+      label: "Input Monitoring",
     },
     {
       id: "model",
@@ -1121,6 +1156,22 @@ function setupSteps(): SetupStep[] {
       action: "Download",
       label: "a speech model",
     },
+    // A fifth step only when something is set to rewrite with it. At None no
+    // model runs on the dictation path, and through OpenRouter the rewriting
+    // happens elsewhere -- in both cases a missing local model stops nothing,
+    // and a checklist row for it would be a chore invented out of nothing.
+    ...(settings.polishLevel !== "none" && settings.polishEngine === "local"
+      ? [
+          {
+            id: "polish-model",
+            done: polishInstalled,
+            title: "Download the AI polish model",
+            detail: `${polishLabel}${polishDownloadSize === "" ? "" : ` · ${polishDownloadSize}`} — the part that tidies what you said`,
+            action: "Download",
+            label: "the AI polish model",
+          },
+        ]
+      : []),
   ];
 }
 
@@ -1137,6 +1188,17 @@ async function refreshModelInstalled(): Promise<void> {
   modelInstalled = current ? current.runtimeInstalled && current.weightsInstalled : false;
   modelDownloadSize =
     current && current.downloadBytes !== null ? formatBytes(current.downloadBytes) : "";
+
+  // The polish model is the other half of "can this app do what it is set to
+  // do", and it is read here so both halves are known at the same moment --
+  // a list that ticks one row a round trip after the other reads as broken.
+  await readPolishModel();
+  polishInstalled = wizardPolishModel?.installed ?? false;
+  polishLabel = wizardPolishModel?.label ?? "";
+  polishDownloadSize = wizardPolishModel
+    ? formatBytes(wizardPolishModel.downloadBytes)
+    : "";
+
   setupKnown = true;
   renderSetup();
   renderDictationDeck();
@@ -1604,7 +1666,10 @@ function showDownloadProgress(event: ModelEvent): void {
   // The onboarding card offers the same download without the models page ever
   // being opened, so it gets the same progress.
   const percent = Math.round((event.progress ?? 0) * 100);
-  // Nothing for the wizard. It fetches two models on spec before anyone asks
+  speechPercent = percent;
+  if (wizardStep === "ready") renderReadyProgress();
+  // Nothing for the wizard beyond the last page. It fetches two models on
+  // spec before anyone asks
   // for one, and a percentage counting up in its footer would be announcing
   // a download the person never started.
   const step = element.onboardSteps.querySelector<HTMLElement>('[data-step="model"]');
@@ -1730,6 +1795,10 @@ function renderLanguageSelect(): void {
 function resolveSetupStep(id: string): void {
   if (id === "model") {
     void downloadModel(settings.modelId);
+    return;
+  }
+  if (id === "polish-model") {
+    void downloadPolishModel(settings.localModelId).then(refreshModelInstalled);
     return;
   }
   if (id === "microphone") {
@@ -2770,7 +2839,10 @@ function renderKeypick(): void {
   element.keyboardCaption.replaceChildren();
   if (chosen) {
     const name = document.createElement("strong");
-    name.textContent = chosen.label;
+    // The glyph as well as the name. The name is what disambiguates the two
+    // Commands and the two Options, and the glyph is what is actually
+    // printed on the key you are about to go and hold.
+    name.textContent = `${chosen.label} (${hotkeyKeycap(chosen)})`;
     element.keyboardCaption.append(name, text(` ${KEY_ADVICE[chosen.id] ?? ""}`));
   } else {
     element.keyboardCaption.append(text("Pick a key to hold while you speak."));
@@ -2929,7 +3001,9 @@ function renderWizardKey(): void {
   const off = settings.polishLevel === "none";
   const wanted = !off && settings.polishEngine === "openrouter";
   const local = !off && settings.polishEngine === "local";
-  element.wizardEngineIdle.hidden = !off;
+  // Nothing rewrites at None, so there is nothing to set up and nothing to
+  // describe. The slot closes rather than explaining itself.
+  element.wizardEngineDetail.hidden = off;
   element.wizardLocalRow.hidden = !local;
   element.wizardKeyRow.hidden = !wanted;
   if (local) void renderWizardLocal();
@@ -3047,24 +3121,57 @@ function renderWizardReady(): void {
   element.readyKey.textContent = glyph;
   element.readyKeyTap.textContent = `${glyph} ${glyph}`;
 
+  // Saying "That's everything" over a model that has not arrived is the one
+  // way this page can be actively misleading.
   const outstanding = setupSteps().filter((step) => !step.done);
-  // Saying "That's everything" over a list of three things that are not done
-  // is the one way this page can be actively misleading.
-  if (outstanding.length === 0) {
-    element.readyTitle.textContent = "That's everything";
-    element.readyLede.textContent =
-      "Put your cursor in any text field and try it. Nothing you say leaves this Mac.";
-    return;
-  }
-  element.readyTitle.textContent = "Nearly there";
-  element.readyLede.textContent = `Still to do: ${listMissing(outstanding)}. The card on Transcripts will keep offering it.`;
+  element.readyTitle.textContent = outstanding.length === 0 ? "That's everything" : "Nearly there";
+
+  void readPolishModel().then(renderReadyProgress);
+  renderReadyProgress();
 }
 
-/** "the microphone and Accessibility", in a sentence rather than a list. */
-function listMissing(steps: SetupStep[]): string {
-  const labels = steps.map((step) => step.label);
-  if (labels.length <= 1) return labels[0] ?? "";
-  return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+/** The polish model as the catalogue last described it. */
+async function readPolishModel(): Promise<void> {
+  const catalog = await host().getPolishModelCatalog().catch(() => []);
+  wizardPolishModel =
+    catalog.find((model) => model.id === settings.localModelId) ??
+    catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID) ??
+    null;
+}
+
+/**
+ * The two downloads, on the one page where whether they have finished is the
+ * answer to the question being asked.
+ *
+ * A row appears only while its model is not here yet, so somebody whose
+ * downloads landed during the questions -- which is most people, which is
+ * the whole point of starting them early -- sees nothing at all.
+ */
+function renderReadyProgress(): void {
+  const speech = getSpeechModel(settings.modelId);
+  const speechPending = !modelInstalled;
+  element.readySpeechRow.hidden = !speechPending;
+  if (speechPending) {
+    element.readySpeechName.textContent = speech.label;
+    const busy = downloading !== null;
+    element.readySpeechState.textContent = busy ? `${speechPercent}%` : "Waiting to start";
+    element.readySpeechBar.style.width = `${busy ? speechPercent : 0}%`;
+  }
+
+  // Only when something above None is selected: at None no model rewrites,
+  // so one arriving is not something this page is waiting on.
+  const polish = wizardPolishModel;
+  const polishPending =
+    settings.polishLevel !== "none" && polish !== null && !polish.installed;
+  element.readyPolishRow.hidden = !polishPending;
+  if (polishPending && polish) {
+    element.readyPolishName.textContent = `${polish.label} · AI polish`;
+    const busy = polishDownloading !== null;
+    element.readyPolishState.textContent = busy ? `${polishPercent}%` : "Waiting to start";
+    element.readyPolishBar.style.width = `${busy ? polishPercent : 0}%`;
+  }
+
+  element.readyProgress.hidden = !speechPending && !polishPending;
 }
 
 /* -------------------------------------------------------------------------
