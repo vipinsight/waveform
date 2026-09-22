@@ -27,6 +27,6 @@
     "esbuild": "^0.28.2",
     "lucide-static": "^1.45.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }
