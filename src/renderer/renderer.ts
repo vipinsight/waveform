@@ -44,6 +44,11 @@ import {
   SUGGESTED_MODELS,
   transformPromptFor,
 } from "../shared/prompts";
+import {
+  actionsForDictation,
+  dictationEntryTitle,
+  isFailedDictation,
+} from "./history-entry";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
@@ -2025,7 +2030,16 @@ function renderHistory(): void {
   const matches =
     query === ""
       ? entries
-      : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
+      : entries.filter((entry) => {
+          const haystack = [
+            entry.text,
+            isFailedDictation(entry) ? dictationEntryTitle(entry) : "",
+            entry.message ?? "",
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(query.toLowerCase());
+        });
 
   // Both cards stay in the tree; renderDictationDeck decides which is showing.
   element.history.replaceChildren(element.onboard, element.dictationDeck);
@@ -2089,34 +2103,96 @@ function renderDay(day: SavedDictation[]): HTMLElement {
 
 function renderEntry(entry: SavedDictation): HTMLElement {
   const article = document.createElement("article");
-  article.className = entry.id === freshId ? "entry is-fresh" : "entry";
+  article.className = [
+    "entry",
+    entry.id === freshId ? "is-fresh" : "",
+    isFailedDictation(entry) ? "is-failed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const time = document.createElement("span");
   time.className = "entry-time";
   time.textContent = formatTime(entry.createdAt);
   time.title = new Date(entry.createdAt).toLocaleString();
 
+  const body = document.createElement("div");
+  body.className = "entry-body";
+
   const text = document.createElement("p");
   text.className = "entry-text";
-  text.textContent = entry.text;
+  text.textContent = dictationEntryTitle(entry);
+  body.append(text);
+
+  if (isFailedDictation(entry) && entry.message) {
+    const detail = document.createElement("p");
+    detail.className = "entry-subtitle";
+    detail.textContent = entry.message;
+    body.append(detail);
+  }
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
-  actions.append(
-    iconButton("Copy", COPY_ICON, "", () => {
-      void navigator.clipboard.writeText(entry.text);
-    }),
-    iconButton("Delete", TRASH_ICON, "is-danger", () => {
-      void host().deleteDictation(entry.id).then((next) => {
-        entries = next;
-        freshId = null;
-        renderHistory();
-      });
-    }),
-  );
+  for (const action of actionsForDictation(entry)) {
+    if (action === "copy") {
+      actions.append(
+        iconButton("Copy", COPY_ICON, "", () => {
+          void navigator.clipboard.writeText(entry.text);
+        }),
+      );
+    } else if (action === "play") {
+      actions.append(
+        iconButton("Play", PLAY_ICON, "", () => {
+          void playDictationAudio(entry.id);
+        }),
+      );
+    } else if (action === "retry") {
+      actions.append(
+        iconButton("Retry", RETRY_ICON, "", () => {
+          void host().retryFailedDictation(entry.id);
+        }),
+      );
+    } else {
+      actions.append(
+        iconButton("Delete", TRASH_ICON, "is-danger", () => {
+          void host().deleteDictation(entry.id).then((next) => {
+            entries = next;
+            freshId = null;
+            renderHistory();
+          });
+        }),
+      );
+    }
+  }
 
-  article.append(time, text, actions);
+  article.append(time, body, actions);
   return article;
+}
+
+let playingAudio: HTMLAudioElement | null = null;
+
+async function playDictationAudio(id: string): Promise<void> {
+  try {
+    const bytes = await host().getDictationAudio(id);
+    const copy = Uint8Array.from(bytes);
+    const blob = new Blob([copy], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    if (playingAudio) {
+      playingAudio.pause();
+      const previous = playingAudio.src;
+      playingAudio = null;
+      URL.revokeObjectURL(previous);
+    }
+    const audio = new Audio(url);
+    playingAudio = audio;
+    audio.addEventListener("ended", () => {
+      URL.revokeObjectURL(url);
+      if (playingAudio === audio) playingAudio = null;
+    });
+    await audio.play();
+  } catch (error: unknown) {
+    setStatus(error instanceof Error ? error.message : String(error));
+  }
 }
 
 function iconButton(
@@ -2147,6 +2223,12 @@ function iconButton(
 const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />';
 
 const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />';
+
+const PLAY_ICON =
+  '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none" />';
+
+const RETRY_ICON =
+  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />';
 
 function toggleSearch(open: boolean): void {
   searchOpen = open;
