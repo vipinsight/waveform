@@ -65,6 +65,12 @@ describe("stylesheet covers the markup", () => {
     expect(overlayCss).not.toMatch(/\.hud\[data-state="idle"\][^{]*\{[^}]*display:\s*none/);
   });
 
+  it("shows Retry controls on a hold-mode failed transcription", () => {
+    expect(overlayCss).toContain(
+      '.hud[data-state="error"][data-retry="true"] .hud-accept',
+    );
+  });
+
   /*
    * Status used to sit beside Check for Updates. Long copy wrapped the
    * copyright onto a new line, so it jumped left. The button now carries every

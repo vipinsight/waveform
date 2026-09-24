@@ -312,6 +312,23 @@ body {
 }
 
 /*
+ * A failed transcription with held audio needs Retry / Dismiss even when the
+ * session was a hold: Accept retries, Cancel dismisses the pill and keeps the
+ * Transcripts row.
+ */
+.hud[data-state="error"][data-retry="true"] .hud-cancel,
+.hud[data-state="error"][data-retry="true"] .hud-accept {
+  width: 20px;
+  margin-right: 8px;
+  margin-left: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hud[data-state="error"][data-retry="true"] .hud-cancel { margin-right: 8px; margin-left: 0; }
+.hud[data-state="error"][data-retry="true"] .hud-accept { margin-left: 8px; margin-right: 0; }
+
+/*
  * Lucide draws at stroke-width 2 in a 24 viewBox, which at these sizes comes
  * out to a single pixel and reads as faint beside the capsule. The strokes are
  * scaled back up to the weight the buttons were drawn with.

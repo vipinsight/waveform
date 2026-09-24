@@ -1,4 +1,5 @@
 import { AudioCapture } from "./audio/capture";
+import { concatMonoPcm16Wavs } from "./audio/wav";
 import { speechBands } from "./audio/spectrum";
 import { microphoneDevices } from "../shared/microphones";
 import { getHotkeyBinding, hotkeyArrow, hotkeyCaption } from "../shared/hotkeys";
@@ -90,6 +91,16 @@ let pointerOver = false;
  * polish can warm that same circle instead of collapsing it and opening another.
  */
 let sessionReleased = false;
+/**
+ * Failed history row for the clips held in `capture`, when a transcription
+ * miss was persisted. Dismiss keeps this row; Delete or a successful Retry
+ * removes it.
+ */
+let failedId: string | null = null;
+/** True while Accept should Retry and Cancel should only hide the pill. */
+let canRetry = false;
+/** Guards overlapping Retry presses from HUD and the Transcripts list. */
+let retrying = false;
 
 const capture = new AudioCapture({
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
@@ -98,8 +109,7 @@ const capture = new AudioCapture({
     void host().log("info", "capture", message);
   },
   onError: (message) => {
-    setState("error", message);
-    scheduleIdle();
+    void handleCaptureError(message);
   },
   transcribe: (bytes) => host().transcribe(bytes),
   startNativeCapture: () => host().startNativeCapture(),
@@ -226,7 +236,13 @@ hud.addEventListener("focusout", (event) => {
   }
 });
 
-cancelButton.addEventListener("click", () => void host().cancelDictation());
+cancelButton.addEventListener("click", () => {
+  if (canRetry) {
+    dismissRetry();
+    return;
+  }
+  void host().cancelDictation();
+});
 micButton.addEventListener("click", async () => {
   if (state !== "idle") return;
   micButton.disabled = true;
@@ -240,6 +256,15 @@ micButton.addEventListener("click", async () => {
   }
 });
 acceptButton.addEventListener("click", async () => {
+  if (canRetry) {
+    acceptButton.disabled = true;
+    try {
+      await runRetry(failedId);
+    } finally {
+      if (canRetry) acceptButton.disabled = false;
+    }
+    return;
+  }
   acceptButton.disabled = true;
   try {
     await host().acceptDictation();
@@ -256,8 +281,14 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     return;
   }
 
+  if (command.action === "retry") {
+    await runRetry(command.failedId ?? null);
+    return;
+  }
+
   if (command.action === "idle") {
     cancelReleaseTail();
+    clearRetryUi();
     if (capture.isRunning) capture.stop();
     showIdle();
     return;
@@ -273,6 +304,8 @@ async function handleCommand(command: DictationCommand): Promise<void> {
     hud.dataset.mode = "hold";
     // The reason travels with the command, and setState carries it to the
     // window: a red pill on its own says only that something happened.
+    // Host-originated fails (polish, permissions) have nothing to Retry.
+    clearRetryUi();
     setState("error", command.message);
     startAnimation();
     scheduleIdle();
@@ -281,6 +314,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
 
   if (command.action === "busy") {
     cancelReleaseTail();
+    clearRetryUi();
     if (capture.isRunning) capture.stop();
     cancelLinger();
     previewing = false;
@@ -297,6 +331,10 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "start") {
     cancelReleaseTail();
     cancelLinger();
+    // A new listen does not wipe older failed Transcripts rows; it only drops
+    // the in-memory Retry target for this session.
+    clearRetryUi();
+    capture.clearRetryClips();
     previewing = false;
     sessionReleased = false;
     acceptButton.disabled = false;
@@ -321,6 +359,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
 
   if (command.action === "cancel") {
     cancelReleaseTail();
+    clearRetryUi();
     capture.cancel();
     finish();
     return;
@@ -330,12 +369,140 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   // is no microphone session: treating it as a release tail called stop() on a
   // capture that never started, which hung the HUD.
   if (command.action === "stop" && !capture.isRunning) {
+    if (canRetry) return;
     finish();
     return;
   }
 
   acceptButton.disabled = true;
   scheduleReleaseTail();
+}
+
+/**
+ * Engine / empty-words failures with held audio become a failed history row
+ * and stay on the pill until Retry or Dismiss.
+ */
+async function handleCaptureError(message: string): Promise<void> {
+  if (!capture.hasRetryableClips) {
+    clearRetryUi();
+    setState("error", message);
+    scheduleIdle();
+    return;
+  }
+
+  cancelReleaseTail();
+  cancelLinger();
+  if (capture.isRunning) capture.stop();
+
+  try {
+    if (!failedId) {
+      const wav = concatMonoPcm16Wavs(capture.clips());
+      const entries = await host().saveFailedDictation(message, wav);
+      failedId = entries[0]?.id ?? null;
+    } else {
+      await host().updateFailedDictation(failedId, message);
+    }
+  } catch (error: unknown) {
+    void host().log(
+      "error",
+      "capture",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  canRetry = true;
+  hud.dataset.retry = "true";
+  acceptButton.disabled = false;
+  cancelButton.setAttribute("aria-label", "Dismiss failed dictation");
+  acceptButton.setAttribute("aria-label", "Retry transcription");
+  setState("error", message);
+  startAnimation();
+}
+
+/** Hides the pill; leaves the failed Transcripts row and its WAV. */
+function dismissRetry(): void {
+  clearRetryUi();
+  capture.clearRetryClips();
+  finish();
+}
+
+function clearRetryUi(): void {
+  canRetry = false;
+  failedId = null;
+  hud.dataset.retry = "false";
+  cancelButton.setAttribute("aria-label", "Cancel dictation");
+  acceptButton.setAttribute("aria-label", "Accept dictation");
+}
+
+/**
+ * Re-runs transcription from memory (current failure) or disk (list Retry).
+ * Success pastes via the usual idle flush after the failed row is removed.
+ */
+async function runRetry(id: string | null): Promise<void> {
+  if (retrying) return;
+  retrying = true;
+  cancelLinger();
+  cancelReleaseTail();
+  previewing = false;
+  sessionReleased = false;
+  canRetry = false;
+  hud.dataset.retry = "false";
+  setState("transcribing");
+
+  try {
+    let result: { texts: string[]; error?: string };
+    if (id && id === failedId && capture.hasRetryableClips) {
+      result = await capture.retryLast();
+    } else if (id) {
+      const wav = await host().getDictationAudio(id);
+      result = await capture.retryFromWav(wav);
+    } else if (capture.hasRetryableClips) {
+      result = await capture.retryLast();
+    } else {
+      result = { texts: [], error: "Nothing to retry." };
+    }
+
+    if (result.error) {
+      const target = id ?? failedId;
+      if (target) {
+        await host().updateFailedDictation(target, result.error);
+        failedId = target;
+      }
+      canRetry = true;
+      hud.dataset.retry = "true";
+      acceptButton.disabled = false;
+      setState("error", result.error);
+      startAnimation();
+      return;
+    }
+
+    // Remove the failed row before idle flush adds the successful transcript.
+    const target = id ?? failedId;
+    if (target) await host().deleteDictation(target);
+    clearRetryUi();
+    capture.clearRetryClips();
+    // Phrases already reported via onPhrase; idle flush pastes and saves text.
+    finish();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const target = id ?? failedId;
+    if (target) {
+      try {
+        await host().updateFailedDictation(target, message);
+        failedId = target;
+      } catch {
+        // The row may already be gone; the pill still needs the error.
+      }
+    }
+    canRetry = Boolean(target) || capture.hasRetryableClips;
+    hud.dataset.retry = canRetry ? "true" : "false";
+    acceptButton.disabled = !canRetry;
+    setState("error", message);
+    if (canRetry) startAnimation();
+    else scheduleIdle();
+  } finally {
+    retrying = false;
+  }
 }
 
 /** Holds the microphone after the key comes up, then ends the session. */
@@ -409,6 +576,8 @@ function scheduleIdle(): void {
     () => {
       lingerTimer = null;
       if (capture.isRunning || capture.pendingCount > 0) return;
+      // Retryable failures stay until Accept, Cancel, or a new dictation.
+      if (state === "error" && canRetry) return;
       if (state === "error") {
         finish();
         return;
@@ -510,7 +679,9 @@ function setState(next: DictationState, message?: string): void {
   hud.dataset.busy = isWaiting(next) ? "true" : "false";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL[next];
-  if (next === "rewriting" || next === "error") acceptButton.disabled = true;
+  if (next === "rewriting") acceptButton.disabled = true;
+  if (next === "error" && canRetry) acceptButton.disabled = false;
+  else if (next === "error") acceptButton.disabled = true;
   if (isWaiting(next)) stopAnimation();
   reportHitRegion();
   // A preview is a UI affordance, not a real session; the app must not think
