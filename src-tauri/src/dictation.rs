@@ -56,6 +56,9 @@ struct DictationCommand {
     /// put a sentence, but it hands this back to the window, which does.
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
+    /// Failed history row the Transcripts list asked to Retry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failed_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -398,13 +401,36 @@ impl Dictation {
     ///
     /// A dictation that went to the wrong place, or that the user wants twice,
     /// otherwise means opening the window and copying it out of the history.
+    /// Failed rows have no text to paste; skip them for the last success.
     pub async fn paste_last(self: &Arc<Self>) {
         let text = {
             let history = self.history.lock().await;
-            history.entries().first().map(|entry| entry.text.clone())
+            history
+                .entries()
+                .into_iter()
+                .find(|entry| {
+                    entry.status == crate::history::DictationStatus::Ok && !entry.text.is_empty()
+                })
+                .map(|entry| entry.text)
         };
         let Some(text) = text else { return };
         self.helper.paste(&text).await;
+    }
+
+    /// Asks the overlay to re-transcribe a failed history row's saved audio.
+    pub async fn retry_failed(self: &Arc<Self>, id: &str) {
+        self.show_overlay().await;
+        let _ = self.app.emit_to(
+            OVERLAY_LABEL,
+            "dictation-command",
+            DictationCommand {
+                action: "retry".into(),
+                sink: "insert".into(),
+                mode: "hold".into(),
+                message: None,
+                failed_id: Some(id.to_string()),
+            },
+        );
     }
 
     /// Ends a running session and rewrites what was said before inserting it.
@@ -862,6 +888,7 @@ impl Dictation {
                 sink: sink.into(),
                 mode: mode.into(),
                 message: None,
+                failed_id: None,
             },
         );
     }
@@ -884,6 +911,7 @@ impl Dictation {
                 sink: "insert".into(),
                 mode: "hold".into(),
                 message: Some(message.to_string()),
+                failed_id: None,
             },
         );
     }

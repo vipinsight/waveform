@@ -354,6 +354,52 @@ async fn clear_history(
 }
 
 #[tauri::command]
+async fn save_failed_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    message: String,
+    wav_bytes: Vec<u8>,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state
+        .history
+        .lock()
+        .await
+        .add_failed(&message, &wav_bytes)?;
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn update_failed_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    message: String,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state
+        .history
+        .lock()
+        .await
+        .update_failed_message(&id, &message);
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn get_dictation_audio(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<u8>, String> {
+    state.history.lock().await.audio_bytes(&id)
+}
+
+#[tauri::command]
+async fn retry_failed_dictation(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.dictation.retry_failed(&id).await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_stats(state: State<'_, AppState>) -> Result<AppStats, String> {
     Ok(state.stats.lock().await.value())
 }
@@ -531,8 +577,8 @@ async fn append_log(
 ///
 /// For when an engine reports silence and the meter says otherwise: those two
 /// read the microphone through different nodes, so only the bytes actually sent
-/// settle which one is lying. Off unless asked for, and audio is never
-/// otherwise written anywhere.
+/// settle which one is lying. Off unless asked for. Failed-dictation persistence
+/// writes under the app data `audio/` directory instead; this dump is unrelated.
 fn dump_audio(wav: &[u8]) {
     let Some(dir) = std::env::var_os("WAVEFORM_DUMP_AUDIO") else {
         return;
@@ -1066,6 +1112,10 @@ pub fn run() {
             get_history,
             delete_dictation,
             clear_history,
+            save_failed_dictation,
+            update_failed_dictation,
+            get_dictation_audio,
+            retry_failed_dictation,
             get_model_state,
             start_model,
             select_model,
@@ -1452,11 +1502,15 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
     // Disabled rather than hidden when there is nothing to paste, so the item
     // does not appear and disappear as history comes and goes.
-    let last_dictation = state
-        .history
-        .try_lock()
-        .ok()
-        .and_then(|history| history.entries().first().map(|entry| entry.text.clone()));
+    let last_dictation = state.history.try_lock().ok().and_then(|history| {
+        history
+            .entries()
+            .into_iter()
+            .find(|entry| {
+                entry.status == history::DictationStatus::Ok && !entry.text.is_empty()
+            })
+            .map(|entry| entry.text)
+    });
     let paste_last = MenuItem::with_id(
         app,
         "paste-last",

@@ -77,6 +77,11 @@ export class AudioCapture {
   /** The last phrase sent, for a session that comes back with no words. */
   private lastSeconds = 0;
   private lastPeak = 0;
+  /**
+   * WAV clips queued this session, kept so a failed transcription can Retry
+   * without speaking again. Replaced when a new listen starts.
+   */
+  private lastClips: Uint8Array[] = [];
   /** Per session, so a shout in one does not starve the next. */
   private gain = new InputGain();
   /** In-flight open, so a second start cannot stop the first stream. */
@@ -92,6 +97,21 @@ export class AudioCapture {
 
   get pendingCount(): number {
     return this.pending;
+  }
+
+  /** True when this session queued audio that Retry can send again. */
+  get hasRetryableClips(): boolean {
+    return this.lastClips.length > 0;
+  }
+
+  /** Phrase WAVs from this session, for persisting a failed dictation. */
+  clips(): Uint8Array[] {
+    return this.lastClips.map((clip) => new Uint8Array(clip));
+  }
+
+  /** Drops held clips after Dismiss or a successful Retry. */
+  clearRetryClips(): void {
+    this.lastClips = [];
   }
 
   /** Nothing to warm: native capture does not build an AudioContext. */
@@ -130,6 +150,7 @@ export class AudioCapture {
     this.phrases = 0;
     this.inserted = 0;
     this.empty = 0;
+    this.lastClips = [];
     this.gain = new InputGain();
     this.sampleRate = 48_000;
     this.segmenter = new SpeechSegmenter({ sampleRate: this.sampleRate });
@@ -184,7 +205,57 @@ export class AudioCapture {
   /** Ends the session and throws away the audio, including anything in flight. */
   cancel(): void {
     this.discarding = true;
+    this.lastClips = [];
     this.release();
+  }
+
+  /**
+   * Re-transcribes held clips without opening the microphone.
+   *
+   * Empty-room failures leave no clips, so there is nothing to Retry.
+   */
+  async retryLast(): Promise<{ texts: string[]; error?: string }> {
+    if (this.lastClips.length === 0) {
+      return { texts: [], error: "Nothing to retry." };
+    }
+    return this.transcribeClips(this.lastClips);
+  }
+
+  /** Re-transcribes a single WAV loaded from a failed history row. */
+  async retryFromWav(wav: Uint8Array): Promise<{ texts: string[]; error?: string }> {
+    this.lastClips = [new Uint8Array(wav)];
+    return this.transcribeClips(this.lastClips);
+  }
+
+  private async transcribeClips(
+    clips: Uint8Array[],
+  ): Promise<{ texts: string[]; error?: string }> {
+    this.discarding = false;
+    this.pending += clips.length;
+    this.handlers.onPendingChange(this.pending);
+    const texts: string[] = [];
+    let error: string | undefined;
+    try {
+      for (const wav of clips) {
+        try {
+          const { text } = await this.handlers.transcribe(wav);
+          if (text) texts.push(text);
+        } catch (caught: unknown) {
+          error = caught instanceof Error ? caught.message : String(caught);
+          break;
+        }
+      }
+      if (!error && texts.length === 0) {
+        error = `No words in ${clips.length === 1 ? "the phrase" : `${clips.length} phrases`}.`;
+      }
+      if (!error) {
+        for (const text of texts) this.handlers.onPhrase(text);
+      }
+    } finally {
+      this.pending -= clips.length;
+      this.handlers.onPendingChange(this.pending);
+    }
+    return error ? { texts, error } : { texts };
   }
 
   /**
@@ -231,13 +302,15 @@ export class AudioCapture {
     this.pending += 1;
     this.lastSeconds = samples.length / sampleRate;
     this.lastPeak = rootMeanSquare(samples);
+    const wav = encodeMonoPcm16Wav(samples, sampleRate);
+    this.lastClips.push(wav);
     this.handlers.log(
       `phrase ${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}`,
     );
     this.handlers.onPendingChange(this.pending);
 
     void this.handlers
-      .transcribe(encodeMonoPcm16Wav(samples, sampleRate))
+      .transcribe(wav)
       .then(({ text }) => {
         if (this.discarding) return;
         if (!text) {

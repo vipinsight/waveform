@@ -115,6 +115,18 @@ const api: DesktopApi = {
   getHistory: () => invoke<SavedDictation[]>("get_history"),
   deleteDictation: (id) => invoke<SavedDictation[]>("delete_dictation", { id }),
   clearHistory: () => invoke<SavedDictation[]>("clear_history"),
+  saveFailedDictation: async (message, wavBytes) =>
+    invoke<SavedDictation[]>("save_failed_dictation", {
+      message,
+      wavBytes: Array.from(wavBytes),
+    }),
+  updateFailedDictation: (id, message) =>
+    invoke<SavedDictation[]>("update_failed_dictation", { id, message }),
+  getDictationAudio: async (id) => {
+    const bytes = await invoke<number[]>("get_dictation_audio", { id });
+    return Uint8Array.from(bytes);
+  },
+  retryFailedDictation: (id) => invoke<void>("retry_failed_dictation", { id }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
   getStats: () => invoke<AppStats>("get_stats"),

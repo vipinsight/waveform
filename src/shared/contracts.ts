@@ -95,12 +95,23 @@ export type DictationState =
 
 export interface DictationCommand {
   /** "preview" shows the HUD with synthetic levels, so it can be checked
-      without a microphone, a loaded model, or granted permissions. */
-  action: "start" | "stop" | "cancel" | "preview" | "idle" | "busy" | "fail";
+      without a microphone, a loaded model, or granted permissions.
+      "retry" re-runs transcription for a failed history row's audio. */
+  action:
+    | "start"
+    | "stop"
+    | "cancel"
+    | "preview"
+    | "idle"
+    | "busy"
+    | "fail"
+    | "retry";
   sink: DictationSink;
   mode: DictationMode;
   /** Why it failed, for the actions where something did. */
   message?: string;
+  /** Failed history row to Retry from the Transcripts list. */
+  failedId?: string;
 }
 
 /**
@@ -224,11 +235,20 @@ export interface PolishModelStatus {
   fit: ModelFit | null;
 }
 
+/** Successful transcripts are text-only; failed ones may keep a local WAV. */
+export type SavedDictationStatus = "ok" | "failed";
+
 export interface SavedDictation {
   id: string;
   text: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
+  /** Missing on older rows means a successful transcript. */
+  status?: SavedDictationStatus;
+  /** Engine error detail for failed rows. */
+  message?: string;
+  /** Relative WAV name under the app audio directory; failed rows only. */
+  audioPath?: string;
 }
 
 export interface AppStats {
@@ -336,6 +356,14 @@ export interface DesktopApi {
   getHistory(): Promise<SavedDictation[]>;
   deleteDictation(id: string): Promise<SavedDictation[]>;
   clearHistory(): Promise<SavedDictation[]>;
+  /** Persists a failed session's WAV and appends a failed history row. */
+  saveFailedDictation(message: string, wavBytes: Uint8Array): Promise<SavedDictation[]>;
+  /** Updates the message on an existing failed row after another Retry miss. */
+  updateFailedDictation(id: string, message: string): Promise<SavedDictation[]>;
+  /** WAV bytes for a failed row, for Play or Retry after relaunch. */
+  getDictationAudio(id: string): Promise<Uint8Array>;
+  /** Asks the overlay to re-transcribe a failed row's audio. */
+  retryFailedDictation(id: string): Promise<void>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
