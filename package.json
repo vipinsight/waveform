@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.2",
     "esbuild": "^0.28.2",
-    "lucide-static": "^1.45.0",
+    "lucide-static": "^1.47.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }
