@@ -1,4 +1,4 @@
-import { InputGain } from "./gain";
+import { InputGain, normalizePhrase } from "./gain";
 import { SpeechSegmenter, rootMeanSquare } from "./segmenter";
 import { SPECTRUM_WINDOW, spectrumFromBlock } from "./spectrum";
 import { encodeMonoPcm16Wav } from "./wav";
@@ -261,21 +261,29 @@ export class AudioCapture {
     void this.handlers.stopNativeCapture();
   }
 
+  /**
+   * The session gain only drives detection. Boosting the samples themselves
+   * clipped a laptop mic on every loud syllable, and that distorted audio was
+   * what the engine heard and history kept; phrases are scaled once, whole,
+   * in `queue`.
+   */
   private handleBlock(samples: Float32Array): void {
-    const boosted = this.gain.apply(samples);
+    const factor = this.gain.measure(samples);
     this.blocks += 1;
-    this.peak = Math.max(this.peak, rootMeanSquare(boosted));
-    const segment = this.segmenter?.push(boosted);
+    this.peak = Math.max(this.peak, rootMeanSquare(samples) * factor);
+    const segment = this.segmenter?.push(samples, factor);
     if (segment) this.queue(segment, this.sampleRate);
   }
 
-  private queue(samples: Float32Array, sampleRate: number): void {
+  private queue(raw: Float32Array, sampleRate: number): void {
     if (this.discarding) return;
     this.phrases += 1;
+    const { samples, factor } = normalizePhrase(raw);
     this.lastSeconds = samples.length / sampleRate;
     this.lastPeak = rootMeanSquare(samples);
     this.handlers.log(
-      `phrase ${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}`,
+      `phrase ${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)} ` +
+        `(raw ${rootMeanSquare(raw).toFixed(4)}, scaled ${factor.toFixed(1)}x)`,
     );
     const wav = encodeMonoPcm16Wav(samples, sampleRate);
     this.lastClips.push(wav);

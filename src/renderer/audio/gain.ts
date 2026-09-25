@@ -26,13 +26,20 @@ const MAX_GAIN = 32;
  * alone. The factor is held for the session so room and speech stay in
  * proportion — dropping it when speech arrived is what used to hide a 2.8×
  * raw ratio under the segmenter's floor.
+ *
+ * Capture uses the factor for detection only (`measure`); the audio sent to
+ * the engine is scaled per phrase by `normalizePhrase`, which cannot clip.
  */
 export class InputGain {
   private peak = 0;
   /** Zero until the first block, so a loud interface is not opened at 32×. */
   private applied = 0;
 
-  apply(samples: Float32Array): Float32Array {
+  /**
+   * Updates the held factor from this block and returns it, without touching
+   * the samples. Detection works in boosted units; the audio itself stays raw.
+   */
+  measure(samples: Float32Array): number {
     const level = rootMeanSquare(samples);
     this.peak = Math.max(level, this.peak * 0.995);
     const desired = this.desiredFactor();
@@ -43,6 +50,12 @@ export class InputGain {
     if (this.applied === 0 || desired > this.applied || this.peak >= TARGET_PEAK) {
       this.applied = desired;
     }
+    return this.applied;
+  }
+
+  /** The block multiplied by the held factor, hard-clipped at full scale. */
+  apply(samples: Float32Array): Float32Array {
+    this.measure(samples);
     if (this.applied <= 1.01) return samples;
 
     const boosted = new Float32Array(samples.length);
@@ -63,4 +76,29 @@ export class InputGain {
       Math.max(1, TARGET_PEAK / Math.max(this.peak, TARGET_PEAK / MAX_GAIN)),
     );
   }
+}
+
+/** Where a finished phrase's loudest sample lands: headroom, never full scale. */
+const PHRASE_PEAK = 0.9;
+
+/**
+ * Scales a finished phrase by one factor so its loudest sample sits at
+ * `PHRASE_PEAK`.
+ *
+ * This is the audio the engine hears and history keeps. The session gain was
+ * chosen from the first quiet blocks and held, which is right for detection
+ * but put a laptop mic at 32x: speech ran past full scale and was clipped on
+ * every loud syllable. One factor per phrase, chosen after the phrase is
+ * whole, cannot clip and does not reshape the speech.
+ */
+export function normalizePhrase(samples: Float32Array): { samples: Float32Array; factor: number } {
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  if (peak === 0) return { samples, factor: 1 };
+  const factor = Math.min(MAX_GAIN, PHRASE_PEAK / peak);
+  const scaled = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    scaled[index] = (samples[index] ?? 0) * factor;
+  }
+  return { samples: scaled, factor };
 }

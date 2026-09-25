@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InputGain } from "../src/renderer/audio/gain";
+import { InputGain, normalizePhrase } from "../src/renderer/audio/gain";
 import { SpeechSegmenter, rootMeanSquare } from "../src/renderer/audio/segmenter";
 import { canReuseMicrophoneStream, AudioCapture, microphoneConstraints } from "../src/renderer/audio/capture";
 
@@ -281,6 +281,49 @@ describe("AudioCapture.retryLast", () => {
     await waitFor(() => order.includes("pending-zero"));
     expect(order).toEqual(["clip", "error:true", "pending-zero"]);
     expect(capture.canRetry).toBe(true);
+  });
+});
+
+/*
+ * The session gain was applied to the samples, and at a laptop mic's 32x it
+ * pushed ordinary speech past full scale: 1-6% of samples in real recordings
+ * were clipped, and that is what the engine heard and history kept.
+ */
+describe("phrase audio", () => {
+  it("is scaled once so its loudest sample sits below full scale", () => {
+    const raw = new Float32Array([0.01, -0.05, 0.02, 0.1, -0.03]);
+    const { samples: scaled, factor } = normalizePhrase(raw);
+    expect(factor).toBeCloseTo(9);
+    expect(Math.max(...scaled.map(Math.abs))).toBeCloseTo(0.9);
+    // One factor for the whole phrase: the shape is untouched.
+    expect(scaled[1]! / scaled[3]!).toBeCloseTo(raw[1]! / raw[3]!);
+  });
+
+  it("leaves silence alone", () => {
+    const silent = new Float32Array(10);
+    expect(normalizePhrase(silent).factor).toBe(1);
+  });
+
+  it("is not clipped when the session gain would have clipped it", async () => {
+    const clips: Uint8Array[] = [];
+    const capture = new AudioCapture({
+      ...silentCaptureHandlers(),
+      onClip: (wav) => {
+        clips.push(wav);
+      },
+    });
+    await capture.start();
+    // A quiet room sets the held gain to 32x; speech at 0.05 would reach 1.6.
+    capture.feed(samples(300, 0.0004), 1_000);
+    capture.feed(samples(400, 0.05), 1_000);
+    capture.stop();
+    await waitFor(() => clips.length > 0);
+
+    const wav = clips[0]!;
+    const pcm = new Int16Array(wav.buffer, wav.byteOffset + 44, (wav.length - 44) / 2);
+    const peak = Math.max(...Array.from(pcm, Math.abs));
+    expect(peak).toBeLessThan(32_000);
+    expect(peak).toBeGreaterThan(28_000);
   });
 });
 
