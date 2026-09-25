@@ -413,6 +413,12 @@ function wireEvents(): void {
 
   bindTranscribeDrop();
 
+  // Closing the window hides it rather than quitting; a recording must not
+  // keep playing from a window nobody can see.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopPlayback();
+  });
+
   // Delegated rather than bound per button: both the onboarding card and the
   // Setup page rebuild their rows whenever a step completes.
   for (const container of [element.onboardSteps, element.checklist]) {
@@ -639,6 +645,8 @@ function bindGroup(selector: string, onSelect: (button: HTMLElement) => void): v
 }
 
 function showView(view: string): void {
+  // Recordings play from the Transcripts list; leaving it leaves them.
+  if (view !== "dictate") stopPlayback();
   for (const button of Array.from(
     document.querySelectorAll<HTMLElement>(".nav[aria-label='Sections'] [data-view]"),
   )) {
@@ -2736,6 +2744,8 @@ function formatDay(timestamp: number): string {
 
 function toggleSettings(open: boolean, page = "general"): void {
   if (open && promptEditorKind) togglePromptEditor(false);
+  // Settings covers the list, and with it the button that would pause.
+  if (open) stopPlayback();
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
   element.scrim.hidden = !open && !promptEditorKind;
