@@ -134,6 +134,10 @@ const element = {
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
   polishModelLine: requireElement<HTMLElement>("polish-model-line"),
   modelTabs: requireElement<HTMLElement>("model-tabs"),
+  speechKindCurrent: requireElement<HTMLElement>("speech-kind-current"),
+  speechKindState: requireElement<HTMLElement>("speech-kind-state"),
+  polishKindCurrent: requireElement<HTMLElement>("polish-kind-current"),
+  polishKindState: requireElement<HTMLElement>("polish-kind-state"),
   modelsSpeech: requireElement<HTMLElement>("models-speech"),
   modelsPolish: requireElement<HTMLElement>("models-polish"),
   transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
@@ -721,8 +725,6 @@ function showModelsTab(tab: "speech" | "polish"): void {
   )) {
     const active = button.dataset.modelTab === tab;
     button.setAttribute("aria-selected", String(active));
-    // The segmented control is styled on aria-checked, as everywhere else.
-    button.setAttribute("aria-checked", String(active));
   }
   element.modelsSpeech.hidden = tab !== "speech";
   element.modelsPolish.hidden = tab !== "polish";
@@ -741,6 +743,50 @@ function renderPolishModelLine(): void {
       ? `${polishModelLabel(settings.localModelId)} on this Mac`
       : `${settings.openRouterModel} through OpenRouter`;
   element.polishModelLine.textContent = `Polish model: ${label}`;
+  renderModelKinds();
+}
+
+/**
+ * The two cards at the top of the Models page: which model each kind is set
+ * to, and the one thing standing between it and working, if anything.
+ */
+function renderModelKinds(): void {
+  element.speechKindCurrent.textContent = getSpeechModel(settings.modelId).label;
+  setKindState(
+    element.speechKindState,
+    setupKnown && !modelInstalled ? "Not downloaded yet" : "In use",
+    setupKnown && !modelInstalled,
+  );
+
+  const local = settings.polishEngine === "local";
+  element.polishKindCurrent.textContent = local
+    ? `${polishModelLabel(settings.localModelId)}, on this Mac`
+    : `${settings.openRouterModel}, through OpenRouter`;
+  const level = settings.polishLevel;
+  const missing = local
+    ? aiStatus !== null && !aiStatus.localReady
+      ? "Not downloaded yet"
+      : null
+    : aiStatus !== null && !aiStatus.hasApiKey
+      ? "Needs an OpenRouter key"
+      : null;
+  if (level === "none") {
+    setKindState(element.polishKindState, "Off: AI Polish is set to None", false);
+  } else if (missing) {
+    setKindState(element.polishKindState, missing, true);
+  } else {
+    setKindState(element.polishKindState, `In use at ${polishLevelName(level)}`, false);
+  }
+}
+
+function setKindState(target: HTMLElement, text: string, attention: boolean): void {
+  target.textContent = text;
+  if (attention) target.dataset.tone = "attention";
+  else delete target.dataset.tone;
+}
+
+function polishLevelName(level: PolishLevel): string {
+  return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 function polishModelLabel(id: string): string {
@@ -966,6 +1012,7 @@ function renderAiStatus(status: AiStatus): void {
     element.polishLevelHint.append(open);
   }
   element.polishLevelHint.hidden = ready;
+  renderModelKinds();
   for (const card of polishLevelCards()) {
     card.disabled = !ready && card.dataset.level !== "none";
   }
@@ -1327,6 +1374,7 @@ async function refreshModelInstalled(): Promise<void> {
   setupKnown = true;
   renderSetup();
   renderDictationDeck();
+  renderModelKinds();
 }
 
 /**

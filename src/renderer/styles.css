@@ -457,10 +457,64 @@ kbd {
   margin-bottom: 0;
 }
 
-/* The segmented control, standing in for tabs: Speech and Polish are two
-   lists of the same kind of row, not two pages. */
-.model-tabs {
-  align-self: center;
+/* Two cards that are also the tabs. */
+.model-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.model-kind {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.model-kind:hover {
+  background: var(--surface-hover);
+}
+
+.model-kind[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgb(50 132 208 / 12%));
+}
+
+.model-kind-name {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.model-kind-what {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.model-kind-current {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.model-kind-state {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.model-kind-state[data-tone="attention"] {
+  color: var(--danger);
 }
 
 /* What the speech tab is for, with the language it listens for beside it. */

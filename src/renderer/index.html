@@ -284,17 +284,32 @@
         <section class="view" id="view-models" hidden>
           <div class="view-head">
             <h1 class="display">Models</h1>
-            <div class="segmented model-tabs" id="model-tabs" role="tablist" aria-label="Kind of model">
-              <button type="button" role="tab" id="model-tab-speech" data-model-tab="speech" aria-controls="models-speech" aria-selected="true" aria-checked="true">Speech</button>
-              <button type="button" role="tab" id="model-tab-polish" data-model-tab="polish" aria-controls="models-polish" aria-selected="false" aria-checked="false">Polish</button>
-            </div>
+          </div>
+
+          <!--
+            Cards, not a small switch: a switch in the corner was the kind of
+            control people never press, so most would not learn that polish
+            has a model at all. Both stay in view, each naming what it does
+            and what it is set to.
+          -->
+          <div class="model-kinds" id="model-tabs" role="tablist" aria-label="Kind of model">
+            <button type="button" class="model-kind" role="tab" id="model-tab-speech" data-model-tab="speech" aria-controls="models-speech" aria-selected="true">
+              <span class="model-kind-name">Speech model</span>
+              <span class="model-kind-what">Turns your voice into text</span>
+              <strong class="model-kind-current" id="speech-kind-current">—</strong>
+              <span class="model-kind-state" id="speech-kind-state"></span>
+            </button>
+            <button type="button" class="model-kind" role="tab" id="model-tab-polish" data-model-tab="polish" aria-controls="models-polish" aria-selected="false">
+              <span class="model-kind-name">Polish model</span>
+              <span class="model-kind-what">Rewrites that text before it is inserted</span>
+              <strong class="model-kind-current" id="polish-kind-current">—</strong>
+              <span class="model-kind-state" id="polish-kind-state"></span>
+            </button>
           </div>
 
           <div id="models-speech" role="tabpanel" aria-labelledby="model-tab-speech">
             <div class="model-intro">
-              <p class="lede">
-                Turns your voice into text. Every speech model runs on this Mac.
-              </p>
+              <p class="lede">Every speech model runs on this Mac.</p>
               <span class="head-tools">
                 <label class="view-note" for="speech-language">Language</label>
                 <select id="speech-language" aria-label="Dictation language"></select>
@@ -305,8 +320,7 @@
 
           <div id="models-polish" role="tabpanel" aria-labelledby="model-tab-polish" hidden>
             <p class="lede">
-              Rewrites the text after it is transcribed: filler words, grammar,
-              clarity. Used only when
+              Fixes filler words, grammar and clarity. Used only when
               <button type="button" class="link" data-open-view="ai">AI Polish</button>
               is above None, and by the polish shortcut.
             </p>
