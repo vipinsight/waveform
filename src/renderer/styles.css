@@ -1415,20 +1415,6 @@ kbd {
   margin-left: 6px;
 }
 
-.update-simulate {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: 12px;
-  color: var(--ink-faint);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.update-simulate[hidden] {
-  display: none;
-}
-
 .about-foot {
   display: flex;
   flex: none;
