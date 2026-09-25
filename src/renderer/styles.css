@@ -671,7 +671,8 @@ kbd {
 
 .entry:hover .entry-actions,
 .entry:focus-within .entry-actions,
-.entry.is-playing .entry-actions {
+.entry.is-playing .entry-actions,
+.entry.is-menu-open .entry-actions {
   opacity: 1;
 }
 
@@ -719,6 +720,77 @@ kbd {
 .entry-action.is-danger:hover {
   color: var(--danger);
   background: var(--danger-soft);
+}
+
+.entry-action[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+/* Floats on the body beside its trigger; see openEntryMenu. */
+.entry-menu {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(28 27 24 / 14%), 0 1px 3px rgb(28 27 24 / 8%);
+  animation: entry-menu-in 120ms ease-out both;
+}
+
+.entry-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: default;
+}
+
+.entry-menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+}
+
+.entry-menu-item:hover,
+.entry-menu-item:focus-visible {
+  outline: none;
+  background: var(--surface-sunken);
+}
+
+.entry-menu-item.is-danger,
+.entry-menu-item.is-danger svg {
+  color: var(--danger);
+}
+
+.entry-menu-item.is-danger:hover,
+.entry-menu-item.is-danger:focus-visible {
+  background: var(--danger-soft);
+}
+
+@keyframes entry-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-menu {
+    animation: none;
+  }
 }
 
 .no-matches {

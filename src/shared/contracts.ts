@@ -360,6 +360,8 @@ export interface DesktopApi {
   clearHistory(): Promise<SavedDictation[]>;
   /** WAV bytes for a saved dictation, when one was kept. */
   getDictationAudio(id: string): Promise<Uint8Array>;
+  /** Copies a dictation's recording into Downloads; resolves to its path. */
+  saveDictationAudio(id: string, fileName: string): Promise<string>;
   /** Saves a transcription (from a dropped file, for example) into history. */
   saveDictation(text: string, wavBytes?: Uint8Array): Promise<SavedDictation[]>;
   /** Replaces the words on a saved dictation after re-running the engine. */

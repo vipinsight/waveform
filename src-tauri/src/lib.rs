@@ -362,6 +362,59 @@ async fn get_dictation_audio(
     state.history.lock().await.audio(&id)
 }
 
+/// Copies a dictation's recording into Downloads and shows it in Finder.
+///
+/// Downloads rather than a save panel: it needs no extra plugin, and Finder
+/// opening on the file is the "where did it go" answer a panel would give.
+/// The name comes from the window (it formats the time locally) and is
+/// reduced to a bare file name here, so it cannot point anywhere else.
+#[tauri::command]
+async fn save_dictation_audio(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    file_name: String,
+) -> Result<String, String> {
+    let bytes = state.history.lock().await.audio(&id)?;
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|_| "Could not find the Downloads folder.".to_string())?;
+    let path = unused_path(&dir, &export_file_stem(&file_name));
+    std::fs::write(&path, bytes).map_err(|error| format!("Could not save the audio: {error}"))?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// A file name with no directory in it, and no extension (".wav" is added).
+fn export_file_stem(requested: &str) -> String {
+    let stem: String = requested
+        .trim()
+        .trim_end_matches(".wav")
+        .chars()
+        .filter(|character| !matches!(character, '/' | '\\' | ':' | '\0'))
+        .take(120)
+        .collect();
+    let stem = stem.trim().trim_start_matches('.').to_string();
+    if stem.is_empty() {
+        "Waveform dictation".into()
+    } else {
+        stem
+    }
+}
+
+/// `stem.wav`, or `stem 2.wav` and onward when that is taken.
+fn unused_path(dir: &std::path::Path, stem: &str) -> std::path::PathBuf {
+    let first = dir.join(format!("{stem}.wav"));
+    if !first.exists() {
+        return first;
+    }
+    (2..)
+        .map(|index| dir.join(format!("{stem} {index}.wav")))
+        .find(|candidate| !candidate.exists())
+        .unwrap_or(first)
+}
+
 /// Saves a file transcription the same way a spoken one is saved.
 #[tauri::command]
 async fn save_dictation(
@@ -1127,6 +1180,7 @@ pub fn run() {
             delete_dictation,
             clear_history,
             get_dictation_audio,
+            save_dictation_audio,
             save_dictation,
             update_dictation,
             get_model_state,
@@ -1909,6 +1963,25 @@ use std::path::Path;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_audio_names_cannot_leave_downloads() {
+        assert_eq!(export_file_stem("../../etc/passwd"), "etcpasswd");
+        assert_eq!(export_file_stem("Waveform 2026-09-25 at 13.12.04.wav"), "Waveform 2026-09-25 at 13.12.04");
+        assert_eq!(export_file_stem("  .hidden"), "hidden");
+        assert_eq!(export_file_stem("///"), "Waveform dictation");
+    }
+
+    #[test]
+    fn saved_audio_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("waveform-save-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let first = unused_path(&dir, "clip");
+        assert_eq!(first, dir.join("clip.wav"));
+        std::fs::write(&first, b"x").unwrap();
+        assert_eq!(unused_path(&dir, "clip"), dir.join("clip 2.wav"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn customised() -> AppSettings {
         AppSettings {

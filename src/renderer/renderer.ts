@@ -2062,6 +2062,8 @@ function key(glyph: string): HTMLElement {
 
 /** Renders the saved dictations, newest first, grouped by the day they landed. */
 function renderHistory(): void {
+  // Its row is about to be replaced; a menu left floating would act on nothing.
+  closeEntryMenu();
   const matches =
     query === ""
       ? entries
@@ -2202,27 +2204,195 @@ function renderEntry(entry: SavedDictation): HTMLElement {
     );
     play.dataset.playId = entry.id;
     if (isActive) playback!.button = play;
-    const retry = iconButton("Retry transcription", RETRY_ICON, "", () => {
-      void retryHistoryTranscription(entry, retry, text);
-    });
-    actions.append(play, retry);
+    actions.append(play);
   }
+  // Play and Copy are the everyday actions and stay on the row; the rest
+  // (one of them destructive) wait behind the menu.
   actions.append(
     iconButton("Copy", COPY_ICON, "", () => {
       void navigator.clipboard.writeText(entry.text);
     }),
-    iconButton("Delete", TRASH_ICON, "is-danger", () => {
-      if (playback?.id === entry.id) stopPlayback();
-      void host().deleteDictation(entry.id).then((next) => {
-        entries = next;
-        freshId = null;
-        renderHistory();
-      });
-    }),
+    entryMenuButton(entry, text),
   );
 
   article.append(time, text, actions);
   return article;
+}
+
+interface EntryMenuItem {
+  label: string;
+  icon: string;
+  danger?: boolean;
+  onSelect: () => void;
+}
+
+/** The one open row menu: opening another, or clicking away, closes it. */
+let entryMenu: { trigger: HTMLButtonElement; close: () => void } | null = null;
+
+function entryMenuButton(entry: SavedDictation, text: HTMLElement): HTMLButtonElement {
+  const trigger = iconButton("More actions", MORE_ICON, "is-more", () => {
+    if (entryMenu?.trigger === trigger) {
+      closeEntryMenu();
+      return;
+    }
+    openEntryMenu(trigger, entryMenuItems(entry, trigger, text));
+  });
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  return trigger;
+}
+
+function entryMenuItems(
+  entry: SavedDictation,
+  trigger: HTMLButtonElement,
+  text: HTMLElement,
+): EntryMenuItem[] {
+  const items: EntryMenuItem[] = [];
+  if (entry.hasAudio) {
+    items.push({
+      label: "Retry transcript",
+      icon: RETRY_ICON,
+      // The trigger shows the busy state: the menu is gone by then.
+      onSelect: () => void retryHistoryTranscription(entry, trigger, text),
+    });
+  }
+  items.push({
+    label: "Delete transcript",
+    icon: TRASH_ICON,
+    danger: true,
+    onSelect: () => deleteEntry(entry),
+  });
+  if (entry.hasAudio) {
+    items.push({
+      label: "Save audio",
+      icon: SAVE_AUDIO_ICON,
+      onSelect: () => void saveEntryAudio(entry),
+    });
+  }
+  return items;
+}
+
+/**
+ * Floats the menu on the body, beside its trigger.
+ *
+ * Inside the row it would be clipped by the day card's rounded corners, and
+ * the last row of the list has no room below it, so it flips above.
+ */
+function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void {
+  closeEntryMenu();
+  const menu = document.createElement("div");
+  menu.className = "entry-menu";
+  menu.setAttribute("role", "menu");
+  const buttons = items.map((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = item.danger ? "entry-menu-item is-danger" : "entry-menu-item";
+    button.setAttribute("role", "menuitem");
+    button.innerHTML = iconSvg(item.icon);
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    button.append(label);
+    button.addEventListener("click", () => {
+      closeEntryMenu();
+      item.onSelect();
+    });
+    return button;
+  });
+  menu.append(...buttons);
+  document.body.append(menu);
+
+  const anchor = trigger.getBoundingClientRect();
+  const gap = 6;
+  const margin = 8;
+  const below = anchor.bottom + gap;
+  const top =
+    below + menu.offsetHeight > window.innerHeight - margin
+      ? anchor.top - gap - menu.offsetHeight
+      : below;
+  const left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  menu.style.top = `${Math.max(margin, top)}px`;
+  menu.style.left = `${Math.max(margin, left)}px`;
+
+  const row = trigger.closest(".entry");
+  trigger.setAttribute("aria-expanded", "true");
+  row?.classList.add("is-menu-open");
+  buttons[0]?.focus();
+
+  const onPointer = (event: PointerEvent): void => {
+    const target = event.target as Node;
+    if (!menu.contains(target) && !trigger.contains(target)) closeEntryMenu();
+  };
+  // Captured, so Escape closes this menu and not Settings behind it.
+  const onKey = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeEntryMenu();
+      trigger.focus();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    buttons[(current + step + buttons.length) % buttons.length]?.focus();
+  };
+  // A floating menu left behind by a scroll points at the wrong row.
+  const onMove = (): void => closeEntryMenu();
+
+  document.addEventListener("pointerdown", onPointer, true);
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("scroll", onMove, true);
+  window.addEventListener("resize", onMove);
+  window.addEventListener("blur", onMove);
+
+  entryMenu = {
+    trigger,
+    close: () => {
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("blur", onMove);
+      menu.remove();
+      trigger.setAttribute("aria-expanded", "false");
+      row?.classList.remove("is-menu-open");
+    },
+  };
+}
+
+function closeEntryMenu(): void {
+  const current = entryMenu;
+  entryMenu = null;
+  current?.close();
+}
+
+function deleteEntry(entry: SavedDictation): void {
+  if (playback?.id === entry.id) stopPlayback();
+  void host().deleteDictation(entry.id).then((next) => {
+    entries = next;
+    freshId = null;
+    renderHistory();
+  });
+}
+
+async function saveEntryAudio(entry: SavedDictation): Promise<void> {
+  try {
+    const path = await host().saveDictationAudio(entry.id, audioFileName(entry.createdAt));
+    setStatus(`Saved ${path.split("/").pop() ?? "the audio"} to Downloads`);
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Named the way macOS names a screenshot, so a folder of them sorts by time. */
+function audioFileName(createdAt: number): string {
+  const date = new Date(createdAt);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return (
+    `Waveform ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `at ${pad(date.getHours())}.${pad(date.getMinutes())}.${pad(date.getSeconds())}`
+  );
 }
 
 /**
@@ -2371,9 +2541,7 @@ function iconButton(
   button.className = `entry-action ${modifier}`.trim();
   button.title = label;
   button.setAttribute("aria-label", label);
-  button.innerHTML =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  button.innerHTML = iconSvg(path);
   button.addEventListener("click", () => {
     onClick();
     if (label === "Copy") {
@@ -2385,13 +2553,27 @@ function iconButton(
 }
 
 /* Lucide outline glyphs, matching Copy and Delete. */
-const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" />';
+const PLAY_ICON =
+  '<path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />';
 const PAUSE_ICON =
   '<rect x="14" y="3" width="5" height="18" rx="1" />' +
   '<rect x="5" y="3" width="5" height="18" rx="1" />';
 const RETRY_ICON =
-  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />' +
-  '<path d="M3 3v5h5" />';
+  '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />' +
+  '<path d="M21 3v5h-5" />';
+const MORE_ICON =
+  '<circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />';
+const SAVE_AUDIO_ICON =
+  '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />' +
+  '<path d="M14 2v5a1 1 0 0 0 1 1h5" /><path d="M12 18v-6" /><path d="m9 15 3 3 3-3" />';
+
+/** A Lucide glyph at the stroke the rest of the interface uses. */
+function iconSvg(path: string): string {
+  return (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`
+  );
+}
 const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />';
 
 const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />';

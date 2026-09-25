@@ -119,6 +119,8 @@ const api: DesktopApi = {
     const bytes = await invoke<number[]>("get_dictation_audio", { id });
     return Uint8Array.from(bytes);
   },
+  saveDictationAudio: (id, fileName) =>
+    invoke<string>("save_dictation_audio", { id, fileName }),
   saveDictation: async (text, wavBytes) =>
     invoke<SavedDictation[]>("save_dictation", {
       text,
