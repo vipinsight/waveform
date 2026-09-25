@@ -5384,7 +5384,7 @@ dependencies = [
 
 [[package]]
 name = "waveform"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.23.1",
  "cpal",
