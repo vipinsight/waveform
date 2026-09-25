@@ -449,7 +449,7 @@ function wireEvents(): void {
     }
     const fetch = (event.target as HTMLElement).closest<HTMLElement>("[data-fetch]");
     if (fetch?.dataset.fetch && isSpeechModelId(fetch.dataset.fetch)) {
-      void downloadModel(fetch.dataset.fetch);
+      void downloadModel(fetch.dataset.fetch, { useWhenReady: true });
       return;
     }
     const cancel = (event.target as HTMLElement).closest<HTMLElement>("[data-cancel-download]");
@@ -1675,12 +1675,28 @@ async function deletePolishModel(id: string): Promise<void> {
  * One at a time, and the list is rebuilt afterwards either way: the row's whole
  * text depends on whether the file is there now.
  */
-async function downloadModel(id: SpeechModelId): Promise<void> {
+/**
+ * `useWhenReady` is for the Models page's Download button: pressing it is
+ * choosing the model, and making someone come back to select it once it
+ * lands read as the download not having worked. It is skipped if another
+ * model was picked while this one downloaded -- that is the later choice.
+ * The wizard's background prefetch and the setup card do not pass it.
+ */
+async function downloadModel(
+  id: SpeechModelId,
+  options: { useWhenReady?: boolean } = {},
+): Promise<void> {
   if (downloading) return;
   downloading = id;
+  const selectedAtStart = settings.modelId;
   await renderModels();
   try {
     await host().downloadModel(id);
+    if (options.useWhenReady && settings.modelId === selectedAtStart && settings.modelId !== id) {
+      // Not awaited, like a row click: loading the engine is the models
+      // page's own progress, not the download's.
+      void host().selectModel(id);
+    }
   } catch {
     // Cancelled or failed: the event already said which, and the rebuild below
     // puts the Download button back.
