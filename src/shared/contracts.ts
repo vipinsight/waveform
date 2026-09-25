@@ -31,6 +31,7 @@ export type UpdateStage =
   | "available"
   | "current"
   | "downloading"
+  | "installing"
   | "installed"
   | "error";
 
@@ -39,6 +40,8 @@ export interface UpdateEvent {
   message: string;
   /** How much of the download is done, 0 to 1. Only sent while downloading. */
   progress?: number;
+  /** The version being offered or installed. */
+  version?: string;
 }
 
 /** One line of what the app is doing. */

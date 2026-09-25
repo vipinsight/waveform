@@ -1388,6 +1388,21 @@ kbd {
   font-weight: 400;
 }
 
+.update-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.update-hint[hidden] {
+  display: none;
+}
+
 .about-foot {
   display: flex;
   flex: none;

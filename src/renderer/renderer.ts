@@ -86,6 +86,9 @@ const element = {
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
+  updateHint: requireElement<HTMLElement>("update-hint"),
+  updateHintText: requireElement<HTMLElement>("update-hint-text"),
+  updateNotes: requireElement<HTMLButtonElement>("update-notes"),
   aboutVersion: requireElement<HTMLElement>("about-version"),
   openRepository: requireElement<HTMLButtonElement>("open-repository"),
   openProfile: requireElement<HTMLButtonElement>("open-profile"),
@@ -238,6 +241,8 @@ let setupKnown = false;
 let appVersion = "";
 /** Whether the About button is asking for a check or installing one. */
 let updateAction: "check" | "install" = "check";
+/** The release the status line's "What's new" opens. */
+let updateNotesVersion: string | null = null;
 /** Everything the log has said this session, oldest first. */
 let logLines: LogLine[] = [];
 let settingsOpen = false;
@@ -342,6 +347,7 @@ async function bootstrap(): Promise<void> {
   element.wizardBrand.textContent = appName;
   element.versionLine.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   element.aboutVersion.textContent = appVersion ? `${appName} ${appVersion}` : appName;
+  announceUpdateIfNew();
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -625,10 +631,21 @@ function wireEvents(): void {
   });
   element.updateCheck.addEventListener("click", () => {
     if (updateAction === "install") {
+      // Painted here, before the host answers: its first event follows a
+      // network round trip, and a button that does not change on a press
+      // reads as broken.
+      setUpdateButton("Preparing…", { busy: true, install: true });
       void installUpdate();
       return;
     }
     void checkForUpdate();
+  });
+  element.updateNotes.addEventListener("click", () => {
+    if (updateNotesVersion) {
+      void host().openUrl(
+        `https://github.com/vipinsight/waveform/releases/tag/v${updateNotesVersion}`,
+      );
+    }
   });
   element.openRepository.addEventListener("click", () => {
     void host().openUrl("https://github.com/vipinsight/waveform");
@@ -1897,58 +1914,103 @@ async function installUpdate(): Promise<void> {
 
 function setUpdateButton(
   label: string,
-  options?: { busy?: boolean; install?: boolean; detail?: string },
+  options?: { busy?: boolean; install?: boolean },
 ): void {
   element.updateCheck.textContent = label;
   element.updateCheck.disabled = Boolean(options?.busy);
-  element.updateCheck.title = options?.detail ?? "";
   element.updateCheck.setAttribute("aria-busy", options?.busy ? "true" : "false");
   element.updateCheck.classList.toggle("is-primary", Boolean(options?.install));
   updateAction = options?.install ? "install" : "check";
 }
 
 /**
- * The button itself carries every stage, so a status line cannot shove the
- * copyright off to the left.
+ * The button carries the action; the line above it says what is happening.
+ *
+ * A label alone had to hold both, so the version and any error lived in a
+ * tooltip, and "Update and Restart" followed by a fast relaunch looked like a
+ * press that did nothing. The line sits on its own row, above the copyright,
+ * so a long message cannot shove anything sideways.
  */
 function handleUpdateEvent(event: UpdateEvent): void {
+  const version = event.version ?? null;
   switch (event.stage) {
     case "checking":
       setUpdateButton("Checking…", { busy: true });
+      setUpdateHint(null);
       return;
     case "current":
       setUpdateButton("Up to date");
+      setUpdateHint(appVersion ? `Waveform ${appVersion} is the latest version.` : null);
       return;
     case "available":
-      setUpdateButton("Update and Restart", { install: true, detail: event.message });
+      setUpdateButton(version ? `Update to ${version}` : "Update", { install: true });
+      setUpdateHint(`${event.message}. Waveform restarts to finish.`, version);
       return;
     case "downloading": {
       const percent =
         event.progress !== undefined ? ` ${Math.round(event.progress * 100)}%` : "";
-      setUpdateButton(`Downloading…${percent}`, {
+      setUpdateButton(version ? `Downloading…${percent}` : "Preparing…", {
         busy: true,
         install: true,
-        detail: event.message,
       });
+      setUpdateHint(event.message, version);
       return;
     }
+    case "installing":
+      setUpdateButton("Installing…", { busy: true, install: true });
+      setUpdateHint(event.message, version);
+      return;
     case "installed":
-      setUpdateButton("Restarting…", { busy: true, install: true, detail: event.message });
+      setUpdateButton("Restarting…", { busy: true, install: true });
+      setUpdateHint(
+        version
+          ? `Waveform ${version} is installed. Restarting now.`
+          : "Installed. Restarting now.",
+        version,
+      );
       return;
     case "error":
-      setUpdateButton(
-        event.message.startsWith("Could not install") ? "Update failed" : "Could not check",
-        {
-          detail: event.message,
-          install: updateAction === "install",
-        },
-      );
+      setUpdateButton(updateAction === "install" ? "Try Again" : "Check Again", {
+        install: updateAction === "install",
+      });
+      setUpdateHint(event.message);
       return;
     default: {
       const _exhaustive: never = event.stage;
       return _exhaustive;
     }
   }
+}
+
+/** The status line above the button; `null` hides it. */
+function setUpdateHint(message: string | null, notesFor: string | null = null): void {
+  element.updateHint.hidden = message === null;
+  element.updateHintText.textContent = message ?? "";
+  updateNotesVersion = notesFor;
+  element.updateNotes.hidden = notesFor === null;
+}
+
+/**
+ * Says so after a relaunch into a new version.
+ *
+ * The restart is quick and the window comes back looking the same, so an
+ * update that worked read as one that had not. The last version seen is a
+ * per-machine convenience; when storage is unavailable nothing is said,
+ * which is how it behaved before.
+ */
+function announceUpdateIfNew(): void {
+  if (!appVersion) return;
+  let previous: string | null = null;
+  try {
+    previous = localStorage.getItem("waveform.lastVersion");
+    localStorage.setItem("waveform.lastVersion", appVersion);
+  } catch {
+    return;
+  }
+  if (!previous || previous === appVersion) return;
+  toggleSettings(true, "about");
+  setUpdateButton("Up to date");
+  setUpdateHint(`Updated to Waveform ${appVersion}.`, appVersion);
 }
 
 /**

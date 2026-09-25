@@ -11,6 +11,7 @@
 //! Polish, a model download -- happens because something was pressed.
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
@@ -32,18 +33,36 @@ pub struct UpdateEvent {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<f32>,
+    /// The version being offered or installed, so the button can name it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 fn emit(app: &AppHandle, stage: &str, message: &str, progress: Option<f32>) {
+    emit_version(app, stage, message, progress, None);
+}
+
+fn emit_version(
+    app: &AppHandle,
+    stage: &str,
+    message: &str,
+    progress: Option<f32>,
+    version: Option<&str>,
+) {
     let _ = app.emit(
         "update-event",
         UpdateEvent {
             stage: stage.to_string(),
             message: message.to_string(),
             progress,
+            version: version.map(str::to_string),
         },
     );
 }
+
+/// Set while an install runs. A second press used to start a second download
+/// over the first: the button stayed live through the silent re-check.
+static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 /// Waits before the first check, then keeps one going daily.
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(20);
@@ -95,11 +114,12 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
                 version: update.version.clone(),
                 notes: update.body.clone().unwrap_or_default(),
             };
-            emit(
+            emit_version(
                 app,
                 "available",
                 &format!("Waveform {} is available", info.version),
                 None,
+                Some(&info.version),
             );
             Ok(Some(info))
         }
@@ -123,25 +143,49 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
 /// check crosses to the window as plain data, and one JSON request is cheaper
 /// than holding a download open across it.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
+    if INSTALLING.swap(true, Ordering::SeqCst) {
+        return Err("An update is already installing.".into());
+    }
+    let outcome = install_once(app).await;
+    // Only a failure gets here in practice: success is followed by a restart.
+    INSTALLING.store(false, Ordering::SeqCst);
+    outcome
+}
+
+async fn install_once(app: &AppHandle) -> Result<(), String> {
+    // Said before the re-check, which is a network round trip: without it the
+    // button sat unchanged after the press, and read as not working.
+    emit(app, "downloading", "Preparing the update…", None);
     let update = app
         .updater()
         .map_err(|error| format!("The updater is not configured: {error}"))?
         .check()
         .await
-        .map_err(|error| format!("Could not check for updates: {error}"))?
-        .ok_or("There is no update to install.")?;
+        .map_err(|error| {
+            let message = format!("Could not check for updates: {error}");
+            emit(app, "error", &message, None);
+            message
+        })?
+        .ok_or_else(|| {
+            let message = "There is no update to install.".to_string();
+            emit(app, "current", "Waveform is up to date", None);
+            message
+        })?;
 
     let version = update.version.clone();
-    emit(
+    emit_version(
         app,
         "downloading",
         &format!("Downloading Waveform {version}…"),
         Some(0.0),
+        Some(&version),
     );
 
     let handle = app.clone();
+    let finished = app.clone();
     let downloaded = std::sync::atomic::AtomicU64::new(0);
     let label = version.clone();
+    let installing = version.clone();
 
     update
         .download_and_install(
@@ -150,14 +194,25 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
                     .fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed)
                     + chunk as u64;
                 let fraction = total.map(|total| (done as f32 / total.max(1) as f32).min(1.0));
-                emit(
+                emit_version(
                     &handle,
                     "downloading",
                     &format!("Downloading Waveform {label}…"),
                     fraction,
+                    Some(&label),
                 );
             },
-            || {},
+            // Unpacking and swapping the bundle takes a moment of its own;
+            // a bar parked at 100% looked stuck.
+            move || {
+                emit_version(
+                    &finished,
+                    "installing",
+                    &format!("Installing Waveform {installing}…"),
+                    None,
+                    Some(&installing),
+                );
+            },
         )
         .await
         .map_err(|error| {
@@ -166,11 +221,12 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
             message
         })?;
 
-    emit(
+    emit_version(
         app,
         "installed",
         &format!("Waveform {version} installed — restarting"),
         Some(1.0),
+        Some(&version),
     );
     Ok(())
 }
