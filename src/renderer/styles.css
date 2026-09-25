@@ -457,6 +457,38 @@ kbd {
   margin-bottom: 0;
 }
 
+/* The segmented control, standing in for tabs: Speech and Polish are two
+   lists of the same kind of row, not two pages. */
+.model-tabs {
+  align-self: center;
+}
+
+/* What the speech tab is for, with the language it listens for beside it. */
+.model-intro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.model-intro .lede {
+  margin: 0;
+}
+
+#models-polish > .lede {
+  margin-bottom: 14px;
+}
+
+/* Which model the chosen level will use, and the way to change it. */
+.polish-model-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin: -8px 0 18px;
+}
+
 .view[hidden] {
   display: none;
 }

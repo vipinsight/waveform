@@ -1497,7 +1497,8 @@ fn build_model_menu(
     selected: &str,
     state: &AppState,
 ) -> tauri::Result<Submenu<tauri::Wry>> {
-    let menu = Submenu::new(app, "Model", true)?;
+    // "Speech", because polish has a model too and this is not it.
+    let menu = Submenu::new(app, "Speech Model", true)?;
     let mut heading: Option<&str> = None;
     for (index, definition) in MODELS.iter().enumerate() {
         let group = definition.group.heading();

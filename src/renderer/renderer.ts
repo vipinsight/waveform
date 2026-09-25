@@ -39,7 +39,7 @@ import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
-import { DEFAULT_POLISH_MODEL_ID, isPolishModelId } from "../shared/polish-models";
+import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
 import {
   DEFAULT_POLISH_PROMPT,
   SUGGESTED_MODELS,
@@ -132,6 +132,10 @@ const element = {
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
   polishLevels: requireElement<HTMLElement>("polish-levels"),
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
+  polishModelLine: requireElement<HTMLElement>("polish-model-line"),
+  modelTabs: requireElement<HTMLElement>("model-tabs"),
+  modelsSpeech: requireElement<HTMLElement>("models-speech"),
+  modelsPolish: requireElement<HTMLElement>("models-polish"),
   transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
   transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
   polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
@@ -374,7 +378,7 @@ function wireEvents(): void {
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
   host().onOpenModelSettings(() => {
     toggleSettings(false);
-    showView("models");
+    showModelsTab("speech");
   });
   host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged(renderStats);
@@ -430,6 +434,20 @@ function wireEvents(): void {
   });
 
   bindTranscribeDrop();
+
+  // Tabs on the Models page, and the links elsewhere that open one of them.
+  // Delegated: the AI Polish hint rebuilds its link whenever the status does.
+  document.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const tab = target.closest<HTMLElement>("[data-model-tab], [data-open-models]");
+    const kind = tab?.dataset.modelTab ?? tab?.dataset.openModels;
+    if (kind === "speech" || kind === "polish") {
+      showModelsTab(kind);
+      return;
+    }
+    const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
+    if (view) showView(view);
+  });
 
   // Closing the window hides it rather than quitting; a recording must not
   // keep playing from a window nobody can see.
@@ -683,10 +701,50 @@ function showView(view: string): void {
   // Both lists describe files on the disk, which arrive while the section is
   // closed -- from a download here, or from a terminal -- so each is re-read on
   // the way in rather than trusted from startup.
-  if (view === "models") void renderModels();
+  if (view === "models") {
+    if (modelsTab === "polish") void renderPolishModels();
+    else void renderModels();
+  }
   // The levels say what they need before they can run, and what they need is
   // a key or a download that could have arrived while the section was closed.
   if (view === "ai") void host().getAiStatus().then(renderAiStatus);
+}
+
+/** Which half of the Models page is up: voice to text, or rewriting text. */
+let modelsTab: "speech" | "polish" = "speech";
+
+/** Opens the Models page on one kind of model, closing Settings if it is up. */
+function showModelsTab(tab: "speech" | "polish"): void {
+  modelsTab = tab;
+  for (const button of Array.from(
+    element.modelTabs.querySelectorAll<HTMLElement>("[data-model-tab]"),
+  )) {
+    const active = button.dataset.modelTab === tab;
+    button.setAttribute("aria-selected", String(active));
+    // The segmented control is styled on aria-checked, as everywhere else.
+    button.setAttribute("aria-checked", String(active));
+  }
+  element.modelsSpeech.hidden = tab !== "speech";
+  element.modelsPolish.hidden = tab !== "polish";
+  if (settingsOpen) toggleSettings(false);
+  showView("models");
+}
+
+/**
+ * Names the polish model on the AI Polish page, since that is where the
+ * level it serves is chosen -- and "which model" was otherwise only answered
+ * two screens away.
+ */
+function renderPolishModelLine(): void {
+  const label =
+    settings.polishEngine === "local"
+      ? `${polishModelLabel(settings.localModelId)} on this Mac`
+      : `${settings.openRouterModel} through OpenRouter`;
+  element.polishModelLine.textContent = `Polish model: ${label}`;
+}
+
+function polishModelLabel(id: string): string {
+  return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
 }
 
 function showSettingsPage(page: string): void {
@@ -703,9 +761,6 @@ function showSettingsPage(page: string): void {
     section.hidden = section.dataset.page !== page;
   }
   if (page === "dictation") void refreshMicrophones(true);
-  // Weights arrive while the page is closed -- from a download here, or from a
-  // terminal -- so the list is re-read on the way in rather than trusted.
-  if (page === "ai") void renderPolishModels();
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }
@@ -782,6 +837,7 @@ function applySettings(next: AppSettings): void {
   }
   element.aiModel.value = next.openRouterModel;
   renderPolishEngine(next.polishEngine);
+  renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
   renderPromptPreviews(next);
   element.polishShortcut.value = next.polishShortcut;
@@ -899,8 +955,16 @@ function renderAiStatus(status: AiStatus): void {
   element.polishLevelHint.textContent = ready
     ? ""
     : status.engine === "local"
-      ? "Download a model in Settings → AI polish to use these."
-      : "Add an OpenRouter key in Settings → AI polish to use these.";
+      ? "Download a polish model to use these. "
+      : "Add an OpenRouter key to use these. ";
+  if (!ready) {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "link";
+    open.dataset.openModels = "polish";
+    open.textContent = "Models → Polish";
+    element.polishLevelHint.append(open);
+  }
   element.polishLevelHint.hidden = ready;
   for (const card of polishLevelCards()) {
     card.disabled = !ready && card.dataset.level !== "none";
