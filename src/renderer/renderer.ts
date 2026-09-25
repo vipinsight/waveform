@@ -36,6 +36,7 @@ import {
 } from "../shared/model-ladder";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
+import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, isPolishModelId } from "../shared/polish-models";
@@ -106,6 +107,16 @@ const element = {
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   setupLede: requireElement<HTMLElement>("setup-lede"),
   checklist: requireElement<HTMLElement>("checklist"),
+  transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
+  transcribeFile: requireElement<HTMLInputElement>("transcribe-file"),
+  transcribeDropTitle: requireElement<HTMLElement>("transcribe-drop-title"),
+  transcribeDropHint: requireElement<HTMLElement>("transcribe-drop-hint"),
+  transcribeResult: requireElement<HTMLElement>("transcribe-result"),
+  transcribeFileName: requireElement<HTMLElement>("transcribe-file-name"),
+  transcribeText: requireElement<HTMLElement>("transcribe-text"),
+  transcribeCopy: requireElement<HTMLButtonElement>("transcribe-copy"),
+  transcribeClear: requireElement<HTMLButtonElement>("transcribe-clear"),
+  transcribeNote: requireElement<HTMLElement>("transcribe-note"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
@@ -218,6 +229,23 @@ let promptEditorKind: "transform" | "polish" | null = null;
 let promptEditorFromSettings = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
+/**
+ * A failed dictation whose audio is still held for Retry.
+ *
+ * Null when there is nothing to retry. Cleared on dismiss, a successful
+ * re-transcription, or a new listen.
+ */
+let pendingRetry: { message: string } | null = null;
+/** Active history playback, if any. The list does not re-render for it. */
+let playback: {
+  id: string;
+  audio: HTMLAudioElement;
+  context: AudioContext;
+  url: string;
+  button: HTMLButtonElement;
+} | null = null;
+/** True while a dropped file is being decoded or transcribed. */
+let transcribeBusy = false;
 let lifetimeSessions = 0;
 let searchOpen = false;
 let query = "";
@@ -382,6 +410,8 @@ function wireEvents(): void {
   element.deckSettings.addEventListener("click", () => {
     toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
   });
+
+  bindTranscribeDrop();
 
   // Delegated rather than bound per button: both the onboarding card and the
   // Setup page rebuild their rows whenever a step completes.
@@ -616,7 +646,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "transcribe", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
@@ -1977,6 +2007,16 @@ function handleDictationUpdate(update: DictationUpdate): void {
   // carries only the engine: which model, ready or not, and anything that
   // went wrong.
   const { status } = update;
+  const retryable = status.state === "error" && Boolean(status.canRetry);
+  const nextRetry = retryable
+    ? { message: status.message ?? "Transcription failed." }
+    : null;
+  const retryChanged =
+    (pendingRetry?.message ?? null) !== (nextRetry?.message ?? null) ||
+    Boolean(pendingRetry) !== Boolean(nextRetry);
+  pendingRetry = nextRetry;
+  if (retryChanged) renderHistory();
+
   // Errors, and the one outcome that is not an error and still needs saying:
   // a polish that changed nothing looks exactly like a shortcut that missed.
   if ((status.state === "error" || status.state === "idle") && status.message) {
@@ -2029,7 +2069,9 @@ function renderHistory(): void {
 
   // Both cards stay in the tree; renderDictationDeck decides which is showing.
   element.history.replaceChildren(element.onboard, element.dictationDeck);
-  element.history.classList.toggle("is-empty", matches.length === 0);
+  element.history.classList.toggle("is-empty", matches.length === 0 && !pendingRetry);
+
+  if (pendingRetry) element.history.append(renderRetryCard(pendingRetry.message));
 
   if (matches.length === 0 && query !== "") {
     const note = document.createElement("p");
@@ -2046,6 +2088,46 @@ function renderHistory(): void {
   }
 
   element.dictateNote.textContent = describeCount(matches.length);
+}
+
+/**
+ * Offered while the overlay still holds the failed clips, so Retry does not
+ * require speaking again or digging through a log.
+ */
+function renderRetryCard(message: string): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "retry-card";
+
+  const title = document.createElement("h2");
+  title.className = "retry-title";
+  title.textContent = "Dictation failed";
+
+  const body = document.createElement("p");
+  body.className = "retry-message";
+  body.textContent = message;
+
+  const actions = document.createElement("div");
+  actions.className = "retry-actions";
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "pill-button";
+  dismiss.textContent = "Dismiss";
+  dismiss.addEventListener("click", () => {
+    void host().dismissDictationRetry();
+  });
+
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "pill-button is-primary";
+  retry.textContent = "Retry";
+  retry.addEventListener("click", () => {
+    void host().retryDictation();
+  });
+
+  actions.append(dismiss, retry);
+  card.append(title, body, actions);
+  return card;
 }
 
 function describeCount(matched: number): string {
@@ -2089,7 +2171,13 @@ function renderDay(day: SavedDictation[]): HTMLElement {
 
 function renderEntry(entry: SavedDictation): HTMLElement {
   const article = document.createElement("article");
-  article.className = entry.id === freshId ? "entry is-fresh" : "entry";
+  const isActive = playback?.id === entry.id;
+  article.className = [
+    entry.id === freshId ? "entry is-fresh" : "entry",
+    isActive ? "is-playing" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const time = document.createElement("span");
   time.className = "entry-time";
@@ -2102,11 +2190,29 @@ function renderEntry(entry: SavedDictation): HTMLElement {
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
+  if (entry.hasAudio) {
+    const playing = Boolean(isActive && playback && !playback.audio.paused);
+    const play = iconButton(
+      playing ? "Pause audio" : "Play audio",
+      playing ? PAUSE_ICON : PLAY_ICON,
+      `is-play${playing ? " is-playing" : ""}`,
+      () => {
+        void togglePlayback(entry.id, play);
+      },
+    );
+    play.dataset.playId = entry.id;
+    if (isActive) playback!.button = play;
+    const retry = iconButton("Retry transcription", RETRY_ICON, "", () => {
+      void retryHistoryTranscription(entry, retry, text);
+    });
+    actions.append(play, retry);
+  }
   actions.append(
     iconButton("Copy", COPY_ICON, "", () => {
       void navigator.clipboard.writeText(entry.text);
     }),
     iconButton("Delete", TRASH_ICON, "is-danger", () => {
+      if (playback?.id === entry.id) stopPlayback();
       void host().deleteDictation(entry.id).then((next) => {
         entries = next;
         freshId = null;
@@ -2117,6 +2223,141 @@ function renderEntry(entry: SavedDictation): HTMLElement {
 
   article.append(time, text, actions);
   return article;
+}
+
+/**
+ * Runs the speech engine again on a saved recording and updates that row.
+ */
+async function retryHistoryTranscription(
+  entry: SavedDictation,
+  button: HTMLButtonElement,
+  textNode: HTMLElement,
+): Promise<void> {
+  if (button.disabled) return;
+  button.disabled = true;
+  button.classList.add("is-busy");
+  setStatus("Retrying transcription…");
+  try {
+    const bytes = await host().getDictationAudio(entry.id);
+    const { text } = await host().transcribe(bytes);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setStatus("No words found in that recording.");
+      return;
+    }
+    entries = await host().updateDictation(entry.id, trimmed);
+    freshId = entry.id;
+    entry.text = trimmed;
+    textNode.textContent = trimmed;
+    setStatus("Transcription updated");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error));
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-busy");
+  }
+}
+
+/**
+ * Plays or pauses a saved recording without rebuilding the list.
+ *
+ * Clips are stored at the level the speech engine wants, which is quiet for
+ * listening. Peak-normalising on the way out keeps the beginning audible
+ * without changing what was sent to the model.
+ */
+async function togglePlayback(id: string, button: HTMLButtonElement): Promise<void> {
+  if (playback?.id === id) {
+    if (playback.audio.paused) {
+      await playback.audio.play();
+      setPlaybackButton(button, true);
+      button.closest(".entry")?.classList.add("is-playing");
+    } else {
+      playback.audio.pause();
+      setPlaybackButton(button, false);
+    }
+    return;
+  }
+
+  stopPlayback();
+  try {
+    const bytes = await host().getDictationAudio(id);
+    const copy = new Uint8Array(bytes);
+    const decoded = await decodeAudioPeak(copy);
+    const blob = new Blob([copy], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    const context = new AudioContext();
+    const source = context.createMediaElementSource(audio);
+    const gain = context.createGain();
+    gain.gain.value = decoded;
+    source.connect(gain);
+    gain.connect(context.destination);
+    playback = { id, audio, context, url, button };
+    audio.addEventListener("ended", () => {
+      if (playback?.id === id) {
+        setPlaybackButton(button, false);
+        button.closest(".entry")?.classList.remove("is-playing");
+        stopPlayback();
+      }
+    });
+    button.closest(".entry")?.classList.add("is-playing");
+    setPlaybackButton(button, true);
+    await audio.play();
+  } catch (error) {
+    stopPlayback();
+    setPlaybackButton(button, false);
+    setStatus(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Peak-normalise gain for a WAV, without holding the decoded buffer. */
+async function decodeAudioPeak(bytes: Uint8Array): Promise<number> {
+  const context = new AudioContext();
+  try {
+    const copy = new Uint8Array(bytes);
+    const buffer = await context.decodeAudioData(copy.buffer);
+    return listeningGain(buffer);
+  } finally {
+    void context.close();
+  }
+}
+
+/** Lift a quiet ASR clip to a comfortable listening level without clipping. */
+function listeningGain(buffer: AudioBuffer): number {
+  let peak = 0;
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    for (let index = 0; index < data.length; index += 1) {
+      peak = Math.max(peak, Math.abs(data[index] ?? 0));
+    }
+  }
+  if (peak < 0.001) return 1;
+  return Math.min(8, 0.85 / peak);
+}
+
+function setPlaybackButton(button: HTMLButtonElement, playing: boolean): void {
+  const label = playing ? "Pause audio" : "Play audio";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.classList.toggle("is-playing", playing);
+  button.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+      playing ? PAUSE_ICON : PLAY_ICON
+    }</svg>`;
+}
+
+function stopPlayback(): void {
+  const current = playback;
+  playback = null;
+  if (!current) return;
+  current.button.closest(".entry")?.classList.remove("is-playing");
+  setPlaybackButton(current.button, false);
+  current.audio.pause();
+  current.audio.removeAttribute("src");
+  current.audio.load();
+  void current.context.close();
+  URL.revokeObjectURL(current.url);
 }
 
 function iconButton(
@@ -2143,10 +2384,134 @@ function iconButton(
   return button;
 }
 
-/* Lucide, like the rest; see the note in index.html. */
+/* Lucide outline glyphs, matching Copy and Delete. */
+const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" />';
+const PAUSE_ICON =
+  '<rect x="14" y="3" width="5" height="18" rx="1" />' +
+  '<rect x="5" y="3" width="5" height="18" rx="1" />';
+const RETRY_ICON =
+  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />' +
+  '<path d="M3 3v5h5" />';
 const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />';
 
 const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />';
+
+function bindTranscribeDrop(): void {
+  const drop = element.transcribeDrop;
+  const input = element.transcribeFile;
+
+  drop.addEventListener("click", () => {
+    if (!transcribeBusy) input.click();
+  });
+  drop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!transcribeBusy) input.click();
+    }
+  });
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (file) void transcribeAudioFile(file);
+  });
+
+  drop.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    drop.classList.add("is-dragging");
+  });
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    drop.classList.add("is-dragging");
+  });
+  drop.addEventListener("dragleave", (event) => {
+    if (!drop.contains(event.relatedTarget as Node | null)) {
+      drop.classList.remove("is-dragging");
+    }
+  });
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("is-dragging");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) void transcribeAudioFile(file);
+  });
+
+  element.transcribeCopy.addEventListener("click", () => {
+    const text = element.transcribeText.textContent ?? "";
+    if (!text) return;
+    void navigator.clipboard.writeText(text);
+    element.transcribeCopy.classList.add("is-done");
+    element.transcribeCopy.textContent = "Copied";
+    setTimeout(() => {
+      element.transcribeCopy.classList.remove("is-done");
+      element.transcribeCopy.textContent = "Copy";
+    }, 900);
+  });
+  element.transcribeClear.addEventListener("click", clearTranscribeResult);
+}
+
+async function transcribeAudioFile(file: File): Promise<void> {
+  if (transcribeBusy) return;
+  if (!isAudioFile(file)) {
+    setTranscribeStatus("That does not look like an audio file.");
+    return;
+  }
+
+  transcribeBusy = true;
+  element.transcribeDrop.classList.add("is-busy");
+  element.transcribeDropTitle.textContent = "Transcribing…";
+  element.transcribeDropHint.textContent = file.name;
+  element.transcribeNote.textContent = "Working…";
+  element.transcribeResult.hidden = true;
+
+  try {
+    const wav = await audioFileToMonoWav(file);
+    const { text } = await host().transcribe(wav);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setTranscribeStatus("No words found in that recording.");
+      resetTranscribeDrop();
+      return;
+    }
+
+    entries = await host().saveDictation(trimmed, wav);
+    freshId = entries[0]?.id ?? null;
+    renderHistory();
+
+    element.transcribeFileName.textContent = file.name;
+    element.transcribeText.textContent = trimmed;
+    element.transcribeResult.hidden = false;
+    element.transcribeNote.textContent = "Saved to Transcripts";
+    setStatus(`Transcribed ${file.name}`);
+    resetTranscribeDrop();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setTranscribeStatus(message);
+    setStatus(message);
+    resetTranscribeDrop();
+  } finally {
+    transcribeBusy = false;
+    element.transcribeDrop.classList.remove("is-busy");
+  }
+}
+
+function resetTranscribeDrop(): void {
+  element.transcribeDropTitle.textContent = "Drop an audio file here";
+  element.transcribeDropHint.textContent =
+    "WAV, MP3, M4A, and other formats WebKit can decode. Click to choose a file.";
+}
+
+function clearTranscribeResult(): void {
+  element.transcribeResult.hidden = true;
+  element.transcribeText.textContent = "";
+  element.transcribeFileName.textContent = "";
+  element.transcribeNote.textContent = "Audio stays on this Mac";
+  resetTranscribeDrop();
+}
+
+function setTranscribeStatus(message: string): void {
+  element.transcribeNote.textContent = message;
+  element.transcribeDropHint.textContent = message;
+}
 
 function toggleSearch(open: boolean): void {
   searchOpen = open;

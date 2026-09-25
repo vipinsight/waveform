@@ -92,14 +92,19 @@ let pointerOver = false;
 let sessionReleased = false;
 
 const capture = new AudioCapture({
+  onClip: (wav) => host().reportDictationClip({ wavBytes: Array.from(wav) }),
   onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
   onPendingChange: () => syncDerivedState(),
   log: (message) => {
     void host().log("info", "capture", message);
   },
   onError: (message) => {
-    setState("error", message);
-    scheduleIdle();
+    // A latched session can cut an empty phrase while the mic is still open;
+    // Retry there would race the live capture, so it waits for the stop.
+    const retryable = capture.canRetry && !capture.isRunning;
+    setState("error", message, retryable);
+    // Held clips stay until Retry or Dismiss; an empty room has nothing to keep.
+    if (!retryable) scheduleIdle();
   },
   transcribe: (bytes) => host().transcribe(bytes),
   startNativeCapture: () => host().startNativeCapture(),
@@ -226,7 +231,13 @@ hud.addEventListener("focusout", (event) => {
   }
 });
 
-cancelButton.addEventListener("click", () => void host().cancelDictation());
+cancelButton.addEventListener("click", () => {
+  if (state === "error" && capture.canRetry) {
+    dismissRetry();
+    return;
+  }
+  void host().cancelDictation();
+});
 micButton.addEventListener("click", async () => {
   if (state !== "idle") return;
   micButton.disabled = true;
@@ -240,6 +251,10 @@ micButton.addEventListener("click", async () => {
   }
 });
 acceptButton.addEventListener("click", async () => {
+  if (state === "error" && capture.canRetry) {
+    beginRetry();
+    return;
+  }
   acceptButton.disabled = true;
   try {
     await host().acceptDictation();
@@ -259,7 +274,23 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "idle") {
     cancelReleaseTail();
     if (capture.isRunning) capture.stop();
+    // A held failure was never reported idle; release it so the host saves
+    // the recording and the window drops its Retry card.
+    if (state === "error" && capture.canRetry) finish();
+    capture.clearRetry();
     showIdle();
+    return;
+  }
+
+  if (command.action === "retry") {
+    // The window asks for the transcript sink, since it is frontmost.
+    sink = command.sink;
+    beginRetry();
+    return;
+  }
+
+  if (command.action === "dismiss-retry") {
+    dismissRetry();
     return;
   }
 
@@ -268,6 +299,8 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   if (command.action === "fail") {
     cancelReleaseTail();
     if (capture.isRunning) capture.stop();
+    // This pill cannot retry, so it must not keep held clips waiting on one.
+    capture.clearRetry();
     cancelLinger();
     previewing = false;
     hud.dataset.mode = "hold";
@@ -338,6 +371,33 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   scheduleReleaseTail();
 }
 
+/** Re-sends held clips through the engine without opening the microphone. */
+function beginRetry(): void {
+  if (state !== "error" || capture.isRunning || capture.pendingCount > 0) return;
+  if (!capture.canRetry) {
+    // A stale Retry (the window's card outlived the clips): end it cleanly.
+    finish();
+    return;
+  }
+  cancelLinger();
+  sessionReleased = false;
+  acceptButton.disabled = true;
+  acceptButton.setAttribute("aria-label", "Accept dictation");
+  setState("transcribing");
+  if (!capture.retryLast()) {
+    setState("error", "Nothing left to retry.", false);
+    scheduleIdle();
+  }
+}
+
+/** Drops held clips and clears the error pill. */
+function dismissRetry(): void {
+  cancelLinger();
+  capture.clearRetry();
+  acceptButton.setAttribute("aria-label", "Accept dictation");
+  finish();
+}
+
 /** Holds the microphone after the key comes up, then ends the session. */
 function scheduleReleaseTail(): void {
   cancelReleaseTail();
@@ -381,6 +441,16 @@ function startPreview(): void {
 }
 
 function syncDerivedState(): void {
+  // A later phrase with words clears the held clips, which leaves an error pill
+  // offering a Retry it no longer has and no timer to take it down.
+  if (state === "error" && hud.dataset.retry === "true" && !capture.canRetry) {
+    hud.dataset.retry = "false";
+    acceptButton.disabled = true;
+    acceptButton.setAttribute("aria-label", "Accept dictation");
+    reportHitRegion();
+    scheduleIdle();
+    return;
+  }
   if (state === "error" || state === "rewriting") return;
   if (capture.isRunning) {
     setState(capture.pendingCount > 0 ? "transcribing" : "listening");
@@ -405,10 +475,15 @@ function syncDerivedState(): void {
 
 function scheduleIdle(): void {
   cancelLinger();
+  // A retryable error waits for Retry or Dismiss, not a timer.
+  if (state === "error" && capture.canRetry) return;
   lingerTimer = setTimeout(
     () => {
       lingerTimer = null;
       if (capture.isRunning || capture.pendingCount > 0) return;
+      // Checked again here: the timer may have been armed while still
+      // transcribing, and the failure arrived before it fired.
+      if (state === "error" && capture.canRetry) return;
       if (state === "error") {
         finish();
         return;
@@ -427,7 +502,7 @@ function scheduleIdle(): void {
 function releaseSession(): void {
   if (sessionReleased) return;
   sessionReleased = true;
-  host().reportDictationState({ state: "idle", sink, mode });
+  void host().reportDictationState({ state: "idle", sink, mode });
 }
 
 function cancelLinger(): void {
@@ -438,6 +513,7 @@ function cancelLinger(): void {
 
 function finish(): void {
   if (capture.isRunning) capture.stop();
+  capture.clearRetry();
   stopAnimation();
   levels.fill(0);
   velocities.fill(0);
@@ -446,8 +522,10 @@ function finish(): void {
   hud.dataset.mode = "hold";
   hud.dataset.state = "idle";
   hud.dataset.busy = "false";
+  hud.dataset.retry = "false";
   hud.dataset.visible = showFlowBarAlways ? "true" : "false";
   srLabel.textContent = STATE_LABEL.idle;
+  acceptButton.setAttribute("aria-label", "Accept dictation");
   syncIdleHover();
   reportHitRegion();
   if (!sessionReleased) {
@@ -470,6 +548,7 @@ function syncIdleHover(): void {
 /** Renders the persistent Wave Bar without starting capture or reporting a session. */
 function showIdle(): void {
   if (capture.isRunning) capture.stop();
+  capture.clearRetry();
   cancelLinger();
   previewing = false;
   stopAnimation();
@@ -479,8 +558,10 @@ function showIdle(): void {
   state = "idle";
   hud.dataset.state = "idle";
   hud.dataset.busy = "false";
+  hud.dataset.retry = "false";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL.idle;
+  acceptButton.setAttribute("aria-label", "Accept dictation");
   syncIdleHover();
   reportHitRegion();
 }
@@ -501,22 +582,34 @@ function isWaiting(next: DictationState): boolean {
  * The pill has nowhere to put a sentence, but the window does: this is what
  * carries a failure to the sidebar. Without it an error is a red pill and no
  * explanation anywhere, which reads as the shortcut doing nothing.
+ *
+ * `canRetry` is true when the last clips are still held, so the window can
+ * offer Retry without asking the user to speak again.
  */
-function setState(next: DictationState, message?: string): void {
+function setState(next: DictationState, message?: string, canRetry = false): void {
   hud.dataset.expanded = "false";
   const changed = next !== state;
   state = next;
   hud.dataset.state = next;
   hud.dataset.busy = isWaiting(next) ? "true" : "false";
+  hud.dataset.retry = canRetry ? "true" : "false";
   hud.dataset.visible = "true";
   srLabel.textContent = STATE_LABEL[next];
-  if (next === "rewriting" || next === "error") acceptButton.disabled = true;
+  if (next === "rewriting") {
+    acceptButton.disabled = true;
+  } else if (next === "error") {
+    acceptButton.disabled = !canRetry;
+    acceptButton.setAttribute(
+      "aria-label",
+      canRetry ? "Retry transcription" : "Accept dictation",
+    );
+  }
   if (isWaiting(next)) stopAnimation();
   reportHitRegion();
   // A preview is a UI affordance, not a real session; the app must not think
   // dictation started.
   if (changed && !previewing) {
-    host().reportDictationState({ state: next, sink, mode, message });
+    host().reportDictationState({ state: next, sink, mode, message, canRetry });
   }
 }
 

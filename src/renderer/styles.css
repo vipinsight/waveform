@@ -670,7 +670,8 @@ kbd {
 }
 
 .entry:hover .entry-actions,
-.entry:focus-within .entry-actions {
+.entry:focus-within .entry-actions,
+.entry.is-playing .entry-actions {
   opacity: 1;
 }
 
@@ -687,6 +688,10 @@ kbd {
   transition: background 120ms ease, color 120ms ease;
 }
 
+.entry-action.is-play {
+  border-radius: 999px;
+}
+
 .entry-action svg {
   width: 16px;
   height: 16px;
@@ -699,6 +704,16 @@ kbd {
 
 .entry-action.is-done {
   color: var(--positive);
+}
+
+.entry-action.is-play.is-playing {
+  color: var(--accent);
+  background: var(--accent-soft, rgb(50 132 208 / 12%));
+}
+
+.entry-action.is-busy {
+  opacity: 0.45;
+  cursor: progress;
 }
 
 .entry-action.is-danger:hover {
@@ -716,6 +731,42 @@ kbd {
 /* The dictation that just landed is briefly tinted, then settles. */
 .entry.is-fresh .entry-text {
   animation: phrase-settle 1.6s 240ms ease-out both;
+}
+
+/* A failed dictation whose clips are still held for Retry. Not a history
+   entry: nothing was saved, and the audio never leaves RAM. */
+.retry-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--danger-soft, rgb(200 70 70 / 22%));
+  border-radius: 12px;
+  margin-bottom: 18px;
+  background: var(--danger-soft, rgb(200 70 70 / 8%));
+}
+
+.retry-title {
+  margin: 0;
+  color: var(--danger, #c0392b);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.retry-message {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 440;
+  line-height: 1.5;
+}
+
+.retry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 @keyframes entry-in {
@@ -737,6 +788,115 @@ kbd {
 .empty-state {
   max-width: 520px;
   padding: 10px 0 6vh;
+}
+
+/* ----------------------------------------------------------- file transcribe */
+
+.transcribe-drop {
+  display: grid;
+  gap: 8px;
+  place-content: center;
+  min-height: 220px;
+  padding: 40px 28px;
+  border: 1.5px dashed var(--hairline-strong, rgb(0 0 0 / 16%));
+  border-radius: 16px;
+  margin-top: 8px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgb(50 132 208 / 6%), transparent 55%),
+    var(--surface-sunken, rgb(0 0 0 / 3%));
+  color: var(--ink-soft);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.transcribe-drop:hover,
+.transcribe-drop:focus-visible {
+  border-color: var(--accent);
+  color: var(--ink);
+  outline: none;
+}
+
+.transcribe-drop.is-dragging {
+  border-color: var(--accent);
+  border-style: solid;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgb(50 132 208 / 12%), transparent 55%),
+    var(--surface-sunken, rgb(0 0 0 / 3%));
+  color: var(--ink);
+}
+
+.transcribe-drop.is-busy {
+  cursor: progress;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.transcribe-drop-title {
+  margin: 0;
+  color: inherit;
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.transcribe-drop-hint {
+  margin: 0;
+  max-width: 36ch;
+  justify-self: center;
+  color: var(--ink-faint);
+  font-size: 13.5px;
+  font-weight: 440;
+  line-height: 1.45;
+}
+
+.transcribe-result {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.transcribe-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transcribe-file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcribe-result-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.transcribe-text {
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 440;
+  line-height: 1.55;
+  letter-spacing: -0.008em;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* It was set at the body size, which for the one heading on an otherwise empty

@@ -162,4 +162,35 @@ describe("short utterances", () => {
     speak(segmenter, 90, 60, 2);
     expect(segmenter.push(samples(300, 0))).not.toBeNull();
   });
+  /*
+   * People start talking as the bar appears. The room used to be the average
+   * of the calibration window, so it came out as their voice, the threshold
+   * sat above it, and only a louder word late in the sentence was kept.
+   */
+  describe("speech from the first block", () => {
+    const rate = 1000;
+    const block = 10;
+    function sentence(segmenter: SpeechSegmenter, ms: number, loudAfter = Infinity): Float32Array[] {
+      const phrases: Float32Array[] = [];
+      for (let t = 0; t < ms; t += block) {
+        const inWord = t % 330 < 250;
+        const level = inWord ? (t >= loudAfter ? 0.15 : 0.05) : 0.01;
+        const phrase = segmenter.push(samples(block, level));
+        if (phrase) phrases.push(phrase);
+      }
+      const tail = segmenter.flush();
+      if (tail) phrases.push(tail);
+      return phrases;
+    }
+
+    it("keeps the whole sentence", () => {
+      const phrases = sentence(new SpeechSegmenter({ sampleRate: rate }), 3000);
+      expect(phrases.reduce((sum, phrase) => sum + phrase.length, 0)).toBe(3000);
+    });
+
+    it("keeps the start even when only the end is loud", () => {
+      const phrases = sentence(new SpeechSegmenter({ sampleRate: rate }), 3000, 2000);
+      expect(phrases.reduce((sum, phrase) => sum + phrase.length, 0)).toBe(3000);
+    });
+  });
 });

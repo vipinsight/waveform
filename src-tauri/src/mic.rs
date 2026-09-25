@@ -205,20 +205,46 @@ fn push_frames(
 
 fn pick_input_device(preferred_name: &str) -> Result<cpal::Device, String> {
     let host = cpal::default_host();
+    let mut devices = host
+        .input_devices()
+        .map_err(|error| format!("No microphone found: {error}"))?
+        .collect::<Vec<_>>();
+
     if !preferred_name.is_empty() {
-        if let Ok(devices) = host.input_devices() {
-            if let Some(device) = devices.into_iter().find(|device| {
-                device
-                    .name()
-                    .map(|name| input_device_matches(&name, preferred_name))
-                    .unwrap_or(false)
-            }) {
-                return Ok(device);
-            }
+        if let Some(index) = devices.iter().position(|device| {
+            device
+                .name()
+                .map(|name| input_device_matches(&name, preferred_name))
+                .unwrap_or(false)
+        }) {
+            return Ok(devices.swap_remove(index));
         }
     }
+
+    // Empty preference (and a preferred name that vanished) used to fall
+    // straight through to macOS's default input. AirPods steal that default
+    // whenever they are connected, so dictation — and the recording kept for
+    // playback — quietly moved off the built-in mic. Prefer the laptop mic
+    // unless the user has named something else.
+    if let Some(index) = devices
+        .iter()
+        .position(|device| device.name().map(|name| is_built_in_input(&name)).unwrap_or(false))
+    {
+        return Ok(devices.swap_remove(index));
+    }
+
     host.default_input_device()
         .ok_or_else(|| "No microphone found.".into())
+}
+
+/// The laptop's own microphone, not a headset macOS may have made default.
+pub fn is_built_in_input(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    normalized.contains("macbook")
+        || normalized.contains("built-in")
+        || normalized.contains("internal microphone")
+        || normalized.contains("mac mini")
+        || normalized.contains("imac")
 }
 
 /// Whether a Core Audio device is the one Settings asked for.
@@ -271,5 +297,13 @@ mod tests {
             "MacBook Pro Microphone",
             "Vipin's AirPods Pro"
         ));
+    }
+
+    #[test]
+    fn recognises_the_built_in_mic() {
+        assert!(is_built_in_input("MacBook Pro Microphone"));
+        assert!(is_built_in_input("Built-in Microphone"));
+        assert!(!is_built_in_input("Vipin's AirPods Pro"));
+        assert!(!is_built_in_input("AT2020USB+"));
     }
 }

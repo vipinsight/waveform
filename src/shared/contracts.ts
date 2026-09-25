@@ -96,7 +96,16 @@ export type DictationState =
 export interface DictationCommand {
   /** "preview" shows the HUD with synthetic levels, so it can be checked
       without a microphone, a loaded model, or granted permissions. */
-  action: "start" | "stop" | "cancel" | "preview" | "idle" | "busy" | "fail";
+  action:
+    | "start"
+    | "stop"
+    | "cancel"
+    | "preview"
+    | "idle"
+    | "busy"
+    | "fail"
+    | "retry"
+    | "dismiss-retry";
   sink: DictationSink;
   mode: DictationMode;
   /** Why it failed, for the actions where something did. */
@@ -167,11 +176,18 @@ export interface DictationStatus {
   sink: DictationSink;
   mode: DictationMode;
   message?: string;
+  /** Held audio can be transcribed again without speaking. */
+  canRetry?: boolean;
 }
 
 export interface DictationPhrase {
   text: string;
   sink: DictationSink;
+}
+
+/** A phrase cut from the mic, stashed before the engine returns words. */
+export interface DictationClip {
+  wavBytes: number[];
 }
 
 export interface DictationUpdate {
@@ -229,6 +245,8 @@ export interface SavedDictation {
   text: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
+  /** Whether a local WAV exists for playback. */
+  hasAudio?: boolean;
 }
 
 export interface AppStats {
@@ -297,6 +315,10 @@ export interface DesktopApi {
   acceptDictation(): Promise<void>;
   polishDictation(): Promise<void>;
   cancelDictation(): Promise<void>;
+  /** Re-transcribes the last failed clips, without opening the microphone. */
+  retryDictation(): Promise<void>;
+  /** Drops held clips from a failed attempt. */
+  dismissDictationRetry(): Promise<void>;
   previewIndicator(): Promise<void>;
   beginOverlayDrag(): void;
   moveOverlay(deltaX: number, deltaY: number): void;
@@ -336,6 +358,12 @@ export interface DesktopApi {
   getHistory(): Promise<SavedDictation[]>;
   deleteDictation(id: string): Promise<SavedDictation[]>;
   clearHistory(): Promise<SavedDictation[]>;
+  /** WAV bytes for a saved dictation, when one was kept. */
+  getDictationAudio(id: string): Promise<Uint8Array>;
+  /** Saves a transcription (from a dropped file, for example) into history. */
+  saveDictation(text: string, wavBytes?: Uint8Array): Promise<SavedDictation[]>;
+  /** Replaces the words on a saved dictation after re-running the engine. */
+  updateDictation(id: string, text: string): Promise<SavedDictation[]>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
@@ -351,6 +379,8 @@ export interface DesktopApi {
       meant for the app underneath. */
   setOverlayHitRegion(region: OverlayRect): void;
   onDictationUpdate(listener: (update: DictationUpdate) => void): () => void;
-  reportDictationState(status: DictationStatus): void;
-  reportDictationPhrase(phrase: DictationPhrase): void;
+  reportDictationState(status: DictationStatus): void | Promise<void>;
+  /** Stashes phrase audio before transcription so idle flush cannot drop it. */
+  reportDictationClip(clip: DictationClip): void | Promise<void>;
+  reportDictationPhrase(phrase: DictationPhrase): void | Promise<void>;
 }

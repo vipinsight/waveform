@@ -302,13 +302,28 @@ body {
 .hud-accept { margin-left: 8px; background: #f6f5f2; color: #171717; }
 
 /* Holding the shortcut is its own commitment -- releasing the key accepts --
-   so the session shows the meter and nothing to press. */
+   so the session shows the meter and nothing to press. A failed transcription
+   with held audio is the exception: Retry and Dismiss have to stay reachable. */
 .hud[data-mode="hold"] .hud-cancel,
 .hud[data-mode="hold"] .hud-accept {
   width: 0;
   margin: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.hud[data-mode="hold"][data-state="error"][data-retry="true"] .hud-cancel {
+  width: 20px;
+  margin-right: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hud[data-mode="hold"][data-state="error"][data-retry="true"] .hud-accept {
+  width: 20px;
+  margin-left: 8px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /*

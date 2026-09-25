@@ -122,6 +122,7 @@ function silentCaptureHandlers(overrides: {
   stopNativeCapture?: () => Promise<void>;
 } = {}) {
   return {
+    onClip: () => undefined,
     onPhrase: () => undefined,
     onPendingChange: () => undefined,
     onError: overrides.onError ?? (() => undefined),
@@ -155,3 +156,138 @@ describe("AudioCapture.stop", () => {
     expect(stopped).toBe(0);
   });
 });
+
+describe("AudioCapture.retryLast", () => {
+  it("re-transcribes held clips after a failure without opening the mic", async () => {
+    let attempts = 0;
+    const phrases: string[] = [];
+    const errors: string[] = [];
+    let starts = 0;
+    const capture = new AudioCapture({
+      ...silentCaptureHandlers({
+        onError: (message) => errors.push(message),
+      }),
+      onPhrase: (text) => {
+        phrases.push(text);
+      },
+      startNativeCapture: async () => {
+        starts += 1;
+        return "mic";
+      },
+      transcribe: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("engine busy");
+        return { text: "hello again" };
+      },
+    });
+
+    await capture.start();
+    // Calibrate on room, speak, then stop so flush cuts the phrase.
+    capture.feed(samples(300, 0.0004), 1_000);
+    capture.feed(samples(400, 0.05), 1_000);
+    capture.stop();
+    await waitFor(() => errors.includes("engine busy"));
+    expect(capture.canRetry).toBe(true);
+    expect(starts).toBe(1);
+
+    expect(capture.retryLast()).toBe(true);
+    await waitFor(() => phrases.includes("hello again"));
+    expect(capture.canRetry).toBe(false);
+    expect(starts).toBe(1);
+  });
+
+  it("clears held clips when a new session starts", async () => {
+    let attempts = 0;
+    const capture = new AudioCapture({
+      ...silentCaptureHandlers(),
+      transcribe: async () => {
+        attempts += 1;
+        throw new Error("fail");
+      },
+    });
+    await capture.start();
+    capture.feed(samples(300, 0.0004), 1_000);
+    capture.feed(samples(400, 0.05), 1_000);
+    capture.stop();
+    await waitFor(() => capture.canRetry);
+    await capture.start();
+    expect(capture.canRetry).toBe(false);
+    expect(capture.retryLast()).toBe(false);
+    expect(attempts).toBe(1);
+  });
+
+  it("has nothing to retry when the session heard no phrases", async () => {
+    const errors: string[] = [];
+    const capture = new AudioCapture(
+      silentCaptureHandlers({
+        onError: (message) => errors.push(message),
+      }),
+    );
+    await capture.start();
+    capture.feed(samples(500, 0.0001), 1_000);
+    capture.stop();
+    await waitFor(() => errors.length > 0);
+    expect(capture.canRetry).toBe(false);
+    expect(capture.retryLast()).toBe(false);
+  });
+
+  it("finishes delivering a phrase before pending drops to zero", async () => {
+    const order: string[] = [];
+    let releasePhrase: (() => void) | null = null;
+    const capture = new AudioCapture({
+      ...silentCaptureHandlers(),
+      onPhrase: async () => {
+        order.push("phrase-start");
+        await new Promise<void>((resolve) => {
+          releasePhrase = resolve;
+        });
+        order.push("phrase-done");
+      },
+      onPendingChange: (pending) => {
+        if (pending === 0) order.push("pending-zero");
+      },
+      transcribe: async () => ({ text: "logged" }),
+    });
+    await capture.start();
+    capture.feed(samples(300, 0.0004), 1_000);
+    capture.feed(samples(400, 0.05), 1_000);
+    capture.stop();
+    await waitFor(() => releasePhrase !== null);
+    expect(order).toEqual(["phrase-start"]);
+    releasePhrase!();
+    await waitFor(() => order.includes("pending-zero"));
+    expect(order).toEqual(["phrase-start", "phrase-done", "pending-zero"]);
+  });
+
+  it("stashes audio before transcription and reports empty before pending hits zero", async () => {
+    const order: string[] = [];
+    const capture = new AudioCapture({
+      ...silentCaptureHandlers(),
+      onClip: () => {
+        order.push("clip");
+      },
+      onError: (message) => {
+        order.push(`error:${message.startsWith("No words")}`);
+      },
+      onPendingChange: (pending) => {
+        if (pending === 0) order.push("pending-zero");
+      },
+      transcribe: async () => ({ text: "" }),
+    });
+    await capture.start();
+    capture.feed(samples(300, 0.0004), 1_000);
+    capture.feed(samples(400, 0.05), 1_000);
+    capture.stop();
+    await waitFor(() => order.includes("pending-zero"));
+    expect(order).toEqual(["clip", "error:true", "pending-zero"]);
+    expect(capture.canRetry).toBe(true);
+  });
+});
+
+async function waitFor(predicate: () => boolean, tries = 40): Promise<void> {
+  for (let index = 0; index < tries; index += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out waiting for condition");
+}

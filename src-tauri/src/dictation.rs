@@ -68,6 +68,9 @@ pub struct DictationStatus {
     pub mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Held audio can be transcribed again without speaking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub can_retry: bool,
 }
 
 fn default_sink() -> String {
@@ -83,6 +86,13 @@ pub struct DictationPhrase {
     pub text: String,
     #[serde(default = "default_sink")]
     pub sink: String,
+}
+
+/// Phrase audio stashed before transcription finishes.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationClip {
+    pub wav_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -136,6 +146,21 @@ pub struct Dictation {
     /// text appearing mid-sentence interrupts the person still speaking, and
     /// pastes into whatever they may have clicked on in the meantime.
     pending: Mutex<Vec<String>>,
+    /// WAV clips stashed as soon as a phrase is cut, before transcription.
+    ///
+    /// Idle flush used to run against an empty buffer when the engine returned
+    /// no words (or the phrase IPC lagged). Keeping audio here means history
+    /// still gets a row the user can retry from.
+    pending_audio: Mutex<Vec<Vec<u8>>>,
+    /// The overlay is showing a failed attempt with Retry and still holds its
+    /// clips. Only then does `pending_audio` belong to a finished session that
+    /// a new one must save before clearing; otherwise it is a phrase still in
+    /// flight from a quick re-press.
+    retry_held: Mutex<bool>,
+    /// The app that was frontmost when the session began, unless that was
+    /// Waveform. Opening Waveform's window mid-dictation must not steal the
+    /// paste; see `focus`.
+    paste_target: Mutex<Option<i32>>,
     /// Where this session's text is going, kept because the last phrases
     /// arrive after the session itself has ended.
     pending_sink: Mutex<String>,
@@ -185,6 +210,9 @@ impl Dictation {
             watched_key: Mutex::new(None),
             generation: Mutex::new(0),
             pending: Mutex::new(Vec::new()),
+            pending_audio: Mutex::new(Vec::new()),
+            retry_held: Mutex::new(false),
+            paste_target: Mutex::new(None),
             pending_sink: Mutex::new("insert".into()),
             discard_pending: Mutex::new(false),
             rewrite_pending: Mutex::new(false),
@@ -401,7 +429,12 @@ impl Dictation {
     pub async fn paste_last(self: &Arc<Self>) {
         let text = {
             let history = self.history.lock().await;
-            history.entries().first().map(|entry| entry.text.clone())
+            // A failed attempt's placeholder is not something anyone said.
+            history
+                .entries()
+                .into_iter()
+                .find(|entry| !crate::history::is_placeholder(&entry.text))
+                .map(|entry| entry.text)
         };
         let Some(text) = text else { return };
         self.helper.paste(&text).await;
@@ -424,6 +457,19 @@ impl Dictation {
         }
         self.gestures.lock().await.cancel();
         self.end_session("cancel").await;
+    }
+
+    /// Asks the overlay to re-transcribe held clips from a failed attempt.
+    ///
+    /// The window is frontmost when this is pressed, so inserting would paste
+    /// into Waveform itself; the words go to the transcript instead.
+    pub async fn retry_from_app(self: &Arc<Self>) {
+        self.send_to_overlay("retry", "transcript", "hold").await;
+    }
+
+    /// Asks the overlay to drop held clips from a failed attempt.
+    pub async fn dismiss_retry_from_app(self: &Arc<Self>) {
+        self.send_to_overlay("dismiss-retry", "insert", "hold").await;
     }
 
     pub async fn preview_indicator(self: &Arc<Self>) {
@@ -453,8 +499,16 @@ impl Dictation {
                 stop_when_speech_ends: false,
             });
         }
+        // A prior attempt may still hold audio (empty ASR waiting on Retry).
+        // Starting again must not erase it: flush first so history keeps a row.
+        if std::mem::replace(&mut *self.retry_held.lock().await, false) {
+            self.flush_pending().await;
+        }
+        // After that flush, which still pastes into the previous session's app.
+        *self.paste_target.lock().await = crate::focus::frontmost_other_app();
         *self.generation.lock().await += 1;
         self.pending.lock().await.clear();
+        self.pending_audio.lock().await.clear();
         *self.pending_sink.lock().await = sink.to_string();
         *self.discard_pending.lock().await = false;
         *self.rewrite_pending.lock().await = false;
@@ -606,6 +660,7 @@ impl Dictation {
     }
 
     pub async fn on_overlay_state(self: &Arc<Self>, status: DictationStatus) {
+        *self.retry_held.lock().await = status.state == "error" && status.can_retry;
         if status.state == "idle" {
             if self.session.lock().await.take().is_some() {
                 // The overlay stopped on its own, e.g. a device error; resync.
@@ -637,6 +692,13 @@ impl Dictation {
                 phrase: None,
             },
         );
+    }
+
+    /// Stashes phrase audio before the engine returns words.
+    pub async fn on_overlay_clip(self: &Arc<Self>, wav: Vec<u8>) {
+        if wav.len() > 44 {
+            self.pending_audio.lock().await.push(wav);
+        }
     }
 
     /// Collects a finished phrase. Nothing is delivered until the session ends.
@@ -683,10 +745,27 @@ impl Dictation {
     /// Joining first also means the model rewrite sees whole sentences rather
     /// than fragments split at a pause, and costs one request instead of one
     /// per phrase.
+    ///
+    /// Audio without words still becomes a history row: the recording is what
+    /// Retry needs, and disappearing without a trace is worse than a
+    /// placeholder the user can re-run.
     async fn flush_pending(self: &Arc<Self>) {
         let phrases: Vec<String> = self.pending.lock().await.drain(..).collect();
+        let clips: Vec<Vec<u8>> = self.pending_audio.lock().await.drain(..).collect();
         let discard = std::mem::replace(&mut *self.discard_pending.lock().await, false);
-        if phrases.is_empty() || discard {
+        if discard {
+            return;
+        }
+        if phrases.is_empty() {
+            let Some(wav) = crate::history::concat_mono_wavs(&clips) else {
+                return;
+            };
+            let entries = self
+                .history
+                .lock()
+                .await
+                .add("", Some(wav.as_slice()));
+            let _ = self.app.emit("history-changed", entries);
             return;
         }
 
@@ -713,6 +792,7 @@ impl Dictation {
         }
 
         if sink == "insert" {
+            self.return_focus_to_target().await;
             self.helper.paste(&format!("{text} ")).await;
         }
 
@@ -726,7 +806,8 @@ impl Dictation {
             let _ = self.app.emit("stats-changed", stats);
         }
 
-        let entries = self.history.lock().await.add(&text);
+        let wav = crate::history::concat_mono_wavs(&clips);
+        let entries = self.history.lock().await.add(&text, wav.as_deref());
         let _ = self.app.emit("history-changed", entries);
 
         let _ = self.app.emit_to(
@@ -738,10 +819,36 @@ impl Dictation {
                     sink: sink.clone(),
                     mode: "hold".into(),
                     message: None,
+                    can_retry: false,
                 },
                 phrase: Some(DictationPhrase { text, sink }),
             },
         );
+    }
+
+    /// Puts the dictated-into app back in front when Waveform's window took it.
+    ///
+    /// Only Waveform is stepped over: switching to some other app on purpose
+    /// still sends the words there, as it always has.
+    async fn return_focus_to_target(&self) {
+        if !crate::focus::waveform_is_frontmost() {
+            return;
+        }
+        let Some(pid) = *self.paste_target.lock().await else {
+            return;
+        };
+        if !crate::focus::activate(pid) {
+            return;
+        }
+        // Activation is asynchronous; the keystroke must not beat it.
+        for _ in 0..20 {
+            if crate::focus::frontmost_pid() == Some(pid) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        // The app restores its focused field once it is key, a beat later.
+        tokio::time::sleep(Duration::from_millis(120)).await;
     }
 
     /// Rewrites whatever is selected in the focused app, in place.
@@ -900,6 +1007,7 @@ impl Dictation {
                     sink: "insert".into(),
                     mode: "hold".into(),
                     message: Some(message.into()),
+                    can_retry: false,
                 },
                 phrase: None,
             },
@@ -916,6 +1024,7 @@ impl Dictation {
                     sink: "insert".into(),
                     mode: "hold".into(),
                     message: Some(message.into()),
+                    can_retry: false,
                 },
                 phrase: None,
             },

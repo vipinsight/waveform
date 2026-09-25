@@ -115,6 +115,17 @@ const api: DesktopApi = {
   getHistory: () => invoke<SavedDictation[]>("get_history"),
   deleteDictation: (id) => invoke<SavedDictation[]>("delete_dictation", { id }),
   clearHistory: () => invoke<SavedDictation[]>("clear_history"),
+  getDictationAudio: async (id) => {
+    const bytes = await invoke<number[]>("get_dictation_audio", { id });
+    return Uint8Array.from(bytes);
+  },
+  saveDictation: async (text, wavBytes) =>
+    invoke<SavedDictation[]>("save_dictation", {
+      text,
+      wavBytes: wavBytes ? Array.from(wavBytes) : null,
+    }),
+  updateDictation: (id, text) =>
+    invoke<SavedDictation[]>("update_dictation", { id, text }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
   getStats: () => invoke<AppStats>("get_stats"),
@@ -142,6 +153,8 @@ const api: DesktopApi = {
   acceptDictation: () => invoke<void>("accept_dictation"),
   polishDictation: () => invoke<void>("polish_dictation"),
   cancelDictation: () => invoke<void>("cancel_dictation"),
+  retryDictation: () => invoke<void>("retry_dictation"),
+  dismissDictationRetry: () => invoke<void>("dismiss_dictation_retry"),
   previewIndicator: () => invoke<void>("preview_indicator"),
   getModelCatalog: () => invoke<ModelStatus[]>("model_catalog"),
   onDictationCommand: (listener) =>
@@ -151,8 +164,9 @@ const api: DesktopApi = {
   setOverlayHitRegion: (region) => void invoke("set_overlay_hit_region", { ...region }),
   onDictationUpdate: (listener) =>
     subscribe<DictationUpdate>("dictation-update", listener),
-  reportDictationState: (status) => void invoke("report_dictation_state", { status }),
-  reportDictationPhrase: (phrase) => void invoke("report_dictation_phrase", { phrase }),
+  reportDictationState: (status) => invoke<void>("report_dictation_state", { status }),
+  reportDictationClip: (clip) => invoke<void>("report_dictation_clip", { clip }),
+  reportDictationPhrase: (phrase) => invoke<void>("report_dictation_phrase", { phrase }),
 
   beginOverlayDrag: () => void invoke("begin_overlay_drag"),
   moveOverlay: (deltaX, deltaY) => void invoke("drag_overlay", { deltaX, deltaY }),
