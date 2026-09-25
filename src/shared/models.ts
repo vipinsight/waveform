@@ -108,10 +108,14 @@ export type SpeechEngine = SpeechModelDefinition["engine"];
  *
  * Named rather than "the first entry", because the table is ordered for the
  * models page to read, Parakeet first, and that is not a model a fresh install
- * can run without a terminal. Small runs on every Apple Silicon Mac and is
- * accurate enough that a first dictation is not a bad first impression.
+ * can run without a terminal. Large v3 Turbo · Q5 is the setup wizard's
+ * recommendation and one of the two models it fetches on a first run, so
+ * skipping the wizard lands on weights that are likely already on the disk.
+ * Small used to be the answer here, which the wizard neither offers nor fetches.
+ * Kept equal to `DEFAULT_LADDER_MODEL_ID` by a test; not imported from it,
+ * because the ladder imports this module.
  */
-export const DEFAULT_SPEECH_MODEL_ID: SpeechModelId = "whisper-cpp-small";
+export const DEFAULT_SPEECH_MODEL_ID: SpeechModelId = "whisper-cpp-large-v3-turbo-q5";
 
 export function isSpeechModelId(value: unknown): value is SpeechModelId {
   return SPEECH_MODELS.some(({ id }) => id === value);

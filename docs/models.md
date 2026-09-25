@@ -40,8 +40,11 @@ The default is named rather than positional. It used to be `MODELS[0]` and
 `SPEECH_MODELS[0].id`, which worked while the first entry was the only
 self-downloading model; now the table is ordered lightest-first for the models
 page to read, and the lightest Whisper is Tiny. `DEFAULT_MODEL_ID` and
-`DEFAULT_SPEECH_MODEL_ID` both say `whisper-cpp-small` — accurate enough that a
-first dictation is not a bad first impression, and small enough to run anywhere.
+`DEFAULT_SPEECH_MODEL_ID` both say `whisper-cpp-large-v3-turbo-q5`, the setup
+wizard's recommendation (`DEFAULT_LADDER_MODEL_ID`) and one of the two models it
+fetches on a first run, so a skipped wizard lands on weights that are likely
+already on the disk. It used to be `whisper-cpp-small`, which the wizard neither
+offers nor fetches. A test keeps the two TypeScript ids equal.
 
 There used to be a third copy of the id list, in the settings validator, and the
 comment it left behind is worth reading before adding a fourth

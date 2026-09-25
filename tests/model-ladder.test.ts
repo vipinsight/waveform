@@ -8,7 +8,7 @@ import {
   ladderIndexOf,
   ladderRung,
 } from "../src/shared/model-ladder";
-import { getSpeechModel } from "../src/shared/models";
+import { DEFAULT_SPEECH_MODEL_ID, getSpeechModel } from "../src/shared/models";
 import type { ModelFit } from "../src/shared/contracts";
 
 /**
@@ -106,5 +106,16 @@ describe("the speed/accuracy ladder", () => {
     expect(ladderRung(Number.NaN)).toBe(MODEL_LADDER[0]);
     expect(chooseModel(Number.NaN, everythingFits).id).toBe(MODEL_LADDER[0]!.id);
     expect(chooseModel(Number.NaN, everythingFits).askedFor).toBeNull();
+  });
+});
+
+/*
+ * A skipped wizard falls back to the stored default. It used to be Whisper
+ * Small, which the wizard neither offers nor prefetches, so the first
+ * dictation waited on a download of a model nobody had chosen.
+ */
+describe("the default model", () => {
+  it("is the model the wizard recommends", () => {
+    expect(DEFAULT_SPEECH_MODEL_ID).toBe(DEFAULT_LADDER_MODEL_ID);
   });
 });

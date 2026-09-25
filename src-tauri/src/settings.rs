@@ -183,9 +183,12 @@ impl Default for AppSettings {
             polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
             polish_shortcut: "Alt+1".to_string(),
             menu_bar_icon: true,
-            launch_at_login: false,
-            show_flow_bar_always: false,
-            hide_dock_when_closed: false,
+            // On for a fresh install: Waveform is a shortcut that has to be
+            // there when it is pressed, so it starts with the Mac, keeps its
+            // bar in view, and lives in the menu bar rather than the Dock.
+            launch_at_login: true,
+            show_flow_bar_always: true,
+            hide_dock_when_closed: true,
             automatic_update_check: true,
             sidebar_collapsed: false,
             onboarding_completed: false,
