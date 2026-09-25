@@ -447,9 +447,10 @@ pub const MODELS: &[ModelDefinition] = &[
 ///
 /// Named rather than positional -- the table is ordered for the interface to
 /// read, Parakeet first, and that is not a model a fresh install can run
-/// without a terminal. Small is: it runs on every Apple Silicon Mac, and it is
-/// accurate enough that a first dictation is not a bad first impression.
-pub const DEFAULT_MODEL_ID: &str = "whisper-cpp-small";
+/// without a terminal. Large v3 Turbo · Q5 is: it is the setup wizard's
+/// recommendation and one of the two models it fetches on a first run, so a
+/// skipped wizard still lands on weights that are likely already on the disk.
+pub const DEFAULT_MODEL_ID: &str = "whisper-cpp-large-v3-turbo-q5";
 
 /// Everything that differs between the two Python engines.
 ///

@@ -31,10 +31,10 @@ describe("speech model registry", () => {
     expect(getSpeechModel("whisper-cpp-small").engine).toBe("whisper-cpp");
   });
 
-  it("defaults to Whisper Small, which runs on any Apple Silicon Mac", () => {
+  it("defaults to Large v3 Turbo · Q5, the model the setup wizard recommends", () => {
     // Named rather than positional: the list is ordered Parakeet first for the
     // models page to read, and that is not a model to hand anyone unasked.
-    expect(DEFAULT_SPEECH_MODEL_ID).toBe("whisper-cpp-small");
+    expect(DEFAULT_SPEECH_MODEL_ID).toBe("whisper-cpp-large-v3-turbo-q5");
     expect(isSpeechModelId(DEFAULT_SPEECH_MODEL_ID)).toBe(true);
   });
 

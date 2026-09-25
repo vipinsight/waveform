@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings";
 import { DEFAULT_POLISH_PROMPT } from "../src/shared/prompts";
 
+describe("DEFAULT_SETTINGS", () => {
+  it("starts with the Mac, keeps the bar up, and stays out of the Dock", () => {
+    expect(DEFAULT_SETTINGS.launchAtLogin).toBe(true);
+    expect(DEFAULT_SETTINGS.showFlowBarAlways).toBe(true);
+    expect(DEFAULT_SETTINGS.hideDockWhenClosed).toBe(true);
+    // Hiding the Dock icon is ignored without the menu bar icon to return by.
+    expect(DEFAULT_SETTINGS.menuBarIcon).toBe(true);
+  });
+});
+
 describe("normalizeSettings", () => {
   it("falls back to defaults for an unusable file", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);

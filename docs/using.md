@@ -44,8 +44,9 @@ A small indicator — the Wave Bar — appears while the microphone is open, so 
 open microphone is never a surprise. It carries cancel on the left and polish on
 the right, never takes focus from the app you are typing into, and can be
 dragged anywhere; the position is remembered. **Settings → General** has **Show
-me** to summon it and **Reset** to put it back, and a switch to keep it on
-screen the whole time rather than only while you dictate.
+me** to summon it and **Reset** to put it back, and a switch that keeps it on
+screen the whole time. That switch starts on; turn it off to see the bar only
+while you dictate.
 
 ## The trigger key
 
@@ -115,12 +116,12 @@ while it is loaded, and it is approximate.
 | --- | --- | --- | --- | --- |
 | Tiny | 78 MB | ~250 MB | ~4× faster | Short commands where a wrong word is obvious |
 | Base | 148 MB | ~350 MB | ~2× faster | The smallest model worth dictating sentences to |
-| **Small** | 488 MB | ~800 MB | baseline | The accuracy floor for text you do not reread. The default |
+| Small | 488 MB | ~800 MB | baseline | The accuracy floor for text you do not reread |
 | Small · Q5 | 190 MB | ~440 MB | about the same | Small on a Mac that cannot spare 800 MB |
 | Medium | 1.5 GB | ~2.1 GB | ~3× slower | Accents and jargon Small gets wrong |
 | Medium · Q5 | 539 MB | ~1.1 GB | ~3× slower | Most of Medium's accuracy in half the memory |
 | **Large v3 Turbo** | 1.6 GB | ~2.2 GB | ~2× slower | The best trade here: near Large v3's accuracy, nowhere near its cost |
-| Large v3 Turbo · Q5 | 574 MB | ~1.2 GB | ~2× slower | Turbo on a 16 GB Mac |
+| **Large v3 Turbo · Q5** | 574 MB | ~1.2 GB | ~2× slower | Turbo on a 16 GB Mac. The default |
 | Large v3 · Q5 | 1.1 GB | ~1.8 GB | ~5× slower | The most accurate weights under 2 GB |
 | Large v3 | 3.1 GB | ~3.8 GB | ~6× slower | When accuracy matters more than waiting |
 
@@ -255,8 +256,8 @@ one case where a press really does leave everything as it was.
 
 Closing the window does not quit Waveform — the shortcut keeps working with
 nothing on screen, and the Dock or menu bar icon brings the window back.
-**Settings → General** can drop the app out of the Dock entirely while the
-window is closed, leaving only the menu bar icon.
+By default the app also leaves the Dock while the window is closed, leaving
+only the menu bar icon; **Settings → General** turns that off.
 
 The icon's menu carries **Model** and **Microphone** submenus, so switching
 either takes one gesture and no window. **Model** lists the whole catalogue
@@ -264,8 +265,9 @@ under the same headings the models page uses; a model that still needs a
 download or a terminal is listed greyed out, because the menu bar can switch
 between models that are here and the window is where models arrive.
 
-With **Start with login** enabled, Waveform starts in the background after you
-log in, including after a restart, with its window hidden and dictation ready.
+**Start with login** is on from the first launch: Waveform starts in the
+background after you log in, including after a restart, with its window hidden
+and dictation ready.
 Launching it by hand always opens the window.
 
 ## Updates
