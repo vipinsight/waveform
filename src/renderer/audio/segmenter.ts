@@ -142,9 +142,13 @@ export class SpeechSegmenter {
     return Math.max(MINIMUM_THRESHOLD, this.floor * FLOOR_MARGIN);
   }
 
-  push(input: Float32Array): Float32Array | null {
+  /**
+   * `gain` scales the level used for detection only. The chunk is kept as it
+   * arrived, so the phrase that comes back is the raw audio.
+   */
+  push(input: Float32Array, gain = 1): Float32Array | null {
     const chunk = new Float32Array(input);
-    const level = rootMeanSquare(chunk);
+    const level = rootMeanSquare(chunk) * gain;
 
     if (this.calibrating > 0) {
       this.calibrating -= chunk.length;
