@@ -194,6 +194,24 @@ let modelReady = false;
 let modelLoading = false;
 /** The model whose weights are being fetched, so a second press does nothing. */
 let downloading: SpeechModelId | null = null;
+/**
+ * Downloads waiting their turn behind `downloading`.
+ *
+ * The host fetches one model at a time: parallel transfers share one
+ * connection, so none would finish sooner, and the Parakeet and Qwen
+ * installers share a Python environment that two at once would corrupt.
+ * Without a queue a second Download press did nothing at all.
+ */
+interface QueuedDownload {
+  id: SpeechModelId;
+  /** Put into use once it lands; see `downloadModel`. */
+  useWhenReady: boolean;
+  /** The selection when it was asked for: a later pick overrides it. */
+  selectedWhenAsked: SpeechModelId;
+  finished: Promise<void>;
+  resolve: () => void;
+}
+let downloadQueue: QueuedDownload[] = [];
 /** The same, for the polish models, which are fetched from their own page. */
 let polishDownloading: string | null = null;
 /** The last thing the host said about the AI side, so a change in one half of
@@ -449,12 +467,17 @@ function wireEvents(): void {
     }
     const fetch = (event.target as HTMLElement).closest<HTMLElement>("[data-fetch]");
     if (fetch?.dataset.fetch && isSpeechModelId(fetch.dataset.fetch)) {
-      void downloadModel(fetch.dataset.fetch);
+      void downloadModel(fetch.dataset.fetch, { useWhenReady: true });
       return;
     }
     const cancel = (event.target as HTMLElement).closest<HTMLElement>("[data-cancel-download]");
     if (cancel) {
       void host().cancelModelDownload();
+      return;
+    }
+    const unqueue = (event.target as HTMLElement).closest<HTMLElement>("[data-cancel-queued]");
+    if (unqueue?.dataset.cancelQueued && isSpeechModelId(unqueue.dataset.cancelQueued)) {
+      cancelQueuedDownload(unqueue.dataset.cancelQueued);
       return;
     }
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-model]");
@@ -1290,9 +1313,18 @@ function renderOnboarding(steps: SetupStep[]): void {
         button.type = "button";
         button.className = "pill-button is-primary onboard-action";
         button.dataset.fix = step.id;
-        button.textContent =
-          step.id === "model" && downloading !== null ? "Downloading…" : step.action;
-        button.disabled = step.id === "model" && downloading !== null;
+        // Only the selected model's download is this step's. Another one
+        // running (the wizard's prefetch) just means this one queues.
+        const selectedState =
+          step.id !== "model"
+            ? null
+            : downloading === settings.modelId
+              ? "Downloading…"
+              : isQueued(settings.modelId)
+                ? "Queued"
+                : null;
+        button.textContent = selectedState ?? step.action;
+        button.disabled = selectedState !== null;
         item.append(button);
       }
       return item;
@@ -1522,6 +1554,26 @@ function cancelDownloadButton(): HTMLElement {
   return wrap;
 }
 
+/** Waiting behind another download; Cancel takes it out of the line. */
+function queuedDownloadControls(id: string, label: string): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.className = "model-download-controls";
+
+  const state = document.createElement("span");
+  state.className = "model-progress";
+  state.textContent = "Queued";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pill-button model-cancel";
+  button.dataset.cancelQueued = id;
+  button.textContent = "Cancel";
+  button.setAttribute("aria-label", `Remove ${label} from the download queue`);
+
+  wrap.append(state, button);
+  return wrap;
+}
+
 /**
  * One model: the numbers to choose on, and what it would take to have it.
  *
@@ -1539,6 +1591,7 @@ function modelRow(model: ModelStatus): HTMLElement {
   const ready = model.runtimeInstalled && model.weightsInstalled;
   const fetchable = !ready && model.downloadBytes !== null;
   const busy = downloading === model.id;
+  const queued = !busy && isQueued(model.id);
   const size = model.downloadBytes === null ? "" : formatBytes(model.downloadBytes);
 
   // The numbers the choice is made on. A third line of prose is dropped: the
@@ -1610,7 +1663,13 @@ function modelRow(model: ModelStatus): HTMLElement {
   row.setAttribute("role", "presentation");
   // What the row is, in one word, so the stylesheet can say the rest: a model
   // that is not here reads dimmer than one that is.
-  row.dataset.state = ready ? "here" : busy ? "busy" : fetchable ? "download" : "terminal";
+  row.dataset.state = ready
+    ? "here"
+    : busy || queued
+      ? "busy"
+      : fetchable
+        ? "download"
+        : "terminal";
   row.append(pick, body);
 
   if (ready && model.selected) {
@@ -1623,6 +1682,8 @@ function modelRow(model: ModelStatus): HTMLElement {
 
   if (busy) {
     row.append(cancelDownloadButton());
+  } else if (queued) {
+    row.append(queuedDownloadControls(model.id, model.label));
   } else if (fetchable) {
     row.append(fetchButton(model.id, model.label, size));
   } else if (!ready) {
@@ -1675,22 +1736,99 @@ async function deletePolishModel(id: string): Promise<void> {
  * One at a time, and the list is rebuilt afterwards either way: the row's whole
  * text depends on whether the file is there now.
  */
-async function downloadModel(id: SpeechModelId): Promise<void> {
-  if (downloading) return;
-  downloading = id;
+/**
+ * Asks for a model, joining the queue if another is downloading.
+ *
+ * Resolves when this model's download ends, however it ends, so the wizard's
+ * prefetch can still take its models one after another.
+ *
+ * `useWhenReady` is for the Models page's Download button: pressing it is
+ * choosing the model, and making someone come back to select it once it
+ * lands read as the download not having worked. It is skipped if another
+ * model was picked in the meantime -- that is the later choice. The wizard's
+ * background prefetch and the setup card do not pass it.
+ */
+function downloadModel(
+  id: SpeechModelId,
+  options: { useWhenReady?: boolean } = {},
+): Promise<void> {
+  const existing =
+    activeDownload?.id === id ? activeDownload : downloadQueue.find((entry) => entry.id === id);
+  if (existing) {
+    // Asked again from the Models page after the wizard queued it on spec.
+    if (options.useWhenReady && !existing.useWhenReady) {
+      existing.useWhenReady = true;
+      existing.selectedWhenAsked = settings.modelId;
+    }
+    return existing.finished;
+  }
+
+  let resolve = (): void => {};
+  const finished = new Promise<void>((done) => {
+    resolve = done;
+  });
+  downloadQueue.push({
+    id,
+    useWhenReady: options.useWhenReady ?? false,
+    selectedWhenAsked: settings.modelId,
+    finished,
+    resolve,
+  });
+  void pumpDownloads();
+  return finished;
+}
+
+let activeDownload: QueuedDownload | null = null;
+
+function isQueued(id: string): boolean {
+  return downloadQueue.some((entry) => entry.id === id);
+}
+
+/** Starts the next queued download when nothing is running. */
+async function pumpDownloads(): Promise<void> {
+  if (activeDownload) {
+    // Still running: only the new "Queued" row needs drawing.
+    await renderModels();
+    return;
+  }
+  const next = downloadQueue.shift();
+  if (!next) return;
+  activeDownload = next;
+  downloading = next.id;
+  if (next.id === settings.modelId) speechPercent = 0;
   await renderModels();
   try {
-    await host().downloadModel(id);
+    await host().downloadModel(next.id);
+    if (
+      next.useWhenReady &&
+      settings.modelId === next.selectedWhenAsked &&
+      settings.modelId !== next.id
+    ) {
+      // Not awaited, like a row click: loading the engine is the models
+      // page's own progress, not the download's.
+      void host().selectModel(next.id);
+    }
   } catch {
     // Cancelled or failed: the event already said which, and the rebuild below
     // puts the Download button back.
   } finally {
+    activeDownload = null;
     downloading = null;
+    next.resolve();
     await renderModels();
     // The model is a setup step, so its arrival is what closes the last row of
     // the onboarding card.
     await refreshModelInstalled();
+    void pumpDownloads();
   }
+}
+
+function cancelQueuedDownload(id: SpeechModelId): void {
+  const entry = downloadQueue.find((queued) => queued.id === id);
+  if (!entry) return;
+  downloadQueue = downloadQueue.filter((queued) => queued !== entry);
+  entry.resolve();
+  void renderModels();
 }
 
 /**
@@ -1704,13 +1842,18 @@ function showDownloadProgress(event: ModelEvent): void {
   // The onboarding card offers the same download without the models page ever
   // being opened, so it gets the same progress.
   const percent = Math.round((event.progress ?? 0) * 100);
-  speechPercent = percent;
-  if (wizardStep === "ready") renderReadyProgress();
+  // The setup card and the wizard's last page wait on the selected model;
+  // a queued neighbour's percentage would be a number about something else.
+  const forSelected = event.modelId === settings.modelId;
+  if (forSelected) speechPercent = percent;
+  if (forSelected && wizardStep === "ready") renderReadyProgress();
   // Nothing for the wizard beyond the last page. It fetches two models on
   // spec before anyone asks
   // for one, and a percentage counting up in its footer would be announcing
   // a download the person never started.
-  const step = element.onboardSteps.querySelector<HTMLElement>('[data-step="model"]');
+  const step = forSelected
+    ? element.onboardSteps.querySelector<HTMLElement>('[data-step="model"]')
+    : null;
   const stepAction = step?.querySelector("button");
   if (stepAction) stepAction.textContent = `${percent}%`;
   const stepDetail = step?.querySelector("small");
@@ -3750,7 +3893,7 @@ function renderReadyProgress(): void {
   element.readySpeechRow.hidden = !speechPending;
   if (speechPending) {
     element.readySpeechName.textContent = speech.label;
-    const busy = downloading !== null;
+    const busy = downloading === settings.modelId;
     element.readySpeechState.textContent = busy ? `${speechPercent}%` : "Waiting to start";
     element.readySpeechBar.style.width = `${busy ? speechPercent : 0}%`;
   }
