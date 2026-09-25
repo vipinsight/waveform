@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { microphoneDevices } from "../src/shared/microphones";
+import { isBuiltInMicrophone, microphoneDevices } from "../src/shared/microphones";
 
 function device(deviceId: string, label: string, kind: MediaDeviceKind = "audioinput"): MediaDeviceInfo {
   return { deviceId, label, kind, groupId: "", toJSON: () => ({}) };
@@ -15,7 +15,7 @@ describe("microphone list shared with the menu bar", () => {
       device("teams", "Microsoft Teams Audio Device (Virtual)"),
     ];
     expect(microphoneDevices(inputs)).toEqual([
-      { id: "", label: "Auto-detect", displayLabel: "Auto-detect (MacBook Pro)" },
+      { id: "", label: "Auto-detect", displayLabel: "Auto (built-in mic)" },
       { id: "mac", label: "MacBook Pro Microphone", displayLabel: "Built-in mic (recommended)" },
       { id: "usb", label: "AT2020 USB", displayLabel: "AT2020 USB" },
       { id: "teams", label: "Microsoft Teams Audio Device (Virtual)", displayLabel: "Microsoft Teams Audio Device (Virtual)" },
@@ -25,8 +25,8 @@ describe("microphone list shared with the menu bar", () => {
     expect(inputs[1]?.deviceId).toBe("usb");
   });
 
-  it("says auto-detect plainly when macOS has not said what it resolves to", () => {
-    expect(microphoneDevices([device("mac", "MacBook Pro Microphone")])[0]).toEqual({
+  it("says auto-detect plainly when there is no built-in mic to prefer", () => {
+    expect(microphoneDevices([device("usb", "AT2020 USB")])[0]).toEqual({
       id: "",
       label: "Auto-detect",
       displayLabel: "Auto-detect",
@@ -43,5 +43,10 @@ describe("microphone list shared with the menu bar", () => {
       { id: "", label: "Auto-detect", displayLabel: "Auto-detect" },
       { id: "unnamed", label: "Microphone 1", displayLabel: "Microphone 1" },
     ]);
+  });
+
+  it("recognises the built-in mic by name", () => {
+    expect(isBuiltInMicrophone("MacBook Air Microphone")).toBe(true);
+    expect(isBuiltInMicrophone("Vipin's AirPods Pro")).toBe(false);
   });
 });

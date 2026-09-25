@@ -5,6 +5,7 @@
 //! surface. This crate supplies that surface natively.
 
 mod download;
+mod focus;
 mod gestures;
 mod history;
 mod install;
@@ -354,6 +355,44 @@ async fn clear_history(
 }
 
 #[tauri::command]
+async fn get_dictation_audio(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<u8>, String> {
+    state.history.lock().await.audio(&id)
+}
+
+/// Saves a file transcription the same way a spoken one is saved.
+#[tauri::command]
+async fn save_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    wav_bytes: Option<Vec<u8>>,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state
+        .history
+        .lock()
+        .await
+        .add(&text, wav_bytes.as_deref());
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
+}
+
+/// Replaces the words on a saved dictation after a re-transcription.
+#[tauri::command]
+async fn update_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+) -> Result<Vec<SavedDictation>, String> {
+    let entries = state.history.lock().await.update_text(&id, &text)?;
+    let _ = app.emit("history-changed", &entries);
+    Ok(entries)
+}
+
+#[tauri::command]
 async fn get_stats(state: State<'_, AppState>) -> Result<AppStats, String> {
     Ok(state.stats.lock().await.value())
 }
@@ -610,6 +649,18 @@ async fn cancel_dictation(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn retry_dictation(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.retry_from_app().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn dismiss_dictation_retry(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.dismiss_retry_from_app().await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn preview_indicator(state: State<'_, AppState>) -> Result<(), String> {
     state.dictation.preview_indicator().await;
     Ok(())
@@ -621,6 +672,15 @@ async fn report_dictation_state(
     status: DictationStatus,
 ) -> Result<(), String> {
     state.dictation.on_overlay_state(status).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn report_dictation_clip(
+    state: State<'_, AppState>,
+    clip: dictation::DictationClip,
+) -> Result<(), String> {
+    state.dictation.on_overlay_clip(clip.wav_bytes).await;
     Ok(())
 }
 
@@ -1066,6 +1126,9 @@ pub fn run() {
             get_history,
             delete_dictation,
             clear_history,
+            get_dictation_audio,
+            save_dictation,
+            update_dictation,
             get_model_state,
             start_model,
             select_model,
@@ -1087,8 +1150,11 @@ pub fn run() {
             accept_dictation,
             polish_dictation,
             cancel_dictation,
+            retry_dictation,
+            dismiss_dictation_retry,
             preview_indicator,
             report_dictation_state,
+            report_dictation_clip,
             report_dictation_phrase,
             get_hotkey_status,
             request_hotkey_permission,
@@ -1475,14 +1541,20 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .lock()
         .map(|devices| devices.clone())
         .unwrap_or_default();
-    // The renderer carries the system default as the first entry, naming the
-    // device it currently resolves to. Before the first capture there is no
-    // list yet, so the plain word stands in.
-    let auto_label = devices
-        .iter()
-        .find(|device| device.id.is_empty())
-        .map(|device| device.display_label.clone())
-        .unwrap_or_else(|| "Auto-detect".to_string());
+    // The renderer carries Waveform's automatic choice as the first entry.
+    // Before the first capture there is no list yet, so the plain word stands in.
+    // Empty-id Auto is stripped before it reaches the tray list, so the label
+    // is rebuilt here to match Settings: capture prefers the built-in mic when
+    // nothing is pinned, and falls back to macOS's default otherwise.
+    let auto_label = if devices.is_empty()
+        || devices
+            .iter()
+            .any(|device| mic::is_built_in_input(&device.label))
+    {
+        "Auto (built-in mic)".to_string()
+    } else {
+        "Auto-detect".to_string()
+    };
     let system_default = CheckMenuItem::with_id(
         app,
         "microphone-default",

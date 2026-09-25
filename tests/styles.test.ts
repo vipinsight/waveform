@@ -66,6 +66,23 @@ describe("stylesheet covers the markup", () => {
   });
 
   /*
+   * Hold mode hides accept/cancel because releasing the key is the commit.
+   * A failed transcription with held audio is the exception: Retry has to stay
+   * reachable without speaking again.
+   */
+  it("keeps accept reachable on a retryable error in hold mode", () => {
+    expect(overlayCss).toContain(
+      '.hud[data-mode="hold"][data-state="error"][data-retry="true"] .hud-accept',
+    );
+    const rule = overlayCss.match(
+      /\.hud\[data-mode="hold"\]\[data-state="error"\]\[data-retry="true"\]\s*\.hud-accept\s*\{[^}]+\}/,
+    )?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/pointer-events:\s*auto/);
+    expect(rule).not.toMatch(/opacity:\s*0/);
+  });
+
+  /*
    * Status used to sit beside Check for Updates. Long copy wrapped the
    * copyright onto a new line, so it jumped left. The button now carries every
    * stage itself, and the footer is forbidden from wrapping.

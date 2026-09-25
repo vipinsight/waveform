@@ -38,6 +38,32 @@ const FLOOR_MARGIN = 2.5;
  */
 const CALIBRATION_MS = 250;
 
+/**
+ * Which calibration block stands for the room: the tenth percentile.
+ *
+ * The room used to be an average of the calibration window, which is only
+ * the room if nobody is talking. People start speaking the moment the bar
+ * appears, so the "room" came out as their voice, the threshold landed at
+ * 2.5x the voice, and nothing counted as speech until a louder word late in
+ * the sentence -- which kept only that word and the pre-roll before it. The
+ * gaps between words are quiet even in continuous speech, and steady room
+ * noise barely moves across percentiles, so a low one is right in both cases.
+ */
+const CALIBRATION_PERCENTILE = 0.1;
+
+/** Below this a block is a dropout (a mic opening on zeros), not a room. */
+const DROPOUT_LEVEL = 1e-5;
+
+/**
+ * How much audio is kept ahead of the session's first phrase.
+ *
+ * Before anything has been detected, a miss costs the start of what was said,
+ * so the whole run-up is kept rather than the short pre-roll that suits later
+ * phrases. Bounded, because minutes of room tone invite the engine to invent
+ * words in it.
+ */
+const LEAD_IN_MS = 3_000;
+
 export class SpeechSegmenter {
   /** Set only when a fixed threshold was asked for. See `threshold`. */
   private readonly silenceThreshold: number | null;
@@ -49,6 +75,11 @@ export class SpeechSegmenter {
   private readonly minimumSpeechSamples: number;
   private readonly flushMinimumSpeechSamples: number;
   private readonly preRollSamples: number;
+  private readonly leadInSamples: number;
+  /** Levels seen while calibrating; the floor is taken from these at the end. */
+  private calibrationLevels: number[] = [];
+  /** Whether a phrase has been cut yet. Until then the pre-roll is the lead-in. */
+  private heardPhrase = false;
   private readonly maximumSegmentSamples: number;
   private preRoll: Float32Array[] = [];
   private preRollLength = 0;
@@ -86,6 +117,10 @@ export class SpeechSegmenter {
     // noise as far as detection goes, but they are also the run-up to a phrase
     // that started immediately, and dropping them clips the first word.
     this.preRollSamples = millisecondsToSamples(options.preRollMs ?? 320, options.sampleRate);
+    this.leadInSamples = Math.max(
+      this.preRollSamples,
+      millisecondsToSamples(LEAD_IN_MS, options.sampleRate),
+    );
     this.calibrating = millisecondsToSamples(
       options.calibrationMs ?? CALIBRATION_MS,
       options.sampleRate,
@@ -113,7 +148,8 @@ export class SpeechSegmenter {
 
     if (this.calibrating > 0) {
       this.calibrating -= chunk.length;
-      this.learnFloor(level, 0.3);
+      if (level > DROPOUT_LEVEL) this.calibrationLevels.push(level);
+      if (this.calibrating <= 0) this.settleCalibration();
       this.addPreRoll(chunk);
       return null;
     }
@@ -121,8 +157,13 @@ export class SpeechSegmenter {
     const isSpeech = level >= this.threshold();
 
     // Only silence teaches the floor, and only between phrases: folding speech
-    // into it would raise the bar until the speaker fell under it.
-    if (!isSpeech && !this.speaking) this.learnFloor(level, 0.1);
+    // into it would raise the bar until the speaker fell under it. It falls
+    // fast and rises slowly: a floor learned from a voice (speech from the
+    // first block) has to come down in the first gap between words, while a
+    // real rise in the room is gradual and can afford to be.
+    if (!isSpeech && !this.speaking) {
+      this.learnFloor(level, level < this.floor ? 0.5 : 0.05);
+    }
 
     if (!this.speaking) {
       if (!isSpeech) {
@@ -162,6 +203,14 @@ export class SpeechSegmenter {
     return this.finishSegment(this.flushMinimumSpeechSamples);
   }
 
+  private settleCalibration(): void {
+    const levels = this.calibrationLevels.sort((first, second) => first - second);
+    this.calibrationLevels = [];
+    if (levels.length === 0) return;
+    const index = Math.floor((levels.length - 1) * CALIBRATION_PERCENTILE);
+    this.floor = levels[index] ?? 0;
+  }
+
   /** The first measurement is taken whole, so nothing is judged against zero. */
   private learnFloor(level: number, weight: number): void {
     this.floor = this.floor === 0 ? level : this.floor * (1 - weight) + level * weight;
@@ -171,7 +220,8 @@ export class SpeechSegmenter {
     this.preRoll.push(chunk);
     this.preRollLength += chunk.length;
 
-    while (this.preRollLength > this.preRollSamples && this.preRoll.length > 1) {
+    const limit = this.heardPhrase ? this.preRollSamples : this.leadInSamples;
+    while (this.preRollLength > limit && this.preRoll.length > 1) {
       const removed = this.preRoll.shift();
       if (removed) this.preRollLength -= removed.length;
     }
@@ -180,6 +230,7 @@ export class SpeechSegmenter {
   private finishSegment(minimumSpeechSamples = this.minimumSpeechSamples): Float32Array | null {
     const valid = this.speaking && this.speechSamples >= minimumSpeechSamples;
     const result = valid ? concatenate(this.segment, this.segmentLength) : null;
+    if (valid) this.heardPhrase = true;
 
     this.segment = [];
     this.segmentLength = 0;
