@@ -1388,18 +1388,44 @@ kbd {
   font-weight: 400;
 }
 
+/* One block for the status line and the button, with its height reserved:
+   .about spreads its children apart, so a line appearing on its own row
+   moved everything above it. */
+.about-status {
+  display: grid;
+  flex: none;
+  gap: 8px;
+}
+
+/* Two lines, always there. Empty is blank space, not a collapsed row; a
+   longer error is clamped and carried whole in the title. */
 .update-hint {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-  margin: 0 0 10px;
+  display: -webkit-box;
+  height: calc(12.5px * 1.45 * 2);
+  margin: 0;
+  overflow: hidden;
   color: var(--ink-soft);
   font-size: 12.5px;
   line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.update-hint[hidden] {
+.update-hint .link {
+  margin-left: 6px;
+}
+
+.update-simulate {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 12px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.update-simulate[hidden] {
   display: none;
 }
 
@@ -1418,7 +1444,16 @@ kbd {
   min-width: 0;
 }
 
+.about-updates {
+  align-items: center;
+}
+
+/* Wide enough for the longest stage ("Downloading… 100%"), so the button
+   does not resize as its label changes. */
 .about-updates .pill-button {
+  min-width: 11.5em;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
   margin: 0;
   max-width: 100%;
   overflow: hidden;

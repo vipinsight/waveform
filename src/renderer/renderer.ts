@@ -89,6 +89,9 @@ const element = {
   updateHint: requireElement<HTMLElement>("update-hint"),
   updateHintText: requireElement<HTMLElement>("update-hint-text"),
   updateNotes: requireElement<HTMLButtonElement>("update-notes"),
+  updateSimulate: requireElement<HTMLElement>("update-simulate"),
+  simulateUpdate: requireElement<HTMLButtonElement>("simulate-update"),
+  simulateFailure: requireElement<HTMLButtonElement>("simulate-failure"),
   aboutVersion: requireElement<HTMLElement>("about-version"),
   openRepository: requireElement<HTMLButtonElement>("open-repository"),
   openProfile: requireElement<HTMLButtonElement>("open-profile"),
@@ -342,6 +345,8 @@ async function bootstrap(): Promise<void> {
   // rendered as "Waveform null".
   appVersion = await host().getAppVersion().catch(() => "");
   const appName = await host().getAppName().catch(() => "Waveform");
+  // Only a checkout build can rehearse an update; see simulateUpdateCheck.
+  element.updateSimulate.hidden = appName === "Waveform";
   document.title = appName;
   element.appBrand.textContent = appName;
   element.wizardBrand.textContent = appName;
@@ -366,7 +371,11 @@ function wireEvents(): void {
   wireWizard();
   host().onModelEvent(handleModelEvent);
   host().onPolishModelEvent(showPolishDownloadProgress);
-  host().onUpdateEvent(handleUpdateEvent);
+  // A simulation owns the button until it ends; a real check landing in the
+  // middle would repaint it with the truth halfway through the story.
+  host().onUpdateEvent((event) => {
+    if (!updateSimulation) handleUpdateEvent(event);
+  });
   host().onLogLine(handleLogLine);
   host().onSettingsChanged(applySettings);
   host().onHotkeyStatusChanged((next) => {
@@ -635,11 +644,14 @@ function wireEvents(): void {
       // network round trip, and a button that does not change on a press
       // reads as broken.
       setUpdateButton("Preparing…", { busy: true, install: true });
-      void installUpdate();
+      if (updateSimulation) simulateUpdateInstall();
+      else void installUpdate();
       return;
     }
     void checkForUpdate();
   });
+  element.simulateUpdate.addEventListener("click", () => simulateUpdateCheck(false));
+  element.simulateFailure.addEventListener("click", () => simulateUpdateCheck(true));
   element.updateNotes.addEventListener("click", () => {
     if (updateNotesVersion) {
       void host().openUrl(
@@ -1982,10 +1994,12 @@ function handleUpdateEvent(event: UpdateEvent): void {
   }
 }
 
-/** The status line above the button; `null` hides it. */
+/** The status line above the button; `null` blanks it (its space stays). */
 function setUpdateHint(message: string | null, notesFor: string | null = null): void {
-  element.updateHint.hidden = message === null;
   element.updateHintText.textContent = message ?? "";
+  element.updateHint.title = message ?? "";
+  // A rehearsed version has no release page to open.
+  if (updateSimulation) notesFor = null;
   updateNotesVersion = notesFor;
   element.updateNotes.hidden = notesFor === null;
 }
@@ -4134,3 +4148,99 @@ function requireElement<T extends HTMLElement>(id: string): T {
   if (!node) throw new Error(`Missing #${id}`);
   return node as T;
 }
+
+/**
+ * A rehearsal of the update flow, for checkout builds only.
+ *
+ * Nothing is fetched, installed or restarted: the same events the host would
+ * send are fed to the same handler on a timer, so every state of the About
+ * page can be seen without publishing a release. `fail` ends the download in
+ * the error a bad signature would produce.
+ */
+let updateSimulation: { version: string; fail: boolean; timers: number[] } | null = null;
+
+function simulateUpdateCheck(fail: boolean): void {
+  stopUpdateSimulation();
+  const version = nextMinorVersion(appVersion || "0.0.0");
+  updateSimulation = { version, fail, timers: [] };
+  playUpdateSimulation([
+    [0, { stage: "checking", message: "Checking for updates…" }],
+    [900, { stage: "available", message: `Waveform ${version} is available`, version }],
+  ]);
+}
+
+function simulateUpdateInstall(): void {
+  const simulation = updateSimulation;
+  if (!simulation) return;
+  const { version, fail } = simulation;
+  const steps: Array<[number, UpdateEvent]> = [
+    [0, { stage: "downloading", message: "Preparing the update…" }],
+  ];
+  const lastTenth = fail ? 6 : 10;
+  for (let tenth = 0; tenth <= lastTenth; tenth += 1) {
+    steps.push([
+      700 + tenth * 220,
+      {
+        stage: "downloading",
+        message: `Downloading Waveform ${version}…`,
+        progress: tenth / 10,
+        version,
+      },
+    ]);
+  }
+  const downloaded = 700 + lastTenth * 220;
+  if (fail) {
+    steps.push([
+      downloaded + 400,
+      {
+        stage: "error",
+        message: "Could not install the update: the signature did not verify (simulated).",
+      },
+    ]);
+    playUpdateSimulation(steps, () => {
+      // Try Again should rehearse again, not reach for the real feed.
+      if (updateSimulation) updateSimulation.fail = false;
+    });
+    return;
+  }
+  steps.push(
+    [downloaded + 300, { stage: "installing", message: `Installing Waveform ${version}…`, version }],
+    [
+      downloaded + 1_600,
+      { stage: "installed", message: `Waveform ${version} installed — restarting`, version },
+    ],
+  );
+  playUpdateSimulation(steps, () => {
+    // Where a real update would relaunch, stand in for the window it opens.
+    const timer = window.setTimeout(() => {
+      stopUpdateSimulation();
+      setUpdateButton("Up to date");
+      setUpdateHint(`Updated to Waveform ${version}. (Simulated: nothing was installed.)`);
+    }, 1_400);
+    updateSimulation?.timers.push(timer);
+  });
+}
+
+function playUpdateSimulation(steps: Array<[number, UpdateEvent]>, then?: () => void): void {
+  const simulation = updateSimulation;
+  if (!simulation) return;
+  for (const [delay, event] of steps) {
+    simulation.timers.push(window.setTimeout(() => handleUpdateEvent(event), delay));
+  }
+  if (then) {
+    const last = Math.max(...steps.map(([delay]) => delay));
+    simulation.timers.push(window.setTimeout(then, last + 1));
+  }
+}
+
+function stopUpdateSimulation(): void {
+  for (const timer of updateSimulation?.timers ?? []) window.clearTimeout(timer);
+  updateSimulation = null;
+}
+
+/** 0.6.0 becomes 0.7.0: plausible, and never a release that exists. */
+function nextMinorVersion(version: string): string {
+  const [major = 0, minor = 0] = version.split(".").map((part) => Number(part) || 0);
+  return `${major}.${minor + 1}.0`;
+}
+
