@@ -51,6 +51,12 @@ import { installTauriBridge } from "./tauri-bridge";
 const element = {
   history: requireElement<HTMLElement>("history"),
   dictationDeck: requireElement<HTMLElement>("dictation-deck"),
+  modelDeck: requireElement<HTMLElement>("model-deck"),
+  modelDeckStatus: requireElement<HTMLElement>("model-deck-status"),
+  modelDeckTitle: requireElement<HTMLElement>("model-deck-title"),
+  modelDeckDescription: requireElement<HTMLElement>("model-deck-description"),
+  modelDeckLanguage: requireElement<HTMLElement>("model-deck-language"),
+  modelDeckPolish: requireElement<HTMLElement>("model-deck-polish"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
   shortcutHint: requireElement<HTMLElement>("shortcut-hint"),
@@ -102,8 +108,6 @@ const element = {
   deckDescription: requireElement<HTMLElement>("deck-description"),
   deckKey: requireElement<HTMLElement>("deck-key"),
   deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
-  gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
-  gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
@@ -434,9 +438,7 @@ function wireEvents(): void {
     if (promptEditorKind) togglePromptEditor(false);
     else toggleSettings(false);
   });
-  element.deckSettings.addEventListener("click", () => {
-    openView("dictation");
-  });
+  element.deckSettings.addEventListener("click", () => openView("dictate"));
 
   bindTranscribeDrop();
 
@@ -1246,8 +1248,6 @@ function renderHotkeyLabels(): void {
   const binding = getHotkeyBinding(settings.hotkeyId);
   const glyph = binding ? hotkeyKeycap(binding) : "—";
   element.hintKey.textContent = glyph;
-  element.gestureKeyHold.textContent = glyph;
-  element.gestureKeyTap.textContent = `${glyph} ${glyph}`;
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
@@ -2133,16 +2133,30 @@ function renderDictationDeck(): void {
   // is true yet, so the slot stays empty rather than guessing.
   const known = setupKnown && hotkeyStatus !== null;
   element.onboard.hidden = !known || outstanding.length === 0;
-  element.dictationDeck.hidden = !known || outstanding.length > 0;
-  if (!known || outstanding.length > 0) return;
+  element.modelDeck.hidden = !known || outstanding.length > 0;
+  renderModelDeck();
 
+  // The shortcut card lives on the Dictation page. Unfinished setup is said
+  // there too, pointing back to the checklist rather than repeating it.
+  element.dictationDeck.hidden = !known;
+  if (!known) return;
   element.deckKey.textContent = key;
+  element.deckSettings.hidden = outstanding.length === 0;
+  if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
+  else delete element.deckStatus.dataset.tone;
+  if (outstanding.length > 0) {
+    element.deckStatus.textContent = "Setup unfinished";
+    element.deckTitle.textContent = "Finish setup to dictate";
+    element.deckDescription.textContent = `${outstanding.length} ${
+      outstanding.length === 1 ? "step is" : "steps are"
+    } left, in the checklist on Transcripts.`;
+    return;
+  }
 
   if (!binding) {
     element.deckStatus.textContent = "Shortcut off";
     element.deckTitle.textContent = "Choose a key to start dictating";
     element.deckDescription.textContent = "Pick a modifier key that will not type into the app you are using.";
-    element.deckSettings.textContent = "Choose shortcut";
     return;
   }
 
@@ -2150,16 +2164,44 @@ function renderDictationDeck(): void {
     element.deckStatus.textContent = "Preparing speech model";
     element.deckTitle.textContent = "Your words are about to be ready";
     element.deckDescription.textContent = `${getSpeechModel(settings.modelId).label} is loading on this Mac.`;
-    element.deckSettings.textContent = "Key & microphone";
     return;
   }
 
   element.deckStatus.textContent = modelReady ? "Ready anywhere" : "Ready on demand";
   element.deckTitle.textContent = `Hold ${key}, say it, release`;
   element.deckDescription.textContent = modelReady
-    ? "Words will land at your cursor, then stay here for easy copying."
+    ? "Words land at your cursor, and stay in Transcripts for easy copying."
     : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
-  element.deckSettings.textContent = "Key & microphone";
+}
+
+/**
+ * The Transcripts card: which model turns speech into these words, whether it
+ * is ready, the language it listens for, and what AI Polish does after it.
+ */
+function renderModelDeck(): void {
+  const missing = setupKnown && !modelInstalled;
+  element.modelDeckStatus.textContent = missing
+    ? "Not downloaded"
+    : modelLoading
+      ? "Loading"
+      : modelReady
+        ? "Ready"
+        : "Loads when you dictate";
+  if (missing) element.modelDeckStatus.dataset.tone = "attention";
+  else delete element.modelDeckStatus.dataset.tone;
+
+  element.modelDeckTitle.textContent = getSpeechModel(settings.modelId).label;
+  element.modelDeckDescription.textContent = "Speech model, running on this Mac.";
+  element.modelDeckLanguage.textContent = settings.speechLanguage
+    ? settings.speechLanguage.toUpperCase()
+    : "Auto";
+
+  element.modelDeckPolish.textContent =
+    settings.polishLevel === "none"
+      ? "None"
+      : settings.polishEngine === "local"
+        ? `Active, ${polishModelLabel(settings.localModelId)} on this Mac`
+        : `Active, ${settings.openRouterModel} through OpenRouter`;
 }
 
 function renderStats(stats: AppStats): void {
@@ -2288,7 +2330,7 @@ function renderHistory(): void {
       : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
 
   // Both cards stay in the tree; renderDictationDeck decides which is showing.
-  element.history.replaceChildren(element.onboard, element.dictationDeck);
+  element.history.replaceChildren(element.onboard, element.modelDeck);
   element.history.classList.toggle("is-empty", matches.length === 0 && !pendingRetry);
 
   if (pendingRetry) element.history.append(renderRetryCard(pendingRetry.message));

@@ -2819,6 +2819,15 @@ select {
   font-weight: 650;
 }
 
+.deck-status[data-tone="attention"] {
+  color: #ffd79a;
+}
+
+.deck-status[data-tone="attention"]::before {
+  background: #f5a524;
+  box-shadow: 0 0 0 3px rgb(245 165 36 / 18%);
+}
+
 .deck-status::before {
   width: 6px;
   height: 6px;
@@ -2903,6 +2912,7 @@ select {
   cursor: default;
 }
 
+.deck-settings[hidden] { display: none; }
 .deck-settings:hover { background: rgb(255 255 255 / 20%); }
 .deck-settings:focus-visible { outline-color: #fff; }
 

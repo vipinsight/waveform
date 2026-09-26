@@ -168,23 +168,26 @@
               </p>
             </section>
 
-            <section class="dictation-deck" id="dictation-deck" aria-live="polite">
+            <!--
+              The model in use, in the card the shortcut used to hold: this page
+              is where dictations land, and what turned speech into these words
+              is the thing worth knowing here. The shortcut card moved to the
+              Dictation page, beside the key it describes.
+            -->
+            <section class="dictation-deck" id="model-deck" aria-live="polite" hidden>
               <div class="deck-intro">
-                <p class="deck-status" id="deck-status">Checking setup</p>
-                <h2 class="deck-title" id="deck-title">Get ready to dictate</h2>
-                <p class="deck-description" id="deck-description">
-                  Waveform checks your shortcut, permissions, and local speech model here.
-                </p>
+                <p class="deck-status" id="model-deck-status">Checking model</p>
+                <h2 class="deck-title" id="model-deck-title">—</h2>
+                <p class="deck-description" id="model-deck-description"></p>
               </div>
-              <div class="deck-key" aria-label="Dictation shortcut">
-                <span>Hold</span>
-                <kbd id="deck-key">—</kbd>
+              <div class="deck-key" aria-label="Language">
+                <span>Language</span>
+                <kbd id="model-deck-language">—</kbd>
               </div>
-              <div class="deck-gestures" aria-label="Dictation gestures">
-                <span><strong>Hold</strong> Speak, then release</span>
-                <span><strong>Tap twice</strong> Keep listening</span>
+              <div class="deck-gestures" aria-label="Polish">
+                <span><strong>AI Polish</strong> <span id="model-deck-polish">—</span></span>
               </div>
-              <button id="deck-settings" class="deck-settings" type="button">Key &amp; microphone</button>
+              <button type="button" class="deck-settings" data-open-models="speech">Change model</button>
             </section>
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
@@ -210,15 +213,30 @@
         <section class="view" id="view-dictation" hidden>
           <h1 class="display">Dictation</h1>
 
+          <section class="dictation-deck" id="dictation-deck" aria-live="polite">
+            <div class="deck-intro">
+              <p class="deck-status" id="deck-status">Checking setup</p>
+              <h2 class="deck-title" id="deck-title">Get ready to dictate</h2>
+              <p class="deck-description" id="deck-description">
+                Waveform checks your shortcut, permissions, and local speech model here.
+              </p>
+            </div>
+            <div class="deck-key" aria-label="Dictation shortcut">
+              <span>Hold</span>
+              <kbd id="deck-key">—</kbd>
+            </div>
+            <div class="deck-gestures" aria-label="Dictation gestures">
+              <span><strong>Hold</strong> Speak, then release</span>
+              <span><strong>Tap twice</strong> Keep listening</span>
+              <span><strong>Esc</strong> Cancel</span>
+            </div>
+            <button id="deck-settings" class="deck-settings" type="button" hidden>Finish setup</button>
+          </section>
+
           <h2 class="section-label">Key to hold</h2>
           <div class="dictation-key">
             <div class="keyboard" id="dictation-keyboard" role="radiogroup" aria-label="Key to hold"></div>
             <p class="keyboard-caption" id="dictation-keyboard-caption"></p>
-              <ul class="gesture-list">
-                <li><kbd id="gesture-key-hold">fn</kbd><span>Hold, speak, release</span></li>
-                <li><kbd id="gesture-key-tap">fn fn</kbd><span>Double tap to keep listening</span></li>
-                <li><kbd>esc</kbd><span>Cancel without inserting</span></li>
-              </ul>
 
               <p class="note" id="fn-note" hidden>
                 Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
