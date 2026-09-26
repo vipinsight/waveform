@@ -2583,9 +2583,9 @@ select {
   margin-bottom: 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 88% -6%, rgb(143 128 255 / 40%), transparent 34%),
-    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 16%), transparent 38%),
-    linear-gradient(130deg, #1a2140, #292260);
+    radial-gradient(circle at 88% -6%, rgb(96 165 250 / 40%), transparent 34%),
+    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 14%), transparent 38%),
+    linear-gradient(130deg, #13203f, #1b3a6e);
   color: #f8f8ff;
 }
 
@@ -2788,6 +2788,16 @@ select {
     radial-gradient(circle at 62% 100%, rgb(48 214 161 / 18%), transparent 34%),
     linear-gradient(130deg, #1a2140, #292260);
   color: #f8f8ff;
+}
+
+/* Each card its own colour, so the model on Transcripts, the shortcut on
+   Dictation and the setup checklist do not read as one card in three places.
+   The shortcut keeps the brand indigo; the model is teal, the engine. */
+.dictation-deck.deck-model {
+  background:
+    radial-gradient(circle at 86% 0%, rgb(45 212 191 / 38%), transparent 32%),
+    radial-gradient(circle at 60% 100%, rgb(56 189 248 / 16%), transparent 34%),
+    linear-gradient(130deg, #0f2a2c, #114a45);
 }
 
 .dictation-deck::after {
