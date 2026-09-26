@@ -1,17 +1,16 @@
 /**
  * How much the model may change a dictation before it is inserted.
  *
- * Three settings rather than a switch, because "tidy this" is not one thing.
- * Removing "um" and closing a sentence is a different act from cutting the
- * sentence in half, and someone dictating a commit message wants one while
- * someone dictating a message to a friend wants the other. A single on/off
- * made that choice for them.
+ * Off, or Active (stored as `light`, the name it had when there were three).
+ * A Medium level that also cut and rephrased was dropped: two choices are one
+ * decision, three were a comparison nobody wanted to make on every install.
+ * A saved `medium` reads as `light`.
  *
  * The level chooses the instruction the dictation path runs, which lives in
  * prompts.ts beside the one the polish shortcut uses. `none` runs no model at
  * all: the transcript is inserted as the speech engine returned it.
  */
-export const POLISH_LEVELS = ["none", "light", "medium"] as const;
+export const POLISH_LEVELS = ["none", "light"] as const;
 
 export type PolishLevel = (typeof POLISH_LEVELS)[number];
 

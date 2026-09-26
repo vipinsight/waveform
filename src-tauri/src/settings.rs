@@ -11,7 +11,7 @@ use std::path::PathBuf;
 pub const POLISH_SHORTCUTS: [&str; 5] = ["none", "Alt+1", "Alt+2", "Alt+3", "Alt+P"];
 /// How much a dictation may be changed before it is inserted. Kept in step
 /// with src/shared/polish-levels.ts, which is where what each one means lives.
-pub const POLISH_LEVELS: [&str; 3] = ["none", "light", "medium"];
+pub const POLISH_LEVELS: [&str; 2] = ["none", "light"];
 const HOTKEY_IDS: [&str; 7] = [
     "none",
     "fn",
@@ -53,9 +53,11 @@ pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
 ///
 /// The first dictation prompt predates the rules about how spoken numbers and
 /// times are written down. The second still rewrote grammar and phrasing.
-pub const RETIRED_TRANSFORM_PROMPTS: [&str; 2] = [
+pub const RETIRED_TRANSFORM_PROMPTS: [&str; 3] = [
     include_str!("prompts/transform-retired.txt"),
     include_str!("prompts/transform-retired-grammar.txt"),
+    // The Medium level's default, from when there were three levels.
+    include_str!("prompts/transform-retired-medium.txt"),
 ];
 /// Polish prompts nobody chose. The first was a copy editor; the second tidied
 /// dictation rather than fixing anything, which is the wrong job for text
@@ -241,6 +243,10 @@ impl AppSettings {
             let was_on = self.transform_on_dictate;
             self.polish_level = if was_on { "light" } else { "none" }.to_string();
         }
+        // Medium was retired; the one level left is the closest to it.
+        if self.polish_level == "medium" {
+            self.polish_level = "light".to_string();
+        }
         if !POLISH_LEVELS.contains(&self.polish_level.as_str()) {
             self.polish_level = base.polish_level.clone();
         }
@@ -381,7 +387,7 @@ mod tests {
     /// at a level that asked for it, or on at "none".
     #[test]
     fn the_switch_follows_the_level_it_is_stored_with() {
-        for (level, running) in [("none", false), ("light", true), ("medium", true)] {
+        for (level, running) in [("none", false), ("light", true)] {
             let mut stored = AppSettings::default();
             stored.polish_level = level.into();
             stored.transform_on_dictate = !running;
@@ -389,6 +395,29 @@ mod tests {
             assert_eq!(loaded.polish_level, level);
             assert_eq!(loaded.transform_on_dictate, running);
         }
+    }
+
+    /// Medium was retired. A file that chose it keeps polish on, at the one
+    /// level left, and an unedited Medium instruction becomes that level's.
+    #[test]
+    fn a_saved_medium_becomes_the_active_level() {
+        let mut stored = AppSettings::default();
+        stored.polish_level = "medium".into();
+        stored.transform_prompt = include_str!("prompts/transform-retired-medium.txt").into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.polish_level, "light");
+        assert!(loaded.transform_on_dictate);
+        assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
+    }
+
+    /// An edited Medium instruction is the user's, and stays.
+    #[test]
+    fn an_edited_medium_instruction_is_kept() {
+        let mut stored = AppSettings::default();
+        stored.polish_level = "medium".into();
+        stored.transform_prompt = "Keep it short.".into();
+        let loaded = stored.normalize(&AppSettings::default());
+        assert_eq!(loaded.transform_prompt, "Keep it short.");
     }
 
     /// A level from a later version, or a typed-in one, is not a level this

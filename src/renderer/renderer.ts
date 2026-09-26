@@ -787,7 +787,7 @@ function renderModelKinds(): void {
   } else if (missing) {
     setKindState(element.polishKindState, missing, true);
   } else {
-    setKindState(element.polishKindState, `In use at ${polishLevelName(level)}`, false);
+    setKindState(element.polishKindState, "In use", false);
   }
 }
 
@@ -797,9 +797,6 @@ function setKindState(target: HTMLElement, text: string, attention: boolean): vo
   else delete target.dataset.tone;
 }
 
-function polishLevelName(level: PolishLevel): string {
-  return level.charAt(0).toUpperCase() + level.slice(1);
-}
 
 function polishModelLabel(id: string): string {
   return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
@@ -1006,8 +1003,8 @@ function renderAiStatus(status: AiStatus): void {
   const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
   const local = status.engine === "local";
   element.polishBlockerText.textContent = local
-    ? `Light and Medium need ${polishModelLabel(status.localModelId)} on this Mac.`
-    : "Light and Medium need an OpenRouter key.";
+    ? `Active needs ${polishModelLabel(status.localModelId)} on this Mac.`
+    : "Active needs an OpenRouter key.";
   element.polishBlockerAction.textContent = local ? "Download it" : "Add a key";
   element.polishLevelHint.hidden = ready;
   renderModelKinds();
@@ -3017,8 +3014,8 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
  * instruction that reads as though it were in force.
  */
 function transformPromptWhere(level: PolishLevel): string {
-  if (level === "none") return "Not in use: polish is set to None.";
-  return `Used on every dictation, at ${level === "medium" ? "Medium" : "Light"}.`;
+  if (level === "none") return "Not in use: AI Polish is set to None.";
+  return "Used on every dictation while AI Polish is Active.";
 }
 
 /** First lines of each prompt on the cards, so the page stays scannable. */

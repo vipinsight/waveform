@@ -669,7 +669,7 @@ mod tests {
     fn local_weights_are_only_held_for_a_level_that_uses_them() {
         let mut settings = AppSettings::default();
         settings.polish_engine = "local".into();
-        for (level, warms) in [("none", false), ("light", true), ("medium", true)] {
+        for (level, warms) in [("none", false), ("light", true)] {
             settings.polish_level = level.into();
             assert_eq!(warms_for_dictation(&settings), warms, "at {level}");
         }
@@ -680,7 +680,7 @@ mod tests {
     fn nothing_is_held_for_the_hosted_engine() {
         let mut settings = AppSettings::default();
         settings.polish_engine = "openrouter".into();
-        for level in ["none", "light", "medium"] {
+        for level in ["none", "light"] {
             settings.polish_level = level.into();
             assert!(!warms_for_dictation(&settings), "at {level}");
         }

@@ -125,9 +125,14 @@ describe("normalizeSettings", () => {
 
   it("patches over a previous value without losing the rest", () => {
     const previous = { ...DEFAULT_SETTINGS, openRouterModel: "openai/gpt-4o-mini" };
-    const result = normalizeSettings({ ...previous, polishLevel: "medium" }, previous);
+    const result = normalizeSettings({ ...previous, polishLevel: "light" }, previous);
     expect(result.openRouterModel).toBe("openai/gpt-4o-mini");
-    expect(result.polishLevel).toBe("medium");
+    expect(result.polishLevel).toBe("light");
+  });
+
+  // Medium was retired: a file that chose it keeps polish on, at Active.
+  it("reads a saved Medium as the one active level", () => {
+    expect(normalizeSettings({ polishLevel: "medium" }).polishLevel).toBe("light");
   });
 
   // The level replaced an on/off switch, and a settings file written while
@@ -143,7 +148,6 @@ describe("normalizeSettings", () => {
   it("keeps the old switch in step with the level", () => {
     expect(normalizeSettings({ polishLevel: "none" }).transformOnDictate).toBe(false);
     expect(normalizeSettings({ polishLevel: "light" }).transformOnDictate).toBe(true);
-    expect(normalizeSettings({ polishLevel: "medium" }).transformOnDictate).toBe(true);
     // A stale window sending both: the level wins.
     const conflicted = normalizeSettings({ polishLevel: "none", transformOnDictate: true });
     expect(conflicted.transformOnDictate).toBe(false);
