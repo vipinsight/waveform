@@ -36,21 +36,24 @@ Needs an Apple Silicon Mac on macOS 13 or newer.
 
 ```mermaid
 flowchart TD
-    subgraph mac["all of this happens on your Mac"]
-        key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
-        listen --> model["An open model<br/>transcribes it"]
-        model --> typed["The text is typed back<br/>where you were working"]
-        model -. "optional, text only" .-> local["AI Polish,<br/>model on this Mac"]
-        local -.-> typed
-    end
+    key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
+    listen --> speech["A speech model on your Mac transcribes it<br/>Whisper, Parakeet or Qwen3-ASR"]
+    speech --> polish{"AI Polish?"}
+    selected["You select text and press<br/>the polish shortcut"] --> polish
+    polish -- "off" --> typed["The text is typed back<br/>where you were working"]
+    polish -- "on this Mac" --> local["Qwen3 on your Mac<br/>through llama.cpp"]
+    polish -. "OpenRouter" .-> hosted["A hosted model<br/>leaves your Mac, text only"]
+    local --> typed
+    hosted -.-> typed
 
-    model -. "optional, text only" .-> polish["AI Polish,<br/>through OpenRouter"]
-    polish -.-> typed
+    classDef offMac stroke-dasharray: 5 5
+    class hosted offMac
 ```
 
-AI Polish runs either way round: a Qwen3 model you download runs here like the
-speech model does, and OpenRouter sends the text to a hosted model instead.
-Model downloads and update checks also use the network; see [Privacy](#privacy).
+Speech and polish both run on the Mac: the speech model and a downloaded Qwen3
+polish model are local files, run in the app. Only choosing OpenRouter for AI
+Polish sends anything off the Mac, and then it is text, never audio. Model
+downloads and update checks also use the network; see [Privacy](#privacy).
 
 ## A few things worth knowing
 
