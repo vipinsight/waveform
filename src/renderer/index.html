@@ -83,16 +83,6 @@
             </svg>
             <span>Models</span>
           </button>
-          <button class="nav-item" type="button" data-view="transcribe">
-            <svg data-icon="file-audio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
-              <path d="M14 2v5a1 1 0 0 0 1 1h5" />
-              <path d="M10 15.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0" />
-              <path d="M10 12.5v3" />
-            </svg>
-            <span>Transcribe</span>
-            <span class="nav-tag">Beta</span>
-          </button>
         </nav>
 
         <div class="sidebar-spacer"></div>
@@ -268,44 +258,6 @@
                 <select id="microphone-select" aria-label="Microphone"></select>
               </span>
             </div>
-          </div>
-        </section>
-
-        <section class="view" id="view-transcribe" hidden>
-          <div class="view-head">
-            <h1 class="display">Transcribe</h1>
-            <span class="view-note" id="transcribe-note">Audio stays on this Mac</span>
-          </div>
-
-          <div
-            class="transcribe-drop"
-            id="transcribe-drop"
-            tabindex="0"
-            role="button"
-            aria-label="Drop an audio file to transcribe, or press to choose one"
-          >
-            <input
-              id="transcribe-file"
-              class="transcribe-file"
-              type="file"
-              accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.caf,.aiff,.aif,.webm"
-              hidden
-            />
-            <p class="transcribe-drop-title" id="transcribe-drop-title">Drop an audio file here</p>
-            <p class="transcribe-drop-hint" id="transcribe-drop-hint">
-              WAV, MP3, M4A, and other formats WebKit can decode. Click to choose a file.
-            </p>
-          </div>
-
-          <div class="transcribe-result" id="transcribe-result" hidden>
-            <div class="transcribe-result-head">
-              <span class="transcribe-file-name" id="transcribe-file-name"></span>
-              <div class="transcribe-result-actions">
-                <button id="transcribe-copy" class="pill-button" type="button">Copy</button>
-                <button id="transcribe-clear" class="pill-button" type="button">Clear</button>
-              </div>
-            </div>
-            <p class="transcribe-text" id="transcribe-text"></p>
           </div>
         </section>
 
@@ -543,16 +495,24 @@
       Shown while a file is dragged over the window, whichever page is up:
       it says what letting go will do before anything happens.
     -->
-    <div class="drop-overlay" id="drop-overlay" hidden aria-live="polite">
-      <div class="drop-overlay-card">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <div class="drop-overlay" id="drop-overlay" data-stage="drag" hidden>
+      <div class="drop-overlay-card" role="dialog" aria-modal="true" aria-labelledby="drop-overlay-title" aria-live="polite">
+        <button type="button" class="drop-overlay-close" id="drop-overlay-close" aria-label="Close" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+          </svg>
+        </button>
+        <svg class="drop-overlay-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
           <path d="M14 2v5a1 1 0 0 0 1 1h5" />
           <path d="M12 18v-6" />
           <path d="m9 15 3 3 3-3" />
         </svg>
+        <span class="drop-overlay-spinner" aria-hidden="true"></span>
         <strong id="drop-overlay-title">Drop to transcribe</strong>
-        <span id="drop-overlay-hint">The audio stays on this Mac.</span>
+        <span class="drop-overlay-hint" id="drop-overlay-hint">The audio stays on this Mac.</span>
+        <p class="drop-overlay-text" id="drop-overlay-text" hidden></p>
+        <button type="button" class="pill-button is-primary drop-overlay-copy" id="drop-overlay-copy" hidden>Copy</button>
       </div>
     </div>
 
@@ -1010,6 +970,20 @@
             <label class="row">
               <span class="row-label">Start Waveform when you log in</span>
               <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
+            </label>
+          </div>
+
+          <h2 class="section-label">Audio files</h2>
+          <div class="card">
+            <label class="row">
+              <span class="row-label">
+                <span class="row-title">Transcribe dropped audio <span class="nav-tag">Beta</span></span>
+                <small>
+                  Drop an audio file anywhere on the window to get its text, saved to
+                  Transcripts. Still in development, so it may change.
+                </small>
+              </span>
+              <span class="row-actions"><input id="transcribe-drop-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
 

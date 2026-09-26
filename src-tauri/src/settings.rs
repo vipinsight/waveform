@@ -130,6 +130,9 @@ pub struct AppSettings {
     pub launch_at_login: bool,
     /// Keep the compact listening indicator visible while not dictating.
     pub show_flow_bar_always: bool,
+    /// Transcribe an audio file dropped anywhere on the window. Beta, so off
+    /// until asked for.
+    pub transcribe_on_drop: bool,
     /// Drop out of the Dock while the window is closed, leaving only the menu
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
@@ -190,6 +193,7 @@ impl Default for AppSettings {
             // bar in view, and lives in the menu bar rather than the Dock.
             launch_at_login: true,
             show_flow_bar_always: true,
+            transcribe_on_drop: false,
             hide_dock_when_closed: true,
             automatic_update_check: true,
             sidebar_collapsed: false,
