@@ -560,10 +560,6 @@ kbd {
   flex: none;
 }
 
-#view-ai .lede {
-  max-width: 60ch;
-}
-
 .view[hidden] {
   display: none;
 }
@@ -3732,13 +3728,5 @@ select {
   height: 8px;
   padding: 0;
   font-size: 0;
-}
-
-.dictation-key-off {
-  justify-self: start;
-}
-
-.dictation-key-off[hidden] {
-  display: none;
 }
 

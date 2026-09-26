@@ -76,7 +76,6 @@ const element = {
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   dictationKeyboard: requireElement<HTMLElement>("dictation-keyboard"),
   dictationKeyboardCaption: requireElement<HTMLElement>("dictation-keyboard-caption"),
-  hotkeyOff: requireElement<HTMLButtonElement>("hotkey-off"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
   menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
@@ -567,7 +566,6 @@ function wireEvents(): void {
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-hotkey]")?.dataset.hotkey;
     if (isHotkeyBindingId(id)) void patchSettings({ hotkeyId: id });
   });
-  element.hotkeyOff.addEventListener("click", () => void patchSettings({ hotkeyId: "none" }));
   element.themeToggle.addEventListener("click", (event) => {
     const theme = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]")
       ?.dataset.themeValue;
@@ -881,7 +879,6 @@ function applySettings(next: AppSettings): void {
   renderLanguageSelect();
   renderMicrophoneSelect();
   renderKeyboard(element.dictationKeyboard, element.dictationKeyboardCaption);
-  element.hotkeyOff.hidden = next.hotkeyId === "none";
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
