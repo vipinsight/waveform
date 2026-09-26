@@ -93,6 +93,9 @@ const element = {
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
+  updatePill: requireElement<HTMLButtonElement>("update-pill"),
+  updatePillTitle: requireElement<HTMLElement>("update-pill-title"),
+  updatePillAction: requireElement<HTMLElement>("update-pill-action"),
   updateHint: requireElement<HTMLElement>("update-hint"),
   updateHintText: requireElement<HTMLElement>("update-hint-text"),
   updateNotes: requireElement<HTMLButtonElement>("update-notes"),
@@ -380,6 +383,19 @@ function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
   host().onPolishModelEvent(showPolishDownloadProgress);
   host().onUpdateEvent(handleUpdateEvent);
+  // A check that ran before this window loaded already found it.
+  void host()
+    .getUpdateAvailable()
+    .then((version) => {
+      if (version) {
+        handleUpdateEvent({
+          stage: "available",
+          message: `Waveform ${version} is available`,
+          version,
+        });
+      }
+    })
+    .catch(() => {});
   host().onLogLine(handleLogLine);
   host().onSettingsChanged(applySettings);
   host().onHotkeyStatusChanged((next) => {
@@ -667,6 +683,13 @@ function wireEvents(): void {
       return;
     }
     void checkForUpdate();
+  });
+  element.updatePill.addEventListener("click", () => {
+    if (element.updatePill.dataset.state !== "available" && element.updatePill.dataset.state !== "error") {
+      return;
+    }
+    renderUpdatePill({ stage: "downloading", message: "Preparing the update…" });
+    void installUpdate();
   });
   element.updateNotes.addEventListener("click", () => {
     if (updateNotesVersion) {
@@ -1999,6 +2022,7 @@ function setUpdateButton(
  * so a long message cannot shove anything sideways.
  */
 function handleUpdateEvent(event: UpdateEvent): void {
+  renderUpdatePill(event);
   const version = event.version ?? null;
   switch (event.stage) {
     case "checking":
@@ -2047,6 +2071,63 @@ function handleUpdateEvent(event: UpdateEvent): void {
       return _exhaustive;
     }
   }
+}
+
+/**
+ * The sidebar's update pill: hidden until a check finds something, then the
+ * version and the one action, then how far installing has got.
+ */
+function renderUpdatePill(event: UpdateEvent): void {
+  const pill = element.updatePill;
+  if (event.version) pill.dataset.version = event.version;
+  const version = pill.dataset.version ?? "";
+  switch (event.stage) {
+    case "checking":
+      return;
+    case "current":
+      pill.hidden = true;
+      return;
+    case "available":
+      pill.dataset.state = "available";
+      element.updatePillTitle.textContent = version
+        ? `Waveform ${version} is ready`
+        : "Update available";
+      element.updatePillAction.textContent = "Restart to update";
+      break;
+    case "downloading":
+      pill.dataset.state = "working";
+      element.updatePillTitle.textContent = "Updating Waveform";
+      element.updatePillAction.textContent =
+        event.progress !== undefined
+          ? `Downloading… ${Math.round(event.progress * 100)}%`
+          : "Preparing…";
+      break;
+    case "installing":
+      pill.dataset.state = "working";
+      element.updatePillTitle.textContent = "Updating Waveform";
+      element.updatePillAction.textContent = "Installing…";
+      break;
+    case "installed":
+      pill.dataset.state = "working";
+      element.updatePillTitle.textContent = "Updating Waveform";
+      element.updatePillAction.textContent = "Restarting…";
+      break;
+    case "error":
+      // A failed check is the About page's to report; only a failed install
+      // belongs on a pill that offered to install.
+      if (pill.hidden) return;
+      pill.dataset.state = "error";
+      element.updatePillTitle.textContent = "Update didn't finish";
+      element.updatePillAction.textContent = "Try again";
+      pill.title = event.message;
+      break;
+  }
+  pill.hidden = false;
+  pill.disabled = pill.dataset.state === "working";
+  pill.setAttribute(
+    "aria-label",
+    `${element.updatePillTitle.textContent}. ${element.updatePillAction.textContent}`,
+  );
 }
 
 /** The status line above the button; `null` blanks it (its space stays). */

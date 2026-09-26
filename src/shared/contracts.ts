@@ -287,6 +287,8 @@ export interface DesktopApi {
   checkForUpdate(): Promise<UpdateInfo | null>;
   /** Installs the newer version and relaunches, so this never resolves. */
   installUpdate(): Promise<void>;
+  /** The version a check found and nobody has installed yet, if any. */
+  getUpdateAvailable(): Promise<string | null>;
   onUpdateEvent(listener: (event: UpdateEvent) => void): () => void;
   getLogs(): Promise<LogLine[]>;
   clearLogs(): Promise<void>;

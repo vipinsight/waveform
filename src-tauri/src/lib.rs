@@ -546,6 +546,28 @@ async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     app.restart();
 }
 
+/// The version a check found and nobody has installed yet, for a window
+/// that opened after the event saying so.
+#[tauri::command]
+fn update_available() -> Option<String> {
+    updates::available()
+}
+
+/// "Update and Restart" from the menu bar. Progress is shown in the window's
+/// sidebar; a failure brings the window forward so it can be read there.
+fn install_update_from_menu(app: &tauri::AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match updates::install(&app).await {
+            Ok(()) => {
+                app.state::<AppState>().models.stop().await;
+                app.restart();
+            }
+            Err(_) => present_main_window(&app),
+        }
+    });
+}
+
 #[tauri::command]
 async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
     Ok(state.models.catalog().await)
@@ -1200,6 +1222,7 @@ pub fn run() {
             append_log,
             check_for_update,
             install_update,
+            update_available,
             start_overlay_dictation,
             accept_dictation,
             polish_dictation,
@@ -1347,6 +1370,10 @@ fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 /// Runs a menu action, from either the app menu or the menu bar icon.
 fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
+    if id == "install-update" {
+        install_update_from_menu(app);
+        return;
+    }
     if id == "microphone-default" {
         select_microphone_from_menu(app, String::new(), String::new());
         return;
@@ -1666,15 +1693,34 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // Assembled rather than declared, because the preview line is only there
     // when there is a dictation for it to preview.
     let separator = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
-        &open,
+    // First, and only while there is one: the menu bar is where a menu bar
+    // app is looked at, so an update waiting is said here, not only in a
+    // window that may never be opened.
+    let update = updates::available()
+        .map(|version| {
+            MenuItem::with_id(
+                app,
+                "install-update",
+                format!("Update to {version} and Restart"),
+                true,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = Vec::new();
+    if let Some(update) = update.as_ref() {
+        items.push(update);
+        items.push(&separator);
+    }
+    items.extend([
+        &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         &separator,
         &model_menu,
         &microphone_menu,
         &shortcut_menu,
         &separator,
         &paste_last,
-    ];
+    ]);
     if let Some(preview) = paste_preview.as_ref() {
         items.push(preview);
     }
@@ -1689,7 +1735,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 /// Creates the menu bar icon when first shown.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let menu = build_tray_menu(app)?;
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png"))?;
+    let icon = tray_icon()?;
 
     TrayIconBuilder::with_id("waveform")
         .icon(icon)
@@ -1706,6 +1752,19 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The menu bar icon, with a small dot when an update is waiting.
+///
+/// The dot is part of the template image, so macOS draws it in the same ink
+/// as the bars: news, the way other menu bar apps show it, not an alarm.
+fn tray_icon() -> tauri::Result<tauri::image::Image<'static>> {
+    let bytes: &'static [u8] = if updates::available().is_some() {
+        include_bytes!("../../icons/tray-icon-update.png")
+    } else {
+        include_bytes!("../../icons/tray-icon.png")
+    };
+    tauri::image::Image::from_bytes(bytes)
+}
+
 /// WebView commands run off the AppKit thread. Tray mutation must return to it
 /// or macOS aborts with a BoardServices threading violation.
 fn refresh_tray_menu(app: &tauri::AppHandle) {
@@ -1716,6 +1775,10 @@ fn refresh_tray_menu(app: &tauri::AppHandle) {
         if let Some(tray) = app.tray_by_id("waveform") {
             if let Ok(menu) = build_tray_menu(&app) {
                 let _ = tray.set_menu(Some(menu));
+            }
+            if let Ok(icon) = tray_icon() {
+                let _ = tray.set_icon(Some(icon));
+                let _ = tray.set_icon_as_template(true);
             }
         }
     });

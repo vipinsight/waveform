@@ -60,6 +60,32 @@ fn emit_version(
     );
 }
 
+/// The newer version the last check found, if any.
+///
+/// Kept here so the menu bar and a window opened later can both say so:
+/// the event announcing it is gone by the time either asks.
+static AVAILABLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The version waiting to be installed, if a check has found one.
+pub fn available() -> Option<String> {
+    AVAILABLE.lock().ok().and_then(|found| found.clone())
+}
+
+fn set_available(app: &AppHandle, version: Option<String>) {
+    let changed = AVAILABLE
+        .lock()
+        .map(|mut found| {
+            let changed = *found != version;
+            *found = version;
+            changed
+        })
+        .unwrap_or(false);
+    // The menu bar's badge and menu item follow this.
+    if changed {
+        crate::refresh_tray_menu(app);
+    }
+}
+
 /// Set while an install runs. A second press used to start a second download
 /// over the first: the button stayed live through the silent re-check.
 static INSTALLING: AtomicBool = AtomicBool::new(false);
@@ -114,6 +140,7 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
                 version: update.version.clone(),
                 notes: update.body.clone().unwrap_or_default(),
             };
+            set_available(app, Some(info.version.clone()));
             emit_version(
                 app,
                 "available",
@@ -124,6 +151,7 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
             Ok(Some(info))
         }
         Ok(None) => {
+            set_available(app, None);
             emit(app, "current", "Waveform is up to date", None);
             Ok(None)
         }
