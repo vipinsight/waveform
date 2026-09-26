@@ -377,10 +377,16 @@
             How much Waveform may change what you dictate before it lands where
             your cursor is.
           </p>
-          <p class="note polish-model-line">
-            <span id="polish-model-line"></span>
-            <button type="button" class="link" data-open-models="polish">Change</button>
-          </p>
+          <!--
+            What stops Light and Medium from running, above them rather than
+            in small print below: faded cards alone read as broken.
+          -->
+          <div class="polish-blocker" id="polish-level-hint" hidden>
+            <span id="polish-blocker-text"></span>
+            <button type="button" class="pill-button is-primary" data-open-models="polish" id="polish-blocker-action"></button>
+          </div>
+
+          <h2 class="section-label">How much to change</h2>
 
           <!--
             Three worked examples of one sentence, rather than three labels.
@@ -416,7 +422,19 @@
               </span>
             </button>
           </div>
-          <p class="note polish-level-hint" id="polish-level-hint" hidden></p>
+
+          <h2 class="section-label">Model</h2>
+          <div class="card">
+            <div class="row">
+              <span class="row-label">
+                Polish model
+                <small id="polish-model-line"></small>
+              </span>
+              <span class="row-actions">
+                <button type="button" class="pill-button" data-open-models="polish">Change</button>
+              </span>
+            </div>
+          </div>
 
           <!--
             The words each level is steered by, beside the levels themselves:
@@ -434,6 +452,16 @@
               <span class="prompt-card-where">When you polish selected text with the shortcut</span>
               <small id="polish-prompt-preview"></small>
             </button>
+          </div>
+
+          <h2 class="section-label">Selected text</h2>
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="polish-shortcut">Shortcut</label>
+              <span class="row-actions">
+                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
+              </span>
+            </div>
           </div>
         </section>
 
@@ -828,11 +856,6 @@
               <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
             <span>Dictation</span></button>
-        <button class="nav-item" type="button" data-page="ai">
-            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
-            </svg>
-            <span>AI polish</span></button>
         <button class="nav-item" type="button" data-page="setup">
             <svg data-icon="monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -976,27 +999,6 @@
             Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
             <strong>Do Nothing</strong>, so tapping it does not also switch input source.
           </p>
-        </section>
-
-        <section class="settings-page" data-page="ai" hidden>
-          <h1 class="display">AI polish</h1>
-
-          <p class="note">
-            How much to polish, and the instructions it follows, are on the
-            <button type="button" class="link" data-open-view="ai">AI Polish</button>
-            page; where it runs and which model does it, on
-            <button type="button" class="link" data-open-models="polish">Models</button>.
-          </p>
-
-          <h2 class="section-label">Text you have selected</h2>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="polish-shortcut">Shortcut</label>
-              <span class="row-actions">
-                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
-              </span>
-            </div>
-          </div>
         </section>
 
         <section class="settings-page" data-page="about" hidden>

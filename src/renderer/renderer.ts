@@ -133,6 +133,8 @@ const element = {
   polishLevels: requireElement<HTMLElement>("polish-levels"),
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
   polishModelLine: requireElement<HTMLElement>("polish-model-line"),
+  polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
+  polishBlockerAction: requireElement<HTMLButtonElement>("polish-blocker-action"),
   modelTabs: requireElement<HTMLElement>("model-tabs"),
   speechKindCurrent: requireElement<HTMLElement>("speech-kind-current"),
   speechKindState: requireElement<HTMLElement>("speech-kind-state"),
@@ -741,11 +743,10 @@ function showModelsTab(tab: "speech" | "polish"): void {
  * two screens away.
  */
 function renderPolishModelLine(): void {
-  const label =
+  element.polishModelLine.textContent =
     settings.polishEngine === "local"
-      ? `${polishModelLabel(settings.localModelId)} on this Mac`
-      : `${settings.openRouterModel} through OpenRouter`;
-  element.polishModelLine.textContent = `Polish model: ${label}`;
+      ? `${polishModelLabel(settings.localModelId)}, on this Mac`
+      : `${settings.openRouterModel}, through OpenRouter`;
   renderModelKinds();
 }
 
@@ -1001,19 +1002,11 @@ function renderAiStatus(status: AiStatus): void {
   // the levels that need one say where to get it rather than being selectable
   // and then quietly doing nothing.
   const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
-  element.polishLevelHint.textContent = ready
-    ? ""
-    : status.engine === "local"
-      ? "Download a polish model to use these. "
-      : "Add an OpenRouter key to use these. ";
-  if (!ready) {
-    const open = document.createElement("button");
-    open.type = "button";
-    open.className = "link";
-    open.dataset.openModels = "polish";
-    open.textContent = "Models → Polish";
-    element.polishLevelHint.append(open);
-  }
+  const local = status.engine === "local";
+  element.polishBlockerText.textContent = local
+    ? `Light and Medium need ${polishModelLabel(status.localModelId)} on this Mac.`
+    : "Light and Medium need an OpenRouter key.";
+  element.polishBlockerAction.textContent = local ? "Download it" : "Add a key";
   element.polishLevelHint.hidden = ready;
   renderModelKinds();
   for (const card of polishLevelCards()) {
@@ -3034,7 +3027,7 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
     element.promptEditor.hidden = true;
     if (promptEditorFromSettings) {
       promptEditorFromSettings = false;
-      toggleSettings(true, "ai");
+      toggleSettings(true);
       return;
     }
     element.scrim.hidden = !settingsOpen;
