@@ -107,8 +107,6 @@ const element = {
   gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
-  setupLede: requireElement<HTMLElement>("setup-lede"),
-  checklist: requireElement<HTMLElement>("checklist"),
   transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
   transcribeFile: requireElement<HTMLInputElement>("transcribe-file"),
   transcribeDropTitle: requireElement<HTMLElement>("transcribe-drop-title"),
@@ -438,8 +436,7 @@ function wireEvents(): void {
     else toggleSettings(false);
   });
   element.deckSettings.addEventListener("click", () => {
-    if (setupSteps().some((step) => !step.done)) toggleSettings(true, "setup");
-    else openView("dictation");
+    openView("dictation");
   });
 
   bindTranscribeDrop();
@@ -469,7 +466,7 @@ function wireEvents(): void {
 
   // Delegated rather than bound per button: both the onboarding card and the
   // Setup page rebuild their rows whenever a step completes.
-  for (const container of [element.onboardSteps, element.checklist]) {
+  for (const container of [element.onboardSteps]) {
     container.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLElement>("[data-fix]");
       if (button) resolveSetupStep(button.dataset.fix ?? "");
@@ -1456,51 +1453,11 @@ function renderSetup(): void {
   // watching for it.
   renderWizard();
 
-  // One list, two surfaces. The Setup page used to hold its own copy of the
-  // three permissions in markup, which is how it came to be missing the one
-  // step that actually stops a fresh install working.
-  element.checklist.replaceChildren(
-    ...steps.map((step) => {
-      const row = document.createElement("li");
-      row.className = "check";
-      row.dataset.check = step.id;
-      row.dataset.done = String(step.done);
-
-      const mark = document.createElement("span");
-      mark.className = "check-mark";
-      mark.setAttribute("aria-hidden", "true");
-
-      const body = document.createElement("span");
-      body.className = "check-body";
-      const title = document.createElement("strong");
-      title.textContent = step.title;
-      const detail = document.createElement("small");
-      detail.textContent = step.detail;
-      body.append(title, detail);
-
-      row.append(mark, body);
-
-      // A granted step already carries its tick. A button reading "Done" says
-      // the same thing a second time, and looks like something to press.
-      if (!step.done) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "pill-button is-primary";
-        button.dataset.fix = step.id;
-        button.textContent = step.action;
-        row.append(button);
-      }
-      return row;
-    }),
-  );
-
   renderOnboarding(steps);
+  // On the Transcripts item, where the checklist is, so a step that goes
+  // missing later -- a permission reset by an update -- shows from any page.
   element.setupBadge.hidden = outstanding.length === 0;
   element.setupBadge.textContent = String(outstanding.length);
-  element.setupLede.textContent =
-    outstanding.length === 0
-      ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Waveform needs these before it can dictate into other apps.";
 
   renderEmptyState();
 }

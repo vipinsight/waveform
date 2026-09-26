@@ -3669,16 +3669,69 @@ select {
 
 /* The wizard's keyboard, on the Dictation page: inside a card, with the
    gestures and the Fn note under it. */
+/* No card around it: the keyboard is its own box, and a box in a box
+   squeezed it to half the page. Full width, taller keys, larger glyphs. */
 .dictation-key {
   display: grid;
   gap: 14px;
-  padding: 18px;
 }
 
-.dictation-key .keyboard-caption,
-.dictation-key .gesture-list,
+.dictation-key .keyboard {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: 0;
+  padding: 14px;
+  gap: 8px;
+}
+
+.dictation-key .keyboard-row {
+  gap: 8px;
+}
+
+.dictation-key .keyboard-key {
+  height: 52px;
+  border-radius: 9px;
+  font-size: 16px;
+}
+
+.dictation-key .keyboard-caption {
+  max-width: 720px;
+  margin: 0;
+  text-align: left;
+}
+
+.dictation-key .gesture-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 0;
+}
+
 .dictation-key .note {
   margin: 0;
+}
+
+.onboard-hint {
+  margin: 14px 0 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Collapsed, there is no room for a count: the badge becomes a dot. */
+.sidebar .nav-item {
+  position: relative;
+}
+
+[data-sidebar="collapsed"] .sidebar .nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
 }
 
 .dictation-key-off {

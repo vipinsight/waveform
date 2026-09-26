@@ -61,6 +61,7 @@
               <path d="M22 10v3" />
             </svg>
             <span>Transcripts</span>
+            <span class="nav-badge" id="setup-badge" hidden></span>
           </button>
           <button class="nav-item" type="button" data-view="dictation">
             <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -159,6 +160,11 @@
                 </div>
               </div>
               <ol class="onboard-steps" id="onboard-steps"></ol>
+              <p class="onboard-hint">
+                macOS ties permissions to the app's signature. If one looks granted
+                but is refused, remove Waveform from that list in System Settings and
+                add it again.
+              </p>
             </section>
 
             <section class="dictation-deck" id="dictation-deck" aria-live="polite">
@@ -207,7 +213,7 @@
           </p>
 
           <h2 class="section-label">Key to hold</h2>
-          <div class="card dictation-key">
+          <div class="dictation-key">
             <div class="keyboard" id="dictation-keyboard" role="radiogroup" aria-label="Key to hold"></div>
             <p class="keyboard-caption" id="dictation-keyboard-caption"></p>
               <ul class="gesture-list">
@@ -900,14 +906,6 @@
               <path d="M8 12H3" />
             </svg>
             <span>General</span></button>
-        <button class="nav-item" type="button" data-page="setup">
-            <svg data-icon="monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="20" height="14" x="2" y="3" rx="2" />
-              <line x1="8" x2="16" y1="21" y2="21" />
-              <line x1="12" x2="12" y1="17" y2="21" />
-            </svg>
-          <span>Setup</span><span class="nav-badge" id="setup-badge" hidden></span>
-        </button>
         <button class="nav-item" type="button" data-page="logs">
             <svg data-icon="scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M15 12h-5" />
@@ -928,20 +926,6 @@
       </nav>
 
       <div class="modal-body">
-        <section class="settings-page" data-page="setup">
-          <h1 class="display">Setup</h1>
-          <p class="lede" id="setup-lede">
-            Enable the macOS permissions Waveform needs to dictate in any app.
-          </p>
-
-          <ol class="checklist" id="checklist"></ol>
-
-          <p class="note" id="setup-hint">
-            macOS ties these to the app's signature. If a permission looks granted but
-            is refused, remove Waveform from the list and add it again.
-          </p>
-        </section>
-
         <section class="settings-page" data-page="logs" hidden>
           <h1 class="display">Logs</h1>
           <p class="note">
@@ -962,7 +946,7 @@
           <pre class="log-view" id="log-view" aria-live="polite" aria-label="Log"></pre>
         </section>
 
-        <section class="settings-page" data-page="general" hidden>
+        <section class="settings-page" data-page="general">
           <h1 class="display">General</h1>
 
           <h2 class="section-label">Appearance</h2>
