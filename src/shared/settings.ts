@@ -284,6 +284,8 @@ function clampNumber(
  */
 function polishLevel(input: Record<string, unknown>, base: AppSettings): PolishLevel {
   if (isPolishLevel(input.polishLevel)) return input.polishLevel;
+  // Medium was retired; the one level left is the closest to it.
+  if (input.polishLevel === "medium") return "light";
   if (input.polishLevel === undefined && typeof input.transformOnDictate === "boolean") {
     return input.transformOnDictate ? "light" : "none";
   }

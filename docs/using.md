@@ -168,7 +168,9 @@ cleared. It holds the most recent 10,000 and is readable only by you.
 
 Optional rewriting, which runs only when you ask, and which sends text rather
 than audio if it sends anything at all. **AI Polish**, in the window's own menu,
-chooses where it runs.
+chooses how much it may change; **Models → Polish** chooses where it runs and
+which model does it. **Models → Speech** is the other kind: the model that
+turns your voice into text in the first place.
 
 ### On this Mac
 
@@ -212,7 +214,7 @@ prompt.
 
 The hosted option. This is the one feature that sends anything off the Mac.
 
-Paste a key into **AI Polish**. It goes to your login keychain as a
+Paste a key into **Models → Polish**. It goes to your login keychain as a
 generic password under `com.webtiara.waveform`, never to a file Waveform owns,
 and is never handed back to the interface — the screen can report that a key
 exists and replace it, but cannot read it.
@@ -259,8 +261,8 @@ nothing on screen, and the Dock or menu bar icon brings the window back.
 By default the app also leaves the Dock while the window is closed, leaving
 only the menu bar icon; **Settings → General** turns that off.
 
-The icon's menu carries **Model** and **Microphone** submenus, so switching
-either takes one gesture and no window. **Model** lists the whole catalogue
+The icon's menu carries **Speech Model** and **Microphone** submenus, so switching
+either takes one gesture and no window. **Speech Model** lists the whole catalogue
 under the same headings the models page uses; a model that still needs a
 download or a terminal is listed greyed out, because the menu bar can switch
 between models that are here and the window is where models arrive.

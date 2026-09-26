@@ -1497,7 +1497,8 @@ fn build_model_menu(
     selected: &str,
     state: &AppState,
 ) -> tauri::Result<Submenu<tauri::Wry>> {
-    let menu = Submenu::new(app, "Model", true)?;
+    // "Speech", because polish has a model too and this is not it.
+    let menu = Submenu::new(app, "Speech Model", true)?;
     let mut heading: Option<&str> = None;
     for (index, definition) in MODELS.iter().enumerate() {
         let group = definition.group.heading();
@@ -2074,11 +2075,11 @@ mod tests {
     fn patching_several_fields_at_once_keeps_all_of_them() {
         let current = customised();
         let patch = serde_json::json!({
-            "polishLevel": "medium",
+            "polishLevel": "light",
             "polishShortcut": "Alt+2",
         });
         let merged = merge_settings(&current, &patch).expect("merges");
-        assert_eq!(merged.polish_level, "medium");
+        assert_eq!(merged.polish_level, "light");
         assert_eq!(merged.polish_shortcut, "Alt+2");
         assert_eq!(merged.hotkey_id, "right-option");
     }

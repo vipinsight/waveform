@@ -435,6 +435,7 @@ kbd {
 /* Only the list runs to the edge. The overview, the models and the polish
    settings are ordinary content and keep their bottom inset. */
 #view-overview,
+#view-dictation,
 #view-models,
 #view-ai {
   padding-bottom: 26px;
@@ -443,6 +444,7 @@ kbd {
 /* Models and AI Polish were pages of the settings panel until they became
    sections of the window. Their heading keeps the size it had there: it labels
    a page of controls, not a list with a toolbar beside it. */
+#view-dictation .display,
 #view-models .display,
 #view-ai .display {
   margin-bottom: 22px;
@@ -455,6 +457,107 @@ kbd {
 
 #view-models .view-head .display {
   margin-bottom: 0;
+}
+
+/* Two cards that are also the tabs. */
+.model-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.model-kind {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.model-kind:hover {
+  background: var(--surface-hover);
+}
+
+.model-kind[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgb(50 132 208 / 12%));
+}
+
+.model-kind-name {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.model-kind-what {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.model-kind-current {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.model-kind-state {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.model-kind-state[data-tone="attention"] {
+  color: var(--danger);
+}
+
+/* What the speech tab is for, with the language it listens for beside it. */
+.model-intro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.model-intro .lede {
+  margin: 0;
+}
+
+#models-polish > .lede {
+  margin-bottom: 14px;
+}
+
+/* What stops Light and Medium, with the one button that fixes it. */
+.polish-blocker {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 22px;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft, rgb(50 132 208 / 10%));
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.polish-blocker[hidden] {
+  display: none;
+}
+
+.polish-blocker .pill-button {
+  flex: none;
 }
 
 .view[hidden] {
@@ -2112,7 +2215,7 @@ select {
    reading the three outputs against each other. */
 .polish-levels {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
 
@@ -2180,10 +2283,6 @@ select {
   line-height: 1.5;
 }
 
-/* Sits under the row it is about, not 14px below it like an ordinary note. */
-.polish-level-hint {
-  margin-top: 10px;
-}
 
 @media (max-width: 760px) {
   .polish-levels {
@@ -2520,9 +2619,9 @@ select {
   margin-bottom: 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 88% -6%, rgb(143 128 255 / 40%), transparent 34%),
-    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 16%), transparent 38%),
-    linear-gradient(130deg, #1a2140, #292260);
+    radial-gradient(circle at 88% -6%, rgb(96 165 250 / 40%), transparent 34%),
+    radial-gradient(circle at 10% 112%, rgb(48 214 161 / 14%), transparent 38%),
+    linear-gradient(130deg, #13203f, #1b3a6e);
   color: #f8f8ff;
 }
 
@@ -2727,6 +2826,16 @@ select {
   color: #f8f8ff;
 }
 
+/* Each card its own colour, so the model on Transcripts, the shortcut on
+   Dictation and the setup checklist do not read as one card in three places.
+   The shortcut keeps the brand indigo; the model is teal, the engine. */
+.dictation-deck.deck-model {
+  background:
+    radial-gradient(circle at 86% 0%, rgb(45 212 191 / 38%), transparent 32%),
+    radial-gradient(circle at 60% 100%, rgb(56 189 248 / 16%), transparent 34%),
+    linear-gradient(130deg, #0f2a2c, #114a45);
+}
+
 .dictation-deck::after {
   position: absolute;
   right: 174px;
@@ -2754,6 +2863,15 @@ select {
   color: #bcf4de;
   font-size: 11px;
   font-weight: 650;
+}
+
+.deck-status[data-tone="attention"] {
+  color: #ffd79a;
+}
+
+.deck-status[data-tone="attention"]::before {
+  background: #f5a524;
+  box-shadow: 0 0 0 3px rgb(245 165 36 / 18%);
 }
 
 .deck-status::before {
@@ -2840,6 +2958,7 @@ select {
   cursor: default;
 }
 
+.deck-settings[hidden] { display: none; }
 .deck-settings:hover { background: rgb(255 255 255 / 20%); }
 .deck-settings:focus-visible { outline-color: #fff; }
 
@@ -3599,3 +3718,89 @@ select {
   background: var(--accent);
   transition: width 200ms ease;
 }
+
+/* The wizard's keyboard, on the Dictation page: inside a card, with the
+   gestures and the Fn note under it. */
+/* No card around it: the keyboard is its own box, and a box in a box
+   squeezed it to half the page. Full width, taller keys, larger glyphs. */
+.dictation-key {
+  display: grid;
+  gap: 14px;
+}
+
+.dictation-key .keyboard {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: 0;
+  padding: 14px;
+  gap: 8px;
+}
+
+.dictation-key .keyboard-row {
+  gap: 8px;
+}
+
+.dictation-key .keyboard-key {
+  height: 52px;
+  border-radius: 9px;
+  font-size: 16px;
+}
+
+.dictation-key .keyboard-caption {
+  max-width: 720px;
+  margin: 0;
+  text-align: left;
+}
+
+.dictation-key .gesture-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 0;
+}
+
+.dictation-key .note {
+  margin: 0;
+}
+
+.onboard-hint {
+  margin: 14px 0 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Collapsed, there is no room for a count: the badge becomes a dot. */
+.sidebar .nav-item {
+  position: relative;
+}
+
+[data-sidebar="collapsed"] .sidebar .nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+}
+
+/* An early feature, marked where it is chosen. Gone when the sidebar is
+   folded: there is no room, and the icon alone is the thing to find. */
+.nav-tag {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgb(50 132 208 / 12%));
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+[data-sidebar="collapsed"] .sidebar .nav-tag {
+  display: none;
+}
+

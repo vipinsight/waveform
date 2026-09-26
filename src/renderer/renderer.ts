@@ -39,7 +39,7 @@ import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
-import { DEFAULT_POLISH_MODEL_ID, isPolishModelId } from "../shared/polish-models";
+import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
 import {
   DEFAULT_POLISH_PROMPT,
   SUGGESTED_MODELS,
@@ -51,6 +51,12 @@ import { installTauriBridge } from "./tauri-bridge";
 const element = {
   history: requireElement<HTMLElement>("history"),
   dictationDeck: requireElement<HTMLElement>("dictation-deck"),
+  modelDeck: requireElement<HTMLElement>("model-deck"),
+  modelDeckStatus: requireElement<HTMLElement>("model-deck-status"),
+  modelDeckTitle: requireElement<HTMLElement>("model-deck-title"),
+  modelDeckDescription: requireElement<HTMLElement>("model-deck-description"),
+  modelDeckLanguage: requireElement<HTMLElement>("model-deck-language"),
+  modelDeckPolish: requireElement<HTMLElement>("model-deck-polish"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
   shortcutHint: requireElement<HTMLElement>("shortcut-hint"),
@@ -74,7 +80,8 @@ const element = {
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
-  hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
+  dictationKeyboard: requireElement<HTMLElement>("dictation-keyboard"),
+  dictationKeyboardCaption: requireElement<HTMLElement>("dictation-keyboard-caption"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
   menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
@@ -104,12 +111,8 @@ const element = {
   deckDescription: requireElement<HTMLElement>("deck-description"),
   deckKey: requireElement<HTMLElement>("deck-key"),
   deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
-  gestureKeyHold: requireElement<HTMLElement>("gesture-key-hold"),
-  gestureKeyTap: requireElement<HTMLElement>("gesture-key-tap"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
-  setupLede: requireElement<HTMLElement>("setup-lede"),
-  checklist: requireElement<HTMLElement>("checklist"),
   transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
   transcribeFile: requireElement<HTMLInputElement>("transcribe-file"),
   transcribeDropTitle: requireElement<HTMLElement>("transcribe-drop-title"),
@@ -135,6 +138,16 @@ const element = {
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
   polishLevels: requireElement<HTMLElement>("polish-levels"),
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
+  polishModelLine: requireElement<HTMLElement>("polish-model-line"),
+  polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
+  polishBlockerAction: requireElement<HTMLButtonElement>("polish-blocker-action"),
+  modelTabs: requireElement<HTMLElement>("model-tabs"),
+  speechKindCurrent: requireElement<HTMLElement>("speech-kind-current"),
+  speechKindState: requireElement<HTMLElement>("speech-kind-state"),
+  polishKindCurrent: requireElement<HTMLElement>("polish-kind-current"),
+  polishKindState: requireElement<HTMLElement>("polish-kind-state"),
+  modelsSpeech: requireElement<HTMLElement>("models-speech"),
+  modelsPolish: requireElement<HTMLElement>("models-polish"),
   transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
   transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
   polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
@@ -377,12 +390,12 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
-  host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenMicrophoneSettings(() => openView("dictation"));
   host().onOpenModelSettings(() => {
     toggleSettings(false);
-    showView("models");
+    showModelsTab("speech");
   });
-  host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenShortcutSettings(() => openView("dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
@@ -431,11 +444,26 @@ function wireEvents(): void {
     if (promptEditorKind) togglePromptEditor(false);
     else toggleSettings(false);
   });
-  element.deckSettings.addEventListener("click", () => {
-    toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
-  });
+  element.deckSettings.addEventListener("click", () => openView("dictate"));
 
   bindTranscribeDrop();
+
+  // Tabs on the Models page, and the links elsewhere that open one of them.
+  // Delegated: the AI Polish hint rebuilds its link whenever the status does.
+  document.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const tab = target.closest<HTMLElement>("[data-model-tab], [data-open-models]");
+    const kind = tab?.dataset.modelTab ?? tab?.dataset.openModels;
+    if (kind === "speech" || kind === "polish") {
+      showModelsTab(kind);
+      return;
+    }
+    const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
+    if (view) {
+      if (settingsOpen) toggleSettings(false);
+      showView(view);
+    }
+  });
 
   // Closing the window hides it rather than quitting; a recording must not
   // keep playing from a window nobody can see.
@@ -445,7 +473,7 @@ function wireEvents(): void {
 
   // Delegated rather than bound per button: both the onboarding card and the
   // Setup page rebuild their rows whenever a step completes.
-  for (const container of [element.onboardSteps, element.checklist]) {
+  for (const container of [element.onboardSteps]) {
     container.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLElement>("[data-fix]");
       if (button) resolveSetupStep(button.dataset.fix ?? "");
@@ -542,9 +570,9 @@ function wireEvents(): void {
       microphoneDeviceName: device?.label ?? "",
     });
   });
-  element.hotkeySelect.addEventListener("change", () => {
-    const value = element.hotkeySelect.value;
-    if (isHotkeyBindingId(value)) void patchSettings({ hotkeyId: value });
+  element.dictationKeyboard.addEventListener("click", (event) => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>("[data-hotkey]")?.dataset.hotkey;
+    if (isHotkeyBindingId(id)) void patchSettings({ hotkeyId: id });
   });
   element.themeToggle.addEventListener("click", (event) => {
     const theme = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]")
@@ -694,16 +722,103 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "transcribe", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "transcribe", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
   // closed -- from a download here, or from a terminal -- so each is re-read on
   // the way in rather than trusted from startup.
-  if (view === "models") void renderModels();
+  if (view === "models") {
+    if (modelsTab === "polish") void renderPolishModels();
+    else void renderModels();
+  }
   // The levels say what they need before they can run, and what they need is
   // a key or a download that could have arrived while the section was closed.
   if (view === "ai") void host().getAiStatus().then(renderAiStatus);
+  // Labels are what name the devices, and WebKit hands them over only once
+  // the microphone has been asked for.
+  if (view === "dictation") void refreshMicrophones(true);
+}
+
+/** Shows a section of the window, closing Settings if it is over it. */
+function openView(view: string): void {
+  if (settingsOpen) toggleSettings(false);
+  showView(view);
+}
+
+/** Which half of the Models page is up: voice to text, or rewriting text. */
+let modelsTab: "speech" | "polish" = "speech";
+
+/** Opens the Models page on one kind of model, closing Settings if it is up. */
+function showModelsTab(tab: "speech" | "polish"): void {
+  modelsTab = tab;
+  for (const button of Array.from(
+    element.modelTabs.querySelectorAll<HTMLElement>("[data-model-tab]"),
+  )) {
+    const active = button.dataset.modelTab === tab;
+    button.setAttribute("aria-selected", String(active));
+  }
+  element.modelsSpeech.hidden = tab !== "speech";
+  element.modelsPolish.hidden = tab !== "polish";
+  if (settingsOpen) toggleSettings(false);
+  showView("models");
+}
+
+/**
+ * Names the polish model on the AI Polish page, since that is where the
+ * level it serves is chosen -- and "which model" was otherwise only answered
+ * two screens away.
+ */
+function renderPolishModelLine(): void {
+  element.polishModelLine.textContent =
+    settings.polishEngine === "local"
+      ? `${polishModelLabel(settings.localModelId)}, on this Mac`
+      : `${settings.openRouterModel}, through OpenRouter`;
+  renderModelKinds();
+}
+
+/**
+ * The two cards at the top of the Models page: which model each kind is set
+ * to, and the one thing standing between it and working, if anything.
+ */
+function renderModelKinds(): void {
+  element.speechKindCurrent.textContent = getSpeechModel(settings.modelId).label;
+  setKindState(
+    element.speechKindState,
+    setupKnown && !modelInstalled ? "Not downloaded yet" : "In use",
+    setupKnown && !modelInstalled,
+  );
+
+  const local = settings.polishEngine === "local";
+  element.polishKindCurrent.textContent = local
+    ? `${polishModelLabel(settings.localModelId)}, on this Mac`
+    : `${settings.openRouterModel}, through OpenRouter`;
+  const level = settings.polishLevel;
+  const missing = local
+    ? aiStatus !== null && !aiStatus.localReady
+      ? "Not downloaded yet"
+      : null
+    : aiStatus !== null && !aiStatus.hasApiKey
+      ? "Needs an OpenRouter key"
+      : null;
+  if (level === "none") {
+    setKindState(element.polishKindState, "Off: AI Polish is set to None", false);
+  } else if (missing) {
+    setKindState(element.polishKindState, missing, true);
+  } else {
+    setKindState(element.polishKindState, "In use", false);
+  }
+}
+
+function setKindState(target: HTMLElement, text: string, attention: boolean): void {
+  target.textContent = text;
+  if (attention) target.dataset.tone = "attention";
+  else delete target.dataset.tone;
+}
+
+
+function polishModelLabel(id: string): string {
+  return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
 }
 
 function showSettingsPage(page: string): void {
@@ -719,10 +834,6 @@ function showSettingsPage(page: string): void {
   )) {
     section.hidden = section.dataset.page !== page;
   }
-  if (page === "dictation") void refreshMicrophones(true);
-  // Weights arrive while the page is closed -- from a download here, or from a
-  // terminal -- so the list is re-read on the way in rather than trusted.
-  if (page === "ai") void renderPolishModels();
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }
@@ -783,7 +894,7 @@ function applySettings(next: AppSettings): void {
   void renderModels();
   renderLanguageSelect();
   renderMicrophoneSelect();
-  element.hotkeySelect.value = next.hotkeyId;
+  renderKeyboard(element.dictationKeyboard, element.dictationKeyboardCaption);
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
@@ -799,6 +910,7 @@ function applySettings(next: AppSettings): void {
   }
   element.aiModel.value = next.openRouterModel;
   renderPolishEngine(next.polishEngine);
+  renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
   renderPromptPreviews(next);
   element.polishShortcut.value = next.polishShortcut;
@@ -819,11 +931,6 @@ function applySettings(next: AppSettings): void {
 }
 
 function populateSelects(): void {
-  element.hotkeySelect.append(new Option("Off", "none"));
-  for (const binding of HOTKEY_BINDINGS) {
-    element.hotkeySelect.append(new Option(hotkeyMenuLabel(binding), binding.id));
-  }
-
   for (const accelerator of POLISH_SHORTCUTS) {
     element.polishShortcut.append(
       new Option(describeAccelerator(accelerator), accelerator),
@@ -913,12 +1020,13 @@ function renderAiStatus(status: AiStatus): void {
   // the levels that need one say where to get it rather than being selectable
   // and then quietly doing nothing.
   const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
-  element.polishLevelHint.textContent = ready
-    ? ""
-    : status.engine === "local"
-      ? "Download a model in Settings → AI polish to use these."
-      : "Add an OpenRouter key in Settings → AI polish to use these.";
+  const local = status.engine === "local";
+  element.polishBlockerText.textContent = local
+    ? `Active needs ${polishModelLabel(status.localModelId)} on this Mac.`
+    : "Active needs an OpenRouter key.";
+  element.polishBlockerAction.textContent = local ? "Download it" : "Add a key";
   element.polishLevelHint.hidden = ready;
+  renderModelKinds();
   for (const card of polishLevelCards()) {
     card.disabled = !ready && card.dataset.level !== "none";
   }
@@ -1157,8 +1265,6 @@ function renderHotkeyLabels(): void {
   const binding = getHotkeyBinding(settings.hotkeyId);
   const glyph = binding ? hotkeyKeycap(binding) : "—";
   element.hintKey.textContent = glyph;
-  element.gestureKeyHold.textContent = glyph;
-  element.gestureKeyTap.textContent = `${glyph} ${glyph}`;
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
@@ -1280,6 +1386,7 @@ async function refreshModelInstalled(): Promise<void> {
   setupKnown = true;
   renderSetup();
   renderDictationDeck();
+  renderModelKinds();
 }
 
 /**
@@ -1357,51 +1464,11 @@ function renderSetup(): void {
   // watching for it.
   renderWizard();
 
-  // One list, two surfaces. The Setup page used to hold its own copy of the
-  // three permissions in markup, which is how it came to be missing the one
-  // step that actually stops a fresh install working.
-  element.checklist.replaceChildren(
-    ...steps.map((step) => {
-      const row = document.createElement("li");
-      row.className = "check";
-      row.dataset.check = step.id;
-      row.dataset.done = String(step.done);
-
-      const mark = document.createElement("span");
-      mark.className = "check-mark";
-      mark.setAttribute("aria-hidden", "true");
-
-      const body = document.createElement("span");
-      body.className = "check-body";
-      const title = document.createElement("strong");
-      title.textContent = step.title;
-      const detail = document.createElement("small");
-      detail.textContent = step.detail;
-      body.append(title, detail);
-
-      row.append(mark, body);
-
-      // A granted step already carries its tick. A button reading "Done" says
-      // the same thing a second time, and looks like something to press.
-      if (!step.done) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "pill-button is-primary";
-        button.dataset.fix = step.id;
-        button.textContent = step.action;
-        row.append(button);
-      }
-      return row;
-    }),
-  );
-
   renderOnboarding(steps);
+  // On the Transcripts item, where the checklist is, so a step that goes
+  // missing later -- a permission reset by an update -- shows from any page.
   element.setupBadge.hidden = outstanding.length === 0;
   element.setupBadge.textContent = String(outstanding.length);
-  element.setupLede.textContent =
-    outstanding.length === 0
-      ? "Everything is in place. Hold your shortcut anywhere and speak."
-      : "Waveform needs these before it can dictate into other apps.";
 
   renderEmptyState();
 }
@@ -2128,16 +2195,30 @@ function renderDictationDeck(): void {
   // is true yet, so the slot stays empty rather than guessing.
   const known = setupKnown && hotkeyStatus !== null;
   element.onboard.hidden = !known || outstanding.length === 0;
-  element.dictationDeck.hidden = !known || outstanding.length > 0;
-  if (!known || outstanding.length > 0) return;
+  element.modelDeck.hidden = !known || outstanding.length > 0;
+  renderModelDeck();
 
+  // The shortcut card lives on the Dictation page. Unfinished setup is said
+  // there too, pointing back to the checklist rather than repeating it.
+  element.dictationDeck.hidden = !known;
+  if (!known) return;
   element.deckKey.textContent = key;
+  element.deckSettings.hidden = outstanding.length === 0;
+  if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
+  else delete element.deckStatus.dataset.tone;
+  if (outstanding.length > 0) {
+    element.deckStatus.textContent = "Setup unfinished";
+    element.deckTitle.textContent = "Finish setup to dictate";
+    element.deckDescription.textContent = `${outstanding.length} ${
+      outstanding.length === 1 ? "step is" : "steps are"
+    } left, in the checklist on Transcripts.`;
+    return;
+  }
 
   if (!binding) {
     element.deckStatus.textContent = "Shortcut off";
     element.deckTitle.textContent = "Choose a key to start dictating";
     element.deckDescription.textContent = "Pick a modifier key that will not type into the app you are using.";
-    element.deckSettings.textContent = "Choose shortcut";
     return;
   }
 
@@ -2145,16 +2226,44 @@ function renderDictationDeck(): void {
     element.deckStatus.textContent = "Preparing speech model";
     element.deckTitle.textContent = "Your words are about to be ready";
     element.deckDescription.textContent = `${getSpeechModel(settings.modelId).label} is loading on this Mac.`;
-    element.deckSettings.textContent = "Dictation settings";
     return;
   }
 
   element.deckStatus.textContent = modelReady ? "Ready anywhere" : "Ready on demand";
   element.deckTitle.textContent = `Hold ${key}, say it, release`;
   element.deckDescription.textContent = modelReady
-    ? "Words will land at your cursor, then stay here for easy copying."
+    ? "Words land at your cursor, and stay in Transcripts for easy copying."
     : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
-  element.deckSettings.textContent = "Dictation settings";
+}
+
+/**
+ * The Transcripts card: which model turns speech into these words, whether it
+ * is ready, the language it listens for, and what AI Polish does after it.
+ */
+function renderModelDeck(): void {
+  const missing = setupKnown && !modelInstalled;
+  element.modelDeckStatus.textContent = missing
+    ? "Not downloaded"
+    : modelLoading
+      ? "Loading"
+      : modelReady
+        ? "Ready"
+        : "Loads when you dictate";
+  if (missing) element.modelDeckStatus.dataset.tone = "attention";
+  else delete element.modelDeckStatus.dataset.tone;
+
+  element.modelDeckTitle.textContent = getSpeechModel(settings.modelId).label;
+  element.modelDeckDescription.textContent = "Speech model, running on this Mac.";
+  element.modelDeckLanguage.textContent = settings.speechLanguage
+    ? settings.speechLanguage.toUpperCase()
+    : "Auto";
+
+  element.modelDeckPolish.textContent =
+    settings.polishLevel === "none"
+      ? "None"
+      : settings.polishEngine === "local"
+        ? `Active, ${polishModelLabel(settings.localModelId)} on this Mac`
+        : `Active, ${settings.openRouterModel} through OpenRouter`;
 }
 
 function renderStats(stats: AppStats): void {
@@ -2283,7 +2392,7 @@ function renderHistory(): void {
       : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
 
   // Both cards stay in the tree; renderDictationDeck decides which is showing.
-  element.history.replaceChildren(element.onboard, element.dictationDeck);
+  element.history.replaceChildren(element.onboard, element.modelDeck);
   element.history.classList.toggle("is-empty", matches.length === 0 && !pendingRetry);
 
   if (pendingRetry) element.history.append(renderRetryCard(pendingRetry.message));
@@ -2981,7 +3090,7 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
     element.promptEditor.hidden = true;
     if (promptEditorFromSettings) {
       promptEditorFromSettings = false;
-      toggleSettings(true, "ai");
+      toggleSettings(true);
       return;
     }
     element.scrim.hidden = !settingsOpen;
@@ -3009,8 +3118,8 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
  * instruction that reads as though it were in force.
  */
 function transformPromptWhere(level: PolishLevel): string {
-  if (level === "none") return "Not in use: polish is set to None.";
-  return `Used on every dictation, at ${level === "medium" ? "Medium" : "Light"}.`;
+  if (level === "none") return "Not in use: AI Polish is set to None.";
+  return "Used on every dictation while AI Polish is Active.";
 }
 
 /** First lines of each prompt on the cards, so the page stays scannable. */
@@ -3593,6 +3702,13 @@ const KEY_ADVICE: Partial<Record<HotkeyBindingId, string>> = {
  * than one that draws it and another that edits it.
  */
 function renderKeypick(): void {
+  renderKeyboard(element.keyboard, element.keyboardCaption);
+  // Reserved, not removed: see the comment on the note in index.html.
+  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
+}
+
+/** The keyboard picker, drawn into the wizard or the Dictation page. */
+function renderKeyboard(target: HTMLElement, caption: HTMLElement): void {
   for (const row of KEYBOARD_ROWS) {
     const width = row.reduce((total, key) => total + key.u, 0);
     // Not a guard against user input -- a guard against editing the table
@@ -3602,7 +3718,7 @@ function renderKeypick(): void {
     }
   }
 
-  element.keyboard.replaceChildren(
+  target.replaceChildren(
     ...KEYBOARD_ROWS.map((row) => {
       const line = document.createElement("div");
       line.className = "keyboard-row";
@@ -3636,20 +3752,17 @@ function renderKeypick(): void {
   // The glyphs on the keys are shared -- two Commands, two Options -- so the
   // caption is what says which one is chosen, in words.
   const chosen = getHotkeyBinding(settings.hotkeyId);
-  element.keyboardCaption.replaceChildren();
+  caption.replaceChildren();
   if (chosen) {
     const name = document.createElement("strong");
     // The glyph as well as the name. The name is what disambiguates the two
     // Commands and the two Options, and the glyph is what is actually
     // printed on the key you are about to go and hold.
     name.textContent = `${chosen.label} (${hotkeyKeycap(chosen)})`;
-    element.keyboardCaption.append(name, text(` ${KEY_ADVICE[chosen.id] ?? ""}`));
+    caption.append(name, text(` ${KEY_ADVICE[chosen.id] ?? ""}`));
   } else {
-    element.keyboardCaption.append(text("Pick a key to hold while you speak."));
+    caption.append(text("Pick a key to hold while you speak."));
   }
-
-  // Reserved, not removed: see the comment on the note in index.html.
-  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
 }
 
 /* -------------------------------------------------------------------------
