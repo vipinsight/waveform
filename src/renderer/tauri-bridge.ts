@@ -84,6 +84,7 @@ const api: DesktopApi = {
   cancelModelDownload: () => invoke<void>("cancel_model_download"),
   checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
   installUpdate: () => invoke<void>("install_update"),
+  getUpdateAvailable: () => invoke<string | null>("update_available"),
   onUpdateEvent: (listener) => subscribe<UpdateEvent>("update-event", listener),
   getLogs: () => invoke<LogLine[]>("get_logs"),
   clearLogs: () => invoke<void>("clear_logs"),

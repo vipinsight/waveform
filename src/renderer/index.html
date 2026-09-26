@@ -99,6 +99,19 @@
 
         <p class="shortcut-card" id="shortcut-hint"></p>
 
+        <!--
+          An update waiting, where a menu bar app's window is glanced at: the
+          foot of the sidebar. News rather than an alarm -- accent, not red --
+          with the action on it, the way desktop apps say "Restart to update".
+        -->
+        <button type="button" class="update-pill" id="update-pill" hidden>
+          <span class="update-pill-dot" aria-hidden="true"></span>
+          <span class="update-pill-body">
+            <strong id="update-pill-title">Update available</strong>
+            <small id="update-pill-action">Restart to update</small>
+          </span>
+        </button>
+
         <nav class="nav" aria-label="Settings">
           <button class="nav-item" type="button" id="settings-button" aria-haspopup="dialog">
             <svg data-icon="settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

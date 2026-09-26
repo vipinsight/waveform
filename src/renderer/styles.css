@@ -3804,3 +3804,94 @@ select {
   display: none;
 }
 
+/* An update waiting, at the foot of the sidebar: accent, not red, because
+   it is news. The whole pill is the button. */
+.update-pill {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 11px;
+  background: var(--accent-soft, rgb(50 132 208 / 10%));
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.update-pill[hidden] {
+  display: none;
+}
+
+.update-pill:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.update-pill:disabled {
+  cursor: progress;
+}
+
+.update-pill-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.update-pill[data-state="working"] .update-pill-dot {
+  animation: update-pill-pulse 1.2s ease-in-out infinite;
+}
+
+.update-pill-body {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.update-pill-body strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-pill-body small {
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.update-pill[data-state="error"] .update-pill-body small {
+  color: var(--ink-soft);
+}
+
+/* Folded, there is room for the dot and nothing else. */
+[data-sidebar="collapsed"] .update-pill {
+  justify-content: center;
+  padding: 9px 0;
+}
+
+[data-sidebar="collapsed"] .update-pill-body {
+  display: none;
+}
+
+@keyframes update-pill-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-pill[data-state="working"] .update-pill-dot {
+    animation: none;
+  }
+}
+
