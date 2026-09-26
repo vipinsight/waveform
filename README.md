@@ -3,6 +3,8 @@
 A free ASR tool for macOS, running open-source speech models on your own
 machine.
 
+<img src="docs/screenshots/demo.gif" alt="Holding the shortcut, speaking, and the words being typed into a chat box in another app">
+
 <img src="docs/screenshots/transcripts.png" alt="Waveform's Transcripts page, with the speech model running on this Mac and recent dictations listed by time">
 
 ## What it does
