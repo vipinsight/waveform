@@ -3730,3 +3730,21 @@ select {
   font-size: 0;
 }
 
+/* An early feature, marked where it is chosen. Gone when the sidebar is
+   folded: there is no room, and the icon alone is the thing to find. */
+.nav-tag {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgb(50 132 208 / 12%));
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+[data-sidebar="collapsed"] .sidebar .nav-tag {
+  display: none;
+}
+
