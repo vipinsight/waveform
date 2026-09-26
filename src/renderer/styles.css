@@ -435,6 +435,7 @@ kbd {
 /* Only the list runs to the edge. The overview, the models and the polish
    settings are ordinary content and keep their bottom inset. */
 #view-overview,
+#view-dictation,
 #view-models,
 #view-ai {
   padding-bottom: 26px;
@@ -443,6 +444,7 @@ kbd {
 /* Models and AI Polish were pages of the settings panel until they became
    sections of the window. Their heading keeps the size it had there: it labels
    a page of controls, not a list with a toolbar beside it. */
+#view-dictation .display,
 #view-models .display,
 #view-ai .display {
   margin-bottom: 22px;
@@ -3664,3 +3666,26 @@ select {
   background: var(--accent);
   transition: width 200ms ease;
 }
+
+/* The wizard's keyboard, on the Dictation page: inside a card, with the
+   gestures and the Fn note under it. */
+.dictation-key {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.dictation-key .keyboard-caption,
+.dictation-key .gesture-list,
+.dictation-key .note {
+  margin: 0;
+}
+
+.dictation-key-off {
+  justify-self: start;
+}
+
+.dictation-key-off[hidden] {
+  display: none;
+}
+

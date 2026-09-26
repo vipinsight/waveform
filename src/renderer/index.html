@@ -62,6 +62,14 @@
             </svg>
             <span>Transcripts</span>
           </button>
+          <button class="nav-item" type="button" data-view="dictation">
+            <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 19v3" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <rect x="9" y="2" width="6" height="13" rx="3" />
+            </svg>
+            <span>Dictation</span>
+          </button>
           <button class="nav-item" type="button" data-view="transcribe">
             <svg data-icon="file-audio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
@@ -169,7 +177,7 @@
                 <span><strong>Hold</strong> Speak, then release</span>
                 <span><strong>Tap twice</strong> Keep listening</span>
               </div>
-              <button id="deck-settings" class="deck-settings" type="button">Dictation settings</button>
+              <button id="deck-settings" class="deck-settings" type="button">Key &amp; microphone</button>
             </section>
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
@@ -182,6 +190,49 @@
                 <li><span class="starter-step">2</span>Hold <kbd class="starter-key">fn</kbd> and say a sentence.</li>
                 <li><span class="starter-step">3</span>Let go. The text appears where you were typing.</li>
               </ul>
+            </div>
+          </div>
+        </section>
+
+        <!--
+          How you start dictating and what listens: the two things that decide
+          whether the shortcut works at all, out of Settings and beside the
+          rest of the app. The key is the wizard's keyboard, not a list: where
+          a key sits is the difference between Left and Right Option.
+        -->
+        <section class="view" id="view-dictation" hidden>
+          <h1 class="display">Dictation</h1>
+          <p class="lede">
+            The key you hold to speak, and the microphone Waveform listens with.
+          </p>
+
+          <h2 class="section-label">Key to hold</h2>
+          <div class="card dictation-key">
+            <div class="keyboard" id="dictation-keyboard" role="radiogroup" aria-label="Key to hold"></div>
+            <p class="keyboard-caption" id="dictation-keyboard-caption"></p>
+              <ul class="gesture-list">
+                <li><kbd id="gesture-key-hold">fn</kbd><span>Hold, speak, release</span></li>
+                <li><kbd id="gesture-key-tap">fn fn</kbd><span>Double tap to keep listening</span></li>
+                <li><kbd>esc</kbd><span>Cancel without inserting</span></li>
+              </ul>
+
+              <p class="note" id="fn-note" hidden>
+                Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
+                <strong>Do Nothing</strong>, so tapping it does not also switch input source.
+              </p>
+            <button type="button" class="link dictation-key-off" id="hotkey-off">Turn off the key</button>
+          </div>
+
+          <h2 class="section-label">Microphone</h2>
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="microphone-select">
+                Listen with
+                <small>Auto uses the built-in mic when there is one, so AirPods connecting does not take over.</small>
+              </label>
+              <span class="row-actions">
+                <select id="microphone-select" aria-label="Microphone"></select>
+              </span>
             </div>
           </div>
         </section>
@@ -849,13 +900,6 @@
               <path d="M8 12H3" />
             </svg>
             <span>General</span></button>
-        <button class="nav-item" type="button" data-page="dictation">
-            <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 19v3" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <rect x="9" y="2" width="6" height="13" rx="3" />
-            </svg>
-            <span>Dictation</span></button>
         <button class="nav-item" type="button" data-page="setup">
             <svg data-icon="monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect width="20" height="14" x="2" y="3" rx="2" />
@@ -969,36 +1013,6 @@
               <span class="row-actions"><input id="update-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
-        </section>
-
-        <section class="settings-page" data-page="dictation" hidden>
-          <h1 class="display">Dictation</h1>
-          <p class="lede">
-            The key you hold to speak, and what Waveform listens with.
-          </p>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="hotkey-select">Key to hold</label>
-              <span class="row-actions"><select id="hotkey-select" aria-label="Dictation shortcut"></select></span>
-            </div>
-            <div class="row">
-              <label class="row-label" for="microphone-select">Microphone</label>
-              <span class="row-actions">
-                <select id="microphone-select" aria-label="Microphone"></select>
-              </span>
-            </div>
-          </div>
-
-          <ul class="gesture-list">
-            <li><kbd id="gesture-key-hold">fn</kbd><span>Hold, speak, release</span></li>
-            <li><kbd id="gesture-key-tap">fn fn</kbd><span>Double tap to keep listening</span></li>
-            <li><kbd>esc</kbd><span>Cancel without inserting</span></li>
-          </ul>
-
-          <p class="note" id="fn-note" hidden>
-            Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
-            <strong>Do Nothing</strong>, so tapping it does not also switch input source.
-          </p>
         </section>
 
         <section class="settings-page" data-page="about" hidden>

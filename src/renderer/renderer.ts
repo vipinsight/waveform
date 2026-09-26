@@ -74,7 +74,9 @@ const element = {
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
-  hotkeySelect: requireElement<HTMLSelectElement>("hotkey-select"),
+  dictationKeyboard: requireElement<HTMLElement>("dictation-keyboard"),
+  dictationKeyboardCaption: requireElement<HTMLElement>("dictation-keyboard-caption"),
+  hotkeyOff: requireElement<HTMLButtonElement>("hotkey-off"),
   themeToggle: requireElement<HTMLElement>("theme-toggle"),
   menubarToggle: requireElement<HTMLInputElement>("menubar-toggle"),
   launchAtLoginToggle: requireElement<HTMLInputElement>("launch-at-login-toggle"),
@@ -381,12 +383,12 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
-  host().onOpenMicrophoneSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenMicrophoneSettings(() => openView("dictation"));
   host().onOpenModelSettings(() => {
     toggleSettings(false);
     showModelsTab("speech");
   });
-  host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
+  host().onOpenShortcutSettings(() => openView("dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
@@ -436,7 +438,8 @@ function wireEvents(): void {
     else toggleSettings(false);
   });
   element.deckSettings.addEventListener("click", () => {
-    toggleSettings(true, setupSteps().some((step) => !step.done) ? "setup" : "dictation");
+    if (setupSteps().some((step) => !step.done)) toggleSettings(true, "setup");
+    else openView("dictation");
   });
 
   bindTranscribeDrop();
@@ -563,10 +566,11 @@ function wireEvents(): void {
       microphoneDeviceName: device?.label ?? "",
     });
   });
-  element.hotkeySelect.addEventListener("change", () => {
-    const value = element.hotkeySelect.value;
-    if (isHotkeyBindingId(value)) void patchSettings({ hotkeyId: value });
+  element.dictationKeyboard.addEventListener("click", (event) => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>("[data-hotkey]")?.dataset.hotkey;
+    if (isHotkeyBindingId(id)) void patchSettings({ hotkeyId: id });
   });
+  element.hotkeyOff.addEventListener("click", () => void patchSettings({ hotkeyId: "none" }));
   element.themeToggle.addEventListener("click", (event) => {
     const theme = (event.target as HTMLElement).closest<HTMLElement>("[data-theme-value]")
       ?.dataset.themeValue;
@@ -704,7 +708,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "transcribe", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "transcribe", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
@@ -717,6 +721,15 @@ function showView(view: string): void {
   // The levels say what they need before they can run, and what they need is
   // a key or a download that could have arrived while the section was closed.
   if (view === "ai") void host().getAiStatus().then(renderAiStatus);
+  // Labels are what name the devices, and WebKit hands them over only once
+  // the microphone has been asked for.
+  if (view === "dictation") void refreshMicrophones(true);
+}
+
+/** Shows a section of the window, closing Settings if it is over it. */
+function openView(view: string): void {
+  if (settingsOpen) toggleSettings(false);
+  showView(view);
 }
 
 /** Which half of the Models page is up: voice to text, or rewriting text. */
@@ -810,7 +823,6 @@ function showSettingsPage(page: string): void {
   )) {
     section.hidden = section.dataset.page !== page;
   }
-  if (page === "dictation") void refreshMicrophones(true);
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
 }
@@ -871,7 +883,8 @@ function applySettings(next: AppSettings): void {
   void renderModels();
   renderLanguageSelect();
   renderMicrophoneSelect();
-  element.hotkeySelect.value = next.hotkeyId;
+  renderKeyboard(element.dictationKeyboard, element.dictationKeyboardCaption);
+  element.hotkeyOff.hidden = next.hotkeyId === "none";
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
@@ -908,11 +921,6 @@ function applySettings(next: AppSettings): void {
 }
 
 function populateSelects(): void {
-  element.hotkeySelect.append(new Option("Off", "none"));
-  for (const binding of HOTKEY_BINDINGS) {
-    element.hotkeySelect.append(new Option(hotkeyMenuLabel(binding), binding.id));
-  }
-
   for (const accelerator of POLISH_SHORTCUTS) {
     element.polishShortcut.append(
       new Option(describeAccelerator(accelerator), accelerator),
@@ -2191,7 +2199,7 @@ function renderDictationDeck(): void {
     element.deckStatus.textContent = "Preparing speech model";
     element.deckTitle.textContent = "Your words are about to be ready";
     element.deckDescription.textContent = `${getSpeechModel(settings.modelId).label} is loading on this Mac.`;
-    element.deckSettings.textContent = "Dictation settings";
+    element.deckSettings.textContent = "Key & microphone";
     return;
   }
 
@@ -2200,7 +2208,7 @@ function renderDictationDeck(): void {
   element.deckDescription.textContent = modelReady
     ? "Words will land at your cursor, then stay here for easy copying."
     : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
-  element.deckSettings.textContent = "Dictation settings";
+  element.deckSettings.textContent = "Key & microphone";
 }
 
 function renderStats(stats: AppStats): void {
@@ -3639,6 +3647,13 @@ const KEY_ADVICE: Partial<Record<HotkeyBindingId, string>> = {
  * than one that draws it and another that edits it.
  */
 function renderKeypick(): void {
+  renderKeyboard(element.keyboard, element.keyboardCaption);
+  // Reserved, not removed: see the comment on the note in index.html.
+  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
+}
+
+/** The keyboard picker, drawn into the wizard or the Dictation page. */
+function renderKeyboard(target: HTMLElement, caption: HTMLElement): void {
   for (const row of KEYBOARD_ROWS) {
     const width = row.reduce((total, key) => total + key.u, 0);
     // Not a guard against user input -- a guard against editing the table
@@ -3648,7 +3663,7 @@ function renderKeypick(): void {
     }
   }
 
-  element.keyboard.replaceChildren(
+  target.replaceChildren(
     ...KEYBOARD_ROWS.map((row) => {
       const line = document.createElement("div");
       line.className = "keyboard-row";
@@ -3682,20 +3697,17 @@ function renderKeypick(): void {
   // The glyphs on the keys are shared -- two Commands, two Options -- so the
   // caption is what says which one is chosen, in words.
   const chosen = getHotkeyBinding(settings.hotkeyId);
-  element.keyboardCaption.replaceChildren();
+  caption.replaceChildren();
   if (chosen) {
     const name = document.createElement("strong");
     // The glyph as well as the name. The name is what disambiguates the two
     // Commands and the two Options, and the glyph is what is actually
     // printed on the key you are about to go and hold.
     name.textContent = `${chosen.label} (${hotkeyKeycap(chosen)})`;
-    element.keyboardCaption.append(name, text(` ${KEY_ADVICE[chosen.id] ?? ""}`));
+    caption.append(name, text(` ${KEY_ADVICE[chosen.id] ?? ""}`));
   } else {
-    element.keyboardCaption.append(text("Pick a key to hold while you speak."));
+    caption.append(text("Pick a key to hold while you speak."));
   }
-
-  // Reserved, not removed: see the comment on the note in index.html.
-  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
 }
 
 /* -------------------------------------------------------------------------
