@@ -3,6 +3,8 @@
 A free ASR tool for macOS, running open-source speech models on your own
 machine.
 
+<img src="docs/screenshots/transcripts.png" alt="Waveform's Transcripts page, with the speech model running on this Mac and recent dictations listed by time">
+
 ## What it does
 
 Hold a shortcut, speak, and release to insert text into the focused app.
@@ -16,6 +18,8 @@ engines. No account or subscription is required.
 - **Menu bar and Wave Bar:** keep dictation available while working in other apps.
 - **Optional AI Polish:** tidy dictated or selected text with a small model
   downloaded onto your Mac, or with a hosted model through OpenRouter.
+
+<img src="docs/screenshots/dictation.png" alt="Waveform's Dictation page, with Right Option chosen as the key to hold and the microphone setting below it">
 
 Apple Silicon and macOS 13 or newer are required. Intel Macs, Windows, and Linux
 are not currently supported. Waveform is pre-1.0; behavior may change between releases.
@@ -36,21 +40,24 @@ Needs an Apple Silicon Mac on macOS 13 or newer.
 
 ```mermaid
 flowchart TD
-    subgraph mac["all of this happens on your Mac"]
-        key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
-        listen --> model["An open model<br/>transcribes it"]
-        model --> typed["The text is typed back<br/>where you were working"]
-        model -. "optional, text only" .-> local["AI Polish,<br/>model on this Mac"]
-        local -.-> typed
-    end
+    key["You hold a key in any app"] --> listen["Waveform listens,<br/>splitting at your pauses"]
+    listen --> speech["A speech model on your Mac transcribes it<br/>Whisper, Parakeet or Qwen3-ASR"]
+    speech --> polish{"AI Polish?"}
+    selected["You select text and press<br/>the polish shortcut"] --> polish
+    polish -- "off" --> typed["The text is typed back<br/>where you were working"]
+    polish -- "on this Mac" --> local["Qwen3 on your Mac<br/>through llama.cpp"]
+    polish -. "OpenRouter" .-> hosted["A hosted model<br/>leaves your Mac, text only"]
+    local --> typed
+    hosted -.-> typed
 
-    model -. "optional, text only" .-> polish["AI Polish,<br/>through OpenRouter"]
-    polish -.-> typed
+    classDef offMac stroke-dasharray: 5 5
+    class hosted offMac
 ```
 
-AI Polish runs either way round: a Qwen3 model you download runs here like the
-speech model does, and OpenRouter sends the text to a hosted model instead.
-Model downloads and update checks also use the network; see [Privacy](#privacy).
+Speech and polish both run on the Mac: the speech model and a downloaded Qwen3
+polish model are local files, run in the app. Only choosing OpenRouter for AI
+Polish sends anything off the Mac, and then it is text, never audio. Model
+downloads and update checks also use the network; see [Privacy](#privacy).
 
 ## A few things worth knowing
 
