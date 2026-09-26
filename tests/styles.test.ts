@@ -70,6 +70,12 @@ describe("stylesheet covers the markup", () => {
    * A failed transcription with held audio is the exception: Retry has to stay
    * reachable without speaking again.
    */
+  // A `display` rule outranks the `hidden` attribute: the dropped-file result
+  // and its Copy button must still disappear when hidden.
+  it("hides the dropped-file result until there is one", () => {
+    expect(css).toMatch(/\.drop-overlay-text\[hidden\][^{]*\{[^}]*display:\s*none/);
+  });
+
   it("keeps accept reachable on a retryable error in hold mode", () => {
     expect(overlayCss).toContain(
       '.hud[data-mode="hold"][data-state="error"][data-retry="true"] .hud-accept',

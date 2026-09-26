@@ -11,6 +11,14 @@ describe("DEFAULT_SETTINGS", () => {
     // Hiding the Dock icon is ignored without the menu bar icon to return by.
     expect(DEFAULT_SETTINGS.menuBarIcon).toBe(true);
   });
+
+  // Beta: off until someone turns it on, on both sides of the bridge.
+  it("leaves transcribing dropped audio off", () => {
+    expect(DEFAULT_SETTINGS.transcribeOnDrop).toBe(false);
+    expect(normalizeSettings({ transcribeOnDrop: true }).transcribeOnDrop).toBe(true);
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain("transcribe_on_drop: false,");
+  });
 });
 
 describe("normalizeSettings", () => {

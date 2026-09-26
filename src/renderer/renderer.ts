@@ -116,16 +116,13 @@ const element = {
   deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
-  transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
-  transcribeFile: requireElement<HTMLInputElement>("transcribe-file"),
-  transcribeDropTitle: requireElement<HTMLElement>("transcribe-drop-title"),
-  transcribeDropHint: requireElement<HTMLElement>("transcribe-drop-hint"),
-  transcribeResult: requireElement<HTMLElement>("transcribe-result"),
-  transcribeFileName: requireElement<HTMLElement>("transcribe-file-name"),
-  transcribeText: requireElement<HTMLElement>("transcribe-text"),
-  transcribeCopy: requireElement<HTMLButtonElement>("transcribe-copy"),
-  transcribeClear: requireElement<HTMLButtonElement>("transcribe-clear"),
-  transcribeNote: requireElement<HTMLElement>("transcribe-note"),
+  dropOverlay: requireElement<HTMLElement>("drop-overlay"),
+  dropOverlayTitle: requireElement<HTMLElement>("drop-overlay-title"),
+  dropOverlayHint: requireElement<HTMLElement>("drop-overlay-hint"),
+  dropOverlayText: requireElement<HTMLElement>("drop-overlay-text"),
+  dropOverlayCopy: requireElement<HTMLButtonElement>("drop-overlay-copy"),
+  dropOverlayClose: requireElement<HTMLButtonElement>("drop-overlay-close"),
+  transcribeDropToggle: requireElement<HTMLInputElement>("transcribe-drop-toggle"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
@@ -462,7 +459,7 @@ function wireEvents(): void {
   });
   element.deckSettings.addEventListener("click", () => openView("dictate"));
 
-  bindTranscribeDrop();
+  bindDropTranscribe();
 
   // Tabs on the Models page, and the links elsewhere that open one of them.
   // Delegated: the AI Polish hint rebuilds its link whenever the status does.
@@ -659,6 +656,9 @@ function wireEvents(): void {
   element.flowBarToggle.addEventListener("change", () => {
     void patchSettings({ showFlowBarAlways: element.flowBarToggle.checked });
   });
+  element.transcribeDropToggle.addEventListener("change", () => {
+    void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
+  });
   element.logCopy.addEventListener("click", () => {
     const text = logLines
       .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
@@ -745,7 +745,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "transcribe", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
@@ -921,6 +921,7 @@ function applySettings(next: AppSettings): void {
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
+  element.transcribeDropToggle.checked = next.transcribeOnDrop;
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
@@ -2981,121 +2982,146 @@ const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><pat
 
 const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />';
 
-function bindTranscribeDrop(): void {
-  const drop = element.transcribeDrop;
-  const input = element.transcribeFile;
+/**
+ * Drop an audio file anywhere on the window to get its text (beta).
+ *
+ * One overlay carries the whole thing: while a file is dragged over it says
+ * what letting go will do, then it shows the work and the result -- text to
+ * select, and Copy -- until it is closed. There is no page for it: the drop
+ * is the way in, and it can happen from any page.
+ *
+ * Every drop is claimed whether or not the feature is on. A file dropped
+ * where nothing handles it is opened by the webview in place of the app:
+ * an audio file became a full-window player with no way back.
+ */
+function bindDropTranscribe(): void {
+  let dragDepth = 0;
+  const carriesFiles = (event: DragEvent): boolean =>
+    Array.from(event.dataTransfer?.types ?? []).includes("Files");
+  const leaveDrag = (): void => {
+    dragDepth = 0;
+    if (element.dropOverlay.dataset.stage === "drag") closeDropOverlay();
+  };
 
-  drop.addEventListener("click", () => {
-    if (!transcribeBusy) input.click();
-  });
-  drop.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      if (!transcribeBusy) input.click();
-    }
-  });
-  input.addEventListener("change", () => {
-    const file = input.files?.[0];
-    input.value = "";
-    if (file) void transcribeAudioFile(file);
-  });
-
-  drop.addEventListener("dragenter", (event) => {
+  document.addEventListener("dragenter", (event) => {
+    if (!carriesFiles(event)) return;
     event.preventDefault();
-    drop.classList.add("is-dragging");
+    dragDepth += 1;
+    if (dragDepth > 1 || !settings.transcribeOnDrop || transcribeBusy) return;
+    showDropHint(event);
   });
-  drop.addEventListener("dragover", (event) => {
+  document.addEventListener("dragleave", (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) leaveDrag();
+  });
+  document.addEventListener("dragover", (event) => event.preventDefault());
+  document.addEventListener("drop", (event) => {
     event.preventDefault();
-    drop.classList.add("is-dragging");
-  });
-  drop.addEventListener("dragleave", (event) => {
-    if (!drop.contains(event.relatedTarget as Node | null)) {
-      drop.classList.remove("is-dragging");
-    }
-  });
-  drop.addEventListener("drop", (event) => {
-    event.preventDefault();
-    drop.classList.remove("is-dragging");
+    dragDepth = 0;
     const file = event.dataTransfer?.files?.[0];
-    if (file) void transcribeAudioFile(file);
+    if (!settings.transcribeOnDrop || transcribeBusy) return;
+    if (!file || !isAudioFile(file)) {
+      closeDropOverlay();
+      return;
+    }
+    void transcribeDroppedFile(file);
   });
+  // A drag that leaves through the window edge fast can skip its last
+  // dragleave; losing focus is the other sign it has gone.
+  window.addEventListener("blur", leaveDrag);
 
-  element.transcribeCopy.addEventListener("click", () => {
-    const text = element.transcribeText.textContent ?? "";
+  element.dropOverlayClose.addEventListener("click", closeDropOverlay);
+  // The backdrop closes a finished result, not work still under way.
+  element.dropOverlay.addEventListener("click", (event) => {
+    const stage = element.dropOverlay.dataset.stage;
+    if (event.target === element.dropOverlay && (stage === "done" || stage === "error")) {
+      closeDropOverlay();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || element.dropOverlay.hidden) return;
+    if (element.dropOverlay.dataset.stage === "working") return;
+    event.stopPropagation();
+    closeDropOverlay();
+  }, true);
+  element.dropOverlayCopy.addEventListener("click", () => {
+    const text = element.dropOverlayText.textContent ?? "";
     if (!text) return;
     void navigator.clipboard.writeText(text);
-    element.transcribeCopy.classList.add("is-done");
-    element.transcribeCopy.textContent = "Copied";
+    element.dropOverlayCopy.textContent = "Copied";
     setTimeout(() => {
-      element.transcribeCopy.classList.remove("is-done");
-      element.transcribeCopy.textContent = "Copy";
+      element.dropOverlayCopy.textContent = "Copy";
     }, 900);
   });
-  element.transcribeClear.addEventListener("click", clearTranscribeResult);
 }
 
-async function transcribeAudioFile(file: File): Promise<void> {
-  if (transcribeBusy) return;
-  if (!isAudioFile(file)) {
-    setTranscribeStatus("That does not look like an audio file.");
-    return;
-  }
+type DropStage = "drag" | "working" | "done" | "error";
 
+function setDropStage(stage: DropStage, title: string, hint: string): void {
+  element.dropOverlay.dataset.stage = stage;
+  element.dropOverlayTitle.textContent = title;
+  element.dropOverlayHint.textContent = hint;
+  element.dropOverlayText.hidden = stage !== "done";
+  element.dropOverlayCopy.hidden = stage !== "done";
+  element.dropOverlayClose.hidden = stage === "drag" || stage === "working";
+  element.dropOverlay.hidden = false;
+}
+
+/**
+ * Says what letting go will do. The file cannot be read before the drop,
+ * but its type usually can, so a PDF is told it will be ignored.
+ */
+function showDropHint(event: DragEvent): void {
+  const known = Array.from(event.dataTransfer?.items ?? [])
+    .filter((item) => item.kind === "file" && item.type !== "")
+    .map((item) => item.type);
+  const notAudio = known.length > 0 && !known.some((type) => type.startsWith("audio/"));
+  element.dropOverlay.dataset.refuse = String(notAudio);
+  setDropStage(
+    "drag",
+    notAudio ? "Only audio files can be transcribed" : "Drop to transcribe",
+    notAudio
+      ? "WAV, MP3, M4A, and other formats WebKit can decode."
+      : "The audio stays on this Mac.",
+  );
+}
+
+function closeDropOverlay(): void {
+  if (element.dropOverlay.dataset.stage === "working") return;
+  element.dropOverlay.hidden = true;
+  element.dropOverlay.dataset.stage = "drag";
+  element.dropOverlay.dataset.refuse = "false";
+  element.dropOverlayText.textContent = "";
+}
+
+/** Decodes, transcribes and saves a dropped file, in the overlay. */
+async function transcribeDroppedFile(file: File): Promise<void> {
   transcribeBusy = true;
-  element.transcribeDrop.classList.add("is-busy");
-  element.transcribeDropTitle.textContent = "Transcribing…";
-  element.transcribeDropHint.textContent = file.name;
-  element.transcribeNote.textContent = "Working…";
-  element.transcribeResult.hidden = true;
-
+  element.dropOverlay.dataset.refuse = "false";
+  setDropStage("working", "Transcribing…", file.name);
   try {
     const wav = await audioFileToMonoWav(file);
     const { text } = await host().transcribe(wav);
-    const trimmed = text.trim();
+    const trimmed = (text ?? "").trim();
     if (!trimmed) {
-      setTranscribeStatus("No words found in that recording.");
-      resetTranscribeDrop();
+      setDropStage("error", "No words found", `${file.name} has no speech Waveform could hear.`);
       return;
     }
-
     entries = await host().saveDictation(trimmed, wav);
     freshId = entries[0]?.id ?? null;
     renderHistory();
-
-    element.transcribeFileName.textContent = file.name;
-    element.transcribeText.textContent = trimmed;
-    element.transcribeResult.hidden = false;
-    element.transcribeNote.textContent = "Saved to Transcripts";
-    setStatus(`Transcribed ${file.name}`);
-    resetTranscribeDrop();
+    element.dropOverlayText.textContent = trimmed;
+    setDropStage("done", file.name, "Saved to Transcripts");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setTranscribeStatus(message);
-    setStatus(message);
-    resetTranscribeDrop();
+    setDropStage(
+      "error",
+      "Could not transcribe",
+      error instanceof Error ? error.message : String(error),
+    );
   } finally {
     transcribeBusy = false;
-    element.transcribeDrop.classList.remove("is-busy");
   }
-}
-
-function resetTranscribeDrop(): void {
-  element.transcribeDropTitle.textContent = "Drop an audio file here";
-  element.transcribeDropHint.textContent =
-    "WAV, MP3, M4A, and other formats WebKit can decode. Click to choose a file.";
-}
-
-function clearTranscribeResult(): void {
-  element.transcribeResult.hidden = true;
-  element.transcribeText.textContent = "";
-  element.transcribeFileName.textContent = "";
-  element.transcribeNote.textContent = "Audio stays on this Mac";
-  resetTranscribeDrop();
-}
-
-function setTranscribeStatus(message: string): void {
-  element.transcribeNote.textContent = message;
-  element.transcribeDropHint.textContent = message;
 }
 
 function toggleSearch(open: boolean): void {

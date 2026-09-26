@@ -965,180 +965,6 @@ kbd {
   padding: 10px 0 6vh;
 }
 
-/* ----------------------------------------------------------- file transcribe */
-
-.transcribe-drop {
-  display: grid;
-  gap: 8px;
-  place-content: center;
-  min-height: 220px;
-  padding: 40px 28px;
-  border: 1.5px dashed var(--hairline-strong, rgb(0 0 0 / 16%));
-  border-radius: 16px;
-  margin-top: 8px;
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgb(50 132 208 / 6%), transparent 55%),
-    var(--surface-sunken, rgb(0 0 0 / 3%));
-  color: var(--ink-soft);
-  text-align: center;
-  cursor: pointer;
-  transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    color 140ms ease;
-}
-
-.transcribe-drop:hover,
-.transcribe-drop:focus-visible {
-  border-color: var(--accent);
-  color: var(--ink);
-  outline: none;
-}
-
-.transcribe-drop.is-dragging {
-  border-color: var(--accent);
-  border-style: solid;
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgb(50 132 208 / 12%), transparent 55%),
-    var(--surface-sunken, rgb(0 0 0 / 3%));
-  color: var(--ink);
-}
-
-.transcribe-drop.is-busy {
-  cursor: progress;
-  opacity: 0.72;
-  pointer-events: none;
-}
-
-.transcribe-drop-title {
-  margin: 0;
-  color: inherit;
-  font-size: 18px;
-  font-weight: 560;
-  letter-spacing: -0.02em;
-}
-
-.transcribe-drop-hint {
-  margin: 0;
-  max-width: 36ch;
-  justify-self: center;
-  color: var(--ink-faint);
-  font-size: 13.5px;
-  font-weight: 440;
-  line-height: 1.45;
-}
-
-.transcribe-result {
-  display: grid;
-  gap: 14px;
-  margin-top: 22px;
-}
-
-.transcribe-result-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.transcribe-file-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-faint);
-  font-size: 12.5px;
-  font-weight: 520;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.transcribe-result-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.transcribe-text {
-  margin: 0;
-  padding: 18px 20px;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 440;
-  line-height: 1.55;
-  letter-spacing: -0.008em;
-  white-space: pre-wrap;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-/* It was set at the body size, which for the one heading on an otherwise empty
-   panel read as a caption for nothing. */
-.empty-headline {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 21px;
-  letter-spacing: -0.012em;
-}
-
-.empty-hint {
-  max-width: 430px;
-  margin: 10px 0 0;
-  color: var(--ink-soft);
-  font-size: 14px;
-  font-weight: 440;
-  line-height: 1.6;
-  letter-spacing: -0.004em;
-}
-
-.empty-hint kbd {
-  margin: 0 1px;
-}
-
-.starter {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 0;
-  margin: 22px 0 0;
-  list-style: none;
-}
-
-.starter[hidden] {
-  display: none;
-}
-
-.starter li {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  color: var(--ink-soft);
-  font-size: 14px;
-  font-weight: 450;
-  letter-spacing: -0.004em;
-}
-
-.starter-step {
-  display: grid;
-  width: 21px;
-  height: 21px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--surface-sunken);
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 580;
-  font-variant-numeric: tabular-nums;
-}
-
-.starter kbd,
-.starter-key {
-  font-size: 12px;
-}
-
 /* ---------------------------------------------------------------- setup */
 
 .lede {
@@ -3804,6 +3630,252 @@ select {
   display: none;
 }
 
+/* It was set at the body size, which for the one heading on an otherwise empty
+   panel read as a caption for nothing. */
+.empty-headline {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 21px;
+  letter-spacing: -0.012em;
+}
+
+.empty-hint {
+  max-width: 430px;
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 440;
+  line-height: 1.6;
+  letter-spacing: -0.004em;
+}
+
+.empty-hint kbd {
+  margin: 0 1px;
+}
+
+.starter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  margin: 22px 0 0;
+  list-style: none;
+}
+
+.starter[hidden] {
+  display: none;
+}
+
+.starter li {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: -0.004em;
+}
+
+.starter-step {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 580;
+  font-variant-numeric: tabular-nums;
+}
+
+.starter kbd,
+.starter-key {
+  font-size: 12px;
+}
+
+/* Over the whole window while a file is dragged across it, then while it
+   is transcribed and its text is read. While dragging it takes no pointer
+   events, so the drop lands on the document underneath. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgb(20 20 18 / 32%);
+  backdrop-filter: blur(3px);
+  /* No fill mode: if the fade does not run, the overlay is simply shown. */
+  animation: drop-overlay-in 120ms ease-out;
+}
+
+.drop-overlay[data-stage="drag"] {
+  pointer-events: none;
+}
+
+.drop-overlay[hidden] {
+  display: none;
+}
+
+.drop-overlay-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  width: min(420px, 100%);
+  max-height: calc(100vh - 56px);
+  padding: 34px 28px 30px;
+  border: 2px dashed var(--accent);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--ink);
+  text-align: center;
+}
+
+/* Reading and copying want room, and the dashed "drop here" edge is done. */
+.drop-overlay[data-stage="done"] .drop-overlay-card,
+.drop-overlay[data-stage="error"] .drop-overlay-card {
+  width: min(600px, 100%);
+  border-style: solid;
+  border-color: var(--hairline);
+}
+
+.drop-overlay[data-refuse="true"] .drop-overlay-card,
+.drop-overlay[data-stage="error"] .drop-overlay-card {
+  border-color: var(--danger);
+}
+
+.drop-overlay-icon {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.drop-overlay[data-refuse="true"] .drop-overlay-icon,
+.drop-overlay[data-stage="error"] .drop-overlay-icon {
+  color: var(--danger);
+}
+
+.drop-overlay[data-stage="working"] .drop-overlay-icon {
+  display: none;
+}
+
+.drop-overlay-spinner {
+  display: none;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 10px;
+  border: 3px solid var(--accent-soft, rgb(50 132 208 / 18%));
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: drop-overlay-spin 800ms linear infinite;
+}
+
+.drop-overlay[data-stage="working"] .drop-overlay-spinner {
+  display: block;
+}
+
+.drop-overlay-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-overlay-hint {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+/* The result: selectable, scrolling when long, read as prose. */
+.drop-overlay-text {
+  width: 100%;
+  max-height: 46vh;
+  margin: 12px 0 6px;
+  padding: 16px 18px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  font-size: 15px;
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.drop-overlay-text[hidden],
+.drop-overlay-copy[hidden],
+.drop-overlay-close[hidden] {
+  display: none;
+}
+
+.drop-overlay-copy {
+  justify-self: end;
+}
+
+.drop-overlay-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.drop-overlay-close:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.drop-overlay-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes drop-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes drop-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-overlay,
+  .drop-overlay-spinner {
+    animation: none;
+  }
+}
+
+/* A label with a tag beside it, not pushed to the far end as in the nav. */
+.row-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.row-title .nav-tag {
+  margin-left: 0;
+}
+
 /* An update waiting, at the foot of the sidebar: accent, not red, because
    it is news. The whole pill is the button. */
 .update-pill {
@@ -3894,4 +3966,3 @@ select {
     animation: none;
   }
 }
-

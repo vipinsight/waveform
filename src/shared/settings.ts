@@ -103,6 +103,8 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** Keep the compact listening indicator visible while idle. */
   showFlowBarAlways: boolean;
+  /** Transcribe an audio file dropped anywhere on the window (beta). */
+  transcribeOnDrop: boolean;
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
   /** Fold the sidebar away. Kept here so it survives a restart. */
@@ -156,6 +158,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarIcon: true,
   launchAtLogin: true,
   showFlowBarAlways: true,
+  // Beta, so off until asked for.
+  transcribeOnDrop: false,
   hideDockWhenClosed: true,
   automaticUpdateCheck: true,
   sidebarCollapsed: false,
@@ -214,6 +218,8 @@ export function normalizeSettings(
       typeof input.showFlowBarAlways === "boolean"
         ? input.showFlowBarAlways
         : base.showFlowBarAlways,
+    transcribeOnDrop:
+      typeof input.transcribeOnDrop === "boolean" ? input.transcribeOnDrop : base.transcribeOnDrop,
     hideDockWhenClosed:
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed
