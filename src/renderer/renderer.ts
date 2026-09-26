@@ -450,7 +450,10 @@ function wireEvents(): void {
       return;
     }
     const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
-    if (view) showView(view);
+    if (view) {
+      if (settingsOpen) toggleSettings(false);
+      showView(view);
+    }
   });
 
   // Closing the window hides it rather than quitting; a recording must not

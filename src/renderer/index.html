@@ -417,6 +417,24 @@
             </button>
           </div>
           <p class="note polish-level-hint" id="polish-level-hint" hidden></p>
+
+          <!--
+            The words each level is steered by, beside the levels themselves:
+            in Settings they were two screens from the choice they shape.
+          -->
+          <h2 class="section-label">Instructions</h2>
+          <div class="prompt-cards">
+            <button type="button" class="prompt-card" data-prompt="transform">
+              <strong>Dictation</strong>
+              <span class="prompt-card-where" id="transform-prompt-where"></span>
+              <small id="transform-prompt-preview"></small>
+            </button>
+            <button type="button" class="prompt-card" data-prompt="polish">
+              <strong>Selection</strong>
+              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
+              <small id="polish-prompt-preview"></small>
+            </button>
+          </div>
         </section>
 
       </main>
@@ -964,9 +982,10 @@
           <h1 class="display">AI polish</h1>
 
           <p class="note">
-            Where polish runs, and which model does it, is chosen on the
-            <button type="button" class="link" data-open-models="polish">Models</button>
-            page.
+            How much to polish, and the instructions it follows, are on the
+            <button type="button" class="link" data-open-view="ai">AI Polish</button>
+            page; where it runs and which model does it, on
+            <button type="button" class="link" data-open-models="polish">Models</button>.
           </p>
 
           <h2 class="section-label">Text you have selected</h2>
@@ -977,20 +996,6 @@
                 <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
               </span>
             </div>
-          </div>
-
-          <h2 class="section-label">Instructions</h2>
-          <div class="prompt-cards">
-            <button type="button" class="prompt-card" data-prompt="transform">
-              <strong>Dictation</strong>
-              <span class="prompt-card-where" id="transform-prompt-where"></span>
-              <small id="transform-prompt-preview"></small>
-            </button>
-            <button type="button" class="prompt-card" data-prompt="polish">
-              <strong>Selection</strong>
-              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
-              <small id="polish-prompt-preview"></small>
-            </button>
           </div>
         </section>
 
