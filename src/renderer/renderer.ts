@@ -2985,6 +2985,21 @@ function bindTranscribeDrop(): void {
   const drop = element.transcribeDrop;
   const input = element.transcribeFile;
 
+  // A file dropped where nothing handles it is opened by the webview in
+  // place of the app -- an audio file became a full-window player with no
+  // way back. Every drop is claimed here; the zone below handles its own.
+  // An audio file dropped on another page is taken to Transcribe, which is
+  // what dropping one means everywhere else in the window.
+  document.addEventListener("dragover", (event) => event.preventDefault());
+  document.addEventListener("drop", (event) => {
+    event.preventDefault();
+    if (drop.contains(event.target as Node)) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (!file || !isAudioFile(file)) return;
+    openView("transcribe");
+    void transcribeAudioFile(file);
+  });
+
   drop.addEventListener("click", () => {
     if (!transcribeBusy) input.click();
   });
