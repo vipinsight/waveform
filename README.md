@@ -3,9 +3,14 @@
 A free ASR tool for macOS, running open-source speech models on your own
 machine.
 
-<img src="docs/screenshots/demo.gif" alt="Holding the shortcut, speaking, and the words being typed into a chat box in another app">
+<p align="center">
+  <img src="docs/screenshots/demo.gif" width="600" alt="Holding the shortcut, speaking, and the words being typed into a chat box in another app">
+</p>
 
-<img src="docs/screenshots/transcripts.png" alt="Waveform's Transcripts page, with the speech model running on this Mac and recent dictations listed by time">
+<p>
+  <img src="docs/screenshots/transcripts.png" width="49%" alt="Waveform's Transcripts page, with the speech model running on this Mac and recent dictations listed by time">
+  <img src="docs/screenshots/dictation.png" width="49%" alt="Waveform's Dictation page, with Right Option chosen as the key to hold and the microphone setting below it">
+</p>
 
 ## What it does
 
@@ -20,8 +25,6 @@ engines. No account or subscription is required.
 - **Menu bar and Wave Bar:** keep dictation available while working in other apps.
 - **Optional AI Polish:** tidy dictated or selected text with a small model
   downloaded onto your Mac, or with a hosted model through OpenRouter.
-
-<img src="docs/screenshots/dictation.png" alt="Waveform's Dictation page, with Right Option chosen as the key to hold and the microphone setting below it">
 
 Apple Silicon and macOS 13 or newer are required. Intel Macs, Windows, and Linux
 are not currently supported. Waveform is pre-1.0; behavior may change between releases.
