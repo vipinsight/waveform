@@ -117,6 +117,9 @@ const element = {
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   transcribeDrop: requireElement<HTMLElement>("transcribe-drop"),
+  dropOverlay: requireElement<HTMLElement>("drop-overlay"),
+  dropOverlayTitle: requireElement<HTMLElement>("drop-overlay-title"),
+  dropOverlayHint: requireElement<HTMLElement>("drop-overlay-hint"),
   transcribeFile: requireElement<HTMLInputElement>("transcribe-file"),
   transcribeDropTitle: requireElement<HTMLElement>("transcribe-drop-title"),
   transcribeDropHint: requireElement<HTMLElement>("transcribe-drop-hint"),
@@ -2990,15 +2993,40 @@ function bindTranscribeDrop(): void {
   // way back. Every drop is claimed here; the zone below handles its own.
   // An audio file dropped on another page is taken to Transcribe, which is
   // what dropping one means everywhere else in the window.
+  //
+  // The overlay covers the zone too, so every drop arrives here, and the
+  // same thing happens whichever page it lands on.
+  let dragDepth = 0;
+  const carriesFiles = (event: DragEvent): boolean =>
+    Array.from(event.dataTransfer?.types ?? []).includes("Files");
+  const hideOverlay = (): void => {
+    dragDepth = 0;
+    element.dropOverlay.hidden = true;
+  };
+  document.addEventListener("dragenter", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    if (dragDepth > 1) return;
+    showDropOverlay(event);
+  });
+  document.addEventListener("dragleave", (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) element.dropOverlay.hidden = true;
+  });
   document.addEventListener("dragover", (event) => event.preventDefault());
   document.addEventListener("drop", (event) => {
     event.preventDefault();
-    if (drop.contains(event.target as Node)) return;
+    hideOverlay();
     const file = event.dataTransfer?.files?.[0];
     if (!file || !isAudioFile(file)) return;
     openView("transcribe");
     void transcribeAudioFile(file);
   });
+  // A drag that leaves through the window edge fast can skip its last
+  // dragleave; losing focus is the other sign it has gone.
+  window.addEventListener("blur", hideOverlay);
 
   drop.addEventListener("click", () => {
     if (!transcribeBusy) input.click();
@@ -3015,26 +3043,6 @@ function bindTranscribeDrop(): void {
     if (file) void transcribeAudioFile(file);
   });
 
-  drop.addEventListener("dragenter", (event) => {
-    event.preventDefault();
-    drop.classList.add("is-dragging");
-  });
-  drop.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    drop.classList.add("is-dragging");
-  });
-  drop.addEventListener("dragleave", (event) => {
-    if (!drop.contains(event.relatedTarget as Node | null)) {
-      drop.classList.remove("is-dragging");
-    }
-  });
-  drop.addEventListener("drop", (event) => {
-    event.preventDefault();
-    drop.classList.remove("is-dragging");
-    const file = event.dataTransfer?.files?.[0];
-    if (file) void transcribeAudioFile(file);
-  });
-
   element.transcribeCopy.addEventListener("click", () => {
     const text = element.transcribeText.textContent ?? "";
     if (!text) return;
@@ -3047,6 +3055,31 @@ function bindTranscribeDrop(): void {
     }, 900);
   });
   element.transcribeClear.addEventListener("click", clearTranscribeResult);
+}
+
+/**
+ * Says what letting go will do. The file itself cannot be read until the
+ * drop, but its type usually can, so a PDF is told it will be ignored.
+ */
+function showDropOverlay(event: DragEvent): void {
+  const types = Array.from(event.dataTransfer?.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.type);
+  const known = types.filter((type) => type !== "");
+  const notAudio = known.length > 0 && !known.some((type) => type.startsWith("audio/"));
+  const busy = transcribeBusy;
+  element.dropOverlay.dataset.state = notAudio || busy ? "refuse" : "accept";
+  element.dropOverlayTitle.textContent = busy
+    ? "Still transcribing the last file"
+    : notAudio
+      ? "Only audio files can be transcribed"
+      : "Drop to transcribe";
+  element.dropOverlayHint.textContent = busy
+    ? "Drop it again when this one is done."
+    : notAudio
+      ? "WAV, MP3, M4A, and other formats WebKit can decode."
+      : "The audio stays on this Mac.";
+  element.dropOverlay.hidden = false;
 }
 
 async function transcribeAudioFile(file: File): Promise<void> {

@@ -995,14 +995,6 @@ kbd {
   outline: none;
 }
 
-.transcribe-drop.is-dragging {
-  border-color: var(--accent);
-  border-style: solid;
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgb(50 132 208 / 12%), transparent 55%),
-    var(--surface-sunken, rgb(0 0 0 / 3%));
-  color: var(--ink);
-}
 
 .transcribe-drop.is-busy {
   cursor: progress;
@@ -3897,6 +3889,78 @@ select {
 
 @media (prefers-reduced-motion: reduce) {
   .update-pill[data-state="working"] .update-pill-dot {
+    animation: none;
+  }
+}
+
+/* Over the whole window while a file is dragged across it. It takes no
+   pointer events: the drop still lands on the document underneath. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgb(20 20 18 / 32%);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  /* No fill mode: if the fade does not run, the overlay is simply shown. */
+  animation: drop-overlay-in 120ms ease-out;
+}
+
+.drop-overlay[hidden] {
+  display: none;
+}
+
+.drop-overlay-card {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  width: min(420px, 100%);
+  padding: 34px 28px 30px;
+  border: 2px dashed var(--accent);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--ink);
+  text-align: center;
+}
+
+.drop-overlay-card svg {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.drop-overlay-card strong {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.drop-overlay-card span {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.drop-overlay[data-state="refuse"] .drop-overlay-card {
+  border-color: var(--danger);
+}
+
+.drop-overlay[data-state="refuse"] .drop-overlay-card svg {
+  color: var(--danger);
+}
+
+@keyframes drop-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-overlay {
     animation: none;
   }
 }
