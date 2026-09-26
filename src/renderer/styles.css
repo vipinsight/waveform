@@ -1034,6 +1034,12 @@ kbd {
   margin-top: 22px;
 }
 
+/* `display: grid` above outranks the `hidden` attribute, which is how an
+   empty result box with Copy and Clear showed before any file was chosen. */
+.transcribe-result[hidden] {
+  display: none;
+}
+
 .transcribe-result-head {
   display: flex;
   flex-wrap: wrap;

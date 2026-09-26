@@ -70,6 +70,12 @@ describe("stylesheet covers the markup", () => {
    * A failed transcription with held audio is the exception: Retry has to stay
    * reachable without speaking again.
    */
+  // A `display` rule outranks the `hidden` attribute. The Transcribe page
+  // showed an empty result box, with Copy and Clear, before any file.
+  it("hides the transcribe result until there is one", () => {
+    expect(css).toMatch(/\.transcribe-result\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+
   it("keeps accept reachable on a retryable error in hold mode", () => {
     expect(overlayCss).toContain(
       '.hud[data-mode="hold"][data-state="error"][data-retry="true"] .hud-accept',
