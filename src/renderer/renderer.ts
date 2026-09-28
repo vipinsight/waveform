@@ -1117,7 +1117,12 @@ function renderPolishShortcut(shortcut: string): void {
     button.setAttribute("aria-checked", String(button.dataset.shortcut === shortcut));
   }
   const name = document.createElement("strong");
-  name.textContent = shortcut === "none" ? "Off." : nameAccelerator(shortcut);
+  // Written like the Dictation caption's "Right Option (⌥→)": the name, then
+  // the keycap it appears as.
+  name.textContent =
+    shortcut === "none"
+      ? "Off."
+      : `${nameAccelerator(shortcut)} (${describeAccelerator(shortcut).replace(" + ", "")})`;
   element.polishShortcutCaption.replaceChildren(
     name,
     shortcut === "none"

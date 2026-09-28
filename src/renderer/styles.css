@@ -3320,7 +3320,7 @@ select {
 
 .shortcut-keys {
   display: grid;
-  max-width: 520px;
+  max-width: 720px;
   padding: 12px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
@@ -3330,7 +3330,7 @@ select {
 }
 
 .shortcut-key {
-  height: 48px;
+  height: 44px;
   font-size: 16px;
   font-weight: 650;
 }
@@ -3340,8 +3340,12 @@ select {
   color: var(--ink);
 }
 
+/* The same width as the Dictation keyboard's caption, so the sentence runs
+   on one line there and here. */
 .shortcut-picker .keyboard-caption {
-  margin: 12px 0 0;
+  min-height: 0;
+  max-width: 720px;
+  margin: 10px 0 0;
   text-align: left;
 }
 
