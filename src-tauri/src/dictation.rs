@@ -133,7 +133,6 @@ pub struct Dictation {
     accessibility_prompted: Mutex<bool>,
     /// Accelerators currently bound, so each can be released individually.
     /// Releasing all of them would drop Escape along with the polish key.
-    polish_accelerator: Mutex<Option<String>>,
     escape_bound: Mutex<bool>,
     /// The key the helper is watching, used to reject stray events.
     watched_key: Mutex<Option<i64>>,
@@ -205,7 +204,6 @@ impl Dictation {
             polishing: Mutex::new(false),
             polish_cancelled: Mutex::new(false),
             accessibility_prompted: Mutex::new(false),
-            polish_accelerator: Mutex::new(None),
             escape_bound: Mutex::new(false),
             watched_key: Mutex::new(None),
             generation: Mutex::new(0),
@@ -302,6 +300,10 @@ impl Dictation {
                 let running = self.helper.is_running().await;
                 self.patch_status(|status| status.running = running).await;
                 self.apply_settings().await;
+            }
+            HelperEvent::Polish => {
+                let this = self.clone();
+                tauri::async_runtime::spawn(async move { this.polish_selection().await });
             }
             HelperEvent::Key { phase, key_code } => {
                 // The helper already filters, but a stale watch could still
@@ -624,39 +626,12 @@ impl Dictation {
         *bound = false;
     }
 
-    /// Binds the polish accelerator, releasing only the previous one.
+    /// Binds the polish key in the helper. Sent on every settings pass, so a
+    /// restarted helper learns it again.
     pub async fn apply_polish_shortcut(&self, accelerator: &str) {
-        use tauri_plugin_global_shortcut::GlobalShortcutExt;
-        let mut current = self.polish_accelerator.lock().await;
-        if current.as_deref() == Some(accelerator) {
-            return;
-        }
-        if let Some(previous) = current.take() {
-            let _ = self.app.global_shortcut().unregister(previous.as_str());
-        }
-        if accelerator == "none" {
-            return;
-        }
-
-        let app = self.app.clone();
-        let registered = self
-            .app
-            .global_shortcut()
-            .on_shortcut(accelerator, move |_app, _shortcut, event| {
-                if event.state() != tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                    return;
-                }
-                let dictation = app.state::<crate::AppState>().dictation.clone();
-                tauri::async_runtime::spawn(async move {
-                    dictation.polish_selection().await;
-                });
-            })
-            .is_ok();
-        if registered {
-            *current = Some(accelerator.to_string());
-        } else {
-            eprintln!("could not bind the polish shortcut {accelerator}; another app may own it");
-        }
+        self.helper
+            .watch_polish(crate::hotkey::polish_key_code_for(accelerator))
+            .await;
     }
 
     pub async fn on_overlay_state(self: &Arc<Self>, status: DictationStatus) {
@@ -680,7 +655,9 @@ impl Dictation {
 
             if self.settings.lock().await.value().show_flow_bar_always {
                 self.send_to_overlay("idle", "insert", "hold").await;
-            } else {
+            } else if !*self.polishing.lock().await {
+                // A chord's dropped dictation reports idle after polish has
+                // put the circle up for itself; that idle must not take it down.
                 self.hide_overlay();
             }
         }
@@ -855,6 +832,17 @@ impl Dictation {
     pub async fn polish_selection(self: &Arc<Self>) {
         if *self.polishing.lock().await {
             return;
+        }
+        // With Option as the dictation key, ⌥1 begins a dictation before the
+        // 1 arrives. The machine knows a press this young is a chord.
+        let chord = self.gestures.lock().await.chord(Instant::now());
+        if let Some(command) = chord {
+            self.logs.info(
+                &self.app,
+                "polish",
+                "Dropped the dictation the shortcut's modifier had started.",
+            );
+            self.run_command(command).await;
         }
         if self.session.lock().await.is_some() {
             self.report_error("Finish dictating before polishing.").await;

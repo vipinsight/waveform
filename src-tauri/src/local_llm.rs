@@ -383,9 +383,10 @@ impl LocalPolisher {
     /// of it happens on a blocking thread rather than on the async runtime that
     /// is also driving the overlay.
     ///
-    /// `show_examples` is for the selection path: a 0.6B model follows three
-    /// worked corrections better than a page of rules. Dictation cleanup is a
-    /// different job, and those examples would teach it to proofread instead.
+    /// `show_examples` is for the default selection instruction: a 0.6B model
+    /// follows three worked corrections better than a page of rules. Dictation
+    /// cleanup and a person's own instruction are different jobs, and those
+    /// examples would teach it to proofread instead.
     pub async fn rewrite(
         &self,
         id: &str,

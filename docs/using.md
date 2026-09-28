@@ -192,10 +192,13 @@ so the first polish after launch is a second or two slower than the ones after i
 
 These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
 discused the timeline" becomes "we discussed the timeline", "how r u doing"
-becomes "how are you doing" — and on selected text it is shown three worked
-corrections first, because a model this size follows an example better than it
-follows a page of rules. Dictation cleanup is not: those examples are typed
-fixes, and would teach it to proofread speech instead of stripping filler. A
+becomes "how are you doing" — and on selected text, while the Selection
+instruction is the default one, it is shown three worked corrections first,
+because a model this size follows an example better than it follows a page of
+rules. Dictation cleanup is not, and neither is an instruction you wrote: those
+examples are typed fixes, and would teach it to proofread instead of doing what
+was asked. The instruction itself is the same on both engines; what differs is
+how much of it a model this size can carry out. A
 single word on its own is handed back untouched: there is no sentence around it
 to read it against, and a model that guesses pastes a word you never wrote. A
 hosted model has neither limit. Local polish also takes up to 4,000 characters
@@ -224,7 +227,7 @@ exists and replace it, but cannot read it.
 | Feature | What it does |
 | --- | --- |
 | **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
-| **Polish shortcut** (`⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
+| **Polish shortcut** (left `⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
 
 Both run on system prompts you can edit, with **Reset** to restore the defaults,
 and both engines take the same prompts. With OpenRouter selected you can pick

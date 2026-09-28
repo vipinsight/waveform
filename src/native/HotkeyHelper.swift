@@ -6,10 +6,12 @@
 // is frontmost.
 //
 // Commands (stdin)   {"type":"watch","keyCode":63} | {"type":"unwatch"}
+//                    {"type":"polish-key","keyCode":18} | {"type":"polish-key"}
 //                    {"type":"paste","text":"…"} | {"type":"read-selection"}
 //                    {"type":"permissions"}
 //                    {"type":"request","scope":"accessibility"|"input-monitoring"}
 // Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up","keyCode":63}
+//                    {"type":"polish"}
 //                    {"type":"tap","active":true} | {"type":"permissions",…}
 //                    {"type":"paste","ok":true} | {"type":"selection","ok":…}
 
@@ -281,11 +283,113 @@ private final class ModifierWatcher {
   private(set) var watchedKeyCode: Int64?
   private var isDown = false
 
+  /// The polish shortcut: this key with the *left* Option held. A global
+  /// shortcut cannot tell the two Options apart, and the right one is the
+  /// dictation key on most installs, so the shortcut lives here beside the
+  /// modifier watch. Its tap is active, so the keystroke is swallowed rather
+  /// than typing ¡ into the focused app.
+  private var polishTap: CFMachPort?
+  private var polishSource: CFRunLoopSource?
+  private var polishKeyCode: Int64?
+  /// Whether the polish tap can swallow the chord. Without Accessibility only
+  /// a listening tap can be made, and the chord then also types into the app.
+  private var polishSwallows = false
+
   func watch(keyCode: Int64) {
     watchedKeyCode = keyCode
     isDown = false
     if tap == nil { install() }
     startAccessWatch()
+  }
+
+  func watchPolish(keyCode: Int64?) {
+    polishKeyCode = keyCode
+    if keyCode == nil {
+      uninstallPolish()
+      return
+    }
+    if polishTap == nil { installPolish() }
+    startAccessWatch()
+  }
+
+  private static let leftOptionMask: UInt64 = 0x0000_0020
+  private static let rightOptionMask: UInt64 = 0x0000_0040
+
+  /// Swallows the polish chord and reports it; passes every other key through.
+  func handlePolish(event: CGEvent) -> Bool {
+    guard let polishKeyCode,
+          event.getIntegerValueField(.keyboardEventKeycode) == polishKeyCode,
+          event.getIntegerValueField(.keyboardEventAutorepeat) == 0
+    else { return false }
+    let flags = event.flags
+    guard flags.contains(.maskAlternate),
+          !flags.contains(.maskCommand), !flags.contains(.maskControl),
+          flags.rawValue & Self.leftOptionMask != 0,
+          flags.rawValue & Self.rightOptionMask == 0
+    else { return false }
+    emit(["type": "polish"])
+    return true
+  }
+
+  private func installPolish() {
+    let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+    let callback: CGEventTapCallBack = { _, type, event, _ in
+      switch type {
+      case .keyDown:
+        if watcher.handlePolish(event: event) { return nil }
+      case .tapDisabledByTimeout, .tapDisabledByUserInput:
+        watcher.reenablePolish()
+      default:
+        break
+      }
+      return Unmanaged.passUnretained(event)
+    }
+    // Active first, so the chord is consumed. An active tap needs
+    // Accessibility; without it fall back to listening, where polish still
+    // runs but the key also reaches the app.
+    var swallows = true
+    var created = CGEvent.tapCreate(
+      tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+      eventsOfInterest: mask, callback: callback, userInfo: nil)
+    if created == nil {
+      swallows = false
+      created = CGEvent.tapCreate(
+        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+        eventsOfInterest: mask, callback: callback, userInfo: nil)
+    }
+    guard let created else { return }
+    polishSwallows = swallows
+    let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0)
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    CGEvent.tapEnable(tap: created, enable: true)
+    polishTap = created
+    polishSource = source
+  }
+
+  private func uninstallPolish() {
+    if let polishSource {
+      CFRunLoopRemoveSource(CFRunLoopGetMain(), polishSource, .commonModes)
+    }
+    if let polishTap {
+      CGEvent.tapEnable(tap: polishTap, enable: false)
+      CFMachPortInvalidate(polishTap)
+    }
+    polishTap = nil
+    polishSource = nil
+    polishSwallows = false
+  }
+
+  /// Once Accessibility is granted, a listening polish tap is replaced by
+  /// one that swallows the chord.
+  func upgradePolishIfPossible() {
+    guard polishKeyCode != nil, !polishSwallows, hasAccessibility(prompt: false) else { return }
+    uninstallPolish()
+    installPolish()
+  }
+
+  func reenablePolish() {
+    guard let polishTap else { return }
+    CGEvent.tapEnable(tap: polishTap, enable: true)
   }
 
   /// Begins polling without binding a key, so the setup checklist still
@@ -330,8 +434,9 @@ private final class ModifierWatcher {
     accessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
       guard let self else { return }
       emitPermissionsIfChanged()
+      self.upgradePolishIfPossible()
 
-      guard self.watchedKeyCode != nil else { return }
+      guard self.watchedKeyCode != nil || self.polishKeyCode != nil else { return }
       let access = hasInputMonitoring()
       defer { self.hadAccess = access }
       guard access, !self.hadAccess else { return }
@@ -351,6 +456,12 @@ private final class ModifierWatcher {
     runLoopSource = nil
     isDown = false
     install()
+    // Rebuilt for the same reason: a tap made before access was granted
+    // never receives anything.
+    if polishKeyCode != nil {
+      uninstallPolish()
+      installPolish()
+    }
     emitPermissions()
   }
 
@@ -427,6 +538,9 @@ private func handle(command line: String) {
   case "unwatch":
     watcher.unwatch()
     watcher.observePermissions()
+  case "polish-key":
+    let keyCode = payload["keyCode"] as? Int64 ?? (payload["keyCode"] as? Int).map(Int64.init)
+    watcher.watchPolish(keyCode: keyCode)
   case "paste":
     if let text = payload["text"] as? String, !text.isEmpty { pasteIntoFrontmostApp(text) }
   case "read-selection":

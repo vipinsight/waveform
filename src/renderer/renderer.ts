@@ -1037,7 +1037,7 @@ function describeAccelerator(accelerator: string): string {
 /** The same accelerator in words, for under the glyph and for VoiceOver. */
 function nameAccelerator(accelerator: string): string {
   if (accelerator === "none") return "Off";
-  return accelerator.replace("Alt+", "Option + ");
+  return accelerator.replace("Alt+", "Left Option + ");
 }
 
 /**
@@ -1127,7 +1127,7 @@ function renderPolishShortcut(shortcut: string): void {
     name,
     shortcut === "none"
       ? " Pick a key to polish selected text from any app."
-      : " Select text in any app and press it. Nothing selected? It takes the field you are typing in.",
+      : " Select text in any app and press it, with the left Option key. Nothing selected? It takes the field you are typing in.",
   );
   renderPolishDeck();
 }
