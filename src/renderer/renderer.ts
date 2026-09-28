@@ -413,7 +413,7 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
-  host().onOpenMicrophoneSettings(() => openView("dictation"));
+  host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
   host().onOpenModelSettings(() => {
     toggleSettings(false);
     showModelsTab("speech");

@@ -249,19 +249,6 @@
               </p>
           </div>
 
-          <h2 class="section-label">Microphone</h2>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="microphone-select">
-                Listen with
-                <small>Auto uses the built-in mic when there is one, so AirPods connecting does not take over.</small>
-              </label>
-              <span class="row-actions">
-                <select id="microphone-select" aria-label="Microphone"></select>
-              </span>
-            </div>
-          </div>
-
           <h2 class="section-label">AI cleanup</h2>
           <!--
             What stops Active from running, above the choice rather than
@@ -898,6 +885,20 @@
               <path d="M8 12H3" />
             </svg>
             <span>General</span></button>
+        <button class="nav-item" type="button" data-page="audio">
+            <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 19v3" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <rect x="9" y="2" width="6" height="13" rx="3" />
+            </svg>
+            <span>Audio</span></button>
+        <button class="nav-item" type="button" data-page="labs">
+            <svg data-icon="flask-conical" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2" />
+              <path d="M6.453 15h11.094" />
+              <path d="M8.5 2h7" />
+            </svg>
+            <span>Labs</span></button>
         <button class="nav-item" type="button" data-page="logs">
             <svg data-icon="scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M15 12h-5" />
@@ -936,6 +937,51 @@
             </span>
           </div>
           <pre class="log-view" id="log-view" aria-live="polite" aria-label="Log"></pre>
+        </section>
+
+        <!--
+          Which microphone listens. Set once and then left alone, so it sits in
+          Settings rather than on the Dictation page beside the key and the
+          cleanup, which people come back to.
+        -->
+        <section class="settings-page" data-page="audio" hidden>
+          <h1 class="display">Audio</h1>
+
+          <h2 class="section-label">Microphone</h2>
+          <div class="card">
+            <div class="row">
+              <label class="row-label" for="microphone-select">
+                Listen with
+                <small>Auto uses the built-in mic when there is one, so AirPods connecting does not take over.</small>
+              </label>
+              <span class="row-actions">
+                <select id="microphone-select" aria-label="Microphone"></select>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <!--
+          Features still in development, kept off General so an unfinished one
+          is never mistaken for an ordinary setting.
+        -->
+        <section class="settings-page" data-page="labs" hidden>
+          <h1 class="display">Labs</h1>
+          <p class="note">Features still being built. They may change or go away between releases.</p>
+
+          <h2 class="section-label">Audio files</h2>
+          <div class="card">
+            <label class="row">
+              <span class="row-label">
+                <span class="row-title">Transcribe dropped audio <span class="nav-tag">Beta</span></span>
+                <small>
+                  Drop an audio file anywhere on the window to get its text, saved to
+                  Transcripts. Still in development, so it may change.
+                </small>
+              </span>
+              <span class="row-actions"><input id="transcribe-drop-toggle" type="checkbox" class="switch" /></span>
+            </label>
+          </div>
         </section>
 
         <section class="settings-page" data-page="general">
@@ -979,20 +1025,6 @@
             <label class="row">
               <span class="row-label">Start Waveform when you log in</span>
               <span class="row-actions"><input id="launch-at-login-toggle" type="checkbox" class="switch" /></span>
-            </label>
-          </div>
-
-          <h2 class="section-label">Audio files</h2>
-          <div class="card">
-            <label class="row">
-              <span class="row-label">
-                <span class="row-title">Transcribe dropped audio <span class="nav-tag">Beta</span></span>
-                <small>
-                  Drop an audio file anywhere on the window to get its text, saved to
-                  Transcripts. Still in development, so it may change.
-                </small>
-              </span>
-              <span class="row-actions"><input id="transcribe-drop-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
 

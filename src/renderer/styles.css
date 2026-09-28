@@ -1429,6 +1429,7 @@ kbd {
    is already the gap. */
 .display + .section-label,
 .view-head + .section-label,
+.dictation-deck + .section-label,
 .lede + .section-label {
   margin-top: 0;
 }
@@ -3635,28 +3636,31 @@ select {
    squeezed it to half the page. Full width, taller keys, larger glyphs. */
 .dictation-key {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .dictation-key .keyboard {
   width: 100%;
   max-width: 720px;
   margin-inline: 0;
-  padding: 14px;
-  gap: 8px;
+  padding: 10px;
+  gap: 6px;
 }
 
 .dictation-key .keyboard-row {
-  gap: 8px;
+  gap: 6px;
 }
 
 .dictation-key .keyboard-key {
-  height: 52px;
+  height: 44px;
   border-radius: 9px;
   font-size: 16px;
 }
 
+/* The wizard holds two lines so its Continue button stays put; here nothing
+   sits below that could move, and the held line was only empty space. */
 .dictation-key .keyboard-caption {
+  min-height: 0;
   max-width: 720px;
   margin: 0;
   text-align: left;
