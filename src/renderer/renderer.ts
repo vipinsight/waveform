@@ -1,6 +1,7 @@
 import type {
   AiStatus,
   AppStats,
+  DictationStatus,
   ModelFit,
   SavedDictation,
   DictationUpdate,
@@ -40,11 +41,7 @@ import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
-import {
-  DEFAULT_POLISH_PROMPT,
-  SUGGESTED_MODELS,
-  transformPromptFor,
-} from "../shared/prompts";
+import { SUGGESTED_MODELS, openRouterModelName } from "../shared/prompts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
@@ -137,25 +134,29 @@ const element = {
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
-  polishLevels: requireElement<HTMLElement>("polish-levels"),
-  cleanupWhat: requireElement<HTMLElement>("cleanup-what"),
-  cleanupTyped: requireElement<HTMLElement>("cleanup-typed"),
-  polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
+  aiModelCustom: requireElement<HTMLInputElement>("ai-model-custom"),
+  aiModelUse: requireElement<HTMLButtonElement>("ai-model-use"),
+  aiModelHint: requireElement<HTMLElement>("ai-model-hint"),
+  polishSelectionWhat: requireElement<HTMLElement>("polish-selection-what"),
+  polishEngineNote: requireElement<HTMLElement>("polish-engine-note"),
   polishModelLine: requireElement<HTMLElement>("polish-model-line"),
-  polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
-  polishBlockerAction: requireElement<HTMLButtonElement>("polish-blocker-action"),
-  modelTabs: requireElement<HTMLElement>("model-tabs"),
-  speechKindCurrent: requireElement<HTMLElement>("speech-kind-current"),
-  speechKindState: requireElement<HTMLElement>("speech-kind-state"),
-  polishKindCurrent: requireElement<HTMLElement>("polish-kind-current"),
-  polishKindState: requireElement<HTMLElement>("polish-kind-state"),
-  modelsSpeech: requireElement<HTMLElement>("models-speech"),
-  modelsPolish: requireElement<HTMLElement>("models-polish"),
-  transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
-  transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
-  polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
+  polishEnable: requireElement<HTMLButtonElement>("polish-enable"),
+  polishDictationToggle: requireElement<HTMLInputElement>("polish-dictation-toggle"),
+  polishModelSummary: requireElement<HTMLElement>("polish-model-summary"),
+  tryKey: requireElement<HTMLElement>("try-key"),
+  deckTry: requireElement<HTMLButtonElement>("deck-try"),
+  tryModal: requireElement<HTMLElement>("try-modal"),
+  tryField: requireElement<HTMLTextAreaElement>("try-field"),
+  tryResult: requireElement<HTMLElement>("try-result"),
+  tryAgain: requireElement<HTMLButtonElement>("try-again"),
+  tryDone: requireElement<HTMLButtonElement>("try-done"),
+  tryClose: requireElement<HTMLButtonElement>("try-close"),
+  accuracyRungs: requireElement<HTMLElement>("accuracy-rungs"),
+  accuracyModel: requireElement<HTMLElement>("accuracy-model"),
+  accuracyFacts: requireElement<HTMLElement>("accuracy-facts"),
+  accuracyAction: requireElement<HTMLElement>("accuracy-action"),
+  accuracyNote: requireElement<HTMLElement>("accuracy-note"),
   polishShortcut: requireElement<HTMLElement>("polish-shortcut"),
-  polishShortcutCaption: requireElement<HTMLElement>("polish-shortcut-caption"),
   polishDeckStatus: requireElement<HTMLElement>("polish-deck-status"),
   polishDeckTitle: requireElement<HTMLElement>("polish-deck-title"),
   polishDeckDescription: requireElement<HTMLElement>("polish-deck-description"),
@@ -164,12 +165,6 @@ const element = {
   polishDeckDictation: requireElement<HTMLElement>("polish-deck-dictation"),
   polishEngine: requireElement<HTMLElement>("polish-engine"),
   polishModelList: requireElement<HTMLElement>("polish-model-list"),
-  promptEditor: requireElement<HTMLElement>("prompt-editor"),
-  promptEditorTitle: requireElement<HTMLElement>("prompt-editor-title"),
-  promptEditorWhere: requireElement<HTMLElement>("prompt-editor-where"),
-  promptEditorBody: requireElement<HTMLTextAreaElement>("prompt-editor-body"),
-  promptEditorReset: requireElement<HTMLButtonElement>("prompt-editor-reset"),
-  promptEditorSave: requireElement<HTMLButtonElement>("prompt-editor-save"),
   wizard: requireElement<HTMLElement>("wizard"),
   wizardBrand: requireElement<HTMLElement>("wizard-brand"),
   wizardNext: requireElement<HTMLButtonElement>("wizard-next"),
@@ -270,9 +265,6 @@ let updateNotesVersion: string | null = null;
 let logLines: LogLine[] = [];
 let settingsOpen = false;
 /** Which instruction the popup is editing, if any. */
-let promptEditorKind: "transform" | "polish" | null = null;
-/** Whether closing the popup should put the settings panel back where it was. */
-let promptEditorFromSettings = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
 /**
@@ -307,6 +299,14 @@ let wizardStep: WizardStep | null = null;
  * time a prefetch finishes, which is the only thing that changes it.
  */
 let wizardCatalog = new Map<string, ModelStatus>();
+/** The speech download in flight, for the accuracy line: which, how far. */
+let speechProgress: { id: string; percent: number } | null = null;
+/**
+ * The stop that was pressed while its model was still arriving. The line
+ * under the stops follows this rather than the model in use, so pressing
+ * Fastest shows Fastest downloading, not Accurate installed.
+ */
+let accuracyTarget: SpeechModelId | null = null;
 /**
  * Models the wizard is fetching without being asked, in the order it wants
  * them. The host runs one download at a time -- a second call while one is
@@ -346,6 +346,13 @@ let polishPercent = 0;
  * rung is whichever one it is nearest; letting go snaps it onto that rung.
  */
 let ladderIndex: number = DEFAULT_LADDER_INDEX;
+
+/**
+ * The OpenRouter model list's last entry: an id typed in rather than picked.
+ * Above the bootstrap call, which runs `populateSelects` before the rest of
+ * this file's constants exist.
+ */
+const CUSTOM_MODEL = "__custom";
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -414,10 +421,7 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
-  host().onOpenModelSettings(() => {
-    toggleSettings(false);
-    showModelsTab("speech");
-  });
+  host().onOpenModelSettings(() => openView("dictation"));
   host().onOpenShortcutSettings(() => openView("dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
@@ -463,24 +467,29 @@ function wireEvents(): void {
     renderSidebarCollapsed();
     void patchSettings({ sidebarCollapsed: collapsed });
   });
-  element.scrim.addEventListener("click", () => {
-    if (promptEditorKind) togglePromptEditor(false);
-    else toggleSettings(false);
-  });
+  element.scrim.addEventListener("click", () => toggleSettings(false));
   element.deckSettings.addEventListener("click", () => openView("dictate"));
+  element.deckTry.addEventListener("click", () => openTry());
+  element.tryDone.addEventListener("click", () => closeTry());
+  element.tryClose.addEventListener("click", () => closeTry());
+  element.tryAgain.addEventListener("click", () => {
+    element.tryField.value = "";
+    setTryStage("ready");
+    element.tryField.focus();
+  });
+  // The paste is what lands the words; the field noticing is what says so.
+  element.tryField.addEventListener("input", () => {
+    if (element.tryField.value.trim() !== "") setTryStage("done");
+  });
+  element.tryField.addEventListener("focus", () => {
+    if (element.tryModal.dataset.stage === "ready") setTryStage("focused");
+  });
 
   bindDropTranscribe();
 
-  // Tabs on the Models page, and the links elsewhere that open one of them.
-  // Delegated: the AI Polish hint rebuilds its link whenever the status does.
+  // Links between pages, delegated: the cards that carry them are rebuilt.
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
-    const tab = target.closest<HTMLElement>("[data-model-tab], [data-open-models]");
-    const kind = tab?.dataset.modelTab ?? tab?.dataset.openModels;
-    if (kind === "speech" || kind === "polish") {
-      showModelsTab(kind);
-      return;
-    }
     const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
     if (view) {
       if (settingsOpen) toggleSettings(false);
@@ -504,8 +513,12 @@ function wireEvents(): void {
   }
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (promptEditorKind) togglePromptEditor(false);
-    else if (settingsOpen) toggleSettings(false);
+    // Escape mid-dictation cancels the phrase; that is the helper's, not ours.
+    if (!element.tryModal.hidden) {
+      if (element.tryModal.dataset.stage !== "listening") closeTry();
+      return;
+    }
+    if (settingsOpen) toggleSettings(false);
   });
 
   element.modelList.addEventListener("click", (event) => {
@@ -581,6 +594,32 @@ function wireEvents(): void {
     void patchSettings({ localModelId: id });
   });
 
+  // A rung is a request for speed or accuracy; the model that answers it is
+  // the best one this Mac can hold, and it is fetched if it is not here.
+  element.accuracyRungs.addEventListener("click", (event) => {
+    const rung = (event.target as HTMLElement).closest<HTMLElement>("[data-rung]")?.dataset.rung;
+    if (rung === undefined) return;
+    const choice = chooseModel(Number(rung), (id) => wizardCatalog.get(id)?.fit ?? null);
+    if (isHere(choice.id)) {
+      accuracyTarget = null;
+      if (choice.id !== settings.modelId) void host().selectModel(choice.id);
+      else renderAccuracy();
+      return;
+    }
+    accuracyTarget = choice.id;
+    void downloadModel(choice.id, { useWhenReady: true });
+  });
+  element.accuracyAction.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const fetch = target.closest<HTMLElement>("[data-fetch]")?.dataset.fetch;
+    if (fetch && isSpeechModelId(fetch)) {
+      void downloadModel(fetch, { useWhenReady: true });
+      return;
+    }
+    if (target.closest("[data-cancel-download]")) void host().cancelModelDownload();
+    const unqueue = target.closest<HTMLElement>("[data-cancel-queued]")?.dataset.cancelQueued;
+    if (unqueue && isSpeechModelId(unqueue)) cancelQueuedDownload(unqueue);
+  });
   element.speechLanguage.addEventListener("change", () => {
     const value = element.speechLanguage.value;
     if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
@@ -613,22 +652,54 @@ function wireEvents(): void {
   // more, so a half-pasted key cannot be committed by a stray keystroke.
   element.keySave.addEventListener("click", saveApiKey);
   element.keyRemove.addEventListener("click", removeApiKey);
-  element.aiModel.addEventListener("change", () => {
+  const onModelPicked = () => {
+    if (element.aiModel.value === CUSTOM_MODEL) {
+      // Nothing is written until an id is typed; the list keeps showing the
+      // model still in use if the field is left empty.
+      showCustomModelField(true);
+      element.aiModelCustom.focus();
+      return;
+    }
+    showCustomModelField(false);
     void patchSettings({ openRouterModel: element.aiModel.value });
+  };
+  // Both: WKWebView's native popup has reported one without the other.
+  element.aiModel.addEventListener("change", onModelPicked);
+  element.aiModel.addEventListener("input", onModelPicked);
+  const useCustomModel = () => {
+    const id = element.aiModelCustom.value.trim();
+    if (!id) return;
+    void patchSettings({ openRouterModel: id });
+  };
+  element.aiModelUse.addEventListener("click", useCustomModel);
+  element.aiModelCustom.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") useCustomModel();
   });
-  // A level is also an instruction, so choosing one writes that instruction.
-  // An edit made to the previous level's text is not carried across: it was
-  // written about a different amount of rewriting. None writes nothing, so
-  // turning polish off and on again leaves an edited instruction alone.
-  element.polishLevels.addEventListener("click", (event) => {
-    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
-    const level = card?.dataset.level;
-    if (!isPolishLevel(level) || level === settings.polishLevel) return;
-    void patchSettings(
-      level === "none"
-        ? { polishLevel: level }
-        : { polishLevel: level, transformPrompt: transformPromptFor(level) },
-    );
+  element.polishDictationToggle.addEventListener("change", () => {
+    const level: PolishLevel = element.polishDictationToggle.checked ? "light" : "none";
+    if (level === settings.polishLevel) return;
+    void patchSettings({ polishLevel: level });
+  });
+  // The one thing standing between the switch and On, done from the switch's
+  // own row. A download that lands turns the switch on: pressing it was the
+  // ask.
+  element.polishEnable.addEventListener("click", () => {
+    if (!aiStatus) return;
+    if (aiStatus.engine === "local") {
+      if (polishDownloading) {
+        void host().cancelPolishModelDownload();
+        return;
+      }
+      void downloadPolishModel(aiStatus.localModelId).then(async () => {
+        const status = await host().getAiStatus();
+        if (status.localReady && settings.polishLevel === "none") {
+          await patchSettings({ polishLevel: "light" });
+        }
+      });
+      return;
+    }
+    element.keyInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.keyInput.focus();
   });
   element.polishShortcut.addEventListener("click", (event) => {
     const shortcut = (event.target as HTMLElement).closest<HTMLElement>("[data-shortcut]")
@@ -636,29 +707,6 @@ function wireEvents(): void {
     if (shortcut && shortcut !== settings.polishShortcut) {
       void patchSettings({ polishShortcut: shortcut });
     }
-  });
-  for (const card of Array.from(
-    document.querySelectorAll<HTMLButtonElement>(".prompt-card[data-prompt]"),
-  )) {
-    card.addEventListener("click", () => {
-      const kind = card.dataset.prompt;
-      if (kind === "transform" || kind === "polish") togglePromptEditor(true, kind);
-    });
-  }
-  element.promptEditorReset.addEventListener("click", () => {
-    if (!promptEditorKind) return;
-    element.promptEditorBody.value =
-      promptEditorKind === "transform"
-        ? transformPromptFor(settings.polishLevel)
-        : DEFAULT_POLISH_PROMPT;
-    element.promptEditorBody.focus();
-  });
-  element.promptEditorSave.addEventListener("click", () => {
-    if (!promptEditorKind) return;
-    const value = element.promptEditorBody.value;
-    const patch =
-      promptEditorKind === "transform" ? { transformPrompt: value } : { polishPrompt: value };
-    void patchSettings(patch).then(() => togglePromptEditor(false));
   });
 
   element.menubarToggle.addEventListener("change", () => {
@@ -759,22 +807,24 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "overview", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
-  // Both lists describe files on the disk, which arrive while the section is
+  // Both lists describe files on the disk, which arrive while the page is
   // closed -- from a download here, or from a terminal -- so each is re-read on
-  // the way in rather than trusted from startup.
-  if (view === "models") {
-    if (modelsTab === "polish") void renderPolishModels();
-    else void renderModels();
+  // the way in rather than trusted from startup. The switch says what it
+  // needs before it can run, and that is a key or a download that could have
+  // arrived while the page was closed.
+  if (view === "ai") {
+    void host().getAiStatus().then(renderAiStatus);
+    if (settings.polishEngine === "local") void renderPolishModels();
   }
-  // The levels say what they need before they can run, and what they need is
-  // a key or a download that could have arrived while the section was closed.
-  if (view === "ai") void host().getAiStatus().then(renderAiStatus);
   // Labels are what name the devices, and WebKit hands them over only once
   // the microphone has been asked for.
-  if (view === "dictation") void refreshMicrophones(true);
+  if (view === "dictation") {
+    void renderModels();
+    void refreshMicrophones(true);
+  }
 }
 
 /** Shows a section of the window, closing Settings if it is over it. */
@@ -783,77 +833,17 @@ function openView(view: string): void {
   showView(view);
 }
 
-/** Which half of the Models page is up: voice to text, or rewriting text. */
-let modelsTab: "speech" | "polish" = "speech";
-
-/** Opens the Models page on one kind of model, closing Settings if it is up. */
-function showModelsTab(tab: "speech" | "polish"): void {
-  modelsTab = tab;
-  for (const button of Array.from(
-    element.modelTabs.querySelectorAll<HTMLElement>("[data-model-tab]"),
-  )) {
-    const active = button.dataset.modelTab === tab;
-    button.setAttribute("aria-selected", String(active));
-  }
-  element.modelsSpeech.hidden = tab !== "speech";
-  element.modelsPolish.hidden = tab !== "polish";
-  if (settingsOpen) toggleSettings(false);
-  showView("models");
-}
-
-/**
- * Names the polish model on the AI Polish page, since that is where the
- * level it serves is chosen -- and "which model" was otherwise only answered
- * two screens away.
- */
+/** Where polish runs and with what, on the card and on the fold under it. */
 function renderPolishModelLine(): void {
-  element.polishModelLine.textContent =
-    settings.polishEngine === "local"
-      ? `${polishModelLabel(settings.localModelId)}, on this Mac`
-      : `${settings.openRouterModel}, through OpenRouter`;
-  renderModelKinds();
+  const local = settings.polishEngine === "local";
+  element.polishModelLine.textContent = local
+    ? `This Mac, privately (${polishModelLabel(settings.localModelId)})`
+    : `Online through OpenRouter (${openRouterModelName(settings.openRouterModel)})`;
+  element.polishModelSummary.textContent = local
+    ? polishModelLabel(settings.localModelId)
+    : openRouterModelName(settings.openRouterModel);
   renderPolishDeck();
 }
-
-/**
- * The two cards at the top of the Models page: which model each kind is set
- * to, and the one thing standing between it and working, if anything.
- */
-function renderModelKinds(): void {
-  element.speechKindCurrent.textContent = getSpeechModel(settings.modelId).label;
-  setKindState(
-    element.speechKindState,
-    setupKnown && !modelInstalled ? "Not downloaded yet" : "In use",
-    setupKnown && !modelInstalled,
-  );
-
-  const local = settings.polishEngine === "local";
-  element.polishKindCurrent.textContent = local
-    ? `${polishModelLabel(settings.localModelId)}, on this Mac`
-    : `${settings.openRouterModel}, through OpenRouter`;
-  const level = settings.polishLevel;
-  const missing = local
-    ? aiStatus !== null && !aiStatus.localReady
-      ? "Not downloaded yet"
-      : null
-    : aiStatus !== null && !aiStatus.hasApiKey
-      ? "Needs an OpenRouter key"
-      : null;
-  if (level === "none") {
-    setKindState(element.polishKindState, "Off: AI Polish is set to None", false);
-  } else if (missing) {
-    setKindState(element.polishKindState, missing, true);
-  } else {
-    setKindState(element.polishKindState, "In use", false);
-  }
-}
-
-function setKindState(target: HTMLElement, text: string, attention: boolean): void {
-  target.textContent = text;
-  if (attention) target.dataset.tone = "attention";
-  else delete target.dataset.tone;
-}
-
 
 function polishModelLabel(id: string): string {
   return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
@@ -942,16 +932,19 @@ function applySettings(next: AppSettings): void {
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
-  // A model chosen before this list existed is still a valid choice, so it is
-  // added rather than silently swapped for the first option.
-  if (!SUGGESTED_MODELS.some((model) => model === next.openRouterModel)) {
-    element.aiModel.append(new Option(next.openRouterModel, next.openRouterModel));
+  // A model typed in, or chosen before this list existed, is still a valid
+  // choice, so it is listed rather than silently swapped for the first option.
+  if (!Array.from(element.aiModel.options).some((option) => option.value === next.openRouterModel)) {
+    element.aiModel.insertBefore(
+      new Option(next.openRouterModel, next.openRouterModel),
+      element.aiModel.querySelector(`option[value="${CUSTOM_MODEL}"]`),
+    );
   }
   element.aiModel.value = next.openRouterModel;
+  showCustomModelField(false);
   renderPolishEngine(next.polishEngine);
   renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
-  renderPromptPreviews(next);
   renderPolishShortcut(next.polishShortcut);
   renderThemeToggle(next.theme);
 
@@ -973,18 +966,18 @@ function populateSelects(): void {
   for (const accelerator of POLISH_SHORTCUTS) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "keyboard-key shortcut-key";
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", "false");
     button.setAttribute("aria-label", nameAccelerator(accelerator));
     button.dataset.shortcut = accelerator;
-    // A keycap, so the glyphs alone: "⌥1". The card and caption spell it out.
+    // The glyphs alone: "⌥1". The row's own line spells it out.
     button.textContent = describeAccelerator(accelerator).replace(" + ", "");
     element.polishShortcut.append(button);
   }
   for (const model of SUGGESTED_MODELS) {
-    element.aiModel.append(new Option(model, model));
+    element.aiModel.append(new Option(openRouterModelName(model), model));
   }
+  element.aiModel.append(new Option("Other…", CUSTOM_MODEL));
 }
 
 /**
@@ -1028,6 +1021,13 @@ function renderMicrophoneSelect(): void {
   element.microphoneSelect.value = selected;
 }
 
+function showCustomModelField(open: boolean): void {
+  element.aiModelCustom.hidden = !open;
+  element.aiModelUse.hidden = !open;
+  element.aiModelHint.hidden = !open;
+  if (!open) element.aiModelCustom.value = "";
+}
+
 /** Renders an Electron accelerator the way macOS writes it. */
 function describeAccelerator(accelerator: string): string {
   if (accelerator === "none") return "Off";
@@ -1068,39 +1068,34 @@ function renderAiStatus(status: AiStatus): void {
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
 
-  // Nothing above None can run until there is something to run it with, so
-  // the levels that need one say where to get it rather than being selectable
-  // and then quietly doing nothing.
-  const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
+  // Nothing can run until there is something to run it with. Rather than a
+  // switch that will not move, the row offers the one thing missing -- a
+  // download, or a key -- in the words of someone who has not met a model.
   const local = status.engine === "local";
-  element.polishBlockerText.textContent = local
-    ? `Active needs ${polishModelLabel(status.localModelId)} on this Mac.`
-    : "Active needs an OpenRouter key.";
-  element.polishBlockerAction.textContent = local ? "Download it" : "Add a key";
-  element.polishLevelHint.hidden = ready;
-  renderModelKinds();
-  for (const card of polishLevelCards()) {
-    card.disabled = !ready && card.dataset.level !== "none";
-  }
+  const ready = local ? status.localReady : status.hasApiKey;
+  element.polishDictationToggle.hidden = !ready;
+  element.polishEnable.hidden = ready;
+  if (!ready) renderPolishEnable();
   renderPolishDeck();
 }
 
-function polishLevelCards(): HTMLButtonElement[] {
-  return Array.from(element.polishLevels.querySelectorAll<HTMLButtonElement>("[data-level]"));
+/** The button in the switch's place, and what it is doing. */
+function renderPolishEnable(): void {
+  if (!aiStatus) return;
+  if (aiStatus.engine !== "local") {
+    element.polishEnable.textContent = "Add a key";
+    return;
+  }
+  if (polishDownloading) {
+    element.polishEnable.textContent = `${polishPercent}% · Cancel`;
+    return;
+  }
+  element.polishEnable.textContent =
+    polishDownloadSize === "" ? "Download the model" : `Download (${polishDownloadSize})`;
 }
 
 function renderPolishLevel(level: PolishLevel): void {
-  for (const card of polishLevelCards()) {
-    card.setAttribute("aria-checked", String(card.dataset.level === level));
-  }
-  element.cleanupWhat.textContent =
-    level === "none"
-      ? "Off: typed exactly as you said it, mistakes included."
-      : "Filler words and grammar fixed, by the model on the AI Polish page.";
-  element.cleanupTyped.textContent =
-    level === "none"
-      ? "so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done"
-      : "I was thinking maybe we could push the demo to Thursday. The API stuff isn't quite done.";
+  element.polishDictationToggle.checked = level !== "none";
 }
 
 /**
@@ -1116,19 +1111,10 @@ function renderPolishShortcut(shortcut: string): void {
   )) {
     button.setAttribute("aria-checked", String(button.dataset.shortcut === shortcut));
   }
-  const name = document.createElement("strong");
-  // Written like the Dictation caption's "Right Option (⌥→)": the name, then
-  // the keycap it appears as.
-  name.textContent =
+  element.polishSelectionWhat.textContent =
     shortcut === "none"
-      ? "Off."
-      : `${nameAccelerator(shortcut)} (${describeAccelerator(shortcut).replace(" + ", "")})`;
-  element.polishShortcutCaption.replaceChildren(
-    name,
-    shortcut === "none"
-      ? " Pick a key to polish selected text from any app."
-      : " Select text in any app and press it, with the left Option key. Nothing selected? It takes the field you are typing in.",
-  );
+      ? "Off. Pick a shortcut to fix selected text in place, in any app."
+      : `Select some text and press ${nameAccelerator(shortcut)}. Nothing selected? It takes the field you are typing in.`;
   renderPolishDeck();
 }
 
@@ -1163,7 +1149,7 @@ function renderPolishDeck(): void {
   element.polishDeckKeyLabel.textContent = shortcut === "none" ? "Shortcut" : "Press";
   element.polishDeckKey.textContent = describeAccelerator(shortcut).replace(" + ", "");
   element.polishDeckDictation.textContent =
-    settings.polishLevel === "none" ? "Inserted as spoken" : "Cleaned up before it is typed";
+    settings.polishLevel === "none" ? "Typed as spoken" : "Polished before they are typed";
 }
 
 function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
@@ -1177,6 +1163,10 @@ function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
   )) {
     section.hidden = section.dataset.engineOnly !== engine;
   }
+  element.polishEngineNote.textContent =
+    engine === "local"
+      ? "Private and free. A small model is downloaded once; nothing you write leaves this Mac."
+      : "Better results from a larger model, through OpenRouter. Needs a free key, and sends only the text being polished.";
   if (engine === "local") void renderPolishModels();
   // Switching engines changes what "ready" means, and the rows that say so were
   // drawn for the other one.
@@ -1196,6 +1186,20 @@ async function renderPolishModels(): Promise<void> {
   const catalog = await host().getPolishModelCatalog().catch(() => []);
   element.polishModelList.replaceChildren(...catalog.map(polishModelRow));
 }
+
+/**
+ * What each local model is for, in the terms someone choosing would use.
+ *
+ * The rows carry a size and a memory figure, which is a comparison for
+ * somebody who knows what 0.6B and Q4 mean and nothing at all for somebody
+ * who does not. One sentence says which to pick.
+ */
+const POLISH_MODEL_ADVICE: Record<string, string> = {
+  "qwen3-0.6b-q4": "The smallest, and enough for tidying dictations.",
+  "qwen3-0.6b-q8": "The same model, a touch more precise, for a little more memory.",
+  "qwen3-1.7b-q4": "Better with long or messy text. Wants a Mac with 16 GB.",
+  "qwen3-4b-q4": "The best rewrites here, and the slowest. Wants 16 GB or more.",
+};
 
 function polishModelRow(model: PolishModelStatus): HTMLElement {
   const size = formatBytes(model.downloadBytes);
@@ -1238,6 +1242,13 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
   const body = document.createElement("span");
   body.className = "model-body";
   body.append(name, factLine);
+  const advice = POLISH_MODEL_ADVICE[model.id];
+  if (advice) {
+    const detail = document.createElement("small");
+    detail.className = "model-detail";
+    detail.textContent = advice;
+    body.append(detail);
+  }
 
   const row = document.createElement("div");
   row.className = "model-row";
@@ -1246,11 +1257,9 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
   row.append(pick, body);
 
   if (model.installed && model.selected) {
-    const tag = document.createElement("span");
-    tag.className = "model-tag";
-    tag.dataset.ready = "true";
-    tag.textContent = "In use";
-    row.append(tag);
+    row.append(tag("In use", "ready"));
+  } else if (model.id === DEFAULT_POLISH_MODEL_ID) {
+    row.append(tag("Recommended", "recommended"));
   }
 
   if (busy) {
@@ -1274,6 +1283,8 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
 async function downloadPolishModel(id: string): Promise<void> {
   if (polishDownloading) return;
   polishDownloading = id;
+  polishPercent = 0;
+  renderPolishEnable();
   await renderPolishModels();
   try {
     await host().downloadPolishModel(id);
@@ -1304,6 +1315,7 @@ function showPolishDownloadProgress(event: ModelEvent): void {
     action.textContent = `${polishPercent}%`;
     action.disabled = true;
   }
+  if (!element.polishEnable.hidden) renderPolishEnable();
   if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
     const percent = polishPercent;
     element.wizardLocalTrack.classList.toggle("is-reserved", event.stage !== "downloading");
@@ -1382,6 +1394,7 @@ function renderHotkeyLabels(): void {
   const binding = getHotkeyBinding(settings.hotkeyId);
   const glyph = binding ? hotkeyKeycap(binding) : "—";
   element.hintKey.textContent = glyph;
+  element.tryKey.textContent = glyph;
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
@@ -1503,7 +1516,7 @@ async function refreshModelInstalled(): Promise<void> {
   setupKnown = true;
   renderSetup();
   renderDictationDeck();
-  renderModelKinds();
+  renderAccuracy();
 }
 
 /**
@@ -1632,6 +1645,10 @@ function renderSidebarCollapsed(): void {
 async function renderModels(): Promise<void> {
   const catalog = await host().getModelCatalog().catch(() => []);
 
+  // The accuracy stops read fit and presence from the same catalogue.
+  wizardCatalog = new Map(catalog.map((model) => [model.id, model]));
+  renderAccuracy();
+
   // Group headings come from the catalogue in its own order, so the interface
   // does not hold a second opinion about which groups exist.
   const groups = catalog.reduce<{ heading: string; models: ModelStatus[] }[]>((all, model) => {
@@ -1662,6 +1679,105 @@ async function renderModels(): Promise<void> {
 }
 
 /**
+ * The five stops and the model the chosen one resolves to.
+ *
+ * The stop is marked from the model in use, so a model picked from the full
+ * table that is not on the ladder leaves every stop unmarked and names
+ * itself on the line below. The line carries what the choice costs and the
+ * one thing that may still need doing: the download.
+ */
+function renderAccuracy(): void {
+  // A stop pressed for a model still on its way is the one described, until
+  // the download lands (and selects it) or is cancelled.
+  if (
+    accuracyTarget !== null &&
+    downloading !== accuracyTarget &&
+    !isQueued(accuracyTarget)
+  ) {
+    accuracyTarget = null;
+  }
+  const focus: SpeechModelId = accuracyTarget ?? settings.modelId;
+  const at = ladderIndexOf(focus);
+  element.accuracyRungs.replaceChildren(
+    ...MODEL_LADDER.map((rung, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "rung";
+      button.dataset.rung = String(index);
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(index === at));
+      if (index === at && accuracyTarget !== null) button.dataset.pending = "true";
+      const name = document.createElement("span");
+      name.className = "rung-name";
+      name.textContent = rung.name;
+      if (index === DEFAULT_LADDER_INDEX) {
+        const mark = document.createElement("span");
+        mark.className = "rung-tag";
+        mark.textContent = "Recommended";
+        name.append(mark);
+      }
+      const what = document.createElement("span");
+      what.className = "rung-what";
+      what.textContent = rung.trade;
+      button.append(name, what);
+      return button;
+    }),
+  );
+
+  const chosen = wizardCatalog.get(focus);
+  const label = getSpeechModel(focus).label;
+  element.accuracyModel.textContent = at === null ? `${label} (from the full list)` : label;
+  const facts = [
+    chosen?.wer != null ? `about ${chosen.wer.toFixed(1)} words in 100 wrong` : "",
+    chosen?.downloadBytes != null ? formatBytes(chosen.downloadBytes) : "",
+    chosen ? `${formatMemory(chosen.memoryMb)} of memory while loaded` : "",
+  ].filter((part) => part !== "");
+  element.accuracyFacts.textContent = facts.join(" · ");
+
+  // Whether the words are here, or on their way.
+  const action = element.accuracyAction;
+  const here = chosen ? chosen.runtimeInstalled && chosen.weightsInstalled : false;
+  const busy = downloading === focus;
+  const queued = !busy && isQueued(focus);
+  if (busy) {
+    const controls = cancelDownloadButton();
+    const progress = controls.querySelector(".model-progress");
+    if (progress) {
+      progress.textContent =
+        speechProgress?.id === focus ? `Downloading ${speechProgress.percent}%` : "Downloading…";
+    }
+    action.replaceChildren(controls);
+  } else if (queued) {
+    action.replaceChildren(queuedDownloadControls(focus, label));
+  } else if (here) {
+    const state = document.createElement("span");
+    state.className = "model-tag";
+    state.dataset.ready = "true";
+    state.textContent = focus === settings.modelId ? "Installed" : "Ready";
+    action.replaceChildren(state);
+  } else if (chosen && chosen.downloadBytes !== null) {
+    action.replaceChildren(fetchButton(focus, label, formatBytes(chosen.downloadBytes)));
+  } else {
+    const state = document.createElement("span");
+    state.className = "model-tag";
+    state.textContent = chosen ? "Needs a terminal" : "Not downloaded";
+    action.replaceChildren(state);
+  }
+
+  // The stop asked for is not always the model answering it: a Mac that
+  // cannot hold the model is stepped down, and that is said, not hidden.
+  const asked = at === null ? null : chooseModel(at, (id) => wizardCatalog.get(id)?.fit ?? null);
+  element.accuracyNote.hidden = true;
+  if (chosen && chosen.fit === "too-large") {
+    element.accuracyNote.hidden = false;
+    element.accuracyNote.textContent = `${label} wants more memory than this Mac has to spare. It will run, and slowly.`;
+  } else if (asked && asked.askedFor) {
+    element.accuracyNote.hidden = false;
+    element.accuracyNote.textContent = `${getSpeechModel(asked.askedFor.id).label} wants more memory than this Mac has to spare, so ${asked.label} is the most accurate one that fits.`;
+  }
+}
+
+/**
  * A Lucide glyph, built here because these rows are built here.
  *
  * The markup carries its icons inline with `data-icon` naming the Lucide entry
@@ -1685,6 +1801,21 @@ function icon(name: string, paths: string[]): SVGSVGElement {
     svg.append(path);
   }
   return svg;
+}
+
+/** The catalogue's ids are strings; the ladder only knows the typed ones. */
+function rungOf(id: string): number | null {
+  return isSpeechModelId(id) ? ladderIndexOf(id) : null;
+}
+
+/** A small pill on a row: In use, Recommended, or the rung's name. */
+function tag(label: string, kind: "ready" | "recommended" | "rung"): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "model-tag";
+  pill.dataset.kind = kind;
+  if (kind === "ready") pill.dataset.ready = "true";
+  pill.textContent = label;
+  return pill;
 }
 
 /** Lucide `terminal`: the two models the app cannot fetch for you. */
@@ -1798,15 +1929,21 @@ function modelRow(model: ModelStatus): HTMLElement {
   // The numbers the choice is made on. A third line of prose is dropped: the
   // group heading and the figures already say what the model is for.
   const facts = [
-    model.wer === null ? "" : `${model.wer.toFixed(1)}% errors`,
+    model.wer === null ? "" : `${model.wer.toFixed(1)}% of words wrong`,
     size,
     `${formatMemory(model.memoryMb)} RAM`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  // Only when the app cannot fetch the weights: that command is the next act,
-  // not a description.
-  const aside = ready || fetchable ? "" : `Run ${model.setupCommand}`;
+  // The wizard's sentence for a rung; for a model the app cannot fetch, the
+  // command that would, since that is the next act rather than a description.
+  const rungIndex = rungOf(model.id);
+  const rung = rungIndex === null ? null : MODEL_LADDER[rungIndex]!;
+  const aside = rung
+    ? rung.trade
+    : ready || fetchable
+      ? ""
+      : `Needs a terminal. Run ${model.setupCommand}`;
 
   const pick = document.createElement("button");
   pick.type = "button";
@@ -1851,7 +1988,9 @@ function modelRow(model: ModelStatus): HTMLElement {
 
   const body = document.createElement("span");
   body.className = "model-body";
-  body.append(name, factLine);
+  body.append(name);
+  if (rung) body.append(tag(rung.name, "rung"));
+  body.append(factLine);
   if (aside !== "") {
     const detail = document.createElement("small");
     detail.className = "model-detail";
@@ -1874,11 +2013,9 @@ function modelRow(model: ModelStatus): HTMLElement {
   row.append(pick, body);
 
   if (ready && model.selected) {
-    const tag = document.createElement("span");
-    tag.className = "model-tag";
-    tag.dataset.ready = "true";
-    tag.textContent = "In use";
-    row.append(tag);
+    row.append(tag("In use", "ready"));
+  } else if (model.id === DEFAULT_LADDER_MODEL_ID) {
+    row.append(tag("Recommended", "recommended"));
   }
 
   if (busy) {
@@ -2059,6 +2196,12 @@ function showDownloadProgress(event: ModelEvent): void {
   if (stepAction) stepAction.textContent = `${percent}%`;
   const stepDetail = step?.querySelector("small");
   if (stepDetail) stepDetail.textContent = event.message;
+
+  speechProgress = { id: event.modelId, percent };
+  if (event.modelId === (accuracyTarget ?? settings.modelId)) {
+    const line = element.accuracyAction.querySelector<HTMLElement>(".model-progress");
+    if (line) line.textContent = `Downloading ${percent}%`;
+  }
 
   const pick = element.modelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
@@ -2381,6 +2524,7 @@ function renderDictationDeck(): void {
   element.deckKeyLabel.textContent = binding ? "Hold" : "Shortcut";
   element.deckKey.textContent = binding ? key : "Off";
   element.deckSettings.hidden = outstanding.length === 0;
+  element.deckTry.hidden = outstanding.length > 0 || !binding;
   if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
   else delete element.deckStatus.dataset.tone;
   if (outstanding.length > 0) {
@@ -2519,6 +2663,69 @@ function handleDictationUpdate(update: DictationUpdate): void {
     setStatus(status.message);
   }
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).label} ready`);
+
+  if (!element.tryModal.hidden) followTry(status.state, status.message);
+}
+
+/* -------------------------------------------------------------------------
+ * The rehearsal
+ * ---------------------------------------------------------------------- */
+
+type TryStage = "ready" | "focused" | "listening" | "transcribing" | "done" | "error";
+
+function openTry(): void {
+  element.tryField.value = "";
+  element.tryModal.hidden = false;
+  element.app.inert = true;
+  // Step one, done for them: a rehearsal that starts by asking for a click
+  // in a box that is already the only thing on screen is a step too many.
+  element.tryField.focus();
+  setTryStage("focused");
+}
+
+function closeTry(): void {
+  element.tryModal.hidden = true;
+  element.app.inert = false;
+  element.deckTry.focus();
+}
+
+/**
+ * Which step is lit. The steps are the three the strip lists -- focus, hold,
+ * release -- so the stage names the last one completed, and the stylesheet
+ * lights everything up to it.
+ */
+function setTryStage(stage: TryStage): void {
+  element.tryModal.dataset.stage = stage;
+  element.tryAgain.hidden = stage !== "done" && stage !== "error";
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  const key = binding ? hotkeyKeycap(binding) : "the key";
+  element.tryResult.textContent =
+    stage === "done"
+      ? "That's it. Hold the key in any app and the words land where you were typing."
+      : stage === "transcribing"
+        ? "Turning that into words…"
+        : stage === "listening"
+          ? "Listening. Keep the key held, then let go."
+          : stage === "error"
+            ? (element.tryResult.textContent || "That didn't work. Try once more.")
+            : `Hold ${key} now and say something.`;
+}
+
+/** Follows the session while the rehearsal is up. */
+function followTry(state: DictationStatus["state"], message?: string): void {
+  const stage = element.tryModal.dataset.stage as TryStage;
+  if (stage === "done") return;
+  if (state === "listening") setTryStage("listening");
+  else if (state === "transcribing" || state === "rewriting") setTryStage("transcribing");
+  else if (state === "error") {
+    element.tryResult.textContent = message ?? "";
+    setTryStage("error");
+  } else if (state === "idle" && stage === "transcribing") {
+    // The session ended; the paste lands a beat later and the input event
+    // takes it from here. If nothing arrives, the field says so by staying
+    // empty, and the steps stay where they were.
+    setTryStage("focused");
+  }
 }
 
 /** The shortcut is the way in, so the sidebar says which one to hold. */
@@ -3256,12 +3463,11 @@ function formatDay(timestamp: number): string {
 
 
 function toggleSettings(open: boolean, page = "general"): void {
-  if (open && promptEditorKind) togglePromptEditor(false);
   // Settings covers the list, and with it the button that would pause.
   if (open) stopPlayback();
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
-  element.scrim.hidden = !open && !promptEditorKind;
+  element.scrim.hidden = !open;
   if (!open) return;
   showSettingsPage(page);
   void host().getHotkeyStatus().then((status) => {
@@ -3269,69 +3475,6 @@ function toggleSettings(open: boolean, page = "general"): void {
     renderHotkeyStatus();
   });
   void host().getAiStatus().then(renderAiStatus);
-}
-
-/**
- * Opens or closes the instruction editor over the settings panel.
- *
- * The cards only show a preview; editing happens here so two long prompts do
- * not take the whole page. Reset puts the selected level's default back into
- * the field; Save is what writes it. Closing without Save leaves the stored
- * prompt alone.
- *
- * The panel is closed underneath rather than stacked with, because two dialogs
- * deep is one too many to find the way out of -- and put back on the way out,
- * since the cards that open this are on one of its pages.
- */
-function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "transform"): void {
-  if (!open) {
-    promptEditorKind = null;
-    element.promptEditor.hidden = true;
-    if (promptEditorFromSettings) {
-      promptEditorFromSettings = false;
-      toggleSettings(true);
-      return;
-    }
-    element.scrim.hidden = !settingsOpen;
-    return;
-  }
-  promptEditorFromSettings = settingsOpen;
-  if (settingsOpen) toggleSettings(false);
-  promptEditorKind = kind;
-  element.promptEditorTitle.textContent = kind === "transform" ? "Dictation" : "Selection";
-  element.promptEditorWhere.textContent =
-    kind === "transform"
-      ? transformPromptWhere(settings.polishLevel)
-      : "Used when you polish selected text with the shortcut.";
-  element.promptEditorBody.value =
-    kind === "transform" ? settings.transformPrompt : settings.polishPrompt;
-  element.promptEditor.hidden = false;
-  element.scrim.hidden = false;
-  element.promptEditorBody.focus();
-}
-
-/**
- * Which level the dictation instruction belongs to.
- *
- * At None nothing runs it, and the card says so rather than showing an
- * instruction that reads as though it were in force.
- */
-function transformPromptWhere(level: PolishLevel): string {
-  if (level === "none") return "Not in use: AI Polish is set to None.";
-  return "Used on every dictation while AI Polish is Active.";
-}
-
-/** First lines of each prompt on the cards, so the page stays scannable. */
-function renderPromptPreviews(next: AppSettings = settings): void {
-  element.transformPromptWhere.textContent = transformPromptWhere(next.polishLevel);
-  element.transformPromptPreview.textContent = promptPreview(next.transformPrompt);
-  element.polishPromptPreview.textContent = promptPreview(next.polishPrompt);
-}
-
-function promptPreview(text: string): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= 140) return compact;
-  return `${compact.slice(0, 139).trimEnd()}…`;
 }
 
 /* ==========================================================================
@@ -3400,7 +3543,6 @@ function openWizard(): void {
   // Anything else modal would be underneath this, which is two dialogs deep
   // with the lower one unreachable.
   if (settingsOpen) toggleSettings(false);
-  if (promptEditorKind) togglePromptEditor(false);
 
   void readWizardFits().then(startPrefetch);
   startPolishDefault();
@@ -3433,7 +3575,6 @@ function startPolishDefault(): void {
   if (settings.polishEngine !== DEFAULT_SETTINGS.polishEngine) return;
   void patchSettings({
     polishLevel: "light",
-    transformPrompt: transformPromptFor("light"),
     polishEngine: "local",
   }).then(prefetchPolishModel);
 }
@@ -4402,12 +4543,7 @@ function wireWizard(): void {
     const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
     const level = card?.dataset.level;
     if (!isPolishLevel(level)) return;
-    // The same write the AI Polish page makes: the level owns the instruction
-    // the dictation path runs, so choosing one puts that level's default back.
-    void patchSettings({
-      polishLevel: level,
-      transformPrompt: transformPromptFor(level),
-    }).then(prefetchPolishModel);
+    void patchSettings({ polishLevel: level }).then(prefetchPolishModel);
   });
 
   element.wizardKeyInput.addEventListener("input", () => {

@@ -60,7 +60,7 @@ pub struct LocalModel {
 
 /// Every model offered for local polish, lightest first.
 ///
-/// All three are Qwen3, and deliberately: one family means one prompt format,
+/// All four are Qwen3, and deliberately: one family means one prompt format,
 /// and Qwen3 is the smallest instruction-tuned family that holds a rewrite
 /// instruction at half a gigabyte. The ladder is the same choice the speech
 /// catalogue offers -- the same model at more bits, then a larger one -- rather
@@ -107,7 +107,20 @@ pub const LOCAL_MODELS: &[LocalModel] = &[
         },
         card_url: "https://huggingface.co/Qwen/Qwen3-1.7B",
         memory_mb: 1_900,
-        detail: "Closest to a hosted model, and the slowest to answer.",
+        detail: "Fixes more than spelling; a second or so per sentence.",
+    },
+    LocalModel {
+        id: "qwen3-4b-q4",
+        label: "Qwen3 4B · Q4",
+        download: Download {
+            file: "Qwen3-4B-Q4_K_M.gguf",
+            url: "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/22c9fc8a8c7700b76a1789366280a6a5a1ad1120/Qwen3-4B-Q4_K_M.gguf",
+            bytes: 2_497_281_312,
+            sha256: "f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a",
+        },
+        card_url: "https://huggingface.co/Qwen/Qwen3-4B",
+        memory_mb: 3_400,
+        detail: "Closest to a hosted model: reads the sentence, not just the spelling. Wants 16 GB.",
     },
 ];
 
@@ -383,10 +396,9 @@ impl LocalPolisher {
     /// of it happens on a blocking thread rather than on the async runtime that
     /// is also driving the overlay.
     ///
-    /// `show_examples` is for the default selection instruction: a 0.6B model
-    /// follows three worked corrections better than a page of rules. Dictation
-    /// cleanup and a person's own instruction are different jobs, and those
-    /// examples would teach it to proofread instead.
+    /// `show_examples` is for the selection path: a 0.6B model follows three
+    /// worked corrections better than a page of rules. Dictation cleanup is a
+    /// different job, and those examples would teach it to proofread instead.
     pub async fn rewrite(
         &self,
         id: &str,
@@ -521,12 +533,15 @@ fn generate(model: &LlamaModel, prompt: &str, reply_tokens: usize) -> Result<Str
 /// must not do. Two worked examples are worth more than the rules to a model
 /// this size, and they are short on purpose -- a short phrase is exactly the
 /// case it was failing.
-const EXAMPLES: [(&str, &str); 3] = [
-    ("thanks alot", "thanks a lot"),
-    ("i recieved you're mesage", "i received your message"),
+const EXAMPLES: [(&str, &str); 4] = [
+    ("thanks alot", "Thanks a lot."),
+    ("i recieved you're mesage yesteday", "I received your message yesterday."),
+    // A real word in the wrong place, and a question without its mark: the
+    // two things a model this size leaves alone unless shown otherwise.
+    ("were is the meeting tomorow", "Where is the meeting tomorrow?"),
     (
         "we shoud of checked the numbers befor the meeting",
-        "we should have checked the numbers before the meeting",
+        "We should have checked the numbers before the meeting.",
     ),
 ];
 
@@ -712,7 +727,7 @@ mod tests {
         let rewritten = LocalPolisher::new()
             .rewrite(
                 definition.id,
-                crate::settings::DEFAULT_POLISH_PROMPT,
+                crate::rewrite::POLISH_PROMPT,
                 said,
                 256,
                 true,
