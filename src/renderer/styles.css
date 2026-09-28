@@ -441,23 +441,6 @@ kbd {
   padding-bottom: 26px;
 }
 
-/* Models and AI Polish were pages of the settings panel until they became
-   sections of the window. Their heading keeps the size it had there: it labels
-   a page of controls, not a list with a toolbar beside it. */
-#view-dictation .display,
-#view-models .display,
-#view-ai .display {
-  margin-bottom: 22px;
-  font-size: 26px;
-}
-
-#view-models .view-head {
-  margin-bottom: 18px;
-}
-
-#view-models .view-head .display {
-  margin-bottom: 0;
-}
 
 /* Two cards that are also the tabs. */
 .model-kinds {
@@ -564,8 +547,13 @@ kbd {
   display: none;
 }
 
+/* Every page opens with the same head, the same height whether or not it
+   carries tools, so switching pages leaves the title and the card under it
+   exactly where they were. */
 .view-head {
   display: flex;
+  height: 36px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -617,6 +605,7 @@ kbd {
 
 .view-head .display {
   font-size: 30px;
+  line-height: 36px;
 }
 
 .head-tools {
@@ -1211,9 +1200,12 @@ kbd {
   scrollbar-width: none;
 }
 
+/* The same title as every page of the window, so Settings does not read as
+   a smaller, different kind of page. */
 .modal-body .display {
   margin-bottom: 22px;
-  font-size: 26px;
+  font-size: 30px;
+  line-height: 36px;
 }
 
 .settings-page[hidden] {
@@ -1436,6 +1428,7 @@ kbd {
 /* First on its page, under the title or the lede, where the page's own margin
    is already the gap. */
 .display + .section-label,
+.view-head + .section-label,
 .lede + .section-label {
   margin-top: 0;
 }
@@ -2110,6 +2103,35 @@ select {
 }
 
 
+/* Under the AI cleanup row: one sentence as said and as typed. */
+.cleanup-example {
+  display: grid;
+  gap: 6px 14px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.cleanup-example-label {
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: 0.05em;
+  line-height: 17px;
+  text-transform: uppercase;
+}
+
+.cleanup-example-typed {
+  color: var(--ink);
+}
+
+.segmented button:disabled {
+  opacity: 0.4;
+}
+
 @media (max-width: 760px) {
   .polish-levels {
     grid-template-columns: 1fr;
@@ -2640,8 +2662,8 @@ select {
     "intro key"
     "gestures settings";
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 22px 28px;
-  padding: 25px 27px 22px;
+  gap: 16px 28px;
+  padding: 20px 24px 18px;
   border-radius: 18px;
   margin-bottom: 24px;
   overflow: hidden;
@@ -2660,6 +2682,15 @@ select {
     radial-gradient(circle at 86% 0%, rgb(45 212 191 / 38%), transparent 32%),
     radial-gradient(circle at 60% 100%, rgb(56 189 248 / 16%), transparent 34%),
     linear-gradient(130deg, #0f2a2c, #114a45);
+}
+
+/* Polish is the blue the Wave Bar circle turns while a polish runs
+   (#3284d0 in overlay.css), so the card and the work it describes match. */
+.dictation-deck.deck-polish {
+  background:
+    radial-gradient(circle at 86% 0%, rgb(50 132 208 / 55%), transparent 34%),
+    radial-gradient(circle at 60% 100%, rgb(125 211 252 / 16%), transparent 34%),
+    linear-gradient(130deg, #0e1f36, #17406e);
 }
 
 .dictation-deck::after {
@@ -2684,7 +2715,7 @@ select {
   padding: 4px 8px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 999px;
-  margin: 0 0 11px;
+  margin: 0 0 9px;
   background: rgb(255 255 255 / 9%);
   color: #bcf4de;
   font-size: 11px;
@@ -2709,9 +2740,13 @@ select {
   content: "";
 }
 
+/* One line, always: a title that wrapped on one page made its card taller
+   than the others. */
 .deck-title {
-  max-width: 22ch;
+  overflow: hidden;
   margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   font-size: 24px;
   font-weight: 710;
@@ -2719,9 +2754,13 @@ select {
   line-height: 1.08;
 }
 
+/* One line, cut short rather than wrapping, for the same reason. At the
+   window's default width every description fits. */
 .deck-description {
-  max-width: 54ch;
-  margin: 9px 0 0;
+  overflow: hidden;
+  margin: 7px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: rgb(239 240 255 / 73%);
   font-size: 12.5px;
   line-height: 1.55;
@@ -2730,8 +2769,8 @@ select {
 .deck-key {
   z-index: 1;
   display: flex;
-  width: 112px;
-  min-height: 92px;
+  width: 104px;
+  min-height: 76px;
   grid-area: key;
   align-items: center;
   justify-content: center;
@@ -2759,6 +2798,7 @@ select {
 
 .deck-gestures {
   display: flex;
+  min-height: 28px;
   grid-area: gestures;
   align-items: center;
   gap: 18px;
@@ -2768,6 +2808,17 @@ select {
 
 .deck-gestures span { white-space: nowrap; }
 .deck-gestures strong { color: #fff; font-weight: 650; }
+.deck-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.deck-link:hover { text-decoration: underline; }
+.deck-link:focus-visible { outline-color: #fff; }
 
 .deck-settings {
   z-index: 1;
@@ -3258,6 +3309,39 @@ select {
   background: var(--accent);
   color: var(--accent-ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The polish shortcut as keys to press rather than a list to read: the same
+   caps as the dictation keyboard, one per choice. */
+.shortcut-picker {
+  margin-bottom: 8px;
+}
+
+.shortcut-keys {
+  display: grid;
+  max-width: 520px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.shortcut-key {
+  height: 48px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.shortcut-key:hover:not([aria-checked="true"]) {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.shortcut-picker .keyboard-caption {
+  margin: 12px 0 0;
+  text-align: left;
 }
 
 /* Says which of the two Commands, or which of the two Options, is chosen --

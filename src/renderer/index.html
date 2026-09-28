@@ -63,12 +63,6 @@
             <span>Transcripts</span>
             <span class="nav-badge" id="setup-badge" hidden></span>
           </button>
-          <button class="nav-item" type="button" data-view="ai">
-            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
-            </svg>
-            <span>AI Polish</span>
-          </button>
           <button class="nav-item" type="button" data-view="dictation">
             <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 19v3" />
@@ -76,6 +70,12 @@
               <rect x="9" y="2" width="6" height="13" rx="3" />
             </svg>
             <span>Dictation</span>
+          </button>
+          <button class="nav-item" type="button" data-view="ai">
+            <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
+            </svg>
+            <span>AI Polish</span>
           </button>
           <button class="nav-item" type="button" data-view="models">
             <svg data-icon="sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -188,7 +188,7 @@
                 <kbd id="model-deck-language">—</kbd>
               </div>
               <div class="deck-gestures" aria-label="Polish">
-                <span><strong>AI Polish</strong> <span id="model-deck-polish">—</span></span>
+                <span><button type="button" class="deck-link" data-open-view="ai">AI Polish</button> <span id="model-deck-polish">—</span></span>
               </div>
               <button type="button" class="deck-settings" data-open-models="speech">Change model</button>
             </section>
@@ -214,7 +214,9 @@
           a key sits is the difference between Left and Right Option.
         -->
         <section class="view" id="view-dictation" hidden>
-          <h1 class="display">Dictation</h1>
+          <div class="view-head">
+            <h1 class="display">Dictation</h1>
+          </div>
 
           <section class="dictation-deck" id="dictation-deck" aria-live="polite">
             <div class="deck-intro">
@@ -225,7 +227,7 @@
               </p>
             </div>
             <div class="deck-key" aria-label="Dictation shortcut">
-              <span>Hold</span>
+              <span id="deck-key-label">Hold</span>
               <kbd id="deck-key">—</kbd>
             </div>
             <div class="deck-gestures" aria-label="Dictation gestures">
@@ -257,6 +259,41 @@
               <span class="row-actions">
                 <select id="microphone-select" aria-label="Microphone"></select>
               </span>
+            </div>
+          </div>
+
+          <h2 class="section-label">AI cleanup</h2>
+          <!--
+            What stops Active from running, above the choice rather than
+            in small print below: faded cards alone read as broken.
+          -->
+          <div class="polish-blocker" id="polish-level-hint" hidden>
+            <span id="polish-blocker-text"></span>
+            <button type="button" class="pill-button is-primary" data-open-models="polish" id="polish-blocker-action"></button>
+          </div>
+          <!--
+            A row like the microphone's, so all three settings on this page
+            fit on one screen. One example sentence, as said and as it would be
+            typed at the chosen level, still shows what the choice does.
+          -->
+          <div class="card">
+            <div class="row">
+              <span class="row-label">
+                Tidy dictations before they are typed
+                <small id="cleanup-what"></small>
+              </span>
+              <span class="row-actions">
+                <div class="segmented" id="polish-levels" role="radiogroup" aria-label="How much polish">
+                  <button type="button" role="radio" data-level="none" aria-checked="true">None</button>
+                  <button type="button" role="radio" data-level="light" aria-checked="false">Active</button>
+                </div>
+              </span>
+            </div>
+            <div class="cleanup-example" aria-hidden="true">
+              <span class="cleanup-example-label">You say</span>
+              <span>so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done</span>
+              <span class="cleanup-example-label">Typed</span>
+              <span class="cleanup-example-typed" id="cleanup-typed"></span>
             </div>
           </div>
         </section>
@@ -409,54 +446,36 @@
         </section>
 
         <section class="view" id="view-ai" hidden>
-          <h1 class="display">AI Polish</h1>
-          <!--
-            What stops Active from running, above the choice rather than
-            in small print below: faded cards alone read as broken.
-          -->
-          <div class="polish-blocker" id="polish-level-hint" hidden>
-            <span id="polish-blocker-text"></span>
-            <button type="button" class="pill-button is-primary" data-open-models="polish" id="polish-blocker-action"></button>
+          <div class="view-head">
+            <h1 class="display">AI Polish</h1>
           </div>
 
-          <h2 class="section-label">How much to change</h2>
-
           <!--
-            The same sentence twice, as said and as inserted: seeing what
-            polish does settles it faster than a description.
+            The shortcut first, as Dictation leads with its key: it is the
+            half of polish that works in every app, whatever the level below.
           -->
-          <div class="polish-levels" id="polish-levels" role="radiogroup" aria-label="How much polish">
-            <button type="button" class="polish-level" role="radio" data-level="none" aria-checked="true">
-              <span class="polish-level-name">None</span>
-              <span class="polish-level-what">Transcribes exactly what you said, including mistakes</span>
-              <span class="polish-level-example">
-                so um i was thinking maybe we could push the demo to thursday
-                the API stuff isn't isn't quite done and i'd rather not show
-                something half broken you know
-              </span>
-            </button>
-            <button type="button" class="polish-level" role="radio" data-level="light" aria-checked="false">
-              <span class="polish-level-name">Active</span>
-              <span class="polish-level-what">Cleans up filler words and grammar</span>
-              <span class="polish-level-example">
-                I was thinking maybe we could push the demo to Thursday. The
-                API stuff isn't quite done, and I'd rather not show something
-                half broken.
-              </span>
-            </button>
-          </div>
-
-          <h2 class="section-label">Model</h2>
-          <div class="card">
-            <div class="row">
-              <span class="row-label">
-                Polish model
-                <small id="polish-model-line"></small>
-              </span>
-              <span class="row-actions">
-                <button type="button" class="pill-button" data-open-models="polish">Change</button>
-              </span>
+          <section class="dictation-deck deck-polish" id="polish-deck" aria-live="polite">
+            <div class="deck-intro">
+              <p class="deck-status" id="polish-deck-status">Checking polish</p>
+              <h2 class="deck-title" id="polish-deck-title">Select text, press a key</h2>
+              <p class="deck-description" id="polish-deck-description"></p>
             </div>
+            <div class="deck-key" aria-label="Polish shortcut">
+              <span id="polish-deck-key-label">Press</span>
+              <kbd id="polish-deck-key">—</kbd>
+            </div>
+            <div class="deck-gestures" aria-label="Polish">
+              <span><button type="button" class="deck-link" data-open-view="dictation">Dictation</button> <span id="polish-deck-dictation">—</span></span>
+              <span><strong>Model</strong> <span id="polish-model-line">—</span></span>
+            </div>
+            <button type="button" class="deck-settings" data-open-models="polish">Change model</button>
+          </section>
+
+          <h2 class="section-label">Shortcut</h2>
+          <div class="shortcut-picker">
+            <!-- Filled from POLISH_SHORTCUTS. -->
+            <div class="shortcut-keys" id="polish-shortcut" role="radiogroup" aria-label="Polish selected text shortcut"></div>
+            <p class="keyboard-caption" id="polish-shortcut-caption"></p>
           </div>
 
           <!--
@@ -475,16 +494,6 @@
               <span class="prompt-card-where">When you polish selected text with the shortcut</span>
               <small id="polish-prompt-preview"></small>
             </button>
-          </div>
-
-          <h2 class="section-label">Selected text</h2>
-          <div class="card">
-            <div class="row">
-              <label class="row-label" for="polish-shortcut">Shortcut</label>
-              <span class="row-actions">
-                <select id="polish-shortcut" aria-label="Polish selected text shortcut"></select>
-              </span>
-            </div>
           </div>
         </section>
 
