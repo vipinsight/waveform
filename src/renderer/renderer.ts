@@ -113,6 +113,7 @@ const element = {
   deckTitle: requireElement<HTMLElement>("deck-title"),
   deckDescription: requireElement<HTMLElement>("deck-description"),
   deckKey: requireElement<HTMLElement>("deck-key"),
+  deckKeyLabel: requireElement<HTMLElement>("deck-key-label"),
   deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
@@ -137,6 +138,8 @@ const element = {
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
   polishLevels: requireElement<HTMLElement>("polish-levels"),
+  cleanupWhat: requireElement<HTMLElement>("cleanup-what"),
+  cleanupTyped: requireElement<HTMLElement>("cleanup-typed"),
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
   polishModelLine: requireElement<HTMLElement>("polish-model-line"),
   polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
@@ -151,7 +154,14 @@ const element = {
   transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
   transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
   polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
-  polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
+  polishShortcut: requireElement<HTMLElement>("polish-shortcut"),
+  polishShortcutCaption: requireElement<HTMLElement>("polish-shortcut-caption"),
+  polishDeckStatus: requireElement<HTMLElement>("polish-deck-status"),
+  polishDeckTitle: requireElement<HTMLElement>("polish-deck-title"),
+  polishDeckDescription: requireElement<HTMLElement>("polish-deck-description"),
+  polishDeckKey: requireElement<HTMLElement>("polish-deck-key"),
+  polishDeckKeyLabel: requireElement<HTMLElement>("polish-deck-key-label"),
+  polishDeckDictation: requireElement<HTMLElement>("polish-deck-dictation"),
   polishEngine: requireElement<HTMLElement>("polish-engine"),
   polishModelList: requireElement<HTMLElement>("polish-model-list"),
   promptEditor: requireElement<HTMLElement>("prompt-editor"),
@@ -403,7 +413,7 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
-  host().onOpenMicrophoneSettings(() => openView("dictation"));
+  host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
   host().onOpenModelSettings(() => {
     toggleSettings(false);
     showModelsTab("speech");
@@ -620,8 +630,12 @@ function wireEvents(): void {
         : { polishLevel: level, transformPrompt: transformPromptFor(level) },
     );
   });
-  element.polishShortcut.addEventListener("change", () => {
-    void patchSettings({ polishShortcut: element.polishShortcut.value });
+  element.polishShortcut.addEventListener("click", (event) => {
+    const shortcut = (event.target as HTMLElement).closest<HTMLElement>("[data-shortcut]")
+      ?.dataset.shortcut;
+    if (shortcut && shortcut !== settings.polishShortcut) {
+      void patchSettings({ polishShortcut: shortcut });
+    }
   });
   for (const card of Array.from(
     document.querySelectorAll<HTMLButtonElement>(".prompt-card[data-prompt]"),
@@ -798,6 +812,7 @@ function renderPolishModelLine(): void {
       ? `${polishModelLabel(settings.localModelId)}, on this Mac`
       : `${settings.openRouterModel}, through OpenRouter`;
   renderModelKinds();
+  renderPolishDeck();
 }
 
 /**
@@ -937,7 +952,7 @@ function applySettings(next: AppSettings): void {
   renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
   renderPromptPreviews(next);
-  element.polishShortcut.value = next.polishShortcut;
+  renderPolishShortcut(next.polishShortcut);
   renderThemeToggle(next.theme);
 
   const model = getSpeechModel(next.modelId);
@@ -956,9 +971,16 @@ function applySettings(next: AppSettings): void {
 
 function populateSelects(): void {
   for (const accelerator of POLISH_SHORTCUTS) {
-    element.polishShortcut.append(
-      new Option(describeAccelerator(accelerator), accelerator),
-    );
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "keyboard-key shortcut-key";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", "false");
+    button.setAttribute("aria-label", nameAccelerator(accelerator));
+    button.dataset.shortcut = accelerator;
+    // A keycap, so the glyphs alone: "⌥1". The card and caption spell it out.
+    button.textContent = describeAccelerator(accelerator).replace(" + ", "");
+    element.polishShortcut.append(button);
   }
   for (const model of SUGGESTED_MODELS) {
     element.aiModel.append(new Option(model, model));
@@ -1009,7 +1031,13 @@ function renderMicrophoneSelect(): void {
 /** Renders an Electron accelerator the way macOS writes it. */
 function describeAccelerator(accelerator: string): string {
   if (accelerator === "none") return "Off";
-  return accelerator.replace("Alt+", "⌥");
+  return accelerator.replace("Alt+", "⌥ + ");
+}
+
+/** The same accelerator in words, for under the glyph and for VoiceOver. */
+function nameAccelerator(accelerator: string): string {
+  if (accelerator === "none") return "Off";
+  return accelerator.replace("Alt+", "Option + ");
 }
 
 /**
@@ -1054,6 +1082,7 @@ function renderAiStatus(status: AiStatus): void {
   for (const card of polishLevelCards()) {
     card.disabled = !ready && card.dataset.level !== "none";
   }
+  renderPolishDeck();
 }
 
 function polishLevelCards(): HTMLButtonElement[] {
@@ -1064,6 +1093,14 @@ function renderPolishLevel(level: PolishLevel): void {
   for (const card of polishLevelCards()) {
     card.setAttribute("aria-checked", String(card.dataset.level === level));
   }
+  element.cleanupWhat.textContent =
+    level === "none"
+      ? "Off: typed exactly as you said it, mistakes included."
+      : "Filler words and grammar fixed, by the model on the AI Polish page.";
+  element.cleanupTyped.textContent =
+    level === "none"
+      ? "so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done"
+      : "I was thinking maybe we could push the demo to Thursday. The API stuff isn't quite done.";
 }
 
 /**
@@ -1073,6 +1110,62 @@ function renderPolishLevel(level: PolishLevel): void {
  * a local model and a download is nothing to a hosted one. So the other half is
  * hidden rather than dimmed.
  */
+function renderPolishShortcut(shortcut: string): void {
+  for (const button of Array.from(
+    element.polishShortcut.querySelectorAll<HTMLElement>("[data-shortcut]"),
+  )) {
+    button.setAttribute("aria-checked", String(button.dataset.shortcut === shortcut));
+  }
+  const name = document.createElement("strong");
+  // Written like the Dictation caption's "Right Option (⌥→)": the name, then
+  // the keycap it appears as.
+  name.textContent =
+    shortcut === "none"
+      ? "Off."
+      : `${nameAccelerator(shortcut)} (${describeAccelerator(shortcut).replace(" + ", "")})`;
+  element.polishShortcutCaption.replaceChildren(
+    name,
+    shortcut === "none"
+      ? " Pick a key to polish selected text from any app."
+      : " Select text in any app and press it. Nothing selected? It takes the field you are typing in.",
+  );
+  renderPolishDeck();
+}
+
+/**
+ * The card at the top of AI Polish: the shortcut, whether polish can run, and
+ * what it does to a dictation. Read from settings and the AI status together,
+ * so it is repainted whenever either changes.
+ */
+function renderPolishDeck(): void {
+  const shortcut = settings.polishShortcut;
+  const local = settings.polishEngine === "local";
+  const ready = aiStatus === null ? null : local ? aiStatus.localReady : aiStatus.hasApiKey;
+
+  element.polishDeckStatus.textContent =
+    ready === false
+      ? local
+        ? "Model not downloaded"
+        : "Needs an OpenRouter key"
+      : shortcut === "none"
+        ? "Shortcut off"
+        : "Ready anywhere";
+  if (ready === false) element.polishDeckStatus.dataset.tone = "attention";
+  else delete element.polishDeckStatus.dataset.tone;
+
+  element.polishDeckTitle.textContent =
+    shortcut === "none" ? "Polish is off for selections" : `Select text, press ${describeAccelerator(shortcut)}`;
+  element.polishDeckDescription.textContent =
+    shortcut === "none"
+      ? "Choose a shortcut below to fix selected text in place, in any app."
+      : "Spelling, grammar, punctuation and capitals fixed in place, in any app.";
+  // "Press Off" read as an instruction to press a key called Off.
+  element.polishDeckKeyLabel.textContent = shortcut === "none" ? "Shortcut" : "Press";
+  element.polishDeckKey.textContent = describeAccelerator(shortcut).replace(" + ", "");
+  element.polishDeckDictation.textContent =
+    settings.polishLevel === "none" ? "Inserted as spoken" : "Cleaned up before it is typed";
+}
+
 function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
   for (const button of Array.from(
     element.polishEngine.querySelectorAll<HTMLElement>("[data-engine]"),
@@ -2284,7 +2377,9 @@ function renderDictationDeck(): void {
   // there too, pointing back to the checklist rather than repeating it.
   element.dictationDeck.hidden = !known;
   if (!known) return;
-  element.deckKey.textContent = key;
+  // As on the polish card: no key reads "Shortcut Off", not "Hold —".
+  element.deckKeyLabel.textContent = binding ? "Hold" : "Shortcut";
+  element.deckKey.textContent = binding ? key : "Off";
   element.deckSettings.hidden = outstanding.length === 0;
   if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
   else delete element.deckStatus.dataset.tone;
@@ -2315,7 +2410,7 @@ function renderDictationDeck(): void {
   element.deckTitle.textContent = `Hold ${key}, say it, release`;
   element.deckDescription.textContent = modelReady
     ? "Words land at your cursor, and stay in Transcripts for easy copying."
-    : "Your local speech model wakes when you use the shortcut. Nothing leaves this Mac.";
+    : "Your speech model wakes when you use the shortcut. Nothing leaves this Mac.";
 }
 
 /**
@@ -2340,12 +2435,9 @@ function renderModelDeck(): void {
     ? settings.speechLanguage.toUpperCase()
     : "Auto";
 
-  element.modelDeckPolish.textContent =
-    settings.polishLevel === "none"
-      ? "None"
-      : settings.polishEngine === "local"
-        ? `Active, ${polishModelLabel(settings.localModelId)} on this Mac`
-        : `Active, ${settings.openRouterModel} through OpenRouter`;
+  // On or off only: which model polishes is the AI Polish card's to say, and
+  // the label links there.
+  element.modelDeckPolish.textContent = settings.polishLevel === "none" ? "Off" : "On";
 }
 
 function renderStats(stats: AppStats): void {
