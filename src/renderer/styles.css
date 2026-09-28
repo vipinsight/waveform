@@ -2220,13 +2220,10 @@ select {
 .try-modal[data-stage="transcribing"] [data-step="focus"] .try-step-mark::after,
 .try-modal[data-stage="transcribing"] [data-step="hold"] .try-step-mark::after,
 .try-modal[data-stage="done"] .try-step-mark::after {
-  width: 5px;
-  height: 9px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  margin-top: -2px;
+  width: 12px;
+  height: 12px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
   content: "";
-  transform: rotate(45deg);
 }
 
 /* The one place on the page where nothing is a setting. */
@@ -2812,23 +2809,17 @@ select {
 .dictation-deck {
   display: grid;
   grid-template-areas:
-    "intro key"
-    "gestures key";
-  grid-template-columns: minmax(0, 1fr) auto;
+    "intro settings key"
+    "gestures settings key";
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 6px 24px;
+  gap: 6px 20px;
   padding: 14px 18px 13px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
   margin-bottom: 24px;
   background: var(--surface-sunken);
   color: var(--ink);
-}
-
-.dictation-deck:has(.deck-settings:not([hidden])) {
-  grid-template-areas:
-    "intro key"
-    "gestures settings";
 }
 
 .deck-intro { grid-area: intro; min-width: 0; }
@@ -2928,7 +2919,6 @@ select {
   height: 28px;
   grid-area: settings;
   align-self: center;
-  justify-self: end;
   padding: 0 12px;
   border: 0;
   border-radius: 7px;
@@ -2947,8 +2937,7 @@ select {
 .dictation-deck.deck-polish { color: var(--ink); }
 
 @media (max-width: 820px) {
-  .dictation-deck,
-  .dictation-deck:has(.deck-settings:not([hidden])) {
+  .dictation-deck {
     grid-template-areas:
       "intro"
       "key"
