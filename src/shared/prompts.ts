@@ -104,6 +104,21 @@ export const SUGGESTED_MODELS = [
 export const DEFAULT_OPENROUTER_MODEL = SUGGESTED_MODELS[0];
 
 /**
+ * What the OpenRouter model `<select>` should list for the current choice.
+ *
+ * The offered models, and at most one custom id when the saved choice is not
+ * among them. A previous custom must not linger beside a new one: the select
+ * used to append on every settings apply and stacked every id it had ever
+ * seen.
+ */
+export function openRouterModelsForSelect(selected: string): string[] {
+  if (SUGGESTED_MODELS.some((model) => model === selected)) {
+    return [...SUGGESTED_MODELS];
+  }
+  return [...SUGGESTED_MODELS, selected];
+}
+
+/**
  * Defaults nobody chose, replaced on load wherever they are still stored
  * unedited. A default is not a preference worth preserving.
  *

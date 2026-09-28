@@ -42,7 +42,7 @@ import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
 import {
   DEFAULT_POLISH_PROMPT,
-  SUGGESTED_MODELS,
+  openRouterModelsForSelect,
   transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
@@ -942,12 +942,9 @@ function applySettings(next: AppSettings): void {
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
-  // A model chosen before this list existed is still a valid choice, so it is
-  // added rather than silently swapped for the first option.
-  if (!SUGGESTED_MODELS.some((model) => model === next.openRouterModel)) {
-    element.aiModel.append(new Option(next.openRouterModel, next.openRouterModel));
-  }
-  element.aiModel.value = next.openRouterModel;
+  // Rebuild rather than append: a custom id is still offered when it is the
+  // current choice, but only one at a time — a previous custom must not stack.
+  renderOpenRouterModelSelect(next.openRouterModel);
   renderPolishEngine(next.polishEngine);
   renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
@@ -982,9 +979,19 @@ function populateSelects(): void {
     button.textContent = describeAccelerator(accelerator).replace(" + ", "");
     element.polishShortcut.append(button);
   }
-  for (const model of SUGGESTED_MODELS) {
-    element.aiModel.append(new Option(model, model));
-  }
+  // Suggested models only for now; applySettings adds at most one custom.
+  renderOpenRouterModelSelect(DEFAULT_SETTINGS.openRouterModel);
+}
+
+/**
+ * The OpenRouter model list: the offered ids, plus the current choice when it
+ * is not among them. Replaces the whole list so customs cannot accumulate.
+ */
+function renderOpenRouterModelSelect(selected: string): void {
+  element.aiModel.replaceChildren(
+    ...openRouterModelsForSelect(selected).map((model) => new Option(model, model)),
+  );
+  element.aiModel.value = selected;
 }
 
 /**
