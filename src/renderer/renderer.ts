@@ -155,7 +155,6 @@ const element = {
   accuracyTicks: requireElement<HTMLElement>("accuracy-ticks"),
   accuracyLabels: requireElement<HTMLElement>("accuracy-labels"),
   accuracyRung: requireElement<HTMLElement>("accuracy-rung"),
-  accuracyTrade: requireElement<HTMLElement>("accuracy-trade"),
   accuracyModel: requireElement<HTMLElement>("accuracy-model"),
   accuracyFacts: requireElement<HTMLElement>("accuracy-facts"),
   accuracyAction: requireElement<HTMLElement>("accuracy-action"),
@@ -1727,8 +1726,6 @@ function renderAccuracy(force = true): void {
   element.accuracyRung.textContent =
     onLadder === null && focus === settings.modelId ? "From the full list" : ladderRung(choice.index).name;
   element.accuracyModel.textContent = label;
-  element.accuracyTrade.textContent =
-    onLadder === null && focus === settings.modelId ? "" : ladderRung(choice.index).trade;
   const facts = [
     chosen?.wer != null ? accuracy(chosen.wer) : "",
     chosen?.downloadBytes != null ? `${formatBytes(chosen.downloadBytes)} disk` : "",
@@ -1953,15 +1950,11 @@ function modelRow(model: ModelStatus): HTMLElement {
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  // The wizard's sentence for a rung; for a model the app cannot fetch, the
-  // command that would, since that is the next act rather than a description.
+  // Only for a model the app cannot fetch: the command that would, since
+  // that is the next act rather than a description.
   const rungIndex = rungOf(model.id);
   const rung = rungIndex === null ? null : MODEL_LADDER[rungIndex]!;
-  const aside = rung
-    ? rung.trade
-    : ready || fetchable
-      ? ""
-      : `Needs a terminal. Run ${model.setupCommand}`;
+  const aside = ready || fetchable ? "" : `Needs a terminal. Run ${model.setupCommand}`;
 
   const pick = document.createElement("button");
   pick.type = "button";
@@ -2422,12 +2415,9 @@ function announceUpdateIfNew(): void {
  * Whisper Medium is "1.5 GB", not "1534 MB": past a thousand the megabytes
  * stop being a size and start being a number to read.
  */
-/**
- * A word error rate as the number people compare on. "WER 2.1" is a term of
- * art; "97.9% accurate" is the same fact the way round that reads as good.
- */
+/** A word error rate as a figure rather than a term of art. */
 function accuracy(wer: number): string {
-  return `${(100 - wer).toFixed(1)}% accurate`;
+  return `${wer.toFixed(1)}% error rate`;
 }
 
 function formatBytes(bytes: number): string {
@@ -4056,7 +4046,7 @@ function renderLadderFacts(id: SpeechModelId): void {
   const facts: Array<[string, string]> = [
     ["Disk", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
     ["RAM", model ? formatMemory(model.memoryMb) : "—"],
-    ["Accuracy", model?.wer != null ? accuracy(model.wer) : "—"],
+    ["Error rate", model?.wer != null ? `${model.wer.toFixed(1)}%` : "—"],
   ];
 
   element.ladderFacts.replaceChildren(
