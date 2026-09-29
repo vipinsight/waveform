@@ -2417,7 +2417,7 @@ function announceUpdateIfNew(): void {
  */
 /** A word error rate as a figure rather than a term of art. */
 function accuracy(wer: number): string {
-  return `${wer.toFixed(1)}% error rate`;
+  return `${wer.toFixed(1)}% errors`;
 }
 
 function formatBytes(bytes: number): string {
@@ -4046,7 +4046,7 @@ function renderLadderFacts(id: SpeechModelId): void {
   const facts: Array<[string, string]> = [
     ["Disk", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
     ["RAM", model ? formatMemory(model.memoryMb) : "—"],
-    ["Error rate", model?.wer != null ? `${model.wer.toFixed(1)}%` : "—"],
+    ["Errors", model?.wer != null ? `${model.wer.toFixed(1)}%` : "—"],
   ];
 
   element.ladderFacts.replaceChildren(
