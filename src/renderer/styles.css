@@ -2802,49 +2802,88 @@ select {
   }
 }
 
-/* A status strip, not a poster. Each page used to open on a 200px gradient
-   card that restated what the page below it says; this is one row -- is it
-   working, which key -- in the page's own colours, so the controls are the
-   thing on screen. */
 .dictation-deck {
+  position: relative;
   display: grid;
   grid-template-areas:
-    "intro settings key"
-    "gestures settings key";
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px 20px;
-  padding: 14px 18px 13px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
+    "intro key"
+    "gestures settings";
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 28px;
+  padding: 20px 24px 18px;
+  border-radius: 18px;
   margin-bottom: 24px;
-  background: var(--surface-sunken);
-  color: var(--ink);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 86% 0%, rgb(143 128 255 / 42%), transparent 31%),
+    radial-gradient(circle at 62% 100%, rgb(48 214 161 / 18%), transparent 34%),
+    linear-gradient(130deg, #1a2140, #292260);
+  color: #f8f8ff;
+}
+
+/* Each card its own colour, so the model on Transcripts, the shortcut on
+   Dictation and the setup checklist do not read as one card in three places.
+   The shortcut keeps the brand indigo; the model is teal, the engine. */
+.dictation-deck.deck-model {
+  background:
+    radial-gradient(circle at 86% 0%, rgb(45 212 191 / 38%), transparent 32%),
+    radial-gradient(circle at 60% 100%, rgb(56 189 248 / 16%), transparent 34%),
+    linear-gradient(130deg, #0f2a2c, #114a45);
+}
+
+/* Polish is the blue the Wave Bar circle turns while a polish runs
+   (#3284d0 in overlay.css), so the card and the work it describes match. */
+.dictation-deck.deck-polish {
+  background:
+    radial-gradient(circle at 86% 0%, rgb(50 132 208 / 55%), transparent 34%),
+    radial-gradient(circle at 60% 100%, rgb(125 211 252 / 16%), transparent 34%),
+    linear-gradient(130deg, #0e1f36, #17406e);
+}
+
+.dictation-deck::after {
+  position: absolute;
+  right: 174px;
+  bottom: -54px;
+  width: 150px;
+  height: 150px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
 }
 
 .deck-intro { grid-area: intro; min-width: 0; }
 
 .deck-status {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 6px;
-  margin: 0 0 4px;
-  color: var(--positive);
+  padding: 4px 8px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  margin: 0 0 9px;
+  background: rgb(255 255 255 / 9%);
+  color: #bcf4de;
   font-size: 11px;
-  font-weight: 640;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-weight: 650;
 }
 
 .deck-status[data-tone="attention"] {
-  color: var(--danger);
+  color: #ffd79a;
+}
+
+.deck-status[data-tone="attention"]::before {
+  background: #f5a524;
+  box-shadow: 0 0 0 3px rgb(245 165 36 / 18%);
 }
 
 .deck-status::before {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: #32d6a1;
+  box-shadow: 0 0 0 3px rgb(50 214 161 / 15%);
   content: "";
 }
 
@@ -2855,74 +2894,88 @@ select {
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
-  font-weight: 640;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-size: 24px;
+  font-weight: 710;
+  letter-spacing: -0.043em;
+  line-height: 1.08;
 }
 
+/* One line, cut short rather than wrapping, for the same reason. At the
+   window's default width every description fits. */
 .deck-description {
   overflow: hidden;
-  margin: 2px 0 0;
+  margin: 7px 0 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-soft);
+  color: rgb(239 240 255 / 73%);
   font-size: 12.5px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .deck-key {
+  z-index: 1;
   display: flex;
-  min-width: 72px;
+  width: 104px;
+  min-height: 76px;
   grid-area: key;
   align-items: center;
+  justify-content: center;
   flex-direction: column;
-  gap: 5px;
-  color: var(--ink-faint);
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 15px;
+  background: rgb(8 10 33 / 27%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 9%);
+  color: rgb(239 240 255 / 67%);
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
 .deck-key kbd {
-  min-width: 42px;
-  padding: 4px 10px;
-  font-size: 16px;
-  font-weight: 640;
+  min-width: 39px;
+  padding: 3px 9px;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-bottom-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 13%);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .deck-gestures {
   display: flex;
+  min-height: 28px;
   grid-area: gestures;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  color: var(--ink-soft);
+  gap: 18px;
+  color: rgb(239 240 255 / 73%);
   font-size: 11.5px;
 }
 
 .deck-gestures span { white-space: nowrap; }
-.deck-gestures strong { color: var(--ink); font-weight: 600; }
+.deck-gestures strong { color: #fff; font-weight: 650; }
 .deck-link {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--ink);
+  color: #fff;
   font: inherit;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
 }
 .deck-link:hover { text-decoration: underline; }
+.deck-link:focus-visible { outline-color: #fff; }
 
 .deck-settings {
+  z-index: 1;
   height: 28px;
   grid-area: settings;
   align-self: center;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 0;
   border-radius: 7px;
-  background: var(--accent);
+  background: rgb(255 255 255 / 11%);
   color: #fff;
   font-size: 11.5px;
   font-weight: 620;
@@ -2930,11 +2983,17 @@ select {
 }
 
 .deck-settings[hidden] { display: none; }
-.deck-settings:hover { filter: brightness(1.08); }
+.deck-settings:hover { background: rgb(255 255 255 / 20%); }
 
-/* Kept for the Transcripts card, which still says which model and links on. */
-.dictation-deck.deck-model,
-.dictation-deck.deck-polish { color: var(--ink); }
+/* The rehearsal is the card's call to action, not a setting: solid on the
+   gradient, where the other buttons are translucent. */
+.deck-settings.is-primary {
+  padding: 0 14px;
+  background: #fff;
+  color: #1a2140;
+}
+.deck-settings.is-primary:hover { background: #eef0ff; }
+.deck-settings:focus-visible { outline-color: #fff; }
 
 @media (max-width: 820px) {
   .dictation-deck {
@@ -2944,10 +3003,11 @@ select {
       "gestures"
       "settings";
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 16px;
   }
 
-  .deck-key { flex-direction: row; justify-content: flex-start; }
+  .deck-key { width: 100%; min-height: 58px; flex-direction: row; }
+  .deck-gestures { flex-wrap: wrap; gap: 8px 16px; }
   .deck-settings { justify-self: start; }
 }
 
