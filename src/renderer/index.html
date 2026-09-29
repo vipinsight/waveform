@@ -252,11 +252,27 @@
           -->
           <h2 class="section-label">Accuracy</h2>
           <div class="card accuracy">
-            <div class="rungs" id="accuracy-rungs" role="radiogroup" aria-label="Speed against accuracy"></div>
+            <!-- The wizard's slider, with the stop names under its notches. -->
+            <div class="ladder is-inline">
+              <div class="ladder-control">
+                <input
+                  class="ladder-slider"
+                  id="accuracy-slider"
+                  type="range"
+                  min="0"
+                  max="4"
+                  step="any"
+                  aria-label="Speed against accuracy"
+                />
+                <ol class="ladder-ticks" id="accuracy-ticks" aria-hidden="true"></ol>
+              </div>
+              <div class="ladder-labels" id="accuracy-labels"></div>
+            </div>
             <div class="accuracy-pick">
               <span class="row-label">
-                <strong id="accuracy-model">—</strong>
-                <small id="accuracy-facts"></small>
+                <span class="accuracy-head"><strong id="accuracy-rung">—</strong><span id="accuracy-model"></span></span>
+                <small id="accuracy-trade"></small>
+                <small class="accuracy-facts" id="accuracy-facts"></small>
               </span>
               <span class="row-actions" id="accuracy-action"></span>
             </div>
