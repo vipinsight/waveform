@@ -1728,9 +1728,9 @@ function renderAccuracy(): void {
   const label = getSpeechModel(focus).label;
   element.accuracyModel.textContent = at === null ? `${label} (from the full list)` : label;
   const facts = [
-    chosen?.wer != null ? `about ${chosen.wer.toFixed(1)} words in 100 wrong` : "",
-    chosen?.downloadBytes != null ? formatBytes(chosen.downloadBytes) : "",
-    chosen ? `${formatMemory(chosen.memoryMb)} of memory while loaded` : "",
+    chosen?.wer != null ? accuracy(chosen.wer) : "",
+    chosen?.downloadBytes != null ? `${formatBytes(chosen.downloadBytes)} disk` : "",
+    chosen ? `${formatMemory(chosen.memoryMb)} RAM` : "",
   ].filter((part) => part !== "");
   element.accuracyFacts.textContent = facts.join(" · ");
 
@@ -1929,8 +1929,8 @@ function modelRow(model: ModelStatus): HTMLElement {
   // The numbers the choice is made on. A third line of prose is dropped: the
   // group heading and the figures already say what the model is for.
   const facts = [
-    model.wer === null ? "" : `${model.wer.toFixed(1)}% of words wrong`,
-    size,
+    model.wer === null ? "" : accuracy(model.wer),
+    size === "" ? "" : `${size} disk`,
     `${formatMemory(model.memoryMb)} RAM`,
   ]
     .filter((part) => part !== "")
@@ -1983,7 +1983,7 @@ function modelRow(model: ModelStatus): HTMLElement {
   factLine.className = "model-facts";
   factLine.textContent = facts;
   if (model.wer !== null) {
-    factLine.title = "Word error rate — lower is more accurate";
+    factLine.title = `Gets about ${model.wer.toFixed(1)} words in 100 wrong on LibriSpeech`;
   }
 
   const body = document.createElement("span");
@@ -2404,6 +2404,14 @@ function announceUpdateIfNew(): void {
  * Whisper Medium is "1.5 GB", not "1534 MB": past a thousand the megabytes
  * stop being a size and start being a number to read.
  */
+/**
+ * A word error rate as the number people compare on. "WER 2.1" is a term of
+ * art; "97.9% accurate" is the same fact the way round that reads as good.
+ */
+function accuracy(wer: number): string {
+  return `${(100 - wer).toFixed(1)}% accurate`;
+}
+
 function formatBytes(bytes: number): string {
   const megabytes = bytes / 1_000_000;
   return megabytes >= 1_000
@@ -3931,15 +3939,9 @@ function renderLadderTicks(): void {
 function renderLadderFacts(id: SpeechModelId): void {
   const model = wizardCatalog.get(id);
   const facts: Array<[string, string]> = [
-    ["Download", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
-    ["Memory", model ? formatMemory(model.memoryMb) : "—"],
-    // Word error rate, said as the thing it measures. "WER 2.1" is a term of
-    // art; "about 2 words in 100" is the same fact to someone who has never
-    // read a speech paper.
-    [
-      "Gets wrong",
-      model?.wer != null ? `~${model.wer.toFixed(1)} words in 100` : "—",
-    ],
+    ["Disk", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
+    ["RAM", model ? formatMemory(model.memoryMb) : "—"],
+    ["Accuracy", model?.wer != null ? accuracy(model.wer) : "—"],
   ];
 
   element.ladderFacts.replaceChildren(
