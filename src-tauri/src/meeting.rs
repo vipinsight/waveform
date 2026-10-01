@@ -544,10 +544,11 @@ impl Recorder {
             .notes
             .iter()
             .filter(|note| {
-                !matches!(
+                let revisited = matches!(
                     note.kind.as_str(),
                     "interrupted" | "no-summary-key" | "summary-failed" | "summary-unparsed" | "nothing-said"
-                ) && !(steps.diarize && note.kind == "speaker-tool-missing")
+                ) || (steps.diarize && note.kind == "speaker-tool-missing");
+                !revisited
             })
             .cloned()
             .collect();

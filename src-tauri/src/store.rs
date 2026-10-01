@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// Shared handle to the open database.
 ///
@@ -251,6 +251,17 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
         // `stage`; those meetings keep it there and show it as is.
         transaction.execute_batch(
             "ALTER TABLE meetings ADD COLUMN notes TEXT NOT NULL DEFAULT '[]';",
+        )?;
+    }
+    if version < 5 {
+        // Meetings closed by version 3 wrote their interruption as prose in
+        // `stage`; the window now wants it as a note with a button.
+        transaction.execute(
+            "UPDATE meetings
+                SET notes = '[{\"kind\":\"interrupted\",\"text\":\"Waveform closed while this was recording. Everything up to that point was kept.\"}]',
+                    stage = NULL
+              WHERE state = 'failed' AND stage LIKE 'The app closed%'",
+            [],
         )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
