@@ -282,10 +282,78 @@ export interface DictionarySuggestion {
   text: string;
 }
 
+// --- Meetings ---------------------------------------------------------------
+
+export type MeetingState = "recording" | "processing" | "ready" | "failed";
+export type MeetingTrack = "mic" | "system";
+
+export interface Meeting {
+  id: string;
+  title: string;
+  /** Milliseconds since the epoch. */
+  createdAt: number;
+  durationMs: number;
+  state: MeetingState;
+  /** What processing is doing now, or why it stopped, or a note on what was skipped. */
+  stage: string | null;
+  language: string;
+  speechModel: string;
+  /** Raw speaker label ("me", "speaker_00") to the name the user gave it. */
+  speakers: Record<string, string>;
+  /** The summary text in its fixed shape, when one has been written. */
+  summary: string | null;
+  summaryModel: string | null;
+  hasSystemAudio: boolean;
+}
+
+export interface MeetingLine {
+  idx: number;
+  /** Milliseconds from the start of the recording. */
+  startMs: number;
+  endMs: number;
+  track: MeetingTrack;
+  /** Raw label; null for a remote line not yet tagged. */
+  speaker: string | null;
+  text: string;
+}
+
+export interface MeetingSummary {
+  overview: string;
+  topics: { heading: string; points: string[] }[];
+  nextSteps: string[];
+  decisions: string[];
+}
+
+export interface MeetingDetail {
+  meeting: Meeting;
+  lines: MeetingLine[];
+  summary: MeetingSummary | null;
+}
+
+export interface RecorderStatus {
+  /** The meeting being recorded now, if any. */
+  recording: string | null;
+  /** "available", "unsupported" (macOS before 14.2), or "missing" (helper not built). */
+  systemAudio: "available" | "unsupported" | "missing";
+  diarizerInstalled: boolean;
+  diarizerBytes: number;
+  hasOpenRouterKey: boolean;
+  localName: string;
+}
+
+export interface DiarizerInstallEvent {
+  stage: "downloading" | "ready" | "error";
+  message: string;
+  progress: number;
+}
+
 /** What saving a hand edit to a transcript returns. */
 export interface EditOutcome {
   entries: SavedDictation[];
+  /** Offered under the row when learning is set to ask. */
   suggestions: DictionarySuggestion[];
+  /** Added without asking when learning is automatic. */
+  added: DictionarySuggestion[];
 }
 
 export interface AppStats {
@@ -424,6 +492,27 @@ export interface DesktopApi {
   importDictionary(text: string): Promise<DictionaryTerm[]>;
   declineDictionarySuggestion(suggestion: DictionarySuggestion): Promise<void>;
   onDictionaryChanged(listener: (terms: DictionaryTerm[]) => void): () => void;
+
+  meetingRecorderStatus(): Promise<RecorderStatus>;
+  listMeetings(): Promise<Meeting[]>;
+  getMeeting(id: string): Promise<MeetingDetail>;
+  startMeeting(title?: string): Promise<Meeting>;
+  stopMeeting(): Promise<Meeting>;
+  /** Ends the recording and throws it away. */
+  cancelMeeting(): Promise<void>;
+  renameMeeting(id: string, title: string): Promise<Meeting>;
+  renameMeetingSpeaker(id: string, label: string, name: string): Promise<Meeting>;
+  /** Writes the summary again, after renames or once a key is added. */
+  summarizeMeeting(id: string): Promise<MeetingDetail>;
+  deleteMeeting(id: string): Promise<void>;
+  getMeetingAudio(id: string): Promise<Uint8Array>;
+  installDiarizer(): Promise<void>;
+  cancelDiarizerInstall(): Promise<void>;
+  removeDiarizer(): Promise<void>;
+  onMeetingLine(listener: (event: { meetingId: string; line: MeetingLine }) => void): () => void;
+  onMeetingChanged(listener: (meeting: Meeting) => void): () => void;
+  onMeetingsChanged(listener: () => void): () => void;
+  onDiarizerInstall(listener: (event: DiarizerInstallEvent) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   /** Every model, and what is on this machine for each. */

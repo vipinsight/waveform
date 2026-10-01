@@ -33,6 +33,8 @@ export type ThemePreference = "system" | "light" | "dark";
 /** Where a rewrite runs: a hosted model, or one downloaded onto this Mac. */
 export type PolishEngine = "openrouter" | "local";
 export type OverlayPlacement = "bottom" | "top";
+/** What a correction to a transcript does to the dictionary. */
+export type DictionaryLearning = "ask" | "auto";
 
 export interface AppSettings {
   modelId: SpeechModelId;
@@ -44,6 +46,12 @@ export interface AppSettings {
    * settings file still loads.
    */
   speechVocabulary: string;
+  /**
+   * When a transcript is corrected by hand: offer the new term, or add it
+   * without asking. Asking is the default because an edit is as often a
+   * rewording as a fix; automatic suits someone who only ever fixes names.
+   */
+  dictionaryLearning: DictionaryLearning;
   /** Empty means let macOS choose its current default input. */
   microphoneDeviceId: string;
   /** Last readable device label, used by the menu bar while the window is hidden. */
@@ -138,6 +146,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelId: DEFAULT_SPEECH_MODEL_ID,
   speechLanguage: DEFAULT_SPEECH_LANGUAGE,
   speechVocabulary: "",
+  dictionaryLearning: "ask",
   microphoneDeviceId: "",
   microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
@@ -192,6 +201,10 @@ export function normalizeSettings(
       ? input.speechLanguage
       : base.speechLanguage,
     speechVocabulary: optionalText(input.speechVocabulary, base.speechVocabulary, 2_000),
+    dictionaryLearning:
+      input.dictionaryLearning === "ask" || input.dictionaryLearning === "auto"
+        ? input.dictionaryLearning
+        : base.dictionaryLearning,
     microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
     microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,

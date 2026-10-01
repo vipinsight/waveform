@@ -178,6 +178,10 @@ private final class SystemTap {
   }
 
   func stop() {
+    status([
+      "type": "stats", "callbacks": debug.callbacks, "bytes": debug.bytes,
+      "channels": Int(format.mChannelsPerFrame),
+    ])
     if let procID {
       AudioDeviceStop(aggregateID, procID)
       AudioDeviceDestroyIOProcID(aggregateID, procID)

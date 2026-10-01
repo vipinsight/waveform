@@ -19,8 +19,13 @@ const FLOOR_MARGIN: f32 = 2.5;
 const CALIBRATION_MS: u32 = 250;
 /// Which calibration block stands for the room: the tenth percentile.
 const CALIBRATION_PERCENTILE: f32 = 0.1;
-/// Below this a block is a dropout, not a room.
-const DROPOUT_LEVEL: f32 = 1e-5;
+/// Below this a block is a dropout or a stream still warming up, not a room.
+///
+/// A microphone's first blocks arrive at digital silence (a few 1e-5) before
+/// the converter settles. Calibrating on those learned a floor of 0.001, the
+/// gain pinned at its maximum, and every later block -- the room included --
+/// read as speech, so phrases were only ever cut at the cap.
+const DROPOUT_LEVEL: f32 = 1e-4;
 /// How much audio is kept ahead of the first phrase.
 const LEAD_IN_MS: u32 = 3_000;
 
@@ -84,6 +89,9 @@ pub struct Segmenter {
     segment_len: usize,
     /// Where the current segment's first sample sits in the stream.
     segment_start: u64,
+    /// Each block's level within the current segment, for relearning the
+    /// room from a stretch that never fell silent.
+    segment_levels: Vec<f32>,
     speech_samples: usize,
     silence_samples: usize,
     speaking: bool,
@@ -114,6 +122,7 @@ impl Segmenter {
             segment: Vec::new(),
             segment_len: 0,
             segment_start: 0,
+            segment_levels: Vec::new(),
             speech_samples: 0,
             silence_samples: 0,
             speaking: false,
@@ -134,8 +143,11 @@ impl Segmenter {
         let level = rms(block) * factor;
 
         if self.calibrating > 0 {
-            self.calibrating -= block.len() as i64;
+            // Only blocks with a room in them count towards the window: the
+            // stream's warm-up silence says nothing about the room, and a
+            // window spent on it learned a floor the room itself exceeded.
             if level > DROPOUT_LEVEL {
+                self.calibrating -= block.len() as i64;
                 self.calibration_levels.push(level);
             }
             if self.calibrating <= 0 {
@@ -162,10 +174,12 @@ impl Segmenter {
             self.segment.push(block.to_vec());
             self.segment_len = self.pre_roll_len + block.len();
             self.pre_roll_len = 0;
+            self.segment_levels.clear();
         } else {
             self.segment.push(block.to_vec());
             self.segment_len += block.len();
         }
+        self.segment_levels.push(level);
 
         if is_speech {
             self.speech_samples += block.len();
@@ -174,10 +188,31 @@ impl Segmenter {
             self.silence_samples += block.len();
         }
 
-        if self.silence_samples >= self.trailing_silence || self.segment_len >= self.maximum_segment {
+        if self.silence_samples >= self.trailing_silence {
+            return self.finish(self.minimum_speech);
+        }
+        if self.segment_len >= self.maximum_segment {
+            // A stretch this long with no pause in it is not someone talking
+            // without breathing; it is a floor that was learned too low. The
+            // quietest tenth of the stretch is the room, so the floor is
+            // taken from there and the next pause will be heard.
+            self.relearn_floor_from_segment();
             return self.finish(self.minimum_speech);
         }
         None
+    }
+
+    fn relearn_floor_from_segment(&mut self) {
+        if self.silence_samples > 0 || self.segment_levels.len() < 8 {
+            return;
+        }
+        let mut levels = std::mem::take(&mut self.segment_levels);
+        levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let index = ((levels.len() - 1) as f32 * CALIBRATION_PERCENTILE).floor() as usize;
+        let quiet = levels[index];
+        if quiet > self.floor {
+            self.floor = quiet;
+        }
     }
 
     /// Ends the stream and returns whatever was captured.
@@ -266,9 +301,7 @@ impl InputGain {
     }
 
     fn desired(&self) -> f32 {
-        (TARGET_PEAK / self.peak.max(TARGET_PEAK / MAX_GAIN))
-            .max(1.0)
-            .min(MAX_GAIN)
+        (TARGET_PEAK / self.peak.max(TARGET_PEAK / MAX_GAIN)).clamp(1.0, MAX_GAIN)
     }
 }
 
@@ -382,11 +415,6 @@ impl WavWriter {
         Ok(())
     }
 
-    /// Seconds of audio written so far.
-    pub fn seconds(&self) -> f64 {
-        self.data_bytes as f64 / 2.0 / self.sample_rate as f64
-    }
-
     pub fn finish(mut self) -> std::io::Result<()> {
         self.patch_header()?;
         self.file.flush()
@@ -410,6 +438,10 @@ mod tests {
     const RATE: u32 = 8_000;
     const BLOCK: usize = 400; // 50 ms
 
+    /// A quiet room, not digital zero: a block of exact zeros is a stream
+    /// that has not started, and calibration rightly waits it out.
+    const ROOM: f32 = 0.002;
+
     fn block(amplitude: f32) -> Vec<f32> {
         vec![amplitude; BLOCK]
     }
@@ -429,9 +461,9 @@ mod tests {
     #[test]
     fn cuts_a_phrase_at_trailing_silence_with_its_timestamps() {
         let mut segmenter = Segmenter::new(SegmenterOptions::dictation(RATE));
-        assert!(feed(&mut segmenter, 300, 0.0).is_empty()); // calibration
+        assert!(feed(&mut segmenter, 300, ROOM).is_empty()); // calibration
         assert!(feed(&mut segmenter, 1_000, 0.2).is_empty());
-        let phrases = feed(&mut segmenter, 800, 0.0);
+        let phrases = feed(&mut segmenter, 800, ROOM);
         assert_eq!(phrases.len(), 1);
         let phrase = &phrases[0];
         // Lead-in keeps the 300 ms of room before the first phrase.
@@ -444,13 +476,13 @@ mod tests {
     #[test]
     fn a_second_phrase_starts_where_its_pre_roll_does() {
         let mut segmenter = Segmenter::new(SegmenterOptions::dictation(RATE));
-        feed(&mut segmenter, 300, 0.0);
+        feed(&mut segmenter, 300, ROOM);
         feed(&mut segmenter, 1_000, 0.2);
-        feed(&mut segmenter, 800, 0.0);
+        feed(&mut segmenter, 800, ROOM);
         // 2 s of room, then speech again: the pre-roll is 320 ms (7 blocks of 50 ms, rounded up).
-        feed(&mut segmenter, 2_000, 0.0);
+        feed(&mut segmenter, 2_000, ROOM);
         feed(&mut segmenter, 500, 0.2);
-        let phrases = feed(&mut segmenter, 800, 0.0);
+        let phrases = feed(&mut segmenter, 800, ROOM);
         assert_eq!(phrases.len(), 1);
         let speech_started = 300 + 1_000 + 800 + 2_000;
         let start = phrases[0].start_ms;
@@ -460,9 +492,9 @@ mod tests {
     #[test]
     fn a_click_is_not_a_phrase_but_a_flush_keeps_short_speech() {
         let mut segmenter = Segmenter::new(SegmenterOptions::dictation(RATE));
-        feed(&mut segmenter, 300, 0.0);
+        feed(&mut segmenter, 300, ROOM);
         feed(&mut segmenter, 50, 0.2); // 50 ms: under the 120 ms minimum
-        assert!(feed(&mut segmenter, 800, 0.0).is_empty());
+        assert!(feed(&mut segmenter, 800, ROOM).is_empty());
 
         feed(&mut segmenter, 100, 0.2); // under 120 but over the 60 ms flush floor
         assert!(segmenter.flush().is_some());
@@ -471,7 +503,7 @@ mod tests {
     #[test]
     fn a_long_monologue_is_cut_at_the_cap() {
         let mut segmenter = Segmenter::new(SegmenterOptions::meeting(RATE));
-        feed(&mut segmenter, 300, 0.0);
+        feed(&mut segmenter, 300, ROOM);
         let phrases = feed(&mut segmenter, 30_000, 0.2);
         assert_eq!(phrases.len(), 1);
         assert_eq!(phrases[0].end_ms - phrases[0].start_ms, 25_000);
@@ -480,8 +512,38 @@ mod tests {
     #[test]
     fn silence_alone_yields_nothing() {
         let mut segmenter = Segmenter::new(SegmenterOptions::dictation(RATE));
-        assert!(feed(&mut segmenter, 5_000, 0.0).is_empty());
+        assert!(feed(&mut segmenter, 5_000, ROOM).is_empty());
         assert!(segmenter.flush().is_none());
+        // A stream that never starts, likewise.
+        let mut dead = Segmenter::new(SegmenterOptions::dictation(RATE));
+        assert!(feed(&mut dead, 5_000, 0.0).is_empty());
+        assert!(dead.flush().is_none());
+    }
+
+    /// The failure seen on a real recording: a stream that opens at digital
+    /// silence teaches a floor so low that the room itself reads as speech.
+    #[test]
+    fn a_floor_learned_from_warm_up_silence_heals_at_the_first_cap() {
+        let mut segmenter = Segmenter::new(SegmenterOptions::meeting(RATE));
+        // Warm-up: a few blocks at a few 1e-5, then a real room at 0.01.
+        feed(&mut segmenter, 300, 0.00003);
+        // Room tone with speech in it, never dropping to the warm-up level.
+        let mut phrases = Vec::new();
+        for _ in 0..3 {
+            phrases.extend(feed(&mut segmenter, 1_000, 0.06));
+            phrases.extend(feed(&mut segmenter, 1_000, 0.01));
+        }
+        // Everything was "speech" until the cap; room blocks are included.
+        let first_cap = phrases.len();
+        phrases.extend(feed(&mut segmenter, 30_000, 0.01));
+        assert!(phrases.len() >= first_cap + 1, "the cap must fire");
+        // After the cap the floor is the room, so speech then room now cuts.
+        let before = phrases.len();
+        phrases.extend(feed(&mut segmenter, 1_000, 0.06));
+        phrases.extend(feed(&mut segmenter, 1_000, 0.01));
+        assert_eq!(phrases.len(), before + 1, "a pause after speech now cuts a phrase");
+        let last = phrases.last().unwrap();
+        assert!(last.end_ms - last.start_ms < 3_000, "{}", last.end_ms - last.start_ms);
     }
 
     #[test]
@@ -501,7 +563,6 @@ mod tests {
         let mut writer = WavWriter::create(&path, RATE).unwrap();
         writer.write(&vec![0.5; 1_000]).unwrap();
         writer.write(&vec![-0.5; 1_000]).unwrap();
-        assert!((writer.seconds() - 0.25).abs() < 1e-9);
         writer.finish().unwrap();
 
         let bytes = std::fs::read(&path).unwrap();
@@ -523,5 +584,43 @@ mod tests {
         assert!((out[0] - 0.9).abs() < 1e-6);
         assert!((out[1] + 0.45).abs() < 1e-6);
         assert_eq!(normalize_phrase(&[0.0, 0.0]), vec![0.0, 0.0]);
+    }
+}
+
+#[cfg(test)]
+mod wav_probe {
+    use super::*;
+
+    /// Runs the segmenter over a real recording and prints its cuts.
+    /// `WAVEFORM_TEST_WAV=/path/to/mic.wav cargo test -- --ignored probe --nocapture`
+    #[test]
+    #[ignore]
+    fn probe_segments_a_recording() {
+        let path = std::env::var("WAVEFORM_TEST_WAV").expect("set WAVEFORM_TEST_WAV");
+        let bytes = std::fs::read(&path).expect("read");
+        let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
+        let samples: Vec<f32> = bytes[44..]
+            .chunks_exact(2)
+            .map(|p| i16::from_le_bytes([p[0], p[1]]) as f32 / 32_768.0)
+            .collect();
+        let mut segmenter = Segmenter::new(SegmenterOptions::meeting(rate));
+        let mut cuts = 0;
+        for (i, block) in samples.chunks(2_048).enumerate() {
+            if i % 50 == 0 {
+                eprintln!(
+                    "t={:.1}s level={:.4} thr={:.4} floor={:.5} gain={:.1}",
+                    i as f32 * 2_048.0 / rate as f32,
+                    rms(block) * segmenter.gain.applied,
+                    segmenter.threshold(),
+                    segmenter.floor,
+                    segmenter.gain.applied
+                );
+            }
+            if let Some(p) = segmenter.push(block) {
+                cuts += 1;
+                eprintln!("CUT {} -> {} ({} ms)", p.start_ms, p.end_ms, p.end_ms - p.start_ms);
+            }
+        }
+        eprintln!("cuts: {cuts}");
     }
 }

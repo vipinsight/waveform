@@ -63,6 +63,15 @@
             <span>Transcripts</span>
             <span class="nav-badge" id="setup-badge" hidden></span>
           </button>
+          <button class="nav-item" type="button" data-view="meetings">
+            <svg data-icon="users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>Meetings</span>
+          </button>
           <button class="nav-item" type="button" data-view="dictation">
             <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 19v3" />
@@ -298,6 +307,70 @@
           the list grows, people come back to it, and it is read by every
           engine rather than being one more dictation setting.
         -->
+        <!--
+          Meetings: record a call, read the summary, search the transcript.
+          The host records and transcribes; this page shows what it reports.
+        -->
+        <section class="view" id="view-meetings" hidden>
+          <div class="view-head">
+            <h1 class="display">Meetings</h1>
+            <span class="head-tools">
+              <input
+                id="meetings-search"
+                class="dictionary-field is-search"
+                type="search"
+                placeholder="Search meetings"
+                aria-label="Search meetings"
+                spellcheck="false"
+              />
+              <button id="meeting-record" class="pill-button is-primary" type="button">Record</button>
+            </span>
+          </div>
+
+          <div id="meetings-setup" class="card meetings-setup" hidden></div>
+          <div id="meetings-list" class="meetings-list"></div>
+          <p id="meetings-empty" class="dictionary-empty"></p>
+
+          <section id="meeting-detail" class="meeting-detail" hidden>
+            <button id="meeting-back" class="link meeting-back" type="button">← All meetings</button>
+            <header class="meeting-head">
+              <input
+                id="meeting-title"
+                class="meeting-title"
+                type="text"
+                aria-label="Meeting title"
+                spellcheck="false"
+                maxlength="200"
+              />
+              <span id="meeting-meta" class="view-note"></span>
+              <span class="meeting-actions">
+                <button id="meeting-stop" class="pill-button is-primary" type="button">Stop</button>
+                <button id="meeting-discard" class="pill-button" type="button">Discard</button>
+                <button id="meeting-play" class="pill-button" type="button">Play</button>
+                <button id="meeting-copy-transcript" class="pill-button" type="button">Copy transcript</button>
+                <button id="meeting-delete" class="pill-button is-danger" type="button">Delete</button>
+              </span>
+            </header>
+            <p id="meeting-stage" class="meeting-stage" hidden></p>
+            <section id="meeting-summary" class="meeting-summary" hidden></section>
+            <section class="meeting-transcript">
+              <div class="meeting-transcript-head">
+                <h2 class="section-label">Transcript</h2>
+                <input
+                  id="meeting-find"
+                  class="dictionary-field is-search"
+                  type="search"
+                  placeholder="Find in transcript"
+                  aria-label="Find in transcript"
+                  spellcheck="false"
+                />
+              </div>
+              <div id="meeting-speakers" class="meeting-speakers" hidden></div>
+              <ol id="meeting-lines" class="meeting-lines"></ol>
+            </section>
+          </section>
+        </section>
+
         <section class="view" id="view-dictionary" hidden>
           <div class="view-head">
             <h1 class="display">Dictionary</h1>
@@ -339,6 +412,21 @@
                 />
                 <button class="pill-button is-primary" type="submit">Add</button>
               </form>
+            </div>
+            <div class="row">
+              <span class="row-label">
+                When I correct a transcript
+                <small>
+                  Editing a saved transcript shows what the engine heard and what you meant.
+                  Ask before adding the word, or add it straight away.
+                </small>
+              </span>
+              <span class="row-actions">
+                <div class="segmented" id="dictionary-learning" role="radiogroup" aria-label="Learning from corrections">
+                  <button type="button" role="radio" data-learning="ask" aria-checked="true">Ask me</button>
+                  <button type="button" role="radio" data-learning="auto" aria-checked="false">Add automatically</button>
+                </div>
+              </span>
             </div>
             <div class="dictionary-tools" id="dictionary-tools" hidden>
               <input

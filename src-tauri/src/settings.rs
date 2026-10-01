@@ -80,6 +80,8 @@ pub struct AppSettings {
     /// Retired: one release kept a comma list of terms here. It is moved into
     /// the dictionary on launch and cleared; kept so an older file still loads.
     pub speech_vocabulary: String,
+    /// "ask" offers a corrected word as a dictionary term; "auto" adds it.
+    pub dictionary_learning: String,
     /// Empty means follow macOS's current default input device.
     pub microphone_device_id: String,
     /// Human-readable label shown in the tray while the main window is hidden.
@@ -164,6 +166,7 @@ impl Default for AppSettings {
             model_id: default_model_id().to_string(),
             speech_language: "en".to_string(),
             speech_vocabulary: String::new(),
+            dictionary_learning: "ask".to_string(),
             microphone_device_id: String::new(),
             microphone_device_name: String::new(),
             hotkey_id: "fn".to_string(),
@@ -219,6 +222,9 @@ impl AppSettings {
             self.speech_language = base.speech_language.clone();
         }
         self.speech_vocabulary = bounded_text(&self.speech_vocabulary, 2_000);
+        if !matches!(self.dictionary_learning.as_str(), "ask" | "auto") {
+            self.dictionary_learning = base.dictionary_learning.clone();
+        }
         self.microphone_device_id = bounded_text(&self.microphone_device_id, 1_024);
         self.microphone_device_name = bounded_text(&self.microphone_device_name, 200);
         if !HOTKEY_IDS.contains(&self.hotkey_id.as_str()) {

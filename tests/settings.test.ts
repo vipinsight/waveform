@@ -38,6 +38,14 @@ describe("normalizeSettings", () => {
     expect(rust).toContain("bounded_text(&self.speech_vocabulary, 2_000)");
   });
 
+  it("asks before learning a correction unless told to add it", () => {
+    expect(DEFAULT_SETTINGS.dictionaryLearning).toBe("ask");
+    expect(normalizeSettings({ dictionaryLearning: "auto" }).dictionaryLearning).toBe("auto");
+    expect(normalizeSettings({ dictionaryLearning: "always" }).dictionaryLearning).toBe("ask");
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain('dictionary_learning: "ask".to_string()');
+  });
+
   it("falls back to defaults for an unusable file", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings("garbage")).toEqual(DEFAULT_SETTINGS);

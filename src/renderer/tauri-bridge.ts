@@ -28,6 +28,11 @@ import type {
   DictionaryTerm,
   DictionarySuggestion,
   EditOutcome,
+  Meeting,
+  MeetingDetail,
+  MeetingLine,
+  RecorderStatus,
+  DiarizerInstallEvent,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -148,6 +153,31 @@ const api: DesktopApi = {
     invoke<void>("decline_dictionary_suggestion", { suggestion }),
   onDictionaryChanged: (listener) =>
     subscribe<DictionaryTerm[]>("dictionary-changed", listener),
+
+  meetingRecorderStatus: () => invoke<RecorderStatus>("meeting_recorder_status"),
+  listMeetings: () => invoke<Meeting[]>("list_meetings"),
+  getMeeting: (id) => invoke<MeetingDetail>("get_meeting", { id }),
+  startMeeting: (title) => invoke<Meeting>("start_meeting", { title: title ?? null }),
+  stopMeeting: () => invoke<Meeting>("stop_meeting"),
+  cancelMeeting: () => invoke<void>("cancel_meeting"),
+  renameMeeting: (id, title) => invoke<Meeting>("rename_meeting", { id, title }),
+  renameMeetingSpeaker: (id, label, name) =>
+    invoke<Meeting>("rename_meeting_speaker", { id, label, name }),
+  summarizeMeeting: (id) => invoke<MeetingDetail>("summarize_meeting", { id }),
+  deleteMeeting: (id) => invoke<void>("delete_meeting", { id }),
+  getMeetingAudio: async (id) => {
+    const bytes = await invoke<number[]>("get_meeting_audio", { id });
+    return Uint8Array.from(bytes);
+  },
+  installDiarizer: () => invoke<void>("install_diarizer"),
+  cancelDiarizerInstall: () => invoke<void>("cancel_diarizer_install"),
+  removeDiarizer: () => invoke<void>("remove_diarizer"),
+  onMeetingLine: (listener) =>
+    subscribe<{ meetingId: string; line: MeetingLine }>("meeting-line", listener),
+  onMeetingChanged: (listener) => subscribe<Meeting>("meeting-changed", listener),
+  onMeetingsChanged: (listener) => subscribe<unknown>("meetings-changed", () => listener()),
+  onDiarizerInstall: (listener) =>
+    subscribe<DiarizerInstallEvent>("diarizer-install", listener),
   getStats: () => invoke<AppStats>("get_stats"),
   onStatsChanged: (listener) => subscribe<AppStats>("stats-changed", listener),
 

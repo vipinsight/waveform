@@ -48,6 +48,7 @@ import {
   transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
+import { bindMeetings, showMeetings } from "./meetings";
 import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
@@ -696,6 +697,7 @@ function wireEvents(): void {
     void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
   });
   bindDictionary();
+  bindMeetings({ openView });
   element.logCopy.addEventListener("click", () => {
     const text = logLines
       .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
@@ -782,7 +784,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "dictionary", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "dictionary", "meetings", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
@@ -798,6 +800,7 @@ function showView(view: string): void {
   // Labels are what name the devices, and WebKit hands them over only once
   // the microphone has been asked for.
   if (view === "dictation") void refreshMicrophones(true);
+  if (view === "meetings") showMeetings();
 }
 
 /** Shows a section of the window, closing Settings if it is over it. */
@@ -960,6 +963,11 @@ function applySettings(next: AppSettings): void {
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
   element.transcribeDropToggle.checked = next.transcribeOnDrop;
+  for (const button of Array.from(
+    document.querySelectorAll<HTMLElement>("#dictionary-learning [data-learning]"),
+  )) {
+    button.setAttribute("aria-checked", String(button.dataset.learning === next.dictionaryLearning));
+  }
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
@@ -3015,6 +3023,10 @@ async function saveEntryEdit(entry: SavedDictation, after: string, text: HTMLEle
     if (row && outcome.suggestions.length > 0) {
       offerSuggestions(row as HTMLElement, outcome.suggestions);
     }
+    if (outcome.added.length > 0) {
+      const names = outcome.added.map((added) => added.text).join(", ");
+      setStatus(`Added ${names} to the dictionary`);
+    }
   } catch (error) {
     text.textContent = entry.text;
     setStatus(error instanceof Error ? error.message : String(error));
@@ -3108,6 +3120,10 @@ function bindDictionary(): void {
       });
   });
   element.dictionarySearch.addEventListener("input", renderDictionary);
+  bindGroup("#dictionary-learning [data-learning]", (button) => {
+    const value = button.dataset.learning;
+    if (value === "ask" || value === "auto") void patchSettings({ dictionaryLearning: value });
+  });
   element.dictionaryExport.addEventListener("click", () => {
     void navigator.clipboard.writeText(dictionary.map((term) => term.text).join(", "));
     element.dictionaryExport.textContent = "Copied";

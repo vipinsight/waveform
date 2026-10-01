@@ -21,9 +21,55 @@ const QUEUE: usize = 8;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CaptureBlock {
-    samples: Vec<f32>,
-    sample_rate: u32,
+pub struct CaptureBlock {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+}
+
+/// A second microphone stream, for a meeting, that hands its blocks to a
+/// channel instead of the overlay.
+///
+/// Dictation and a meeting can both be open: Core Audio allows two input
+/// streams on one device, and they are read by different code. The stream
+/// lives on its own thread for the same reason the dictation one does, and
+/// closing the handle ends it.
+pub struct MeetingInput {
+    stop: Sender<()>,
+}
+
+impl MeetingInput {
+    /// Opens the preferred device and starts delivering blocks. Returns the
+    /// device's name and sample rate as soon as the stream is running.
+    pub fn open(preferred_name: &str, blocks: SyncSender<CaptureBlock>) -> Result<(String, u32, Self), String> {
+        let (reply, wait) = mpsc::channel::<Result<(String, u32), String>>();
+        let (stop, stopped) = mpsc::channel::<()>();
+        let preferred = preferred_name.to_string();
+        std::thread::Builder::new()
+            .name("waveform-meeting-mic".into())
+            .spawn(move || match open_stream(&preferred, blocks) {
+                Ok((name, rate, stream)) => {
+                    let _ = reply.send(Ok((name, rate)));
+                    // Held here until the handle is dropped or asks to stop.
+                    let _ = stopped.recv();
+                    let _ = stream.pause();
+                    drop(stream);
+                }
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                }
+            })
+            .map_err(|error| format!("Microphone unavailable: {error}"))?;
+        let (name, rate) = wait
+            .recv()
+            .map_err(|_| "Microphone thread stopped".to_string())??;
+        Ok((name, rate, Self { stop }))
+    }
+}
+
+impl Drop for MeetingInput {
+    fn drop(&mut self) {
+        let _ = self.stop.send(());
+    }
 }
 
 enum Command {
@@ -110,16 +156,6 @@ fn stop_stream(stream: &mut Option<Stream>) {
 }
 
 fn open(preferred_name: &str, app: AppHandle) -> Result<(String, Stream), String> {
-    let device = pick_input_device(preferred_name)?;
-    let name = device.name().unwrap_or_else(|_| "microphone".into());
-    let supported = device
-        .default_input_config()
-        .map_err(|error| format!("Microphone unavailable: {error}"))?;
-    let sample_rate = supported.sample_rate().0;
-    let channels = supported.channels() as usize;
-    let format = supported.sample_format();
-    let config: StreamConfig = supported.into();
-
     let (sender, receiver) = mpsc::sync_channel::<CaptureBlock>(QUEUE);
     let emit = app.clone();
     std::thread::Builder::new()
@@ -130,6 +166,24 @@ fn open(preferred_name: &str, app: AppHandle) -> Result<(String, Stream), String
             }
         })
         .map_err(|error| format!("Microphone unavailable: {error}"))?;
+    let (name, sample_rate, stream) = open_stream(preferred_name, sender)?;
+    Ok((format!("{name} at {sample_rate}Hz"), stream))
+}
+
+/// Opens the device and starts the stream, delivering blocks to `sender`.
+fn open_stream(
+    preferred_name: &str,
+    sender: SyncSender<CaptureBlock>,
+) -> Result<(String, u32, Stream), String> {
+    let device = pick_input_device(preferred_name)?;
+    let name = device.name().unwrap_or_else(|_| "microphone".into());
+    let supported = device
+        .default_input_config()
+        .map_err(|error| format!("Microphone unavailable: {error}"))?;
+    let sample_rate = supported.sample_rate().0;
+    let channels = supported.channels() as usize;
+    let format = supported.sample_format();
+    let config: StreamConfig = supported.into();
 
     let stream = match format {
         SampleFormat::F32 => build_f32(&device, &config, channels, sample_rate, sender)?,
@@ -139,7 +193,7 @@ fn open(preferred_name: &str, app: AppHandle) -> Result<(String, Stream), String
     stream
         .play()
         .map_err(|error| format!("Microphone failed to start: {error}"))?;
-    Ok((format!("{name} at {sample_rate}Hz"), stream))
+    Ok((name, sample_rate, stream))
 }
 
 fn build_f32(
