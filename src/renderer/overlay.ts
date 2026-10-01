@@ -106,7 +106,7 @@ const capture = new AudioCapture({
     // Held clips stay until Retry or Dismiss; an empty room has nothing to keep.
     if (!retryable) scheduleIdle();
   },
-  transcribe: (bytes) => host().transcribe(bytes),
+  transcribe: (bytes, priorText) => host().transcribe(bytes, priorText),
   startNativeCapture: () => host().startNativeCapture(),
   stopNativeCapture: () => host().stopNativeCapture(),
 });

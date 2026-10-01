@@ -38,6 +38,11 @@ export interface AppSettings {
   modelId: SpeechModelId;
   /** Language handed to the speech model. Empty asks it to detect. */
   speechLanguage: SpeechLanguageCode;
+  /**
+   * Names and terms the speech model is primed with before every phrase, as
+   * typed. Empty primes it with nothing.
+   */
+  speechVocabulary: string;
   /** Empty means let macOS choose its current default input. */
   microphoneDeviceId: string;
   /** Last readable device label, used by the menu bar while the window is hidden. */
@@ -131,6 +136,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   modelId: DEFAULT_SPEECH_MODEL_ID,
   speechLanguage: DEFAULT_SPEECH_LANGUAGE,
+  speechVocabulary: "",
   microphoneDeviceId: "",
   microphoneDeviceName: "",
   hotkeyId: DEFAULT_HOTKEY_ID,
@@ -184,6 +190,7 @@ export function normalizeSettings(
     speechLanguage: isSpeechLanguage(input.speechLanguage)
       ? input.speechLanguage
       : base.speechLanguage,
+    speechVocabulary: optionalText(input.speechVocabulary, base.speechVocabulary, 2_000),
     microphoneDeviceId: optionalText(input.microphoneDeviceId, base.microphoneDeviceId, 1_024),
     microphoneDeviceName: optionalText(input.microphoneDeviceName, base.microphoneDeviceName, 200),
     hotkeyId: isHotkeyBindingId(input.hotkeyId) ? input.hotkeyId : base.hotkeyId,

@@ -789,7 +789,16 @@ impl ModelServer {
     ///
     /// Passed per phrase rather than fixed when the engine starts, so changing
     /// it takes effect on the next phrase instead of after a reload.
-    pub async fn transcribe(&self, wav: Vec<u8>, language: &str) -> Result<String, String> {
+    ///
+    /// `prompt` primes the decoder with text (see `whisper_cpp::build_prompt`).
+    /// Only whisper.cpp takes one: Parakeet has no prompt input, and the Qwen
+    /// worker does not plumb one through yet.
+    pub async fn transcribe(
+        &self,
+        wav: Vec<u8>,
+        language: &str,
+        prompt: &str,
+    ) -> Result<String, String> {
         // One request at a time: both engines are single-threaded, and
         // overlapping calls only queue behind each other anyway.
         let _guard = self.transcribe_lock.lock().await;
@@ -799,7 +808,7 @@ impl ModelServer {
         match runtime(model(&id).engine) {
             Runtime::Http => self.transcribe_parakeet(wav, language).await,
             Runtime::Worker(spec) => self.transcribe_worker(spec, wav, language).await,
-            Runtime::InProcess => self.transcribe_whisper_cpp(wav, language).await,
+            Runtime::InProcess => self.transcribe_whisper_cpp(wav, language, prompt).await,
         }
     }
 
@@ -834,6 +843,7 @@ impl ModelServer {
         &self,
         wav: Vec<u8>,
         language: &str,
+        prompt: &str,
     ) -> Result<String, String> {
         let context = self
             .whisper_cpp
@@ -842,9 +852,10 @@ impl ModelServer {
             .clone()
             .ok_or("Whisper is not loaded.")?;
         let language = language.to_string();
+        let prompt = prompt.to_string();
         tokio::task::spawn_blocking(move || {
             let audio = crate::whisper_cpp::decode_wav(&wav)?;
-            crate::whisper_cpp::transcribe(&context, &audio, &language)
+            crate::whisper_cpp::transcribe(&context, &audio, &language, &prompt)
         })
         .await
         .map_err(|error| format!("Transcription panicked: {error}"))?

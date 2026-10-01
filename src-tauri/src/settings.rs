@@ -77,6 +77,9 @@ pub struct AppSettings {
     /// Language handed to the speech model. Empty asks it to detect, which on a
     /// single dictated phrase it does unreliably.
     pub speech_language: String,
+    /// Names and terms the speech model is primed with before every phrase,
+    /// as the user typed them. Empty primes it with nothing.
+    pub speech_vocabulary: String,
     /// Empty means follow macOS's current default input device.
     pub microphone_device_id: String,
     /// Human-readable label shown in the tray while the main window is hidden.
@@ -160,6 +163,7 @@ impl Default for AppSettings {
         Self {
             model_id: default_model_id().to_string(),
             speech_language: "en".to_string(),
+            speech_vocabulary: String::new(),
             microphone_device_id: String::new(),
             microphone_device_name: String::new(),
             hotkey_id: "fn".to_string(),
@@ -214,6 +218,7 @@ impl AppSettings {
         if !SPEECH_LANGUAGES.contains(&self.speech_language.as_str()) {
             self.speech_language = base.speech_language.clone();
         }
+        self.speech_vocabulary = bounded_text(&self.speech_vocabulary, 2_000);
         self.microphone_device_id = bounded_text(&self.microphone_device_id, 1_024);
         self.microphone_device_name = bounded_text(&self.microphone_device_name, 200);
         if !HOTKEY_IDS.contains(&self.hotkey_id.as_str()) {

@@ -39,14 +39,76 @@ pub fn load(file: &str) -> Result<WhisperContext, String> {
         .map_err(|error| format!("Could not load {file}: {error}"))
 }
 
+/// How much text a prompt may carry, in characters.
+///
+/// Whisper reads at most 224 tokens of prompt and drops the front of anything
+/// longer. English runs around four characters a token, so this stays under
+/// that for prose while leaving room for a long vocabulary; whisper.cpp still
+/// truncates from the front if a dense script pushes past the token limit,
+/// which is why the vocabulary goes last in `build_prompt`.
+const PROMPT_CHARS: usize = 800;
+
+/// The text whisper.cpp is primed with before it hears a phrase.
+///
+/// `prior` is what the session has transcribed so far; the tail of it tells
+/// the decoder which sentence it is in the middle of, so a phrase cut at a
+/// comma comes back lower-case and punctuated to match, and a name heard once
+/// is spelled the same way the second time. `vocabulary` is the user's own
+/// list of terms. It comes after the context so that if the prompt is still
+/// too long in tokens, whisper.cpp's own front truncation drops old context
+/// rather than the terms the user typed; `prior` is itself trimmed here from
+/// the front, on a word boundary, to whatever room the vocabulary leaves.
+pub fn build_prompt(vocabulary: &str, prior: &str) -> String {
+    let vocabulary = vocabulary.trim();
+    let prior = prior.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let room = PROMPT_CHARS
+        .saturating_sub(vocabulary.chars().count())
+        .saturating_sub(if vocabulary.is_empty() { 0 } else { 1 });
+    let context = tail_on_word_boundary(&prior, room);
+
+    match (context.is_empty(), vocabulary.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => vocabulary.to_string(),
+        (false, true) => context.to_string(),
+        (false, false) => format!("{context} {vocabulary}"),
+    }
+}
+
+/// The last `limit` characters of `text`, cut so it starts at a whole word.
+fn tail_on_word_boundary(text: &str, limit: usize) -> &str {
+    let count = text.chars().count();
+    if count <= limit {
+        return text;
+    }
+    if limit == 0 {
+        return "";
+    }
+    // Byte offset of the first character inside the budget.
+    let start = text
+        .char_indices()
+        .nth(count - limit)
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    let tail = &text[start..];
+    // Whatever that lands in the middle of is dropped with the space after it.
+    match tail.find(' ') {
+        Some(space) => tail[space + 1..].trim_start(),
+        None => "",
+    }
+}
+
 /// Transcribes one phrase. Blocking, for the same reason as `load`.
 ///
 /// `language` is an ISO 639-1 code; empty asks whisper.cpp to detect one,
 /// which it does from the opening seconds alone and therefore unreliably.
+/// `prompt` is what `build_prompt` returns; empty primes the decoder with
+/// nothing, which is how every phrase was decoded before context was carried.
 pub fn transcribe(
     context: &WhisperContext,
     audio: &[f32],
     language: &str,
+    prompt: &str,
 ) -> Result<String, String> {
     let mut state = context
         .create_state()
@@ -59,6 +121,21 @@ pub fn transcribe(
         Some(language)
     });
     params.set_translate(false);
+    if !prompt.is_empty() {
+        params.set_initial_prompt(prompt);
+    }
+    // What whisper.cpp's own command line does and the library does not: a
+    // segment that is mostly room tone otherwise comes back as a plausible
+    // sentence nobody said ("Thank you for watching."), in plain text that
+    // `is_speech` has no way to tell from words. These are the CLI's defaults.
+    // Blank and non-speech tokens are kept out of the beam; a window the
+    // model itself rates as silence, or decodes with low confidence or high
+    // entropy, is dropped rather than typed.
+    params.set_suppress_blank(true);
+    params.set_suppress_nst(true);
+    params.set_no_speech_thold(0.6);
+    params.set_entropy_thold(2.4);
+    params.set_logprob_thold(-1.0);
     // Nothing reads whisper.cpp's stdout, and its progress lines would only
     // interleave with the app's own logging.
     params.set_print_special(false);
@@ -241,6 +318,50 @@ fn blackman(distance: f64, half: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use super::build_prompt;
+
+    #[test]
+    fn empty_in_empty_out() {
+        assert_eq!(build_prompt("", ""), "");
+        assert_eq!(build_prompt("  ", " \n "), "");
+    }
+
+    #[test]
+    fn vocabulary_follows_context() {
+        assert_eq!(
+            build_prompt("Tauri, Parakeet", "We ship the app."),
+            "We ship the app. Tauri, Parakeet"
+        );
+        assert_eq!(build_prompt("Tauri", ""), "Tauri");
+        assert_eq!(build_prompt("", "Hello there."), "Hello there.");
+    }
+
+    #[test]
+    fn context_keeps_its_tail_and_starts_on_a_word() {
+        let prior = (0..300).map(|n| format!("w{n}")).collect::<Vec<_>>().join(" ");
+        let prompt = build_prompt("", &prior);
+        assert!(prompt.chars().count() <= 800, "{}", prompt.chars().count());
+        assert!(prompt.ends_with("w299"));
+        // Cut on a boundary: the first token is a whole word from the list.
+        let first = prompt.split(' ').next().unwrap();
+        assert!(prior.split(' ').any(|word| word == first), "{first:?}");
+    }
+
+    #[test]
+    fn vocabulary_takes_room_from_context_not_the_other_way() {
+        let vocabulary = "x".repeat(790);
+        let prior = "alpha beta gamma delta";
+        let prompt = build_prompt(&vocabulary, prior);
+        assert!(prompt.ends_with(&vocabulary));
+        // 790 + a space leaves nine characters: "delta" fits, "gamma delta" does not.
+        assert_eq!(prompt, format!("delta {vocabulary}"));
+    }
+
+    #[test]
+    fn whitespace_in_context_is_flattened() {
+        assert_eq!(build_prompt("", "one\n\ntwo   three"), "one two three");
+    }
+
     use super::*;
 
     fn wav(samples: &[i16], rate: u32) -> Vec<u8> {
@@ -330,7 +451,7 @@ mod tests {
     fn silence_transcribes_to_nothing() {
         let context = load("ggml-small.bin").expect("could not load the weights");
         let quiet = vec![0.0f32; WHISPER_RATE as usize * 2];
-        let text = transcribe(&context, &quiet, "en").expect("transcription failed");
+        let text = transcribe(&context, &quiet, "en", "").expect("transcription failed");
         assert_eq!(text, "", "two seconds of silence produced {text:?}");
     }
 
@@ -353,7 +474,7 @@ mod tests {
         let context = load("ggml-small.bin").expect("could not load the weights");
         let loaded = loading.elapsed();
         let running = std::time::Instant::now();
-        let text = transcribe(&context, &audio, "en").expect("transcription failed");
+        let text = transcribe(&context, &audio, "en", "").expect("transcription failed");
         eprintln!(
             "load {:.2}s, transcribe {:.2}s for {:.1}s of audio\ntranscript: {text}",
             loaded.as_secs_f64(),

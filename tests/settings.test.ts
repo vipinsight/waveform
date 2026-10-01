@@ -22,6 +22,22 @@ describe("DEFAULT_SETTINGS", () => {
 });
 
 describe("normalizeSettings", () => {
+  // Empty is the default and a valid value: it primes the engine with nothing.
+  it("keeps the vocabulary, trimmed and bounded, on both sides of the bridge", () => {
+    expect(DEFAULT_SETTINGS.speechVocabulary).toBe("");
+    expect(normalizeSettings({ speechVocabulary: "  Tauri, Parakeet " }).speechVocabulary).toBe(
+      "Tauri, Parakeet",
+    );
+    expect(normalizeSettings({ speechVocabulary: "" }).speechVocabulary).toBe("");
+    expect(normalizeSettings({ speechVocabulary: 42 }).speechVocabulary).toBe("");
+    expect(normalizeSettings({ speechVocabulary: "x".repeat(3_000) }).speechVocabulary).toHaveLength(
+      2_000,
+    );
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain("speech_vocabulary: String::new(),");
+    expect(rust).toContain("bounded_text(&self.speech_vocabulary, 2_000)");
+  });
+
   it("falls back to defaults for an unusable file", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings("garbage")).toEqual(DEFAULT_SETTINGS);

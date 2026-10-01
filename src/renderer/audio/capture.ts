@@ -49,7 +49,8 @@ export interface CaptureHandlers {
   onError(message: string): void;
   /** Writes into the app's log. Nowhere else knows these numbers. */
   log(message: string): void;
-  transcribe(wavBytes: Uint8Array): Promise<{ text: string }>;
+  /** `priorText` is what this session has transcribed so far, oldest first. */
+  transcribe(wavBytes: Uint8Array, priorText: string): Promise<{ text: string }>;
   startNativeCapture(): Promise<string>;
   stopNativeCapture(): Promise<void>;
 }
@@ -61,6 +62,26 @@ export interface CaptureHandlers {
  * The microphone is a HAL input in the host, not a WebKit stream, so Music
  * playing through headphones is not on the same device graph.
  */
+/**
+ * The words a session has produced so far, for priming the next decode.
+ *
+ * One per session, and one per retry, held by the clips that belong to it
+ * rather than by the capture: a late phrase from the previous session can
+ * still be decoding when the next one opens, and must not read or write the
+ * new session's text.
+ */
+interface SessionContext {
+  text: string;
+}
+
+/**
+ * How much of a session's text travels with each phrase, in characters.
+ *
+ * The host trims it again to what the engine can read; this only keeps the
+ * IPC payload from growing with a long session.
+ */
+const CONTEXT_CHARS = 2_000;
+
 export class AudioCapture {
   private running = false;
   private sampleRate = 48_000;
@@ -95,6 +116,16 @@ export class AudioCapture {
    * without speaking. Cleared on a new listen or an explicit dismiss.
    */
   private lastClips: Uint8Array[] = [];
+  /** The context the current session's clips append to. */
+  private context: SessionContext = { text: "" };
+  /**
+   * Settles when the phrase most recently handed to the engine has returned.
+   *
+   * Phrases decode one after another, in the order they were cut, because
+   * each is primed with the text of the ones before it. The host serialises
+   * the engine anyway, so this costs no throughput; it only fixes the order.
+   */
+  private chain: Promise<void> = Promise.resolve();
 
   constructor(private readonly handlers: CaptureHandlers) {}
 
@@ -148,6 +179,7 @@ export class AudioCapture {
     this.inserted = 0;
     this.empty = 0;
     this.lastClips = [];
+    this.context = { text: "" };
     this.gain = new InputGain();
     this.sampleRate = 48_000;
     this.segmenter = new SpeechSegmenter({ sampleRate: this.sampleRate });
@@ -225,8 +257,11 @@ export class AudioCapture {
     this.inserted = 0;
     this.empty = 0;
     this.handlers.log(`retrying ${this.lastClips.length} phrase(s)`);
+    // Fresh context, built again clip by clip: the failed run's text, if it
+    // produced any, is not what the retry should be primed with.
+    const context: SessionContext = { text: "" };
     for (const wav of this.lastClips) {
-      this.sendClip(wav, { stash: false });
+      this.sendClip(wav, context, { stash: false });
     }
     return true;
   }
@@ -287,11 +322,29 @@ export class AudioCapture {
     );
     const wav = encodeMonoPcm16Wav(samples, sampleRate);
     this.lastClips.push(wav);
-    this.sendClip(wav);
+    this.sendClip(wav, this.context);
   }
 
-  private sendClip(wav: Uint8Array, options: { stash?: boolean } = {}): void {
+  /**
+   * Claims the next turn at the engine. Synchronous, so the order clips take
+   * is the order this was called in, whatever the stash ahead of each takes.
+   */
+  private reserveTurn(): { wait: Promise<void>; done: () => void } {
+    const wait = this.chain;
+    let done: () => void = () => {};
+    this.chain = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    return { wait, done };
+  }
+
+  private sendClip(
+    wav: Uint8Array,
+    context: SessionContext,
+    options: { stash?: boolean } = {},
+  ): void {
     const stash = options.stash !== false;
+    const turn = this.reserveTurn();
     this.pending += 1;
     this.handlers.onPendingChange(this.pending);
 
@@ -300,8 +353,9 @@ export class AudioCapture {
         // Disk-side first: if idle flush races transcription, the recording
         // is still in the host buffer and history can keep it.
         if (stash) await this.handlers.onClip(wav);
+        await turn.wait;
         if (this.discarding) return;
-        const { text } = await this.handlers.transcribe(wav);
+        const { text } = await this.handlers.transcribe(wav, context.text);
         if (this.discarding) return;
         if (!text) {
           // The engine heard the audio and found no words in it. whisper.cpp
@@ -311,6 +365,10 @@ export class AudioCapture {
           this.empty += 1;
           return;
         }
+        context.text = `${context.text} ${text}`.trim().slice(-CONTEXT_CHARS);
+        // The next phrase can go to the engine now; it does not need to wait
+        // for this one to be typed.
+        turn.done();
         this.inserted += 1;
         // Must finish before pending drops to zero: idle flush races the
         // phrase IPC, and an early flush drops the words before history
@@ -336,6 +394,9 @@ export class AudioCapture {
         }
         this.pending -= 1;
         this.handlers.onPendingChange(this.pending);
+        // Resolving twice is a no-op; not resolving at all would hold every
+        // later phrase forever.
+        turn.done();
       }
     })();
   }

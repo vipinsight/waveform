@@ -79,6 +79,7 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
+  speechVocabulary: requireElement<HTMLTextAreaElement>("speech-vocabulary"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   dictationKeyboard: requireElement<HTMLElement>("dictation-keyboard"),
   dictationKeyboardCaption: requireElement<HTMLElement>("dictation-keyboard-caption"),
@@ -673,6 +674,10 @@ function wireEvents(): void {
   element.transcribeDropToggle.addEventListener("change", () => {
     void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
   });
+  // On change rather than input: the terms matter per phrase, not per key.
+  element.speechVocabulary.addEventListener("change", () => {
+    void patchSettings({ speechVocabulary: element.speechVocabulary.value });
+  });
   element.logCopy.addEventListener("click", () => {
     const text = logLines
       .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
@@ -937,6 +942,10 @@ function applySettings(next: AppSettings): void {
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
   element.transcribeDropToggle.checked = next.transcribeOnDrop;
+  // Not while it is being typed in: a settings echo would move the caret.
+  if (document.activeElement !== element.speechVocabulary) {
+    element.speechVocabulary.value = next.speechVocabulary;
+  }
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
