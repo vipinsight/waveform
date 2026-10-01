@@ -158,11 +158,60 @@ about 140 MB rather than several hundred. The status bar shows live CPU and
 memory for the app and the engine together, since the engine is the larger
 consumer of both.
 
-## Transcripts
+## Dictations
 
-The **Transcripts** view keeps every dictation, newest first, with when it was
+The **Dictations** view keeps every dictation, newest first, with when it was
 said and how long it was. Each one can be copied or deleted, and the whole list
 cleared. It holds the most recent 10,000 and is readable only by you.
+
+Double-click a dictation's text to correct it. When you replace a word, Waveform
+offers to add the right spelling to the Dictionary (see below), so the next
+dictation gets it right.
+
+## Dictionary
+
+The **Dictionary** holds names and terms Waveform should spell right: people,
+products, the jargon the engine keeps mishearing. Before each phrase the terms
+most likely to come up are read to the speech model, and anything it still gets
+wrong is fixed afterwards. Add a term by typing it, with what the engine tends
+to hear instead if you know it; paste a comma-separated list to add several at
+once. Correcting a dictation offers to add the word, or adds it straight away if
+you switch "When I correct a transcript" to **Add automatically**.
+
+## Meetings
+
+**Meetings** records a call, writes the transcript on this Mac as you talk, and
+sums it up when you stop.
+
+Press **Record** before the call. Waveform records your microphone and, on
+macOS 14.2 or later, what the Mac is playing — the other side of the call. macOS
+asks once for permission to hear the other side; allow it under **Screen &
+System Audio Recording**. While recording, the header shows a red **Stop** with
+a running clock, every other page shows a strip with the same, the Wave Bar
+shows a small red capsule, and the menu bar has **Stop recording**. Lines appear
+a few seconds after each sentence ends. Two level bars, **You** and **Other
+side**, show that audio is being heard; if the other side stays silent for five
+seconds, the page says so and offers to open System Settings.
+
+Press **Stop** and Waveform finishes the last phrases, tells the remote speakers
+apart (a one-time 65 MB download, kept on this Mac), prepares playback, and
+writes the summary. The summary has a fixed shape: one sentence on what the
+meeting was about, two to four topics with points, **Next steps** with who took
+each one, and **Decisions**. Each part has its own Copy, and **Copy ▾** offers
+the summary, the transcript, or both.
+
+Click a speaker chip to name them; after a rename, one click rewrites the
+summary with the names. Click a timestamp to play from there; **Find in
+transcript** filters the lines.
+
+Summaries use OpenRouter and need the API key from **AI Polish**. Transcription
+stays on this Mac; only the transcript text is sent for the summary, and only
+when you have a key. Without one, everything else still works and the page says
+how to add it.
+
+If the app closes during a recording, the meeting is kept up to that point and
+marked interrupted; **Finish this meeting** runs speakers and the summary on
+what was saved. Quitting the app during a recording stops and keeps it first.
 
 ## AI Polish
 
