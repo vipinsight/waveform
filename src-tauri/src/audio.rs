@@ -546,6 +546,20 @@ mod tests {
         assert!(last.end_ms - last.start_ms < 3_000, "{}", last.end_ms - last.start_ms);
     }
 
+    /// A floor learned too low heals itself at the first capped phrase.
+    #[test]
+    fn a_floor_learned_too_low_is_relearned_from_a_capped_stretch() {
+        let mut segmenter = Segmenter::new(SegmenterOptions::meeting(RATE));
+        feed(&mut segmenter, 300, 0.0003); // a room far quieter than what follows
+        let capped = feed(&mut segmenter, 30_000, 0.01); // the real room reads as speech
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0].end_ms - capped[0].start_ms, 25_000);
+        let mut after = feed(&mut segmenter, 1_000, 0.06);
+        after.extend(feed(&mut segmenter, 1_000, 0.01));
+        assert_eq!(after.len(), 1, "a pause after speech now cuts a phrase");
+        assert!(after[0].end_ms - after[0].start_ms < 3_000);
+    }
+
     #[test]
     fn a_noisy_room_raises_the_threshold() {
         let mut segmenter = Segmenter::new(SegmenterOptions::dictation(RATE));

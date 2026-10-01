@@ -175,6 +175,8 @@ const api: DesktopApi = {
   onMeetingLine: (listener) =>
     subscribe<{ meetingId: string; line: MeetingLine }>("meeting-line", listener),
   onMeetingChanged: (listener) => subscribe<Meeting>("meeting-changed", listener),
+  onMeetingLevel: (listener) =>
+    subscribe<{ meetingId: string; mic: number; system: number | null }>("meeting-level", listener),
   onMeetingsChanged: (listener) => subscribe<unknown>("meetings-changed", () => listener()),
   onDiarizerInstall: (listener) =>
     subscribe<DiarizerInstallEvent>("diarizer-install", listener),

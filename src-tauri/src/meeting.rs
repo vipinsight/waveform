@@ -18,7 +18,7 @@ use crate::transcribe::Engine;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -89,7 +89,20 @@ struct TrackJob {
     started: Instant,
     stop: Arc<AtomicBool>,
     /// Counts the blocks that arrived, for the caller to judge the track by.
-    delivered: Arc<std::sync::atomic::AtomicU64>,
+    delivered: Arc<AtomicU64>,
+    /// The latest block's level (f32 bits), for the window's meter.
+    level: Arc<AtomicU32>,
+}
+
+/// Input levels while recording, a few times a second.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LevelEvent {
+    meeting_id: String,
+    /// RMS of the latest microphone block, 0..1.
+    mic: f32,
+    /// The same for the other side of the call; absent without a tap.
+    system: Option<f32>,
 }
 
 struct Active {
@@ -102,7 +115,9 @@ struct Active {
     /// Raised to tell every capture thread to finish.
     stop: Arc<AtomicBool>,
     /// Blocks the system track delivered; zero means the tap heard nothing.
-    system_blocks: Option<Arc<std::sync::atomic::AtomicU64>>,
+    system_blocks: Option<Arc<AtomicU64>>,
+    /// Sends the levels to the window; aborted on stop.
+    meter: Option<tauri::async_runtime::JoinHandle<()>>,
     /// Writer and transcriber tasks, awaited on stop so the last phrases land.
     tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
@@ -212,6 +227,7 @@ impl Recorder {
             }
         };
         self.logs.info(&self.app, "meeting", format!("{id}: microphone {mic_name} at {mic_rate}Hz"));
+        let mic_level = Arc::new(AtomicU32::new(0));
         tasks.push(self.spawn_track(TrackJob {
             id: id.clone(),
             track: Track::Mic,
@@ -220,19 +236,23 @@ impl Recorder {
             blocks: mic_rx,
             started,
             stop: stop.clone(),
-            delivered: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            delivered: Arc::new(AtomicU64::new(0)),
+            level: mic_level.clone(),
         }));
 
         // The other side of the call, when this Mac can hear it.
         let mut tap_child = None;
         let mut system_blocks = None;
+        let mut system_level: Option<Arc<AtomicU32>> = None;
         if system_audio_supported() {
             if let Some(helper) = &self.tap_helper {
                 match start_tap(helper, self.logs.clone(), self.app.clone()).await {
                     Ok((child, rate, rx)) => {
                         self.logs.info(&self.app, "meeting", format!("{id}: system audio at {rate}Hz"));
-                        let delivered = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                        let delivered = Arc::new(AtomicU64::new(0));
                         system_blocks = Some(delivered.clone());
+                        let level = Arc::new(AtomicU32::new(0));
+                        system_level = Some(level.clone());
                         tasks.push(self.spawn_track(TrackJob {
                             id: id.clone(),
                             track: Track::System,
@@ -242,6 +262,7 @@ impl Recorder {
                             started,
                             stop: stop.clone(),
                             delivered,
+                            level,
                         }));
                         let _ = self.meetings.lock().await.set_has_system_audio(&id, true);
                         meeting.has_system_audio = true;
@@ -254,6 +275,29 @@ impl Recorder {
             }
         }
 
+        // The window's meter: proof that something is being heard.
+        let meter = {
+            let app = self.app.clone();
+            let meeting_id = id.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut ticks = tokio::time::interval(Duration::from_millis(150));
+                loop {
+                    ticks.tick().await;
+                    let _ = app.emit_to(
+                        MAIN_LABEL,
+                        "meeting-level",
+                        LevelEvent {
+                            meeting_id: meeting_id.clone(),
+                            mic: f32::from_bits(mic_level.load(Ordering::Relaxed)),
+                            system: system_level
+                                .as_ref()
+                                .map(|level| f32::from_bits(level.load(Ordering::Relaxed))),
+                        },
+                    );
+                }
+            })
+        };
+
         *active = Some(Active {
             id: id.clone(),
             started,
@@ -261,6 +305,7 @@ impl Recorder {
             tap: tap_child,
             stop,
             system_blocks,
+            meter: Some(meter),
             tasks,
         });
         drop(active);
@@ -285,6 +330,9 @@ impl Recorder {
             self.emit_changed(&meeting).await;
         }
 
+        if let Some(meter) = active.meter.take() {
+            meter.abort();
+        }
         // End the captures: the microphone by dropping its handle, the tap by
         // closing its stdin. Each writer sees its channel close, flushes the
         // segmenter, and the transcriber behind it drains.
@@ -331,6 +379,9 @@ impl Recorder {
             return Ok(());
         };
         active.stop.store(true, Ordering::Relaxed);
+        if let Some(meter) = active.meter.take() {
+            meter.abort();
+        }
         active._mic.take();
         if let Some(mut child) = active.tap.take() {
             let _ = child.kill().await;
@@ -572,6 +623,7 @@ impl Recorder {
             started,
             stop,
             delivered,
+            level,
         } = job;
         let this = self.clone();
         let (phrases_tx, mut phrases_rx) = tokio::sync::mpsc::unbounded_channel::<audio::Phrase>();
@@ -601,6 +653,7 @@ impl Recorder {
                     match blocks.recv_timeout(Duration::from_millis(250)) {
                         Ok(block) => {
                             delivered.fetch_add(1, Ordering::Relaxed);
+                            level.store(audio::rms(&block.samples).to_bits(), Ordering::Relaxed);
                             if let Err(error) = writer.write(&block.samples) {
                                 writer_logs.error(&writer_app, "meeting", format!("{writer_id}: write failed: {error}"));
                                 break;

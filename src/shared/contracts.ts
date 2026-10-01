@@ -511,6 +511,8 @@ export interface DesktopApi {
   removeDiarizer(): Promise<void>;
   onMeetingLine(listener: (event: { meetingId: string; line: MeetingLine }) => void): () => void;
   onMeetingChanged(listener: (meeting: Meeting) => void): () => void;
+  /** Input levels a few times a second while recording; `system` is absent without the other side. */
+  onMeetingLevel(listener: (event: { meetingId: string; mic: number; system: number | null }) => void): () => void;
   onMeetingsChanged(listener: () => void): () => void;
   onDiarizerInstall(listener: (event: DiarizerInstallEvent) => void): () => void;
   getStats(): Promise<AppStats>;

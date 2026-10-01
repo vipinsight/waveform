@@ -51,8 +51,15 @@ const CALIBRATION_MS = 250;
  */
 const CALIBRATION_PERCENTILE = 0.1;
 
-/** Below this a block is a dropout (a mic opening on zeros), not a room. */
-const DROPOUT_LEVEL = 1e-5;
+/**
+ * Below this a block is a dropout or a stream still warming up, not a room.
+ *
+ * A microphone's first blocks arrive at digital silence (a few 1e-5) before
+ * the converter settles. Calibrating on those learned a floor of 0.001, the
+ * gain pinned at its maximum, and every later block -- the room included --
+ * read as speech, so phrases were only ever cut at the cap.
+ */
+const DROPOUT_LEVEL = 1e-4;
 
 /**
  * How much audio is kept ahead of the session's first phrase.
@@ -85,6 +92,8 @@ export class SpeechSegmenter {
   private preRollLength = 0;
   private segment: Float32Array[] = [];
   private segmentLength = 0;
+  /** Each block's level within the current segment, for relearning the room. */
+  private segmentLevels: number[] = [];
   private speechSamples = 0;
   private silenceSamples = 0;
   private speaking = false;
@@ -151,8 +160,12 @@ export class SpeechSegmenter {
     const level = rootMeanSquare(chunk) * gain;
 
     if (this.calibrating > 0) {
-      this.calibrating -= chunk.length;
-      if (level > DROPOUT_LEVEL) this.calibrationLevels.push(level);
+      // Only blocks with a room in them count towards the window: the
+      // stream's warm-up silence says nothing about the room.
+      if (level > DROPOUT_LEVEL) {
+        this.calibrating -= chunk.length;
+        this.calibrationLevels.push(level);
+      }
       if (this.calibrating <= 0) this.settleCalibration();
       this.addPreRoll(chunk);
       return null;
@@ -180,10 +193,12 @@ export class SpeechSegmenter {
       this.segmentLength = this.preRollLength + chunk.length;
       this.preRoll = [];
       this.preRollLength = 0;
+      this.segmentLevels = [];
     } else {
       this.segment.push(chunk);
       this.segmentLength += chunk.length;
     }
+    this.segmentLevels.push(level);
 
     if (isSpeech) {
       this.speechSamples += chunk.length;
@@ -192,14 +207,28 @@ export class SpeechSegmenter {
       this.silenceSamples += chunk.length;
     }
 
-    if (
-      this.silenceSamples >= this.trailingSilenceSamples ||
-      this.segmentLength >= this.maximumSegmentSamples
-    ) {
+    if (this.silenceSamples >= this.trailingSilenceSamples) {
+      return this.finishSegment();
+    }
+    if (this.segmentLength >= this.maximumSegmentSamples) {
+      // A stretch this long with no pause in it is not someone talking
+      // without breathing; it is a floor learned too low. The quietest tenth
+      // of the stretch is the room, so the floor is taken from there and the
+      // next pause will be heard.
+      this.relearnFloorFromSegment();
       return this.finishSegment();
     }
 
     return null;
+  }
+
+  private relearnFloorFromSegment(): void {
+    if (this.silenceSamples > 0 || this.segmentLevels.length < 8) return;
+    const levels = this.segmentLevels.sort((first, second) => first - second);
+    this.segmentLevels = [];
+    const index = Math.floor((levels.length - 1) * CALIBRATION_PERCENTILE);
+    const quiet = levels[index] ?? 0;
+    if (quiet > this.floor) this.floor = quiet;
   }
 
   /** Ends the session and returns whatever was captured. */
