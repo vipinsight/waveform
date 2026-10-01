@@ -125,6 +125,7 @@ See [Contributing](CONTRIBUTING.md) for the first-PR workflow.
 - [Models](docs/models.md) — how a model id becomes a running engine
 - [Updates](docs/updates.md) — how a release reaches an installed copy
 - [Releasing](docs/releasing.md) — maintainer build, review, and publish checklist
+- [macOS 14 build](docs/macos-14-build.md) — why releases crash on macOS 14, and a one-off build that runs there
 - [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Contributing

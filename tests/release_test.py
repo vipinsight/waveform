@@ -53,6 +53,7 @@ for arg do [ ! -f "$arg" ] || cp "$arg" "$TEST_ROOT/upload/"; done''')
 printf archive > src-tauri/target/release/bundle/macos/Waveform.app.tar.gz
 printf signature > src-tauri/target/release/bundle/macos/Waveform.app.tar.gz.sig
 printf dmg > "src-tauri/target/release/bundle/dmg/Waveform_${TEST_VERSION}_aarch64.dmg"''')
+        self.tool('cargo', '[ "$1" = clean ] || exit 92')
         self.tool('codesign', '[ "${TEST_BAD_SIGN:-}" != 1 ]')
         self.tool('xcrun', 'exit 0')
         self.tool('spctl', '[ "${TEST_BAD_GATEKEEPER:-}" != 1 ]')

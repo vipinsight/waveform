@@ -84,6 +84,10 @@ esac
 echo "release: building $VERSION"
 # Recompile the helper so a cached development helper cannot bypass signing.
 rm -f dist/native/waveform-hotkey
+# Rebuild whisper.cpp and llama.cpp too. Their build scripts do not rerun when
+# MACOSX_DEPLOYMENT_TARGET changes, so a cache built for this Mac's macOS links
+# macOS 15 Metal classes strongly and the app dies at launch on macOS 14.
+cargo clean --release --manifest-path src-tauri/Cargo.toml -p llama-cpp-sys-2 -p whisper-rs-sys
 
 # Path remapping used to strip the checkout path from panic/`strings` output,
 # but `--remap-path-prefix` breaks proc-macro resolution on current rustc
