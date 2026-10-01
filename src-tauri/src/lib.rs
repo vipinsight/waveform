@@ -573,15 +573,23 @@ async fn model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, S
     Ok(state.models.catalog().await)
 }
 
+/// `prior_text` is what the current session has transcribed so far, so the
+/// decoder knows which sentence it is in the middle of. Absent for a phrase
+/// with no session behind it: a dropped file, or a retry from Transcripts.
 #[tauri::command]
 async fn transcribe(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     wav_bytes: Vec<u8>,
+    prior_text: Option<String>,
 ) -> Result<String, String> {
-    let (model_id, language) = {
+    let (model_id, language, prompt) = {
         let settings = state.settings.lock().await.value();
-        (settings.model_id, settings.speech_language)
+        let prompt = whisper_cpp::build_prompt(
+            &settings.speech_vocabulary,
+            prior_text.as_deref().unwrap_or(""),
+        );
+        (settings.model_id, settings.speech_language, prompt)
     };
     dump_audio(&wav_bytes);
 
@@ -589,7 +597,7 @@ async fn transcribe(
     // is the number worth comparing against what was actually said.
     let seconds = wav_bytes.len().saturating_sub(44) as f64 / 2.0 / 48_000.0;
     let started = std::time::Instant::now();
-    let outcome = state.models.transcribe(wav_bytes, &language).await;
+    let outcome = state.models.transcribe(wav_bytes, &language, &prompt).await;
     let took = started.elapsed().as_millis();
 
     match &outcome {

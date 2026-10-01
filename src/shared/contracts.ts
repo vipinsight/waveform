@@ -300,7 +300,12 @@ export interface DesktopApi {
   startNativeCapture(): Promise<string>;
   stopNativeCapture(): Promise<void>;
   onCaptureBlock(listener: (block: CaptureBlock) => void): () => void;
-  transcribe(wavBytes: Uint8Array): Promise<TranscriptionResult>;
+  /**
+   * `priorText` is what the current session has transcribed so far; the
+   * engine is primed with its tail so a phrase cut mid-sentence continues the
+   * sentence. Leave it out for audio with no session behind it.
+   */
+  transcribe(wavBytes: Uint8Array, priorText?: string): Promise<TranscriptionResult>;
   onModelEvent(listener: (event: ModelEvent) => void): () => void;
   getModelState(): Promise<ModelEvent>;
 

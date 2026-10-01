@@ -95,10 +95,11 @@ const api: DesktopApi = {
   startNativeCapture: () => invoke<string>("start_native_capture"),
   stopNativeCapture: () => invoke<void>("stop_native_capture"),
   onCaptureBlock: (listener) => subscribe<CaptureBlock>("capture-block", listener),
-  transcribe: async (wavBytes) => {
+  transcribe: async (wavBytes, priorText) => {
     // Tauri's IPC carries JSON, so the buffer crosses as a number array.
     const text = await invoke<string>("transcribe", {
       wavBytes: Array.from(wavBytes),
+      priorText: priorText ?? null,
     });
     return { text } satisfies TranscriptionResult;
   },

@@ -283,6 +283,27 @@
               <span class="cleanup-example-typed" id="cleanup-typed"></span>
             </div>
           </div>
+
+          <h2 class="section-label">Vocabulary</h2>
+          <div class="card">
+            <label class="row row-stacked" for="speech-vocabulary">
+              <span class="row-label">
+                Names and terms to get right
+                <small>
+                  Whisper is primed with these before every phrase. Separate them
+                  with commas: people, products, the jargon it keeps mishearing.
+                </small>
+              </span>
+              <textarea
+                id="speech-vocabulary"
+                class="vocabulary-input"
+                rows="2"
+                spellcheck="false"
+                placeholder="Tauri, Parakeet, whisper.cpp, Vipin"
+                aria-label="Vocabulary"
+              ></textarea>
+            </label>
+          </div>
         </section>
 
         <section class="view" id="view-overview" hidden>
