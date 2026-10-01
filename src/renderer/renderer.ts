@@ -782,7 +782,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "dictionary", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
