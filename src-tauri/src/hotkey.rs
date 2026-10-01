@@ -22,6 +22,8 @@ const SELECTION_TIMEOUT: Duration = Duration::from_secs(3);
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum HelperEvent {
     Ready,
+    /// The polish chord: the polish key with the left Option held.
+    Polish,
     Key {
         phase: String,
         #[serde(rename = "keyCode")]
@@ -64,6 +66,18 @@ fn default_listening() -> bool {
 
 fn default_microphone() -> String {
     "unknown".to_string()
+}
+
+/// The key half of a polish accelerator, as the helper watches it. The
+/// modifier half is always the left Option; see the helper.
+pub fn polish_key_code_for(accelerator: &str) -> Option<i64> {
+    Some(match accelerator {
+        "Alt+1" => 18,
+        "Alt+2" => 19,
+        "Alt+3" => 20,
+        "Alt+P" => 35,
+        _ => return None,
+    })
 }
 
 pub fn key_code_for(hotkey_id: &str) -> Option<i64> {
@@ -163,6 +177,12 @@ impl HotkeyHelper {
 
     pub async fn unwatch(&self) {
         self.send(serde_json::json!({ "type": "unwatch" })).await;
+    }
+
+    /// Binds the polish key in the helper, or unbinds it with `None`.
+    pub async fn watch_polish(&self, key_code: Option<i64>) {
+        self.send(serde_json::json!({ "type": "polish-key", "keyCode": key_code }))
+            .await;
     }
 
     pub async fn paste(&self, text: &str) {
@@ -321,5 +341,18 @@ mod tests {
         assert!(describe_selection_failure(Some("empty")).contains("no text to polish"));
         assert!(describe_selection_failure(Some("accessibility")).contains("Accessibility"));
         assert!(describe_selection_failure(None).contains("Could not read"));
+    }
+
+    #[test]
+    fn parses_the_polish_chord() {
+        let event: HelperEvent = serde_json::from_str(r#"{"type":"polish"}"#).unwrap();
+        assert!(matches!(event, HelperEvent::Polish));
+    }
+
+    #[test]
+    fn maps_polish_accelerators_to_their_key() {
+        assert_eq!(polish_key_code_for("Alt+1"), Some(18));
+        assert_eq!(polish_key_code_for("Alt+P"), Some(35));
+        assert_eq!(polish_key_code_for("none"), None);
     }
 }

@@ -8,13 +8,14 @@ import {
 
 describe("local polish model registry", () => {
   it("offers a ladder of small instruct models and nothing else", () => {
-    // Three rows, not thirty: the choice is how much memory to spend, and
+    // Four rows, not thirty: the choice is how much memory to spend, and
     // every entry has to be instruction-tuned to follow a rewrite prompt at
     // all. A base model like GPT-2 continues the prompt instead of obeying it.
     expect(POLISH_MODELS.map(({ id }) => id)).toEqual([
       "qwen3-0.6b-q4",
       "qwen3-0.6b-q8",
       "qwen3-1.7b-q4",
+      "qwen3-4b-q4",
     ]);
     expect(DEFAULT_POLISH_MODEL_ID).toBe("qwen3-0.6b-q4");
     expect(isPolishModelId(DEFAULT_POLISH_MODEL_ID)).toBe(true);

@@ -1,6 +1,7 @@
 import type {
   AiStatus,
   AppStats,
+  DictationStatus,
   ModelFit,
   SavedDictation,
   DictationUpdate,
@@ -40,11 +41,7 @@ import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
-import {
-  DEFAULT_POLISH_PROMPT,
-  SUGGESTED_MODELS,
-  transformPromptFor,
-} from "../shared/prompts";
+import { SUGGESTED_MODELS, openRouterModelName } from "../shared/prompts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 
@@ -137,25 +134,32 @@ const element = {
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
   keyState: requireElement<HTMLElement>("key-state"),
   aiModel: requireElement<HTMLSelectElement>("ai-model"),
-  polishLevels: requireElement<HTMLElement>("polish-levels"),
-  cleanupWhat: requireElement<HTMLElement>("cleanup-what"),
-  cleanupTyped: requireElement<HTMLElement>("cleanup-typed"),
-  polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
+  aiModelCustom: requireElement<HTMLInputElement>("ai-model-custom"),
+  aiModelUse: requireElement<HTMLButtonElement>("ai-model-use"),
+  aiModelHint: requireElement<HTMLElement>("ai-model-hint"),
+  polishSelectionWhat: requireElement<HTMLElement>("polish-selection-what"),
+  polishEngineNote: requireElement<HTMLElement>("polish-engine-note"),
   polishModelLine: requireElement<HTMLElement>("polish-model-line"),
-  polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
-  polishBlockerAction: requireElement<HTMLButtonElement>("polish-blocker-action"),
-  modelTabs: requireElement<HTMLElement>("model-tabs"),
-  speechKindCurrent: requireElement<HTMLElement>("speech-kind-current"),
-  speechKindState: requireElement<HTMLElement>("speech-kind-state"),
-  polishKindCurrent: requireElement<HTMLElement>("polish-kind-current"),
-  polishKindState: requireElement<HTMLElement>("polish-kind-state"),
-  modelsSpeech: requireElement<HTMLElement>("models-speech"),
-  modelsPolish: requireElement<HTMLElement>("models-polish"),
-  transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
-  transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
-  polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
+  polishEnable: requireElement<HTMLButtonElement>("polish-enable"),
+  polishDictationToggle: requireElement<HTMLInputElement>("polish-dictation-toggle"),
+  polishModelSummary: requireElement<HTMLElement>("polish-model-summary"),
+  tryKey: requireElement<HTMLElement>("try-key"),
+  deckTry: requireElement<HTMLButtonElement>("deck-try"),
+  tryModal: requireElement<HTMLElement>("try-modal"),
+  tryField: requireElement<HTMLTextAreaElement>("try-field"),
+  tryResult: requireElement<HTMLElement>("try-result"),
+  tryAgain: requireElement<HTMLButtonElement>("try-again"),
+  tryDone: requireElement<HTMLButtonElement>("try-done"),
+  tryClose: requireElement<HTMLButtonElement>("try-close"),
+  accuracySlider: requireElement<HTMLInputElement>("accuracy-slider"),
+  accuracyTicks: requireElement<HTMLElement>("accuracy-ticks"),
+  accuracyLabels: requireElement<HTMLElement>("accuracy-labels"),
+  accuracyRung: requireElement<HTMLElement>("accuracy-rung"),
+  accuracyModel: requireElement<HTMLElement>("accuracy-model"),
+  accuracyFacts: requireElement<HTMLElement>("accuracy-facts"),
+  accuracyAction: requireElement<HTMLElement>("accuracy-action"),
+  accuracyNote: requireElement<HTMLElement>("accuracy-note"),
   polishShortcut: requireElement<HTMLElement>("polish-shortcut"),
-  polishShortcutCaption: requireElement<HTMLElement>("polish-shortcut-caption"),
   polishDeckStatus: requireElement<HTMLElement>("polish-deck-status"),
   polishDeckTitle: requireElement<HTMLElement>("polish-deck-title"),
   polishDeckDescription: requireElement<HTMLElement>("polish-deck-description"),
@@ -164,12 +168,6 @@ const element = {
   polishDeckDictation: requireElement<HTMLElement>("polish-deck-dictation"),
   polishEngine: requireElement<HTMLElement>("polish-engine"),
   polishModelList: requireElement<HTMLElement>("polish-model-list"),
-  promptEditor: requireElement<HTMLElement>("prompt-editor"),
-  promptEditorTitle: requireElement<HTMLElement>("prompt-editor-title"),
-  promptEditorWhere: requireElement<HTMLElement>("prompt-editor-where"),
-  promptEditorBody: requireElement<HTMLTextAreaElement>("prompt-editor-body"),
-  promptEditorReset: requireElement<HTMLButtonElement>("prompt-editor-reset"),
-  promptEditorSave: requireElement<HTMLButtonElement>("prompt-editor-save"),
   wizard: requireElement<HTMLElement>("wizard"),
   wizardBrand: requireElement<HTMLElement>("wizard-brand"),
   wizardNext: requireElement<HTMLButtonElement>("wizard-next"),
@@ -270,9 +268,6 @@ let updateNotesVersion: string | null = null;
 let logLines: LogLine[] = [];
 let settingsOpen = false;
 /** Which instruction the popup is editing, if any. */
-let promptEditorKind: "transform" | "polish" | null = null;
-/** Whether closing the popup should put the settings panel back where it was. */
-let promptEditorFromSettings = false;
 let entries: SavedDictation[] = [];
 let freshId: string | null = null;
 /**
@@ -307,6 +302,19 @@ let wizardStep: WizardStep | null = null;
  * time a prefetch finishes, which is the only thing that changes it.
  */
 let wizardCatalog = new Map<string, ModelStatus>();
+/** The speech download in flight, for the accuracy line: which, how far. */
+let speechProgress: { id: string; percent: number } | null = null;
+/**
+ * The stop that was pressed while its model was still arriving. The line
+ * under the stops follows this rather than the model in use, so pressing
+ * Fastest shows Fastest downloading, not Accurate installed.
+ */
+let accuracyTarget: SpeechModelId | null = null;
+/** The slider on the Dictation page, and the one in the wizard. */
+let accuracyLadder: Ladder;
+let wizardLadder: Ladder;
+/** The rung the Dictation line was last drawn for, so a glide redraws once per rung. */
+let accuracyShownRung = -1;
 /**
  * Models the wizard is fetching without being asked, in the order it wants
  * them. The host runs one download at a time -- a second call while one is
@@ -317,18 +325,6 @@ let prefetchQueue: SpeechModelId[] = [];
 let prefetchRunning = false;
 /** Poll handle for the permissions page; null when that page is not up. */
 let permissionWatch: ReturnType<typeof setInterval> | null = null;
-/** Frame handle for the slider's glide, null when it is not moving on its own. */
-let ladderGlide: number | null = null;
-/**
- * Whether a pointer is down on the slider, and whether it has moved since.
- *
- * The difference between a click on the track and the start of a drag, which
- * a range input reports identically: both arrive as an `input` event with a
- * new value. A click should glide to where you aimed; a drag has to stay
- * under the finger.
- */
-let ladderPointerDown = false;
-let ladderPointerMoved = false;
 /** The rung the card is currently describing, so a glide is not 60 rebuilds. */
 let ladderShownRung = -1;
 /** Whether the slider has been moved, which turns a default into a choice. */
@@ -338,14 +334,13 @@ let wizardPolishModel: PolishModelStatus | null = null;
 /** Latest percent for each download, so the last page can draw a bar. */
 let speechPercent = 0;
 let polishPercent = 0;
+
 /**
- * Where the slider sits, which is not yet what has been chosen.
- *
- * Fractional while a drag is in progress. The track is continuous so the
- * thumb follows the pointer instead of jumping between five stops, and the
- * rung is whichever one it is nearest; letting go snaps it onto that rung.
+ * The OpenRouter model list's last entry: an id typed in rather than picked.
+ * Above the bootstrap call, which runs `populateSelects` before the rest of
+ * this file's constants exist.
  */
-let ladderIndex: number = DEFAULT_LADDER_INDEX;
+const CUSTOM_MODEL = "__custom";
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -414,10 +409,7 @@ function wireEvents(): void {
   host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
-  host().onOpenModelSettings(() => {
-    toggleSettings(false);
-    showModelsTab("speech");
-  });
+  host().onOpenModelSettings(() => openView("dictation"));
   host().onOpenShortcutSettings(() => openView("dictation"));
   host().onStatsChanged(renderStats);
   host().onHistoryChanged((next) => {
@@ -463,24 +455,29 @@ function wireEvents(): void {
     renderSidebarCollapsed();
     void patchSettings({ sidebarCollapsed: collapsed });
   });
-  element.scrim.addEventListener("click", () => {
-    if (promptEditorKind) togglePromptEditor(false);
-    else toggleSettings(false);
-  });
+  element.scrim.addEventListener("click", () => toggleSettings(false));
   element.deckSettings.addEventListener("click", () => openView("dictate"));
+  element.deckTry.addEventListener("click", () => openTry());
+  element.tryDone.addEventListener("click", () => closeTry());
+  element.tryClose.addEventListener("click", () => closeTry());
+  element.tryAgain.addEventListener("click", () => {
+    element.tryField.value = "";
+    setTryStage("ready");
+    element.tryField.focus();
+  });
+  // The paste is what lands the words; the field noticing is what says so.
+  element.tryField.addEventListener("input", () => {
+    if (element.tryField.value.trim() !== "") setTryStage("done");
+  });
+  element.tryField.addEventListener("focus", () => {
+    if (element.tryModal.dataset.stage === "ready") setTryStage("focused");
+  });
 
   bindDropTranscribe();
 
-  // Tabs on the Models page, and the links elsewhere that open one of them.
-  // Delegated: the AI Polish hint rebuilds its link whenever the status does.
+  // Links between pages, delegated: the cards that carry them are rebuilt.
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
-    const tab = target.closest<HTMLElement>("[data-model-tab], [data-open-models]");
-    const kind = tab?.dataset.modelTab ?? tab?.dataset.openModels;
-    if (kind === "speech" || kind === "polish") {
-      showModelsTab(kind);
-      return;
-    }
     const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
     if (view) {
       if (settingsOpen) toggleSettings(false);
@@ -504,8 +501,12 @@ function wireEvents(): void {
   }
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (promptEditorKind) togglePromptEditor(false);
-    else if (settingsOpen) toggleSettings(false);
+    // Escape mid-dictation cancels the phrase; that is the helper's, not ours.
+    if (!element.tryModal.hidden) {
+      if (element.tryModal.dataset.stage !== "listening") closeTry();
+      return;
+    }
+    if (settingsOpen) toggleSettings(false);
   });
 
   element.modelList.addEventListener("click", (event) => {
@@ -581,6 +582,43 @@ function wireEvents(): void {
     void patchSettings({ localModelId: id });
   });
 
+  // The slider is a request for speed or accuracy; the model that answers it
+  // is the best one this Mac can hold, and it is fetched if it is not here.
+  // Nothing is chosen mid-glide: the line follows the thumb, the choice is
+  // made where it comes to rest.
+  accuracyLadder = createLadder(element.accuracySlider, element.accuracyTicks, {
+    onFrame: () => renderAccuracy(false),
+    onSettle: (rung) => {
+      const choice = chooseModel(rung, (id) => wizardCatalog.get(id)?.fit ?? null);
+      if (choice.id === settings.modelId) {
+        accuracyTarget = null;
+        renderAccuracy();
+        return;
+      }
+      if (isHere(choice.id)) {
+        accuracyTarget = null;
+        void host().selectModel(choice.id);
+        return;
+      }
+      accuracyTarget = choice.id;
+      void downloadModel(choice.id, { useWhenReady: true });
+    },
+  });
+  element.accuracyLabels.addEventListener("click", (event) => {
+    const at = (event.target as HTMLElement).closest<HTMLElement>("[data-rung]")?.dataset.rung;
+    if (at !== undefined) accuracyLadder.glideTo(Number(at));
+  });
+  element.accuracyAction.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    const fetch = target.closest<HTMLElement>("[data-fetch]")?.dataset.fetch;
+    if (fetch && isSpeechModelId(fetch)) {
+      void downloadModel(fetch, { useWhenReady: true });
+      return;
+    }
+    if (target.closest("[data-cancel-download]")) void host().cancelModelDownload();
+    const unqueue = target.closest<HTMLElement>("[data-cancel-queued]")?.dataset.cancelQueued;
+    if (unqueue && isSpeechModelId(unqueue)) cancelQueuedDownload(unqueue);
+  });
   element.speechLanguage.addEventListener("change", () => {
     const value = element.speechLanguage.value;
     if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
@@ -613,22 +651,54 @@ function wireEvents(): void {
   // more, so a half-pasted key cannot be committed by a stray keystroke.
   element.keySave.addEventListener("click", saveApiKey);
   element.keyRemove.addEventListener("click", removeApiKey);
-  element.aiModel.addEventListener("change", () => {
+  const onModelPicked = () => {
+    if (element.aiModel.value === CUSTOM_MODEL) {
+      // Nothing is written until an id is typed; the list keeps showing the
+      // model still in use if the field is left empty.
+      showCustomModelField(true);
+      element.aiModelCustom.focus();
+      return;
+    }
+    showCustomModelField(false);
     void patchSettings({ openRouterModel: element.aiModel.value });
+  };
+  // Both: WKWebView's native popup has reported one without the other.
+  element.aiModel.addEventListener("change", onModelPicked);
+  element.aiModel.addEventListener("input", onModelPicked);
+  const useCustomModel = () => {
+    const id = element.aiModelCustom.value.trim();
+    if (!id) return;
+    void patchSettings({ openRouterModel: id });
+  };
+  element.aiModelUse.addEventListener("click", useCustomModel);
+  element.aiModelCustom.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") useCustomModel();
   });
-  // A level is also an instruction, so choosing one writes that instruction.
-  // An edit made to the previous level's text is not carried across: it was
-  // written about a different amount of rewriting. None writes nothing, so
-  // turning polish off and on again leaves an edited instruction alone.
-  element.polishLevels.addEventListener("click", (event) => {
-    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
-    const level = card?.dataset.level;
-    if (!isPolishLevel(level) || level === settings.polishLevel) return;
-    void patchSettings(
-      level === "none"
-        ? { polishLevel: level }
-        : { polishLevel: level, transformPrompt: transformPromptFor(level) },
-    );
+  element.polishDictationToggle.addEventListener("change", () => {
+    const level: PolishLevel = element.polishDictationToggle.checked ? "light" : "none";
+    if (level === settings.polishLevel) return;
+    void patchSettings({ polishLevel: level });
+  });
+  // The one thing standing between the switch and On, done from the switch's
+  // own row. A download that lands turns the switch on: pressing it was the
+  // ask.
+  element.polishEnable.addEventListener("click", () => {
+    if (!aiStatus) return;
+    if (aiStatus.engine === "local") {
+      if (polishDownloading) {
+        void host().cancelPolishModelDownload();
+        return;
+      }
+      void downloadPolishModel(aiStatus.localModelId).then(async () => {
+        const status = await host().getAiStatus();
+        if (status.localReady && settings.polishLevel === "none") {
+          await patchSettings({ polishLevel: "light" });
+        }
+      });
+      return;
+    }
+    element.keyInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.keyInput.focus();
   });
   element.polishShortcut.addEventListener("click", (event) => {
     const shortcut = (event.target as HTMLElement).closest<HTMLElement>("[data-shortcut]")
@@ -636,29 +706,6 @@ function wireEvents(): void {
     if (shortcut && shortcut !== settings.polishShortcut) {
       void patchSettings({ polishShortcut: shortcut });
     }
-  });
-  for (const card of Array.from(
-    document.querySelectorAll<HTMLButtonElement>(".prompt-card[data-prompt]"),
-  )) {
-    card.addEventListener("click", () => {
-      const kind = card.dataset.prompt;
-      if (kind === "transform" || kind === "polish") togglePromptEditor(true, kind);
-    });
-  }
-  element.promptEditorReset.addEventListener("click", () => {
-    if (!promptEditorKind) return;
-    element.promptEditorBody.value =
-      promptEditorKind === "transform"
-        ? transformPromptFor(settings.polishLevel)
-        : DEFAULT_POLISH_PROMPT;
-    element.promptEditorBody.focus();
-  });
-  element.promptEditorSave.addEventListener("click", () => {
-    if (!promptEditorKind) return;
-    const value = element.promptEditorBody.value;
-    const patch =
-      promptEditorKind === "transform" ? { transformPrompt: value } : { polishPrompt: value };
-    void patchSettings(patch).then(() => togglePromptEditor(false));
   });
 
   element.menubarToggle.addEventListener("change", () => {
@@ -759,22 +806,24 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "overview", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
-  // Both lists describe files on the disk, which arrive while the section is
+  // Both lists describe files on the disk, which arrive while the page is
   // closed -- from a download here, or from a terminal -- so each is re-read on
-  // the way in rather than trusted from startup.
-  if (view === "models") {
-    if (modelsTab === "polish") void renderPolishModels();
-    else void renderModels();
+  // the way in rather than trusted from startup. The switch says what it
+  // needs before it can run, and that is a key or a download that could have
+  // arrived while the page was closed.
+  if (view === "ai") {
+    void host().getAiStatus().then(renderAiStatus);
+    if (settings.polishEngine === "local") void renderPolishModels();
   }
-  // The levels say what they need before they can run, and what they need is
-  // a key or a download that could have arrived while the section was closed.
-  if (view === "ai") void host().getAiStatus().then(renderAiStatus);
   // Labels are what name the devices, and WebKit hands them over only once
   // the microphone has been asked for.
-  if (view === "dictation") void refreshMicrophones(true);
+  if (view === "dictation") {
+    void renderModels();
+    void refreshMicrophones(true);
+  }
 }
 
 /** Shows a section of the window, closing Settings if it is over it. */
@@ -783,77 +832,17 @@ function openView(view: string): void {
   showView(view);
 }
 
-/** Which half of the Models page is up: voice to text, or rewriting text. */
-let modelsTab: "speech" | "polish" = "speech";
-
-/** Opens the Models page on one kind of model, closing Settings if it is up. */
-function showModelsTab(tab: "speech" | "polish"): void {
-  modelsTab = tab;
-  for (const button of Array.from(
-    element.modelTabs.querySelectorAll<HTMLElement>("[data-model-tab]"),
-  )) {
-    const active = button.dataset.modelTab === tab;
-    button.setAttribute("aria-selected", String(active));
-  }
-  element.modelsSpeech.hidden = tab !== "speech";
-  element.modelsPolish.hidden = tab !== "polish";
-  if (settingsOpen) toggleSettings(false);
-  showView("models");
-}
-
-/**
- * Names the polish model on the AI Polish page, since that is where the
- * level it serves is chosen -- and "which model" was otherwise only answered
- * two screens away.
- */
+/** Where polish runs and with what, on the card and on the fold under it. */
 function renderPolishModelLine(): void {
-  element.polishModelLine.textContent =
-    settings.polishEngine === "local"
-      ? `${polishModelLabel(settings.localModelId)}, on this Mac`
-      : `${settings.openRouterModel}, through OpenRouter`;
-  renderModelKinds();
+  const local = settings.polishEngine === "local";
+  element.polishModelLine.textContent = local
+    ? `This Mac, privately (${polishModelLabel(settings.localModelId)})`
+    : `Online through OpenRouter (${openRouterModelName(settings.openRouterModel)})`;
+  element.polishModelSummary.textContent = local
+    ? polishModelLabel(settings.localModelId)
+    : openRouterModelName(settings.openRouterModel);
   renderPolishDeck();
 }
-
-/**
- * The two cards at the top of the Models page: which model each kind is set
- * to, and the one thing standing between it and working, if anything.
- */
-function renderModelKinds(): void {
-  element.speechKindCurrent.textContent = getSpeechModel(settings.modelId).label;
-  setKindState(
-    element.speechKindState,
-    setupKnown && !modelInstalled ? "Not downloaded yet" : "In use",
-    setupKnown && !modelInstalled,
-  );
-
-  const local = settings.polishEngine === "local";
-  element.polishKindCurrent.textContent = local
-    ? `${polishModelLabel(settings.localModelId)}, on this Mac`
-    : `${settings.openRouterModel}, through OpenRouter`;
-  const level = settings.polishLevel;
-  const missing = local
-    ? aiStatus !== null && !aiStatus.localReady
-      ? "Not downloaded yet"
-      : null
-    : aiStatus !== null && !aiStatus.hasApiKey
-      ? "Needs an OpenRouter key"
-      : null;
-  if (level === "none") {
-    setKindState(element.polishKindState, "Off: AI Polish is set to None", false);
-  } else if (missing) {
-    setKindState(element.polishKindState, missing, true);
-  } else {
-    setKindState(element.polishKindState, "In use", false);
-  }
-}
-
-function setKindState(target: HTMLElement, text: string, attention: boolean): void {
-  target.textContent = text;
-  if (attention) target.dataset.tone = "attention";
-  else delete target.dataset.tone;
-}
-
 
 function polishModelLabel(id: string): string {
   return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
@@ -942,16 +931,19 @@ function applySettings(next: AppSettings): void {
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.
   element.dockToggle.disabled = !next.menuBarIcon;
-  // A model chosen before this list existed is still a valid choice, so it is
-  // added rather than silently swapped for the first option.
-  if (!SUGGESTED_MODELS.some((model) => model === next.openRouterModel)) {
-    element.aiModel.append(new Option(next.openRouterModel, next.openRouterModel));
+  // A model typed in, or chosen before this list existed, is still a valid
+  // choice, so it is listed rather than silently swapped for the first option.
+  if (!Array.from(element.aiModel.options).some((option) => option.value === next.openRouterModel)) {
+    element.aiModel.insertBefore(
+      new Option(next.openRouterModel, next.openRouterModel),
+      element.aiModel.querySelector(`option[value="${CUSTOM_MODEL}"]`),
+    );
   }
   element.aiModel.value = next.openRouterModel;
+  showCustomModelField(false);
   renderPolishEngine(next.polishEngine);
   renderPolishModelLine();
   renderPolishLevel(next.polishLevel);
-  renderPromptPreviews(next);
   renderPolishShortcut(next.polishShortcut);
   renderThemeToggle(next.theme);
 
@@ -970,21 +962,23 @@ function applySettings(next: AppSettings): void {
 }
 
 function populateSelects(): void {
+  element.accuracySlider.max = String(MODEL_LADDER.length - 1);
+  renderAccuracyLabels();
   for (const accelerator of POLISH_SHORTCUTS) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "keyboard-key shortcut-key";
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", "false");
     button.setAttribute("aria-label", nameAccelerator(accelerator));
     button.dataset.shortcut = accelerator;
-    // A keycap, so the glyphs alone: "⌥1". The card and caption spell it out.
+    // The glyphs alone: "⌥1". The row's own line spells it out.
     button.textContent = describeAccelerator(accelerator).replace(" + ", "");
     element.polishShortcut.append(button);
   }
   for (const model of SUGGESTED_MODELS) {
-    element.aiModel.append(new Option(model, model));
+    element.aiModel.append(new Option(openRouterModelName(model), model));
   }
+  element.aiModel.append(new Option("Other…", CUSTOM_MODEL));
 }
 
 /**
@@ -1028,6 +1022,13 @@ function renderMicrophoneSelect(): void {
   element.microphoneSelect.value = selected;
 }
 
+function showCustomModelField(open: boolean): void {
+  element.aiModelCustom.hidden = !open;
+  element.aiModelUse.hidden = !open;
+  element.aiModelHint.hidden = !open;
+  if (!open) element.aiModelCustom.value = "";
+}
+
 /** Renders an Electron accelerator the way macOS writes it. */
 function describeAccelerator(accelerator: string): string {
   if (accelerator === "none") return "Off";
@@ -1037,7 +1038,7 @@ function describeAccelerator(accelerator: string): string {
 /** The same accelerator in words, for under the glyph and for VoiceOver. */
 function nameAccelerator(accelerator: string): string {
   if (accelerator === "none") return "Off";
-  return accelerator.replace("Alt+", "Option + ");
+  return accelerator.replace("Alt+", "Left Option + ");
 }
 
 /**
@@ -1068,39 +1069,34 @@ function renderAiStatus(status: AiStatus): void {
   element.keyRemove.hidden = !status.hasApiKey;
   syncKeyButtons();
 
-  // Nothing above None can run until there is something to run it with, so
-  // the levels that need one say where to get it rather than being selectable
-  // and then quietly doing nothing.
-  const ready = status.engine === "local" ? status.localReady : status.hasApiKey;
+  // Nothing can run until there is something to run it with. Rather than a
+  // switch that will not move, the row offers the one thing missing -- a
+  // download, or a key -- in the words of someone who has not met a model.
   const local = status.engine === "local";
-  element.polishBlockerText.textContent = local
-    ? `Active needs ${polishModelLabel(status.localModelId)} on this Mac.`
-    : "Active needs an OpenRouter key.";
-  element.polishBlockerAction.textContent = local ? "Download it" : "Add a key";
-  element.polishLevelHint.hidden = ready;
-  renderModelKinds();
-  for (const card of polishLevelCards()) {
-    card.disabled = !ready && card.dataset.level !== "none";
-  }
+  const ready = local ? status.localReady : status.hasApiKey;
+  element.polishDictationToggle.hidden = !ready;
+  element.polishEnable.hidden = ready;
+  if (!ready) renderPolishEnable();
   renderPolishDeck();
 }
 
-function polishLevelCards(): HTMLButtonElement[] {
-  return Array.from(element.polishLevels.querySelectorAll<HTMLButtonElement>("[data-level]"));
+/** The button in the switch's place, and what it is doing. */
+function renderPolishEnable(): void {
+  if (!aiStatus) return;
+  if (aiStatus.engine !== "local") {
+    element.polishEnable.textContent = "Add a key";
+    return;
+  }
+  if (polishDownloading) {
+    element.polishEnable.textContent = `${polishPercent}% · Cancel`;
+    return;
+  }
+  element.polishEnable.textContent =
+    polishDownloadSize === "" ? "Download the model" : `Download (${polishDownloadSize})`;
 }
 
 function renderPolishLevel(level: PolishLevel): void {
-  for (const card of polishLevelCards()) {
-    card.setAttribute("aria-checked", String(card.dataset.level === level));
-  }
-  element.cleanupWhat.textContent =
-    level === "none"
-      ? "Off: typed exactly as you said it, mistakes included."
-      : "Filler words and grammar fixed, by the model on the AI Polish page.";
-  element.cleanupTyped.textContent =
-    level === "none"
-      ? "so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done"
-      : "I was thinking maybe we could push the demo to Thursday. The API stuff isn't quite done.";
+  element.polishDictationToggle.checked = level !== "none";
 }
 
 /**
@@ -1116,19 +1112,10 @@ function renderPolishShortcut(shortcut: string): void {
   )) {
     button.setAttribute("aria-checked", String(button.dataset.shortcut === shortcut));
   }
-  const name = document.createElement("strong");
-  // Written like the Dictation caption's "Right Option (⌥→)": the name, then
-  // the keycap it appears as.
-  name.textContent =
+  element.polishSelectionWhat.textContent =
     shortcut === "none"
-      ? "Off."
-      : `${nameAccelerator(shortcut)} (${describeAccelerator(shortcut).replace(" + ", "")})`;
-  element.polishShortcutCaption.replaceChildren(
-    name,
-    shortcut === "none"
-      ? " Pick a key to polish selected text from any app."
-      : " Select text in any app and press it. Nothing selected? It takes the field you are typing in.",
-  );
+      ? "Off. Pick a shortcut to fix selected text in place, in any app."
+      : `Select some text and press ${nameAccelerator(shortcut)}. Nothing selected? It takes the field you are typing in.`;
   renderPolishDeck();
 }
 
@@ -1163,7 +1150,7 @@ function renderPolishDeck(): void {
   element.polishDeckKeyLabel.textContent = shortcut === "none" ? "Shortcut" : "Press";
   element.polishDeckKey.textContent = describeAccelerator(shortcut).replace(" + ", "");
   element.polishDeckDictation.textContent =
-    settings.polishLevel === "none" ? "Inserted as spoken" : "Cleaned up before it is typed";
+    settings.polishLevel === "none" ? "Typed as spoken" : "Polished before they are typed";
 }
 
 function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
@@ -1177,6 +1164,10 @@ function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
   )) {
     section.hidden = section.dataset.engineOnly !== engine;
   }
+  element.polishEngineNote.textContent =
+    engine === "local"
+      ? "Private and free. A small model is downloaded once; nothing you write leaves this Mac."
+      : "Better results from a larger model, through OpenRouter. Needs a free key, and sends only the text being polished.";
   if (engine === "local") void renderPolishModels();
   // Switching engines changes what "ready" means, and the rows that say so were
   // drawn for the other one.
@@ -1196,6 +1187,20 @@ async function renderPolishModels(): Promise<void> {
   const catalog = await host().getPolishModelCatalog().catch(() => []);
   element.polishModelList.replaceChildren(...catalog.map(polishModelRow));
 }
+
+/**
+ * What each local model is for, in the terms someone choosing would use.
+ *
+ * The rows carry a size and a memory figure, which is a comparison for
+ * somebody who knows what 0.6B and Q4 mean and nothing at all for somebody
+ * who does not. One sentence says which to pick.
+ */
+const POLISH_MODEL_ADVICE: Record<string, string> = {
+  "qwen3-0.6b-q4": "The smallest, and enough for tidying dictations.",
+  "qwen3-0.6b-q8": "The same model, a touch more precise, for a little more memory.",
+  "qwen3-1.7b-q4": "Better with long or messy text. Wants a Mac with 16 GB.",
+  "qwen3-4b-q4": "The best rewrites here, and the slowest. Wants 16 GB or more.",
+};
 
 function polishModelRow(model: PolishModelStatus): HTMLElement {
   const size = formatBytes(model.downloadBytes);
@@ -1238,6 +1243,13 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
   const body = document.createElement("span");
   body.className = "model-body";
   body.append(name, factLine);
+  const advice = POLISH_MODEL_ADVICE[model.id];
+  if (advice) {
+    const detail = document.createElement("small");
+    detail.className = "model-detail";
+    detail.textContent = advice;
+    body.append(detail);
+  }
 
   const row = document.createElement("div");
   row.className = "model-row";
@@ -1246,11 +1258,9 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
   row.append(pick, body);
 
   if (model.installed && model.selected) {
-    const tag = document.createElement("span");
-    tag.className = "model-tag";
-    tag.dataset.ready = "true";
-    tag.textContent = "In use";
-    row.append(tag);
+    row.append(tag("In use", "ready"));
+  } else if (model.id === DEFAULT_POLISH_MODEL_ID) {
+    row.append(tag("Recommended", "recommended"));
   }
 
   if (busy) {
@@ -1274,6 +1284,8 @@ function polishModelRow(model: PolishModelStatus): HTMLElement {
 async function downloadPolishModel(id: string): Promise<void> {
   if (polishDownloading) return;
   polishDownloading = id;
+  polishPercent = 0;
+  renderPolishEnable();
   await renderPolishModels();
   try {
     await host().downloadPolishModel(id);
@@ -1304,6 +1316,7 @@ function showPolishDownloadProgress(event: ModelEvent): void {
     action.textContent = `${polishPercent}%`;
     action.disabled = true;
   }
+  if (!element.polishEnable.hidden) renderPolishEnable();
   if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
     const percent = polishPercent;
     element.wizardLocalTrack.classList.toggle("is-reserved", event.stage !== "downloading");
@@ -1382,6 +1395,7 @@ function renderHotkeyLabels(): void {
   const binding = getHotkeyBinding(settings.hotkeyId);
   const glyph = binding ? hotkeyKeycap(binding) : "—";
   element.hintKey.textContent = glyph;
+  element.tryKey.textContent = glyph;
   element.fnNote.hidden = settings.hotkeyId !== "fn";
 }
 
@@ -1503,7 +1517,7 @@ async function refreshModelInstalled(): Promise<void> {
   setupKnown = true;
   renderSetup();
   renderDictationDeck();
-  renderModelKinds();
+  renderAccuracy();
 }
 
 /**
@@ -1632,6 +1646,10 @@ function renderSidebarCollapsed(): void {
 async function renderModels(): Promise<void> {
   const catalog = await host().getModelCatalog().catch(() => []);
 
+  // The accuracy stops read fit and presence from the same catalogue.
+  wizardCatalog = new Map(catalog.map((model) => [model.id, model]));
+  renderAccuracy();
+
   // Group headings come from the catalogue in its own order, so the interface
   // does not hold a second opinion about which groups exist.
   const groups = catalog.reduce<{ heading: string; models: ModelStatus[] }[]>((all, model) => {
@@ -1662,6 +1680,119 @@ async function renderModels(): Promise<void> {
 }
 
 /**
+ * The slider and the model it resolves to.
+ *
+ * The thumb sits on the rung of the model in use, or on the one being
+ * fetched. The line under it follows the thumb while it moves, naming the
+ * rung, the model that rung gets on this Mac, what it costs, and whether it
+ * is here. `force` redraws even when the rung has not changed: a download
+ * arriving changes the line without moving the thumb.
+ */
+function renderAccuracy(force = true): void {
+  if (
+    accuracyTarget !== null &&
+    downloading !== accuracyTarget &&
+    !isQueued(accuracyTarget)
+  ) {
+    accuracyTarget = null;
+  }
+  const fits = (id: SpeechModelId): ModelFit | null => wizardCatalog.get(id)?.fit ?? null;
+
+  // Where the thumb belongs when nothing is being asked of it: the model in
+  // use, or the one on its way. Not moved under a finger, and not for a model
+  // off the ladder, which has no rung to sit on.
+  if (force && !accuracyLadder.moving()) {
+    const home = ladderIndexOf(accuracyTarget ?? settings.modelId);
+    if (home !== null && Math.round(accuracyLadder.index()) !== home) accuracyLadder.set(home);
+  }
+
+  const rung = Math.round(accuracyLadder.index());
+  if (!force && rung === accuracyShownRung) return;
+  accuracyShownRung = rung;
+
+  for (const label of Array.from(element.accuracyLabels.querySelectorAll<HTMLElement>("[data-rung]"))) {
+    label.setAttribute("aria-current", String(Number(label.dataset.rung) === rung));
+  }
+
+  // What the thumb's rung means here. A model chosen from the full list that
+  // is not on the ladder is still the answer while the thumb has not moved.
+  const onLadder = ladderIndexOf(settings.modelId);
+  const choice = chooseModel(rung, fits);
+  const focus: SpeechModelId =
+    accuracyTarget ?? (onLadder === null && rung === Math.round(accuracyLadder.index()) && !accuracyLadder.touched() ? settings.modelId : choice.id);
+  const chosen = wizardCatalog.get(focus);
+  const label = getSpeechModel(focus).label;
+
+  element.accuracyRung.textContent =
+    onLadder === null && focus === settings.modelId ? "From the full list" : ladderRung(choice.index).name;
+  element.accuracyModel.textContent = label;
+  const facts = [
+    chosen?.wer != null ? accuracy(chosen.wer) : "",
+    chosen?.downloadBytes != null ? `${formatBytes(chosen.downloadBytes)} disk` : "",
+    chosen ? `${formatMemory(chosen.memoryMb)} RAM` : "",
+  ].filter((part) => part !== "");
+  element.accuracyFacts.textContent = facts.join(" · ");
+
+  // Whether the words are here, or on their way.
+  const action = element.accuracyAction;
+  const here = chosen ? chosen.runtimeInstalled && chosen.weightsInstalled : false;
+  const busy = downloading === focus;
+  const queued = !busy && isQueued(focus);
+  if (busy) {
+    const controls = cancelDownloadButton();
+    const progress = controls.querySelector(".model-progress");
+    if (progress) {
+      progress.textContent =
+        speechProgress?.id === focus ? `Downloading ${speechProgress.percent}%` : "Downloading…";
+    }
+    action.replaceChildren(controls);
+  } else if (queued) {
+    action.replaceChildren(queuedDownloadControls(focus, label));
+  } else if (here) {
+    const state = document.createElement("span");
+    state.className = "model-tag";
+    state.dataset.ready = "true";
+    state.textContent = focus === settings.modelId ? "Installed" : "Ready";
+    action.replaceChildren(state);
+  } else if (chosen && chosen.downloadBytes !== null) {
+    action.replaceChildren(fetchButton(focus, label, formatBytes(chosen.downloadBytes)));
+  } else {
+    const state = document.createElement("span");
+    state.className = "model-tag";
+    state.textContent = chosen ? "Needs a terminal" : "Not downloaded";
+    action.replaceChildren(state);
+  }
+
+  // The rung asked for is not always the model answering it: a Mac that
+  // cannot hold the model is stepped down, and that is said, not hidden.
+  element.accuracyNote.hidden = true;
+  if (chosen && chosen.fit === "too-large") {
+    element.accuracyNote.hidden = false;
+    element.accuracyNote.textContent = `${label} wants more memory than this Mac has to spare. It will run, and slowly.`;
+  } else if (choice.askedFor && focus === choice.id) {
+    element.accuracyNote.hidden = false;
+    element.accuracyNote.textContent = `${getSpeechModel(choice.askedFor.id).label} wants more memory than this Mac has to spare, so ${choice.label} is the most accurate one that fits.`;
+  }
+}
+
+/** The stop names under the notches, each centred on its notch. */
+function renderAccuracyLabels(): void {
+  const span = Math.max(1, MODEL_LADDER.length - 1);
+  element.accuracyLabels.replaceChildren(
+    ...MODEL_LADDER.map((rung, index) => {
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "ladder-label";
+      label.dataset.rung = String(index);
+      label.style.setProperty("--at", String(index / span));
+      label.textContent = rung.name;
+      return label;
+    }),
+  );
+}
+
+
+/**
  * A Lucide glyph, built here because these rows are built here.
  *
  * The markup carries its icons inline with `data-icon` naming the Lucide entry
@@ -1685,6 +1816,21 @@ function icon(name: string, paths: string[]): SVGSVGElement {
     svg.append(path);
   }
   return svg;
+}
+
+/** The catalogue's ids are strings; the ladder only knows the typed ones. */
+function rungOf(id: string): number | null {
+  return isSpeechModelId(id) ? ladderIndexOf(id) : null;
+}
+
+/** A small pill on a row: In use, Recommended, or the rung's name. */
+function tag(label: string, kind: "ready" | "recommended" | "rung"): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "model-tag";
+  pill.dataset.kind = kind;
+  if (kind === "ready") pill.dataset.ready = "true";
+  pill.textContent = label;
+  return pill;
 }
 
 /** Lucide `terminal`: the two models the app cannot fetch for you. */
@@ -1798,15 +1944,17 @@ function modelRow(model: ModelStatus): HTMLElement {
   // The numbers the choice is made on. A third line of prose is dropped: the
   // group heading and the figures already say what the model is for.
   const facts = [
-    model.wer === null ? "" : `${model.wer.toFixed(1)}% errors`,
-    size,
+    model.wer === null ? "" : accuracy(model.wer),
+    size === "" ? "" : `${size} disk`,
     `${formatMemory(model.memoryMb)} RAM`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  // Only when the app cannot fetch the weights: that command is the next act,
-  // not a description.
-  const aside = ready || fetchable ? "" : `Run ${model.setupCommand}`;
+  // Only for a model the app cannot fetch: the command that would, since
+  // that is the next act rather than a description.
+  const rungIndex = rungOf(model.id);
+  const rung = rungIndex === null ? null : MODEL_LADDER[rungIndex]!;
+  const aside = ready || fetchable ? "" : `Needs a terminal. Run ${model.setupCommand}`;
 
   const pick = document.createElement("button");
   pick.type = "button";
@@ -1846,12 +1994,14 @@ function modelRow(model: ModelStatus): HTMLElement {
   factLine.className = "model-facts";
   factLine.textContent = facts;
   if (model.wer !== null) {
-    factLine.title = "Word error rate — lower is more accurate";
+    factLine.title = `Gets about ${model.wer.toFixed(1)} words in 100 wrong on LibriSpeech`;
   }
 
   const body = document.createElement("span");
   body.className = "model-body";
-  body.append(name, factLine);
+  body.append(name);
+  if (rung) body.append(tag(rung.name, "rung"));
+  body.append(factLine);
   if (aside !== "") {
     const detail = document.createElement("small");
     detail.className = "model-detail";
@@ -1874,11 +2024,9 @@ function modelRow(model: ModelStatus): HTMLElement {
   row.append(pick, body);
 
   if (ready && model.selected) {
-    const tag = document.createElement("span");
-    tag.className = "model-tag";
-    tag.dataset.ready = "true";
-    tag.textContent = "In use";
-    row.append(tag);
+    row.append(tag("In use", "ready"));
+  } else if (model.id === DEFAULT_LADDER_MODEL_ID) {
+    row.append(tag("Recommended", "recommended"));
   }
 
   if (busy) {
@@ -2059,6 +2207,12 @@ function showDownloadProgress(event: ModelEvent): void {
   if (stepAction) stepAction.textContent = `${percent}%`;
   const stepDetail = step?.querySelector("small");
   if (stepDetail) stepDetail.textContent = event.message;
+
+  speechProgress = { id: event.modelId, percent };
+  if (event.modelId === (accuracyTarget ?? settings.modelId)) {
+    const line = element.accuracyAction.querySelector<HTMLElement>(".model-progress");
+    if (line) line.textContent = `Downloading ${percent}%`;
+  }
 
   const pick = element.modelList.querySelector<HTMLElement>(
     `[data-model="${event.modelId}"]`,
@@ -2261,6 +2415,11 @@ function announceUpdateIfNew(): void {
  * Whisper Medium is "1.5 GB", not "1534 MB": past a thousand the megabytes
  * stop being a size and start being a number to read.
  */
+/** A word error rate as a figure rather than a term of art. */
+function accuracy(wer: number): string {
+  return `${wer.toFixed(1)}% errors`;
+}
+
 function formatBytes(bytes: number): string {
   const megabytes = bytes / 1_000_000;
   return megabytes >= 1_000
@@ -2381,6 +2540,7 @@ function renderDictationDeck(): void {
   element.deckKeyLabel.textContent = binding ? "Hold" : "Shortcut";
   element.deckKey.textContent = binding ? key : "Off";
   element.deckSettings.hidden = outstanding.length === 0;
+  element.deckTry.hidden = outstanding.length > 0 || !binding;
   if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
   else delete element.deckStatus.dataset.tone;
   if (outstanding.length > 0) {
@@ -2519,6 +2679,268 @@ function handleDictationUpdate(update: DictationUpdate): void {
     setStatus(status.message);
   }
   else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).label} ready`);
+
+  if (!element.tryModal.hidden) followTry(status.state, status.message);
+}
+
+/* -------------------------------------------------------------------------
+ * The ladder: a range input with stops
+ * ---------------------------------------------------------------------- */
+
+interface Ladder {
+  /** Where the thumb is, fractional while it moves. */
+  index(): number;
+  /** Puts the thumb somewhere, now, without a word to the hooks' settle. */
+  set(value: number): void;
+  /** Sends the thumb to a rung over a couple of hundred milliseconds. */
+  glideTo(target: number): void;
+  /** Under a finger, or gliding. */
+  moving(): boolean;
+  /** Has been moved by a person since it was last `set`. */
+  touched(): boolean;
+}
+
+interface LadderHooks {
+  /** Every frame the thumb is somewhere new, including on `set`. */
+  onFrame: (index: number) => void;
+  /** The first time a person moves it since it was set. */
+  onTouch?: () => void;
+  /** The thumb has come to rest on a rung after a person moved it. */
+  onSettle?: (rung: number) => void;
+}
+
+/**
+ * The speed/accuracy slider, once, for the wizard and the Dictation page.
+ *
+ * A range input cannot be asked to animate: the thumb is drawn wherever
+ * `value` says, and no CSS transition reaches it -- so clicking the track
+ * teleported the thumb to the rung you aimed at. The value itself is tweened
+ * instead, which the thumb, the filled track and the notches all follow for
+ * free because they are all drawn from it. Not while dragging: a drag has to
+ * stay under the finger, and anything easing toward the pointer is lag.
+ *
+ * `step="any"` is what makes the drag continuous, and it would otherwise
+ * make an arrow key move a hundredth of a rung, so the keyboard gets the
+ * stops the pointer no longer has.
+ */
+function createLadder(slider: HTMLInputElement, ticks: HTMLElement, hooks: LadderHooks): Ladder {
+  const last = MODEL_LADDER.length - 1;
+  let index = DEFAULT_LADDER_INDEX;
+  let glide: number | null = null;
+  let pointerDown = false;
+  let pointerMoved = false;
+  let touched = false;
+
+  const paint = (): void => {
+    const span = Math.max(1, last);
+    // The track paints its own filled portion from this, because a range
+    // input gives no way to style "everything to the left of the thumb".
+    slider.style.setProperty("--fill", `${(Math.min(span, Math.max(0, index)) / span) * 100}%`);
+    // Assigning `value` does not fire `input`, so this cannot feed back into
+    // the handler that started a glide.
+    slider.value = String(index);
+    // A notch per rung: five positions on a continuous-looking slider is not
+    // something anyone discovers by dragging it.
+    const at = Math.round(index);
+    if (ticks.childElementCount !== MODEL_LADDER.length) {
+      ticks.replaceChildren(
+        ...MODEL_LADDER.map((rung) => {
+          const tick = document.createElement("li");
+          tick.className = "ladder-tick";
+          tick.title = rung.name;
+          return tick;
+        }),
+      );
+    }
+    Array.from(ticks.children).forEach((tick, i) => {
+      (tick as HTMLElement).dataset.state = i === at ? "here" : i < at ? "below" : "above";
+    });
+    hooks.onFrame(index);
+  };
+
+  const cancelGlide = (): void => {
+    if (glide === null) return;
+    cancelAnimationFrame(glide);
+    glide = null;
+  };
+
+  const touch = (): void => {
+    if (touched) return;
+    touched = true;
+    hooks.onTouch?.();
+  };
+
+  const set = (value: number): void => {
+    index = value;
+    paint();
+  };
+
+  const settle = (rung: number): void => {
+    set(rung);
+    hooks.onSettle?.(rung);
+  };
+
+  const glideTo = (target: number): void => {
+    const to = Math.min(last, Math.max(0, target));
+    cancelGlide();
+    const from = index;
+    const distance = Math.abs(to - from);
+    // Somebody who has asked for less movement has asked for this too.
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || distance < 0.001) {
+      settle(to);
+      return;
+    }
+    // Put the thumb back where it was, now, before anything is painted: a
+    // click on the track has already moved the input's own value to where it
+    // was aimed, and the first eased frame is a whole frame away.
+    set(from);
+    // Scaled by distance, so a nudge to the next rung is not given the same
+    // time as a jump across the whole ladder, and capped so the long one
+    // still feels like a control rather than a tour.
+    const duration = Math.min(260, 110 + distance * 55);
+    const start = performance.now();
+    const frame = (now: number): void => {
+      const progress = Math.min(1, (now - start) / duration);
+      // Out-cubic: leaves immediately, arrives gently.
+      const eased = 1 - (1 - progress) ** 3;
+      set(from + (to - from) * eased);
+      if (progress < 1) {
+        glide = requestAnimationFrame(frame);
+        return;
+      }
+      glide = null;
+      settle(to);
+    };
+    glide = requestAnimationFrame(frame);
+  };
+
+  // A click on the track and the first instant of a drag are the same event
+  // with the same value. These tell them apart. The move and up listeners are
+  // on the window: the pointer is captured by the input for the length of a
+  // drag, but a drag that leaves the control still has to count as movement.
+  slider.addEventListener("pointerdown", () => {
+    pointerDown = true;
+    pointerMoved = false;
+  });
+  window.addEventListener("pointermove", () => {
+    if (!pointerDown || pointerMoved) return;
+    pointerMoved = true;
+    // From here the thumb belongs to the finger.
+    cancelGlide();
+  });
+  window.addEventListener("pointerup", () => {
+    pointerDown = false;
+  });
+  slider.addEventListener("input", () => {
+    const raw = Number(slider.value);
+    touch();
+    if (pointerDown && !pointerMoved) {
+      // Pressed somewhere along the track without dragging. The input has
+      // already jumped its value there; put it back and travel.
+      glideTo(Math.round(raw));
+      return;
+    }
+    cancelGlide();
+    set(raw);
+  });
+  // Released after a drag: settle onto the nearest rung, so the thumb never
+  // comes to rest between two notches. A click is already gliding.
+  slider.addEventListener("change", () => {
+    if (!pointerMoved) return;
+    glideTo(Math.round(Number(slider.value)));
+  });
+  slider.addEventListener("keydown", (event) => {
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowUp"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowDown"
+          ? -1
+          : 0;
+    let next = step === 0 ? null : Math.round(index) + step;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = last;
+    if (next === null) return;
+    event.preventDefault();
+    touch();
+    glideTo(next);
+  });
+
+  return {
+    index: () => index,
+    set: (value) => {
+      cancelGlide();
+      touched = false;
+      set(value);
+    },
+    glideTo: (target) => {
+      touch();
+      glideTo(target);
+    },
+    moving: () => pointerDown || glide !== null,
+    touched: () => touched,
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * The rehearsal
+ * ---------------------------------------------------------------------- */
+
+type TryStage = "ready" | "focused" | "listening" | "transcribing" | "done" | "error";
+
+function openTry(): void {
+  element.tryField.value = "";
+  element.tryModal.hidden = false;
+  element.app.inert = true;
+  // Step one, done for them: a rehearsal that starts by asking for a click
+  // in a box that is already the only thing on screen is a step too many.
+  element.tryField.focus();
+  setTryStage("focused");
+}
+
+function closeTry(): void {
+  element.tryModal.hidden = true;
+  element.app.inert = false;
+  element.deckTry.focus();
+}
+
+/**
+ * Which step is lit. The steps are the three the strip lists -- focus, hold,
+ * release -- so the stage names the last one completed, and the stylesheet
+ * lights everything up to it.
+ */
+function setTryStage(stage: TryStage): void {
+  element.tryModal.dataset.stage = stage;
+  element.tryAgain.hidden = stage !== "done" && stage !== "error";
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  const key = binding ? hotkeyKeycap(binding) : "the key";
+  element.tryResult.textContent =
+    stage === "done"
+      ? "That's it. Hold the key in any app and the words land where you were typing."
+      : stage === "transcribing"
+        ? "Turning that into words…"
+        : stage === "listening"
+          ? "Listening. Keep the key held, then let go."
+          : stage === "error"
+            ? (element.tryResult.textContent || "That didn't work. Try once more.")
+            : `Hold ${key} now and say something.`;
+}
+
+/** Follows the session while the rehearsal is up. */
+function followTry(state: DictationStatus["state"], message?: string): void {
+  const stage = element.tryModal.dataset.stage as TryStage;
+  if (stage === "done") return;
+  if (state === "listening") setTryStage("listening");
+  else if (state === "transcribing" || state === "rewriting") setTryStage("transcribing");
+  else if (state === "error") {
+    element.tryResult.textContent = message ?? "";
+    setTryStage("error");
+  } else if (state === "idle" && stage === "transcribing") {
+    // The session ended; the paste lands a beat later and the input event
+    // takes it from here. If nothing arrives, the field says so by staying
+    // empty, and the steps stay where they were.
+    setTryStage("focused");
+  }
 }
 
 /** The shortcut is the way in, so the sidebar says which one to hold. */
@@ -3256,12 +3678,11 @@ function formatDay(timestamp: number): string {
 
 
 function toggleSettings(open: boolean, page = "general"): void {
-  if (open && promptEditorKind) togglePromptEditor(false);
   // Settings covers the list, and with it the button that would pause.
   if (open) stopPlayback();
   settingsOpen = open;
   element.settingsPanel.hidden = !open;
-  element.scrim.hidden = !open && !promptEditorKind;
+  element.scrim.hidden = !open;
   if (!open) return;
   showSettingsPage(page);
   void host().getHotkeyStatus().then((status) => {
@@ -3269,69 +3690,6 @@ function toggleSettings(open: boolean, page = "general"): void {
     renderHotkeyStatus();
   });
   void host().getAiStatus().then(renderAiStatus);
-}
-
-/**
- * Opens or closes the instruction editor over the settings panel.
- *
- * The cards only show a preview; editing happens here so two long prompts do
- * not take the whole page. Reset puts the selected level's default back into
- * the field; Save is what writes it. Closing without Save leaves the stored
- * prompt alone.
- *
- * The panel is closed underneath rather than stacked with, because two dialogs
- * deep is one too many to find the way out of -- and put back on the way out,
- * since the cards that open this are on one of its pages.
- */
-function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "transform"): void {
-  if (!open) {
-    promptEditorKind = null;
-    element.promptEditor.hidden = true;
-    if (promptEditorFromSettings) {
-      promptEditorFromSettings = false;
-      toggleSettings(true);
-      return;
-    }
-    element.scrim.hidden = !settingsOpen;
-    return;
-  }
-  promptEditorFromSettings = settingsOpen;
-  if (settingsOpen) toggleSettings(false);
-  promptEditorKind = kind;
-  element.promptEditorTitle.textContent = kind === "transform" ? "Dictation" : "Selection";
-  element.promptEditorWhere.textContent =
-    kind === "transform"
-      ? transformPromptWhere(settings.polishLevel)
-      : "Used when you polish selected text with the shortcut.";
-  element.promptEditorBody.value =
-    kind === "transform" ? settings.transformPrompt : settings.polishPrompt;
-  element.promptEditor.hidden = false;
-  element.scrim.hidden = false;
-  element.promptEditorBody.focus();
-}
-
-/**
- * Which level the dictation instruction belongs to.
- *
- * At None nothing runs it, and the card says so rather than showing an
- * instruction that reads as though it were in force.
- */
-function transformPromptWhere(level: PolishLevel): string {
-  if (level === "none") return "Not in use: AI Polish is set to None.";
-  return "Used on every dictation while AI Polish is Active.";
-}
-
-/** First lines of each prompt on the cards, so the page stays scannable. */
-function renderPromptPreviews(next: AppSettings = settings): void {
-  element.transformPromptWhere.textContent = transformPromptWhere(next.polishLevel);
-  element.transformPromptPreview.textContent = promptPreview(next.transformPrompt);
-  element.polishPromptPreview.textContent = promptPreview(next.polishPrompt);
-}
-
-function promptPreview(text: string): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= 140) return compact;
-  return `${compact.slice(0, 139).trimEnd()}…`;
 }
 
 /* ==========================================================================
@@ -3390,17 +3748,14 @@ function openWizard(): void {
   // A model already chosen puts the slider on its rung; anything off the
   // ladder -- a model picked from the catalogue, or a default from an older
   // build -- leaves the slider where it rests.
-  ladderIndex = ladderIndexOf(settings.modelId) ?? DEFAULT_LADDER_INDEX;
   element.ladderSlider.max = String(MODEL_LADDER.length - 1);
-  element.ladderSlider.value = String(ladderIndex);
-  cancelLadderGlide();
   ladderShownRung = -1;
   ladderTouched = false;
+  wizardLadder.set(ladderIndexOf(settings.modelId) ?? DEFAULT_LADDER_INDEX);
 
   // Anything else modal would be underneath this, which is two dialogs deep
   // with the lower one unreachable.
   if (settingsOpen) toggleSettings(false);
-  if (promptEditorKind) togglePromptEditor(false);
 
   void readWizardFits().then(startPrefetch);
   startPolishDefault();
@@ -3433,7 +3788,6 @@ function startPolishDefault(): void {
   if (settings.polishEngine !== DEFAULT_SETTINGS.polishEngine) return;
   void patchSettings({
     polishLevel: "light",
-    transformPrompt: transformPromptFor("light"),
     polishEngine: "local",
   }).then(prefetchPolishModel);
 }
@@ -3570,7 +3924,7 @@ function wizardNextLabel(step: WizardStep): string {
     // been moved it is a choice, and the button names what was chosen --
     // which is also the last chance to notice the Mac stepped it down.
     if (!ladderTouched) return "Continue with default model";
-    return `Continue with ${chooseModel(ladderIndex, (id) => wizardCatalog.get(id)?.fit ?? null).label}`;
+    return `Continue with ${chooseModel(wizardLadder.index(), (id) => wizardCatalog.get(id)?.fit ?? null).label}`;
   }
   return "Continue";
 }
@@ -3643,20 +3997,11 @@ function permissionSteps(): SetupStep[] {
  * is why the note exists.
  */
 function renderLadder(): void {
-  // The track paints its own filled portion from this, because a range input
-  // gives no way to style "everything to the left of the thumb". Written on
-  // every frame of a glide, which is what makes the fill move with the thumb.
-  const span = Math.max(1, MODEL_LADDER.length - 1);
-  element.ladderSlider.style.setProperty(
-    "--fill",
-    `${(Math.min(span, Math.max(0, ladderIndex)) / span) * 100}%`,
-  );
-
   // Everything below describes a rung, not a position, so it is rebuilt when
   // the rung changes rather than sixty times a second on the way there --
-  // replaceChildren on the ticks and the facts every frame is itself enough
-  // to make a glide stutter.
-  const rung = Math.round(Math.min(span, Math.max(0, ladderIndex)));
+  // replaceChildren on the facts every frame is itself enough to make a
+  // glide stutter.
+  const rung = Math.round(wizardLadder.index());
   if (rung === ladderShownRung) return;
   ladderShownRung = rung;
   renderVoiceButton();
@@ -3672,7 +4017,6 @@ function renderLadder(): void {
   element.ladderModel.textContent = choice.label;
   element.ladderTrade.textContent = ladderRung(choice.index).trade;
 
-  renderLadderTicks();
   renderLadderFacts(choice.id);
 
   element.ladderNote.hidden = choice.askedFor === null;
@@ -3683,100 +4027,10 @@ function renderLadder(): void {
 
 }
 
-/**
- * Moves the slider to a rung over a couple of hundred milliseconds.
- *
- * A range input cannot be asked to animate: the thumb is drawn wherever
- * `value` says, and no CSS transition reaches it -- so clicking the track
- * teleported the thumb to the rung you aimed at. The value itself is tweened
- * instead, which the thumb, the filled track and the notches all follow for
- * free because they are all drawn from it.
- *
- * Not used while dragging. A drag has to stay under the finger, and anything
- * easing its way toward the pointer is lag rather than polish.
- */
-function glideLadderTo(target: number): void {
-  const span = MODEL_LADDER.length - 1;
-  const to = Math.min(span, Math.max(0, target));
-  cancelLadderGlide();
-
-  const from = ladderIndex;
-  const distance = Math.abs(to - from);
-  // Somebody who has asked for less movement has asked for this too.
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduced || distance < 0.001) {
-    setLadderIndex(to);
-    return;
-  }
-
-  // Put the thumb back where it was, now, before anything is painted. A
-  // click on the track has already moved the input's own value to where it
-  // was aimed, and the first eased frame is a whole frame away -- long
-  // enough to show the thumb at the destination and then yank it back to
-  // start the journey it was supposed to make.
-  setLadderIndex(from);
-
-  // Scaled by distance, so a nudge to the next rung is not given the same
-  // couple of hundred milliseconds as a jump across the whole ladder, and
-  // capped so the long one still feels like a control rather than a tour.
-  const duration = Math.min(260, 110 + distance * 55);
-  const start = performance.now();
-
-  const frame = (now: number): void => {
-    const progress = Math.min(1, (now - start) / duration);
-    // Out-cubic: leaves immediately, arrives gently, which is what reads as
-    // the thumb being thrown rather than dragged.
-    const eased = 1 - (1 - progress) ** 3;
-    setLadderIndex(from + (to - from) * eased);
-    if (progress < 1) {
-      ladderGlide = requestAnimationFrame(frame);
-      return;
-    }
-    ladderGlide = null;
-    setLadderIndex(to);
-  };
-  ladderGlide = requestAnimationFrame(frame);
-}
-
 /** The Continue button names the model, so it moves when the slider does. */
 function renderVoiceButton(): void {
   if (wizardStep !== "voice") return;
   element.wizardNext.textContent = wizardNextLabel("voice");
-}
-
-function cancelLadderGlide(): void {
-  if (ladderGlide === null) return;
-  cancelAnimationFrame(ladderGlide);
-  ladderGlide = null;
-}
-
-/** Writes a position to both the control and the card drawn from it. */
-function setLadderIndex(value: number): void {
-  ladderIndex = value;
-  // Assigning `value` does not fire `input`, so this cannot feed back into
-  // the handler that started the glide.
-  element.ladderSlider.value = String(value);
-  renderLadder();
-}
-
-/**
- * A notch per rung, under the track.
- *
- * Five positions on a continuous-looking slider is not something anyone
- * discovers by dragging it. The notches say up front that this has stops
- * rather than a range, and how many.
- */
-function renderLadderTicks(): void {
-  element.ladderTicks.replaceChildren(
-    ...MODEL_LADDER.map((rung, index) => {
-      const tick = document.createElement("li");
-      tick.className = "ladder-tick";
-      const at = Math.round(ladderIndex);
-      tick.dataset.state = index === at ? "here" : index < at ? "below" : "above";
-      tick.title = rung.name;
-      return tick;
-    }),
-  );
 }
 
 /**
@@ -3790,15 +4044,9 @@ function renderLadderTicks(): void {
 function renderLadderFacts(id: SpeechModelId): void {
   const model = wizardCatalog.get(id);
   const facts: Array<[string, string]> = [
-    ["Download", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
-    ["Memory", model ? formatMemory(model.memoryMb) : "—"],
-    // Word error rate, said as the thing it measures. "WER 2.1" is a term of
-    // art; "about 2 words in 100" is the same fact to someone who has never
-    // read a speech paper.
-    [
-      "Gets wrong",
-      model?.wer != null ? `~${model.wer.toFixed(1)} words in 100` : "—",
-    ],
+    ["Disk", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
+    ["RAM", model ? formatMemory(model.memoryMb) : "—"],
+    ["Errors", model?.wer != null ? `${model.wer.toFixed(1)}%` : "—"],
   ];
 
   element.ladderFacts.replaceChildren(
@@ -3824,7 +4072,7 @@ function renderLadderFacts(id: SpeechModelId): void {
  * download at a time and starting a second here would simply be refused.
  */
 async function commitLadderChoice(): Promise<void> {
-  const choice = chooseModel(ladderIndex, (id) => wizardCatalog.get(id)?.fit ?? null);
+  const choice = chooseModel(wizardLadder.index(), (id) => wizardCatalog.get(id)?.fit ?? null);
   if (choice.id !== settings.modelId) await patchSettings({ modelId: choice.id });
   enqueuePrefetch(choice.id, { first: true });
   void drainPrefetch();
@@ -4326,70 +4574,14 @@ function closeWizard(): void {
 function wireWizard(): void {
   element.wizardNext.addEventListener("click", () => void advanceWizard());
 
-  // A click on the track and the first instant of a drag are the same event
-  // with the same value. These two tell them apart.
-  element.ladderSlider.addEventListener("pointerdown", () => {
-    ladderPointerDown = true;
-    ladderPointerMoved = false;
-  });
-  // On the window, not the slider: the pointer is captured by the input for
-  // the length of a drag, but a drag that leaves the control still has to
-  // count as movement.
-  window.addEventListener("pointermove", () => {
-    if (!ladderPointerDown || ladderPointerMoved) return;
-    ladderPointerMoved = true;
-    // From here the thumb belongs to the finger.
-    cancelLadderGlide();
-  });
-  window.addEventListener("pointerup", () => {
-    ladderPointerDown = false;
-  });
-
-  element.ladderSlider.addEventListener("input", () => {
-    const raw = Number(element.ladderSlider.value);
+  wizardLadder = createLadder(element.ladderSlider, element.ladderTicks, {
+    onFrame: renderLadder,
     // Touched by hand: from here the button names the model rather than
-    // calling it the default. Written before the branch below, because a
-    // click that lands on the rung it was already on changes no rung and so
-    // would never reach the card's redraw.
-    ladderTouched = true;
-    renderVoiceButton();
-    if (ladderPointerDown && !ladderPointerMoved) {
-      // Pressed somewhere along the track without dragging. The input has
-      // already jumped its value there; put it back and travel.
-      glideLadderTo(Math.round(raw));
-      return;
-    }
-    cancelLadderGlide();
-    ladderIndex = raw;
-    renderLadder();
-  });
-
-  // Released after a drag: settle onto the rung it is nearest, so the thumb
-  // never comes to rest between two notches the card is not describing. A
-  // click is already gliding and must not be restarted.
-  element.ladderSlider.addEventListener("change", () => {
-    if (!ladderPointerMoved) return;
-    glideLadderTo(Math.round(Number(element.ladderSlider.value)));
-  });
-  // `step="any"` is what makes the drag continuous, and it would otherwise
-  // make an arrow key move a hundredth of a rung. The keyboard gets the stops
-  // the pointer no longer has.
-  element.ladderSlider.addEventListener("keydown", (event) => {
-    const last = MODEL_LADDER.length - 1;
-    const step =
-      event.key === "ArrowRight" || event.key === "ArrowUp"
-        ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowDown"
-          ? -1
-          : 0;
-    let next = step === 0 ? null : Math.round(ladderIndex) + step;
-    if (event.key === "Home") next = 0;
-    if (event.key === "End") next = last;
-    if (next === null) return;
-    event.preventDefault();
-    ladderTouched = true;
-    renderVoiceButton();
-    glideLadderTo(next);
+    // calling it the default.
+    onTouch: () => {
+      ladderTouched = true;
+      renderVoiceButton();
+    },
   });
   element.keyboard.addEventListener("click", (event) => {
     const option = (event.target as HTMLElement).closest<HTMLElement>("[data-hotkey]");
@@ -4402,12 +4594,7 @@ function wireWizard(): void {
     const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
     const level = card?.dataset.level;
     if (!isPolishLevel(level)) return;
-    // The same write the AI Polish page makes: the level owns the instruction
-    // the dictation path runs, so choosing one puts that level's default back.
-    void patchSettings({
-      polishLevel: level,
-      transformPrompt: transformPromptFor(level),
-    }).then(prefetchPolishModel);
+    void patchSettings({ polishLevel: level }).then(prefetchPolishModel);
   });
 
   element.wizardKeyInput.addEventListener("input", () => {

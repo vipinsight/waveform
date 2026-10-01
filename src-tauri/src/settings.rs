@@ -40,33 +40,11 @@ fn default_model_id() -> &'static str {
     crate::model_server::DEFAULT_MODEL_ID
 }
 
-pub const DEFAULT_TRANSFORM_PROMPT: &str = include_str!("prompts/transform.txt");
-pub const DEFAULT_POLISH_PROMPT: &str = include_str!("prompts/polish.txt");
-
 /// Kept in step with src/shared/prompts.ts, which is where the list the
 /// interface offers lives and why these particular ids were chosen.
 pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4.1-mini";
 /// Defaults that turned out not to name a model OpenRouter serves.
 pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
-/// Defaults nobody chose, replaced on load wherever they are still stored
-/// unedited. A default is not a preference worth preserving.
-///
-/// The first dictation prompt predates the rules about how spoken numbers and
-/// times are written down. The second still rewrote grammar and phrasing.
-pub const RETIRED_TRANSFORM_PROMPTS: [&str; 3] = [
-    include_str!("prompts/transform-retired.txt"),
-    include_str!("prompts/transform-retired-grammar.txt"),
-    // The Medium level's default, from when there were three levels.
-    include_str!("prompts/transform-retired-medium.txt"),
-];
-/// Polish prompts nobody chose. The first was a copy editor; the second tidied
-/// dictation rather than fixing anything, which is the wrong job for text
-/// somebody typed and selected -- and far more instruction than a local model
-/// half a gigabyte wide can hold.
-pub const RETIRED_POLISH_PROMPTS: [&str; 2] = [
-    include_str!("prompts/polish-retired.txt"),
-    include_str!("prompts/polish-retired-dictation.txt"),
-];
 
 /// Serialized as camelCase so one settings.json serves both hosts and the
 /// shape matches what the shared frontend expects.
@@ -120,8 +98,6 @@ pub struct AppSettings {
     /// The instruction the dictation path runs, at whichever level is
     /// selected. Choosing a level writes that level's default here; the
     /// Instructions editor overwrites it.
-    pub transform_prompt: String,
-    pub polish_prompt: String,
     pub polish_shortcut: String,
     /// Show a menu bar icon, which is the only way back to a closed window
     /// when the Dock icon is hidden.
@@ -184,8 +160,6 @@ impl Default for AppSettings {
             // somebody is about to paste into their own document.
             polish_level: "none".to_string(),
             transform_on_dictate: false,
-            transform_prompt: DEFAULT_TRANSFORM_PROMPT.trim().to_string(),
-            polish_prompt: DEFAULT_POLISH_PROMPT.trim().to_string(),
             polish_shortcut: "Alt+1".to_string(),
             menu_bar_icon: true,
             // On for a fresh install: Waveform is a shortcut that has to be
@@ -267,20 +241,6 @@ impl AppSettings {
         if RETIRED_OPENROUTER_MODELS.contains(&self.open_router_model.as_str()) {
             self.open_router_model = DEFAULT_OPENROUTER_MODEL.to_string();
         }
-        if RETIRED_TRANSFORM_PROMPTS
-            .iter()
-            .any(|retired| self.transform_prompt.trim() == retired.trim())
-        {
-            self.transform_prompt = DEFAULT_TRANSFORM_PROMPT.trim().to_string();
-        }
-        if RETIRED_POLISH_PROMPTS
-            .iter()
-            .any(|retired| self.polish_prompt.trim() == retired.trim())
-        {
-            self.polish_prompt = DEFAULT_POLISH_PROMPT.trim().to_string();
-        }
-        self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
-        self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
         // Leaving the Dock with no menu bar icon would strand the app with no
         // way to reach it, so the two settings are not independent.
         if !self.menu_bar_icon {
@@ -343,30 +303,6 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
-    /// A prompt left at an old default is replaced, since nobody chose it.
-    #[test]
-    fn a_retired_prompt_is_replaced_on_load() {
-        for retired in RETIRED_TRANSFORM_PROMPTS {
-            let mut stored = AppSettings::default();
-            stored.transform_prompt = retired.trim().to_string();
-            let loaded = stored.normalize(&AppSettings::default());
-            assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
-        }
-    }
-
-    /// The copy-editor polish default rewrote wording; the next one tidied
-    /// dictation rather than fixing typed text. Both are replaced the same way,
-    /// so a default nobody edited is not kept as a preference.
-    #[test]
-    fn a_retired_polish_prompt_is_replaced_on_load() {
-        for retired in RETIRED_POLISH_PROMPTS {
-            let mut stored = AppSettings::default();
-            stored.polish_prompt = retired.trim().to_string();
-            let loaded = stored.normalize(&AppSettings::default());
-            assert_eq!(loaded.polish_prompt, DEFAULT_POLISH_PROMPT.trim());
-        }
-    }
-
     /// The level replaced an on/off switch, and a file written while that
     /// switch existed names no level at all. Switched on, it did what the
     /// light level does, so that is the level it has to load as -- anything
@@ -402,26 +338,14 @@ mod tests {
     }
 
     /// Medium was retired. A file that chose it keeps polish on, at the one
-    /// level left, and an unedited Medium instruction becomes that level's.
+    /// level left.
     #[test]
     fn a_saved_medium_becomes_the_active_level() {
         let mut stored = AppSettings::default();
         stored.polish_level = "medium".into();
-        stored.transform_prompt = include_str!("prompts/transform-retired-medium.txt").into();
         let loaded = stored.normalize(&AppSettings::default());
         assert_eq!(loaded.polish_level, "light");
         assert!(loaded.transform_on_dictate);
-        assert_eq!(loaded.transform_prompt, DEFAULT_TRANSFORM_PROMPT.trim());
-    }
-
-    /// An edited Medium instruction is the user's, and stays.
-    #[test]
-    fn an_edited_medium_instruction_is_kept() {
-        let mut stored = AppSettings::default();
-        stored.polish_level = "medium".into();
-        stored.transform_prompt = "Keep it short.".into();
-        let loaded = stored.normalize(&AppSettings::default());
-        assert_eq!(loaded.transform_prompt, "Keep it short.");
     }
 
     /// A level from a later version, or a typed-in one, is not a level this
@@ -463,17 +387,6 @@ mod tests {
         let loaded = stored.normalize(&AppSettings::default());
         assert_eq!(loaded.polish_engine, "openrouter");
         assert_eq!(loaded.local_model_id, crate::local_llm::DEFAULT_LOCAL_MODEL_ID);
-    }
-
-    /// A prompt the user wrote is theirs, however close to an old default.
-    #[test]
-    fn an_edited_prompt_survives_load() {
-        let mut stored = AppSettings::default();
-        stored.transform_prompt = "Clean it up. Keep it short.".into();
-        stored.polish_prompt = "Make it rhyme.".into();
-        let loaded = stored.normalize(&AppSettings::default());
-        assert_eq!(loaded.transform_prompt, "Clean it up. Keep it short.");
-        assert_eq!(loaded.polish_prompt, "Make it rhyme.");
     }
 
     /// The old default never named a real model, so every rewrite failed and
@@ -681,13 +594,5 @@ mod tests {
         input.hide_dock_when_closed = true;
 
         assert!(input.normalize(&base).hide_dock_when_closed);
-    }
-
-    #[test]
-    fn restores_a_blanked_prompt() {
-        let base = AppSettings::default();
-        let mut input = base.clone();
-        input.polish_prompt = "   ".into();
-        assert_eq!(input.normalize(&base).polish_prompt, base.polish_prompt);
     }
 }

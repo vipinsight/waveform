@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings";
-import { DEFAULT_POLISH_PROMPT } from "../src/shared/prompts";
 
 describe("DEFAULT_SETTINGS", () => {
   it("starts with the Mac, keeps the bar up, and stays out of the Dock", () => {
@@ -107,18 +106,6 @@ describe("normalizeSettings", () => {
     // something that is not there.
     expect(normalizeSettings({ localModelId: "gpt2-large" }).localModelId).toBe(
       DEFAULT_SETTINGS.localModelId,
-    );
-  });
-
-  it("restores a prompt that was blanked out", () => {
-    expect(normalizeSettings({ polishPrompt: "   " }).polishPrompt).toBe(
-      DEFAULT_POLISH_PROMPT,
-    );
-  });
-
-  it("keeps a custom prompt", () => {
-    expect(normalizeSettings({ polishPrompt: "Make it rhyme." }).polishPrompt).toBe(
-      "Make it rhyme.",
     );
   });
 

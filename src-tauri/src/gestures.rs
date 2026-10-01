@@ -127,6 +127,36 @@ impl GestureMachine {
         Some(Command::HoldUntilSilence)
     }
 
+    /// Another key was pressed while ours was down: the press was a chord,
+    /// not the start of a dictation.
+    ///
+    /// The dictation key is a modifier, and the polish shortcut is that same
+    /// modifier plus a key -- ⌥1 with Right Option. Our key goes down first,
+    /// so the session has already started by the time the chord arrives, and
+    /// polish then refused to run with a dictation in flight. Before the hold
+    /// threshold the press is abandoned and its audio dropped. Past it the
+    /// speaker is dictating, and a key pressed then is theirs to explain.
+    pub fn chord(&mut self, now: Instant) -> Option<Command> {
+        match self.state {
+            State::Holding => {
+                let held = self
+                    .pressed_at
+                    .map(|start| now.duration_since(start))
+                    .unwrap_or_default();
+                if held >= self.hold {
+                    return None;
+                }
+                self.reset();
+                Some(Command::Discard)
+            }
+            State::TapWait | State::LatchArming => {
+                self.reset();
+                Some(Command::Discard)
+            }
+            State::Idle | State::Latched | State::LatchReleasing => None,
+        }
+    }
+
     /// Ends a session from outside the keyboard, e.g. a click on the interface.
     pub fn stop(&mut self) -> Option<Command> {
         if self.state == State::Idle {
@@ -159,6 +189,52 @@ mod tests {
     /// Mirrors the TypeScript suite so both hosts are held to one specification.
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_chord_cancels_the_press_that_began_it() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        assert_eq!(machine.key_down(t0), Some(Command::Start));
+        assert_eq!(machine.chord(at(t0, 40)), Some(Command::Discard));
+        assert!(!machine.is_active());
+        // The modifier's release, and the tap window after it, are nothing.
+        assert_eq!(machine.key_up(at(t0, 120)), None);
+        assert_eq!(machine.tick(at(t0, 10_000)), None);
+    }
+
+    #[test]
+    fn a_chord_in_the_tap_window_cancels_the_tap() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        assert_eq!(machine.key_up(at(t0, 30)), None);
+        assert_eq!(machine.chord(at(t0, 60)), Some(Command::Discard));
+        assert!(!machine.is_active());
+        assert_eq!(machine.tick(at(t0, 10_000)), None);
+    }
+
+    #[test]
+    fn a_chord_after_the_hold_threshold_is_a_key_pressed_while_dictating() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        assert_eq!(machine.chord(at(t0, 600)), None);
+        assert!(machine.is_active());
+        assert_eq!(machine.key_up(at(t0, 900)), Some(Command::Commit));
+    }
+
+    #[test]
+    fn a_chord_leaves_a_latched_session_alone() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        machine.key_up(at(t0, 80));
+        machine.key_down(at(t0, 200));
+        machine.key_up(at(t0, 260));
+        assert!(machine.is_latched());
+        assert_eq!(machine.chord(at(t0, 2_000)), None);
+        assert!(machine.is_latched());
     }
 
     #[test]

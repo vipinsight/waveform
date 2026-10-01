@@ -77,12 +77,6 @@
             </svg>
             <span>AI Polish</span>
           </button>
-          <button class="nav-item" type="button" data-view="models">
-            <svg data-icon="sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
-            </svg>
-            <span>Models</span>
-          </button>
         </nav>
 
         <div class="sidebar-spacer"></div>
@@ -190,7 +184,7 @@
               <div class="deck-gestures" aria-label="Polish">
                 <span><button type="button" class="deck-link" data-open-view="ai">AI Polish</button> <span id="model-deck-polish">—</span></span>
               </div>
-              <button type="button" class="deck-settings" data-open-models="speech">Change model</button>
+              <button type="button" class="deck-settings" data-open-view="dictation">Change accuracy</button>
             </section>
             <div id="empty-state" class="empty-state">
               <p class="empty-headline display" id="empty-headline">Your dictations will appear here.</p>
@@ -208,10 +202,10 @@
         </section>
 
         <!--
-          How you start dictating and what listens: the two things that decide
-          whether the shortcut works at all, out of Settings and beside the
-          rest of the app. The key is the wizard's keyboard, not a list: where
-          a key sits is the difference between Left and Right Option.
+          Everything that decides what dictation feels like, on one page and in
+          the order a first visitor needs it: is it working, a place to find
+          out, the key, and how accurate it is. The speech model is the
+          accuracy setting, so it lives here rather than on a page of its own.
         -->
         <section class="view" id="view-dictation" hidden>
           <div class="view-head">
@@ -236,6 +230,7 @@
               <span><strong>Esc</strong> Cancel</span>
             </div>
             <button id="deck-settings" class="deck-settings" type="button" hidden>Finish setup</button>
+            <button id="deck-try" class="deck-settings is-primary" type="button">Try it</button>
           </section>
 
           <h2 class="section-label">Key to hold</h2>
@@ -249,39 +244,51 @@
               </p>
           </div>
 
-          <h2 class="section-label">AI cleanup</h2>
           <!--
-            What stops Active from running, above the choice rather than
-            in small print below: faded cards alone read as broken.
+            The wizard's question, kept: faster or more accurate. Five stops,
+            each a model the app can fetch itself. What was chosen, what it
+            costs and whether it is here sit under the stops; every other
+            model is one fold away for the people who want the table.
           -->
-          <div class="polish-blocker" id="polish-level-hint" hidden>
-            <span id="polish-blocker-text"></span>
-            <button type="button" class="pill-button is-primary" data-open-models="polish" id="polish-blocker-action"></button>
-          </div>
-          <!--
-            A row like the microphone's, so all three settings on this page
-            fit on one screen. One example sentence, as said and as it would be
-            typed at the chosen level, still shows what the choice does.
-          -->
-          <div class="card">
-            <div class="row">
+          <h2 class="section-label">Accuracy</h2>
+          <div class="card accuracy">
+            <!-- The wizard's slider, with the stop names under its notches. -->
+            <div class="ladder is-inline">
+              <div class="ladder-control">
+                <input
+                  class="ladder-slider"
+                  id="accuracy-slider"
+                  type="range"
+                  min="0"
+                  max="4"
+                  step="any"
+                  aria-label="Speed against accuracy"
+                />
+                <ol class="ladder-ticks" id="accuracy-ticks" aria-hidden="true"></ol>
+              </div>
+              <div class="ladder-labels" id="accuracy-labels"></div>
+            </div>
+            <div class="accuracy-pick">
               <span class="row-label">
-                Tidy dictations before they are typed
-                <small id="cleanup-what"></small>
+                <span class="accuracy-head"><strong id="accuracy-rung">—</strong><span id="accuracy-model"></span></span>
+                <small class="accuracy-facts" id="accuracy-facts"></small>
               </span>
+              <span class="row-actions" id="accuracy-action"></span>
+            </div>
+            <p class="note accuracy-note" id="accuracy-note" hidden></p>
+            <div class="row">
+              <label class="row-label" for="speech-language">
+                Language
+                <small>What you dictate in. Detect automatically works for most people.</small>
+              </label>
               <span class="row-actions">
-                <div class="segmented" id="polish-levels" role="radiogroup" aria-label="How much polish">
-                  <button type="button" role="radio" data-level="none" aria-checked="true">None</button>
-                  <button type="button" role="radio" data-level="light" aria-checked="false">Active</button>
-                </div>
+                <select id="speech-language" aria-label="Dictation language"></select>
               </span>
             </div>
-            <div class="cleanup-example" aria-hidden="true">
-              <span class="cleanup-example-label">You say</span>
-              <span>so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done</span>
-              <span class="cleanup-example-label">Typed</span>
-              <span class="cleanup-example-typed" id="cleanup-typed"></span>
-            </div>
+            <details class="model-more" id="all-models">
+              <summary><strong>All models</strong></summary>
+              <div class="model-groups" id="model-list"></div>
+            </details>
           </div>
         </section>
 
@@ -338,72 +345,89 @@
           </div>
         </section>
         <!--
-          Two kinds of model, one page. "Model" alone was the speech engine on
-          this page and a rewriting model in Settings, and nothing said which
-          was which. Each tab opens with what that kind does to your words.
+          One page that owns polish: what it is, where it applies, and what
+          runs it. The engine and its key used to sit on a Models page two
+          links away, so a switch that would not turn on pointed at a banner
+          that pointed at another page. Now the thing that unblocks the switch
+          is on the switch's row.
         -->
-        <section class="view" id="view-models" hidden>
+        <section class="view" id="view-ai" hidden>
           <div class="view-head">
-            <h1 class="display">Models</h1>
+            <h1 class="display">AI Polish</h1>
           </div>
 
-          <!--
-            Cards, not a small switch: a switch in the corner was the kind of
-            control people never press, so most would not learn that polish
-            has a model at all. Both stay in view, each naming what it does
-            and what it is set to.
-          -->
-          <div class="model-kinds" id="model-tabs" role="tablist" aria-label="Kind of model">
-            <button type="button" class="model-kind" role="tab" id="model-tab-speech" data-model-tab="speech" aria-controls="models-speech" aria-selected="true">
-              <span class="model-kind-name">Speech model</span>
-              <span class="model-kind-what">Turns your voice into text</span>
-              <strong class="model-kind-current" id="speech-kind-current">—</strong>
-              <span class="model-kind-state" id="speech-kind-state"></span>
-            </button>
-            <button type="button" class="model-kind" role="tab" id="model-tab-polish" data-model-tab="polish" aria-controls="models-polish" aria-selected="false">
-              <span class="model-kind-name">Polish model</span>
-              <span class="model-kind-what">Rewrites that text before it is inserted</span>
-              <strong class="model-kind-current" id="polish-kind-current">—</strong>
-              <span class="model-kind-state" id="polish-kind-state"></span>
-            </button>
-          </div>
-
-          <div id="models-speech" role="tabpanel" aria-labelledby="model-tab-speech">
-            <div class="model-intro">
-              <p class="lede">Every speech model runs on this Mac.</p>
-              <span class="head-tools">
-                <label class="view-note" for="speech-language">Language</label>
-                <select id="speech-language" aria-label="Dictation language"></select>
-              </span>
+          <section class="dictation-deck deck-polish" id="polish-deck" aria-live="polite">
+            <div class="deck-intro">
+              <p class="deck-status" id="polish-deck-status">Checking polish</p>
+              <h2 class="deck-title" id="polish-deck-title">Select text, press a key</h2>
+              <p class="deck-description" id="polish-deck-description"></p>
             </div>
-            <div class="model-groups" id="model-list"></div>
-          </div>
+            <div class="deck-key" aria-label="Polish shortcut">
+              <span id="polish-deck-key-label">Press</span>
+              <kbd id="polish-deck-key">—</kbd>
+            </div>
+            <div class="deck-gestures" aria-label="Polish">
+              <span><strong>Dictations</strong> <span id="polish-deck-dictation">—</span></span>
+              <span><strong>Runs on</strong> <span id="polish-model-line">—</span></span>
+            </div>
+          </section>
 
-          <div id="models-polish" role="tabpanel" aria-labelledby="model-tab-polish" hidden>
-            <p class="lede">
-              Fixes filler words, grammar and clarity. Used only when
-              <button type="button" class="link" data-open-view="ai">AI Polish</button>
-              is above None, and by the polish shortcut.
-            </p>
-          <h2 class="section-label">Where it runs</h2>
+          <h2 class="section-label">What it does</h2>
+          <div class="card">
+            <div class="cleanup-example is-solo" aria-label="Example">
+              <span class="cleanup-example-label">Before</span>
+              <span>so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done</span>
+              <span class="cleanup-example-label">After</span>
+              <span class="cleanup-example-typed">I was thinking maybe we could push the demo to Thursday. The API stuff isn't quite done.</span>
+            </div>
+          </div>
           <p class="note">
-            This Mac keeps every word here. OpenRouter sends your text to a
-            model that does not.
+            Filler words, spelling, grammar and punctuation are fixed. Your meaning is left alone.
           </p>
+
+          <h2 class="section-label">Where it works</h2>
           <div class="card">
             <div class="row">
-              <span class="row-label">Run on</span>
+              <span class="row-label">
+                Polish my dictations
+                <small id="polish-dictation-what">Tidied before the words are typed.</small>
+              </span>
+              <span class="row-actions">
+                <!-- One of the two: the switch, or the one thing that has to happen before it can be switched on. -->
+                <button type="button" class="pill-button is-primary" id="polish-enable" hidden></button>
+                <input id="polish-dictation-toggle" type="checkbox" class="switch" aria-label="Polish my dictations" />
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-label">
+                Polish text I select, in any app
+                <small id="polish-selection-what"></small>
+              </span>
+              <span class="row-actions">
+                <!-- Filled from POLISH_SHORTCUTS: the shortcut is the row's own control. -->
+                <div class="segmented" id="polish-shortcut" role="radiogroup" aria-label="Polish selected text shortcut"></div>
+              </span>
+            </div>
+          </div>
+
+          <h2 class="section-label">Runs on</h2>
+          <div class="card">
+            <div class="row">
+              <span class="row-label">
+                Where the tidying happens
+                <small id="polish-engine-note"></small>
+              </span>
               <span class="row-actions">
                 <div class="segmented" id="polish-engine" role="radiogroup" aria-label="Where polish runs">
                   <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
-                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">Online</button>
                 </div>
               </span>
             </div>
             <div class="row is-stacked" data-engine-only="openrouter">
               <span class="row-label">
-                API key
-                <small id="key-state"></small>
+                OpenRouter key
+                <small id="key-state">Free to create. Paste it here once; it is kept in your keychain.</small>
                 <button type="button" class="link" id="open-openrouter">Get a key</button>
               </span>
               <span class="row-actions">
@@ -419,68 +443,34 @@
                 <button id="key-remove" class="pill-button" type="button" hidden>Remove</button>
               </span>
             </div>
-            <div class="row" data-engine-only="openrouter">
-              <label class="row-label" for="ai-model">OpenRouter model</label>
-              <span class="row-actions">
-                <select id="ai-model" aria-label="OpenRouter model"></select>
-              </span>
-            </div>
-            <div class="polish-local-models" data-engine-only="local">
-              <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
-            </div>
-          </div>
-          </div>
-        </section>
-
-        <section class="view" id="view-ai" hidden>
-          <div class="view-head">
-            <h1 class="display">AI Polish</h1>
-          </div>
-
-          <!--
-            The shortcut first, as Dictation leads with its key: it is the
-            half of polish that works in every app, whatever the level below.
-          -->
-          <section class="dictation-deck deck-polish" id="polish-deck" aria-live="polite">
-            <div class="deck-intro">
-              <p class="deck-status" id="polish-deck-status">Checking polish</p>
-              <h2 class="deck-title" id="polish-deck-title">Select text, press a key</h2>
-              <p class="deck-description" id="polish-deck-description"></p>
-            </div>
-            <div class="deck-key" aria-label="Polish shortcut">
-              <span id="polish-deck-key-label">Press</span>
-              <kbd id="polish-deck-key">—</kbd>
-            </div>
-            <div class="deck-gestures" aria-label="Polish">
-              <span><button type="button" class="deck-link" data-open-view="dictation">Dictation</button> <span id="polish-deck-dictation">—</span></span>
-              <span><strong>Model</strong> <span id="polish-model-line">—</span></span>
-            </div>
-            <button type="button" class="deck-settings" data-open-models="polish">Change model</button>
-          </section>
-
-          <h2 class="section-label">Shortcut</h2>
-          <div class="shortcut-picker">
-            <!-- Filled from POLISH_SHORTCUTS. -->
-            <div class="shortcut-keys" id="polish-shortcut" role="radiogroup" aria-label="Polish selected text shortcut"></div>
-            <p class="keyboard-caption" id="polish-shortcut-caption"></p>
-          </div>
-
-          <!--
-            The words each level is steered by, beside the levels themselves:
-            in Settings they were two screens from the choice they shape.
-          -->
-          <h2 class="section-label">Instructions</h2>
-          <div class="prompt-cards">
-            <button type="button" class="prompt-card" data-prompt="transform">
-              <strong>Dictation</strong>
-              <span class="prompt-card-where" id="transform-prompt-where"></span>
-              <small id="transform-prompt-preview"></small>
-            </button>
-            <button type="button" class="prompt-card" data-prompt="polish">
-              <strong>Selection</strong>
-              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
-              <small id="polish-prompt-preview"></small>
-            </button>
+            <details class="model-more" id="polish-model-more">
+              <summary><strong>Choose the model</strong><small id="polish-model-summary"></small></summary>
+              <div class="row" data-engine-only="openrouter">
+                <label class="row-label" for="ai-model">
+                  Online model
+                  <small id="ai-model-hint" hidden>Any id from openrouter.ai/models, e.g. qwen/qwen3-1.7b</small>
+                </label>
+                <span class="row-actions">
+                  <select id="ai-model" aria-label="OpenRouter model"></select>
+                  <!-- Shown for Other…: an id typed in, used on Enter or Use. -->
+                  <input
+                    id="ai-model-custom"
+                    type="text"
+                    class="text-input"
+                    placeholder="vendor/model"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="OpenRouter model id"
+                    hidden
+                  />
+                  <button id="ai-model-use" class="pill-button is-primary" type="button" hidden>Use</button>
+                </span>
+              </div>
+              <div class="polish-local-models" data-engine-only="local">
+                <p class="polish-local-lede">Pick one. The smallest is enough for most people.</p>
+                <div class="model-list" id="polish-model-list" role="radiogroup" aria-label="Local polish model"></div>
+              </div>
+            </details>
           </div>
         </section>
 
@@ -513,6 +503,49 @@
     </div>
 
     <div id="scrim" class="scrim" hidden></div>
+
+    <!--
+      A rehearsal, in front of everything else. The Dictation page used to
+      carry a box to dictate into; a box on a page of settings is one more
+      thing to read past, and it said nothing while you tried. This is three
+      steps that light up as you go -- the field has focus, the key is down,
+      the words arrived -- and then gets out of the way. The paste lands in
+      the field because this window is frontmost and the field has focus,
+      which is the same path every other app gets.
+    -->
+    <div id="try-modal" class="try-modal" role="dialog" aria-modal="true" aria-labelledby="try-title" data-stage="ready" hidden>
+      <div class="try-frame">
+        <button type="button" class="drop-overlay-close try-close" id="try-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+          </svg>
+        </button>
+        <h1 class="display" id="try-title">Try dictating</h1>
+        <p class="lede try-lede">Three steps, and the same three in every app after this.</p>
+        <ol class="try-steps">
+          <li class="try-step" data-step="focus">
+            <span class="try-step-mark">1</span>
+            <span><strong>Click in the box</strong><small>The words go wherever your cursor is.</small></span>
+          </li>
+          <li class="try-step" data-step="hold">
+            <span class="try-step-mark">2</span>
+            <span><strong>Hold <kbd id="try-key">—</kbd> and say a sentence</strong><small id="try-hold-hint">Keep it held while you talk.</small></span>
+          </li>
+          <li class="try-step" data-step="release">
+            <span class="try-step-mark">3</span>
+            <span><strong>Let go</strong><small id="try-release-hint">A moment later, the words appear.</small></span>
+          </li>
+        </ol>
+        <textarea id="try-field" class="try-field" rows="4" spellcheck="false" aria-label="Try dictating here" placeholder="Your words will appear here."></textarea>
+        <footer class="try-foot">
+          <p class="try-result" id="try-result" aria-live="polite"></p>
+          <span class="wizard-buttons">
+            <button type="button" class="pill-button" id="try-again" hidden>Clear and try again</button>
+            <button type="button" class="pill-button is-primary" id="try-done">Done</button>
+          </span>
+        </footer>
+      </div>
+    </div>
 
     <!--
       The first run, and only the first run.
@@ -709,12 +742,12 @@
           <section class="wizard-step" data-step="polish" hidden>
             <h1 class="display">How much should it tidy you up?</h1>
             <p class="lede">
-              The same dictated sentence, three ways. You can change this any
-              time, and None needs nothing else set up.
+              The same dictated sentence, as said and as tidied. You can change
+              this any time, and Off needs nothing else set up.
             </p>
             <div class="polish-levels" id="wizard-polish-levels" role="radiogroup" aria-label="How much polish">
               <button type="button" class="polish-level" role="radio" data-level="none" aria-checked="true">
-                <span class="polish-level-name">None</span>
+                <span class="polish-level-name">Off</span>
                 <span class="polish-level-what">Transcribes exactly what you said, including mistakes</span>
                 <span class="polish-level-example">
                   so um i was thinking maybe we could push the demo to thursday
@@ -723,7 +756,7 @@
                 </span>
               </button>
               <button type="button" class="polish-level" role="radio" data-level="light" aria-checked="false">
-                <span class="polish-level-name">Active</span>
+                <span class="polish-level-name">On</span>
                 <span class="polish-level-what">Cleans up filler words and grammar</span>
                 <span class="polish-level-example">
                   I was thinking maybe we could push the demo to Thursday. The
@@ -736,8 +769,8 @@
               <div class="wizard-engine-head">
                 <span class="row-label">Run the rewrite on</span>
                 <div class="segmented" id="wizard-engine" role="radiogroup" aria-label="Where polish runs">
-                  <button type="button" role="radio" data-engine="local" aria-checked="false">This Mac</button>
-                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">OpenRouter</button>
+                  <button type="button" role="radio" data-engine="local" aria-checked="false">On this Mac</button>
+                  <button type="button" role="radio" data-engine="openrouter" aria-checked="true">Online (OpenRouter)</button>
                 </div>
               </div>
               <!--
@@ -842,30 +875,6 @@
             </footer>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div
-      id="prompt-editor"
-      class="prompt-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="prompt-editor-title"
-      hidden
-    >
-      <div class="prompt-dialog-head">
-        <h2 id="prompt-editor-title">Dictation</h2>
-        <button id="prompt-editor-reset" class="pill-button" type="button">Reset</button>
-      </div>
-      <p id="prompt-editor-where" class="prompt-dialog-where"></p>
-      <textarea
-        id="prompt-editor-body"
-        class="prompt-dialog-input"
-        spellcheck="false"
-        aria-label="Custom instruction"
-      ></textarea>
-      <div class="prompt-dialog-foot">
-        <button id="prompt-editor-save" class="pill-button is-primary" type="button">Save</button>
       </div>
     </div>
 

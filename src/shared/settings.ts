@@ -23,11 +23,7 @@ import {
   isPolishModelId,
   type PolishModelId,
 } from "./polish-models";
-import {
-  DEFAULT_OPENROUTER_MODEL,
-  DEFAULT_POLISH_PROMPT,
-  DEFAULT_TRANSFORM_PROMPT,
-} from "./prompts";
+import { DEFAULT_OPENROUTER_MODEL } from "./prompts";
 
 export type ThemePreference = "system" | "light" | "dark";
 /** Where a rewrite runs: a hosted model, or one downloaded onto this Mac. */
@@ -92,9 +88,7 @@ export interface AppSettings {
    * editor overwrites it. So an edit belongs to the level that was selected
    * when it was made, and choosing a level again puts its default back.
    */
-  transformPrompt: string;
   /** System prompt for the polish shortcut. */
-  polishPrompt: string;
   /** Electron accelerator that polishes the current selection, or "none". */
   polishShortcut: string;
   /** Show a menu bar icon. */
@@ -152,8 +146,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   localModelId: DEFAULT_POLISH_MODEL_ID,
   polishLevel: DEFAULT_POLISH_LEVEL,
   transformOnDictate: false,
-  transformPrompt: DEFAULT_TRANSFORM_PROMPT,
-  polishPrompt: DEFAULT_POLISH_PROMPT,
   polishShortcut: "Alt+1",
   menuBarIcon: true,
   launchAtLogin: true,
@@ -205,8 +197,6 @@ export function normalizeSettings(
     // Derived, never read from the input: it is what `polishLevel` means for
     // the paths that only need to know whether a model runs.
     transformOnDictate: polishLevel(input, base) !== "none",
-    transformPrompt: text(input.transformPrompt, base.transformPrompt, 8_000),
-    polishPrompt: text(input.polishPrompt, base.polishPrompt, 8_000),
     polishShortcut: isAccelerator(input.polishShortcut)
       ? input.polishShortcut
       : base.polishShortcut,

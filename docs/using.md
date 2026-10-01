@@ -82,13 +82,17 @@ differently signed build, remove Waveform from both lists and add it again once.
 | [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | NVIDIA's NeMo Metal runtime. Optional. |
 | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Its own Python runtime. Optional. |
 
-**Models**, in the window's own menu, says what is on this Mac and what is not. A filled row is
+**Dictation → Accuracy** is the same five-stop choice the setup wizard makes —
+Fastest to Most accurate, each a Whisper size the app can fetch itself — with
+the chosen model, its cost and its download state on the line under the stops.
+**All models** below it unfolds every size, the English-only builds, and the
+two engines that need a terminal. A filled row is
 downloaded; an outlined one with a **Download** button is not, and pressing that button
 fetches the weights (and, for Parakeet and Qwen, their runtimes). While a download
 runs it becomes **Cancel**. Hover a downloaded model for **Remove** to free the space.
 Whisper is still the default — it is linked into the app and needs no extra runtime —
 and every size of it is one press away. Parakeet and Qwen install the same way from
-the Models page (Qwen needs Python 3 on the Mac). The list puts them first — the most
+**All models** on Dictation (Qwen needs Python 3 on the Mac). The list puts them first — the most
 accurate of the catalogue on the same LibriSpeech figure the rows show.
 
 Qwen3-ASR takes roughly 20–40 seconds to load the first time. Parakeet is
@@ -166,17 +170,21 @@ cleared. It holds the most recent 10,000 and is readable only by you.
 
 ## AI Polish
 
-Optional rewriting, which runs only when you ask, and which sends text rather
-than audio if it sends anything at all. **AI Polish**, in the window's own menu,
-chooses how much it may change; **Models → Polish** chooses where it runs and
-which model does it. **Models → Speech** is the other kind: the model that
-turns your voice into text in the first place.
+Optional tidying — filler words, spelling, grammar and punctuation — which
+runs only when you ask, and which sends text rather than audio if it sends
+anything at all. It works in two places: on every dictation before it is typed
+(a switch on **Dictation** and on **AI Polish**), and on whatever text you
+select in any app, with a shortcut chosen on **AI Polish**. **Runs on**, on the
+same page, chooses where it happens — on this Mac, or online through OpenRouter
+— and **Choose the model** under it picks which model does it. The model that
+turns your voice into text in the first place is on **Dictation → Accuracy**.
 
 ### On this Mac
 
 A small instruction-tuned model, run through llama.cpp in the app the way
 whisper.cpp runs the speech model. Nothing leaves the Mac and no account is
-needed; the model is one file, downloaded from that page by pressing its row.
+needed; the model is one file, downloaded from **AI Polish → Choose the model**
+by pressing its row.
 Hover a downloaded one for **Remove** to free the space.
 
 | Model | Download | Memory while loaded |
@@ -184,6 +192,7 @@ Hover a downloaded one for **Remove** to free the space.
 | **Qwen3 0.6B · Q4** | 397 MB | ~0.9 GB |
 | **Qwen3 0.6B · Q8** | 639 MB | ~1.2 GB |
 | **Qwen3 1.7B · Q4** | 1.1 GB | ~1.9 GB |
+| **Qwen3 4B · Q4** | 2.5 GB | ~3.4 GB |
 
 The weights land in `~/Library/Application Support/Waveform/llm`, and each file
 is checked against its length and SHA-256 before it is put there. The model
@@ -192,10 +201,13 @@ so the first polish after launch is a second or two slower than the ones after i
 
 These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
 discused the timeline" becomes "we discussed the timeline", "how r u doing"
-becomes "how are you doing" — and on selected text it is shown three worked
-corrections first, because a model this size follows an example better than it
-follows a page of rules. Dictation cleanup is not: those examples are typed
-fixes, and would teach it to proofread speech instead of stripping filler. A
+becomes "how are you doing" — and on selected text, while the Selection
+instruction is the default one, it is shown three worked corrections first,
+because a model this size follows an example better than it follows a page of
+rules. Dictation cleanup is not, and neither is an instruction you wrote: those
+examples are typed fixes, and would teach it to proofread instead of doing what
+was asked. The instruction itself is the same on both engines; what differs is
+how much of it a model this size can carry out. A
 single word on its own is handed back untouched: there is no sentence around it
 to read it against, and a model that guesses pastes a word you never wrote. A
 hosted model has neither limit. Local polish also takes up to 4,000 characters
@@ -214,7 +226,7 @@ prompt.
 
 The hosted option. This is the one feature that sends anything off the Mac.
 
-Paste a key into **Models → Polish**. It goes to your login keychain as a
+Paste a key into **AI Polish → Runs on**. It goes to your login keychain as a
 generic password under `com.webtiara.waveform`, never to a file Waveform owns,
 and is never handed back to the interface — the screen can report that a key
 exists and replace it, but cannot read it.
@@ -223,20 +235,20 @@ exists and replace it, but cannot read it.
 
 | Feature | What it does |
 | --- | --- |
-| **Clean up dictation** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
-| **Polish shortcut** (`⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
+| **Polish dictations** | Tidies every phrase before inserting it. Removes filler, pauses and corrections, formats spoken lists as bullets, and leaves the wording alone. Costs a round trip per phrase. |
+| **Polish shortcut** (left `⌥1`) | Fixes spelling, grammar, punctuation and capitalisation in whatever text is selected in the focused app, in place. Nothing is selected? It takes the field you are typing in. |
 
-Both run on system prompts you can edit, with **Reset** to restore the defaults,
-and both engines take the same prompts. With OpenRouter selected you can pick
-any model id; the field suggests a few fast ones.
+Each runs on one fixed instruction, the same whichever engine or model answers.
+With OpenRouter selected you can pick any model id; the field suggests a few
+fast ones.
 
 Whichever engine answers, the reply is checked against the text that went in: a
 rewrite runs to a similar length and reuses most of the words it started with, so
 an answer to a question buried in a selected paragraph does not pass. Anything
 that fails the check is dropped and your original text is kept.
 
-Pressing polish on the indicator tidies that dictation even when **Clean up
-dictation** is switched off. After you stop speaking, the pill gathers into a
+Pressing polish on the indicator tidies that dictation even when **Polish
+dictations** is switched off. After you stop speaking, the pill gathers into a
 circle with a spinner — blue while polish runs, grey while it only transcribes.
 
 Polishing has to copy the selection to read it, since no API exposes another

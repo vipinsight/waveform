@@ -7,7 +7,7 @@
  * A saved `medium` reads as `light`.
  *
  * The level chooses the instruction the dictation path runs, which lives in
- * prompts.ts beside the one the polish shortcut uses. `none` runs no model at
+ * rewrite.rs beside the one the polish shortcut uses. `none` runs no model at
  * all: the transcript is inserted as the speech engine returned it.
  */
 export const POLISH_LEVELS = ["none", "light"] as const;
