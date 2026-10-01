@@ -96,12 +96,11 @@ pub async fn update_settings(
     if next.show_flow_bar_always != previous.show_flow_bar_always {
         state.dictation.apply_flow_bar_setting().await;
     }
-    if next.microphone_device_id != previous.microphone_device_id
-        || next.microphone_device_name != previous.microphone_device_name
+    if next.menu_bar_icon
+        && (next.microphone_device_id != previous.microphone_device_id
+            || next.microphone_device_name != previous.microphone_device_name)
     {
-        if next.menu_bar_icon {
-            refresh_tray_menu(&app);
-        }
+        refresh_tray_menu(&app);
     }
     state
         .hide_dock_when_closed

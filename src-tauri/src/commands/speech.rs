@@ -18,12 +18,10 @@ pub struct MicrophoneResult {
 /// with no session behind it: a dropped file, or a retry from Transcripts.
 #[tauri::command]
 pub async fn transcribe(
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
     wav_bytes: Vec<u8>,
     prior_text: Option<String>,
 ) -> Result<String, String> {
-    let _ = app;
     dump_audio(&wav_bytes);
     state
         .engine

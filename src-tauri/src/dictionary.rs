@@ -11,6 +11,7 @@
 //! transcript (see `suggest`): the dictionary offers to learn, and never
 //! learns silently, because an edit is as often a rewording as a fix.
 
+use crate::clock::now_ms;
 use crate::store::Database;
 use rphonetic::{DoubleMetaphone, Encoder};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -308,12 +309,6 @@ fn describe(error: rusqlite::Error) -> String {
     format!("The dictionary could not be saved: {error}")
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
-}
 
 /// Trims and collapses whitespace; what a term looks like in the table.
 fn clean(text: &str) -> String {

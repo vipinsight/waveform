@@ -569,6 +569,9 @@ struct WorkerState {
     next_job: u64,
 }
 
+/// A phrase waiting for the engine, and the channel its text goes back on.
+type PendingTranscription = (String, oneshot::Sender<Result<String, String>>);
+
 pub struct ModelServer {
     selected: Mutex<String>,
     /// Where bundled scripts live, when running from a real .app.
@@ -594,7 +597,7 @@ pub struct ModelServer {
     /// Raised by `cancel_download` and polled by the stream. Cleared when a
     /// fetch starts so a previous cancel cannot kill the next one.
     cancel_download: AtomicBool,
-    pending: Arc<Mutex<Vec<(String, oneshot::Sender<Result<String, String>>)>>>,
+    pending: Arc<Mutex<Vec<PendingTranscription>>>,
     transcribe_lock: Mutex<()>,
     project_root: PathBuf,
     emit: Box<dyn Fn(ModelEvent) + Send + Sync>,

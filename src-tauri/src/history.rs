@@ -12,12 +12,12 @@
 //! has the original to go back to, and a transcript that reads wrong can be
 //! traced to the model that wrote it.
 
+use crate::clock::now_ms;
 use crate::store::Database;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Older dictations are dropped past this point. A transcript is cheap, but an
 /// unbounded list that is sent to the window whole is not.
@@ -358,12 +358,6 @@ fn audio_files(connection: &Connection, sql: &str) -> rusqlite::Result<Vec<Strin
     Ok(files)
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
-}
 
 fn describe(error: rusqlite::Error) -> String {
     format!("History could not be saved: {error}")

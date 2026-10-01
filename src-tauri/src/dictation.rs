@@ -4,6 +4,7 @@
 //! listening, what happens to each finished phrase, and how the interface is
 //! told about it.
 
+use crate::windows::{MAIN_LABEL, OVERLAY_LABEL};
 use crate::gestures::{Command, GestureMachine};
 use crate::history::{HistoryStore, NewDictation};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
@@ -19,8 +20,6 @@ use tokio::sync::Mutex;
 use std::time::Instant;
 use tokio::time::{interval, Duration};
 
-const OVERLAY_LABEL: &str = "overlay";
-const MAIN_LABEL: &str = "main";
 /// The gesture machine's tap window has to be polled; this is fine-grained
 /// enough that a released tap is never perceptibly late.
 const TICK: Duration = Duration::from_millis(50);

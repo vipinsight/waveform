@@ -18,6 +18,7 @@
 //! is sitting at. Lines carry counts and stages, never the text itself, so what
 //! it writes down is the same thing the page shows.
 
+use crate::clock::now_ms;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -114,9 +115,3 @@ impl Logs {
     }
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
-}

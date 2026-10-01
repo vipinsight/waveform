@@ -7,6 +7,7 @@
 //! window is told about every line and every change of state so it can show
 //! them, and asks for the rest when it needs it.
 
+use crate::windows::{MAIN_LABEL, OVERLAY_LABEL};
 use crate::audio::{self, Segmenter, SegmenterOptions, WavWriter};
 use crate::diarize;
 use crate::logs::Logs;
@@ -26,8 +27,6 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::Mutex;
 
-const MAIN_LABEL: &str = "main";
-const OVERLAY_LABEL: &str = "overlay";
 /// Blocks from the tap helper are read in this many samples at a time;
 /// about 43 ms at 48 kHz, close to the microphone's block.
 const TAP_BLOCK: usize = 2_048;
