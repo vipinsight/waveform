@@ -41,11 +41,6 @@ export function isSettingsOpen(): boolean {
   return settingsOpen;
 }
 
-/** The devices WebKit last reported, for the page that names the chosen one. */
-export function knownMicrophones(): MicrophoneDevice[] {
-  return microphones;
-}
-
 export function bindSettingsPanel(): void {
   element.settingsButton.addEventListener("click", () => toggleSettings(!settingsOpen));
   element.scrim.addEventListener("click", () => {

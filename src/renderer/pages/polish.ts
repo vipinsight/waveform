@@ -316,7 +316,7 @@ function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
  * level it serves is chosen -- and "which model" was otherwise only answered
  * two screens away.
  */
-export function renderPolishModelLine(): void {
+function renderPolishModelLine(): void {
   const { settings } = state;
   element.polishModelLine.textContent =
     settings.polishEngine === "local"

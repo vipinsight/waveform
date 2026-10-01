@@ -34,7 +34,3 @@ export const DEFAULT_SPEECH_LANGUAGE: SpeechLanguageCode = "en";
 export function isSpeechLanguage(value: unknown): value is SpeechLanguageCode {
   return SPEECH_LANGUAGES.some(({ code }) => code === value);
 }
-
-export function speechLanguageLabel(code: string): string {
-  return SPEECH_LANGUAGES.find((language) => language.code === code)?.label ?? code;
-}

@@ -260,7 +260,7 @@ export function showStepProgress(
   }
 }
 
-export function renderSetup(): void {
+function renderSetup(): void {
   const steps = setupSteps();
   const outstanding = steps.filter((step) => !step.done);
   // The wizard draws the same permissions and the same download progress, and
