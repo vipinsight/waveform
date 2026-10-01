@@ -687,6 +687,14 @@ async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec
     state.recorder.audio(&id).await
 }
 
+/// Brings the window up on the live meeting; the HUD's clock calls this.
+#[tauri::command]
+async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
+    present_main_window(&app);
+    let _ = app.emit_to(MAIN_LABEL, "open-meetings", "show");
+    Ok(())
+}
+
 #[tauri::command]
 async fn install_diarizer(state: State<'_, AppState>) -> Result<(), String> {
     state.recorder.install_diarizer().await
@@ -1532,6 +1540,7 @@ pub fn run() {
             delete_meeting,
             get_meeting_audio,
             install_diarizer,
+            show_meetings,
             cancel_diarizer_install,
             remove_diarizer,
             get_dictionary,

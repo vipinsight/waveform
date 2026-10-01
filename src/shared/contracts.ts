@@ -294,7 +294,7 @@ export interface Meeting {
   createdAt: number;
   durationMs: number;
   state: MeetingState;
-  /** What processing is doing now, or why it stopped, or a note on what was skipped. */
+  /** What processing is doing now, or why it failed. */
   stage: string | null;
   language: string;
   speechModel: string;
@@ -304,6 +304,39 @@ export interface Meeting {
   summary: string | null;
   summaryModel: string | null;
   hasSystemAudio: boolean;
+  /** What processing skipped or could not do; each becomes a banner with a button. */
+  notes: MeetingNote[];
+}
+
+export type MeetingNoteKind =
+  | "interrupted"
+  | "other-side-not-heard"
+  | "no-summary-key"
+  | "speaker-tool-missing"
+  | "summary-failed"
+  | "summary-unparsed"
+  | "nothing-said";
+
+export interface MeetingNote {
+  kind: MeetingNoteKind | string;
+  text: string;
+}
+
+/** Whether a meeting is recording, for the HUD and the menu bar. */
+export interface MeetingStateEvent {
+  recording: boolean;
+  meetingId: string | null;
+  title: string | null;
+  startedAt: number | null;
+}
+
+export interface MeetingLevelEvent {
+  meetingId: string;
+  mic: number;
+  system: number | null;
+  /** False a few seconds in means the other side's permission was not given. */
+  otherHeard: boolean;
+  elapsedMs: number;
 }
 
 export interface MeetingLine {
@@ -507,12 +540,23 @@ export interface DesktopApi {
   deleteMeeting(id: string): Promise<void>;
   getMeetingAudio(id: string): Promise<Uint8Array>;
   installDiarizer(): Promise<void>;
+  /** Brings the window up on the live meeting. */
+  showMeetings(): Promise<void>;
   cancelDiarizerInstall(): Promise<void>;
   removeDiarizer(): Promise<void>;
   onMeetingLine(listener: (event: { meetingId: string; line: MeetingLine }) => void): () => void;
   onMeetingChanged(listener: (meeting: Meeting) => void): () => void;
   /** Input levels a few times a second while recording; `system` is absent without the other side. */
-  onMeetingLevel(listener: (event: { meetingId: string; mic: number; system: number | null }) => void): () => void;
+  onMeetingLevel(listener: (event: MeetingLevelEvent) => void): () => void;
+  onMeetingState(listener: (event: MeetingStateEvent) => void): () => void;
+  /** The menu bar asked for the Meetings page: "record" starts one, "show" opens the live one. */
+  onOpenMeetings(listener: (mode: "record" | "show") => void): () => void;
+  /** Runs processing again for an interrupted meeting. */
+  finishMeeting(id: string): Promise<void>;
+  /** Tags speakers on a meeting recorded before the speaker tool was installed. */
+  tagMeetingSpeakers(id: string): Promise<void>;
+  /** Microphone level while dictating, a few times a second, for the Dictation page's meter. */
+  onCaptureLevel(listener: (level: number) => void): () => void;
   onMeetingsChanged(listener: () => void): () => void;
   onDiarizerInstall(listener: (event: DiarizerInstallEvent) => void): () => void;
   getStats(): Promise<AppStats>;

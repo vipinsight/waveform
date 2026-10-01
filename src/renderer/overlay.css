@@ -508,3 +508,90 @@ body {
     animation: none;
   }
 }
+
+
+/* -------------------------------------------------------------- meeting */
+
+/* While a meeting records and dictation rests, the six-pixel mark becomes a
+   capsule the size of the offer: a clock and a square. Red-tinted, because a
+   live microphone is never a surprise. */
+.hud-meeting {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.hud[data-meeting="true"][data-state="idle"][data-visible="true"] {
+  width: 84px;
+  height: 28px;
+  border-color: rgb(255 120 110 / 45%);
+  background: rgb(60 14 12 / 92%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+}
+
+.hud[data-meeting="true"][data-state="idle"] .hud-meeting {
+  display: flex;
+  pointer-events: auto;
+}
+
+/* The offer (the mic button) stays out of the way while the capsule is up. */
+.hud[data-meeting="true"][data-state="idle"] .hud-mic {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-meeting-clock,
+.hud-meeting-stop {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hud-meeting-clock {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.hud-meeting-clock::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #ff5f57;
+  vertical-align: 0;
+  animation: meeting-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes meeting-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.hud-meeting-stop {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 14%);
+  font-size: 10px;
+  line-height: 20px;
+}
+
+.hud-meeting-stop:hover {
+  background: #ff5f57;
+}
+
+.hud-meeting-stop:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

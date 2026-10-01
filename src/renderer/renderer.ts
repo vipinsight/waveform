@@ -48,7 +48,7 @@ import {
   transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
-import { bindMeetings, showMeetings } from "./meetings";
+import { bindMeetings, clock, openRecordingMeeting, showMeetings, stopRecording } from "./meetings";
 import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
@@ -82,6 +82,15 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
+  dictationLanguage: requireElement<HTMLSelectElement>("dictation-language"),
+  dictationSetup: requireElement<HTMLElement>("dictation-setup"),
+  dictationSteps: requireElement<HTMLOListElement>("dictation-steps"),
+  dictationTryLevel: requireElement<HTMLElement>("dictation-try-level"),
+  dictationMicLevel: requireElement<HTMLElement>("dictation-mic-level"),
+  dictationMicName: requireElement<HTMLElement>("dictation-mic-name"),
+  dictationMicChange: requireElement<HTMLButtonElement>("dictation-mic-change"),
+  dictationDictionaryNote: requireElement<HTMLElement>("dictation-dictionary-note"),
+  dictationDictionaryOpen: requireElement<HTMLButtonElement>("dictation-dictionary-open"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
   dictionaryText: requireElement<HTMLInputElement>("dictionary-text"),
   dictionaryHeard: requireElement<HTMLInputElement>("dictionary-heard"),
@@ -490,7 +499,28 @@ function wireEvents(): void {
     if (promptEditorKind) togglePromptEditor(false);
     else toggleSettings(false);
   });
-  element.deckSettings.addEventListener("click", () => openView("dictate"));
+  element.deckSettings.addEventListener("click", () => {
+    element.dictationSetup.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  element.dictationLanguage.addEventListener("change", () => {
+    const value = element.dictationLanguage.value;
+    if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
+  });
+  element.dictationMicChange.addEventListener("click", () => toggleSettings(true, "audio"));
+  element.dictationDictionaryOpen.addEventListener("click", () => openView("dictionary"));
+  // The microphone's level while dictating: proof the mic is live before
+  // anyone blames the app.
+  let levelFade: number | null = null;
+  host().onCaptureLevel((level) => {
+    const amount = `${Math.min(100, Math.round(Math.sqrt(Math.min(1, level * 4)) * 100))}%`;
+    element.dictationTryLevel.style.height = amount;
+    element.dictationMicLevel.style.width = amount;
+    if (levelFade !== null) window.clearTimeout(levelFade);
+    levelFade = window.setTimeout(() => {
+      element.dictationTryLevel.style.height = "0%";
+      element.dictationMicLevel.style.width = "0%";
+    }, 600);
+  });
 
   bindDropTranscribe();
 
@@ -519,7 +549,7 @@ function wireEvents(): void {
 
   // Delegated rather than bound per button: both the onboarding card and the
   // Setup page rebuild their rows whenever a step completes.
-  for (const container of [element.onboardSteps]) {
+  for (const container of [element.onboardSteps, element.dictationSteps]) {
     container.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLElement>("[data-fix]");
       if (button) resolveSetupStep(button.dataset.fix ?? "");
@@ -697,7 +727,13 @@ function wireEvents(): void {
     void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
   });
   bindDictionary();
-  bindMeetings({ openView });
+  bindMeetings({
+    openView,
+    toast: showToast,
+    introSeen: () => settings.meetingsIntroSeen,
+    markIntroSeen: () => void patchSettings({ meetingsIntroSeen: true }),
+  });
+  bindRecordingStrip();
   element.logCopy.addEventListener("click", () => {
     const text = logLines
       .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
@@ -801,6 +837,7 @@ function showView(view: string): void {
   // the microphone has been asked for.
   if (view === "dictation") void refreshMicrophones(true);
   if (view === "meetings") showMeetings();
+  renderRecordingStrip();
 }
 
 /** Shows a section of the window, closing Settings if it is over it. */
@@ -958,6 +995,8 @@ function applySettings(next: AppSettings): void {
   void renderModels();
   renderLanguageSelect();
   renderMicrophoneSelect();
+  element.dictationMicName.textContent =
+    next.microphoneDeviceName || "Auto-detect: the built-in microphone unless you pick one";
   renderKeyboard(element.dictationKeyboard, element.dictationKeyboardCaption);
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
@@ -1556,8 +1595,14 @@ function renderOnboarding(steps: SetupStep[]): void {
   element.onboardCount.textContent = `${done} of ${steps.length}`;
   element.onboardBar.style.width = `${(done / steps.length) * 100}%`;
 
-  element.onboardSteps.replaceChildren(
-    ...steps.map((step, index) => {
+  const rows = (list: HTMLElement) =>
+    list.replaceChildren(...steps.map((step, index) => stepRow(step, index)));
+  rows(element.onboardSteps);
+  rows(element.dictationSteps);
+  element.dictationSetup.hidden = done === steps.length;
+}
+
+function stepRow(step: SetupStep, index: number): HTMLLIElement {
       const item = document.createElement("li");
       item.className = "onboard-step";
       item.dataset.done = String(step.done);
@@ -1597,11 +1642,10 @@ function renderOnboarding(steps: SetupStep[]): void {
                 : null;
         button.textContent = selectedState ?? step.action;
         button.disabled = selectedState !== null;
+        button.setAttribute("aria-label", `${step.action} ${step.label}`);
         item.append(button);
       }
       return item;
-    }),
-  );
 }
 
 function renderSetup(): void {
@@ -2300,12 +2344,12 @@ function formatBytes(bytes: number): string {
 }
 
 function renderLanguageSelect(): void {
-  if (element.speechLanguage.options.length === 0) {
-    element.speechLanguage.append(
-      ...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)),
-    );
+  for (const select of [element.speechLanguage, element.dictationLanguage]) {
+    if (select.options.length === 0) {
+      select.append(...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)));
+    }
+    select.value = settings.speechLanguage;
   }
-  element.speechLanguage.value = settings.speechLanguage;
 }
 
 function resolveSetupStep(id: string): void {
@@ -2416,10 +2460,9 @@ function renderDictationDeck(): void {
   else delete element.deckStatus.dataset.tone;
   if (outstanding.length > 0) {
     element.deckStatus.textContent = "Setup unfinished";
-    element.deckTitle.textContent = "Finish setup to dictate";
-    element.deckDescription.textContent = `${outstanding.length} ${
-      outstanding.length === 1 ? "step is" : "steps are"
-    } left, in the checklist on Transcripts.`;
+    element.deckTitle.textContent =
+      outstanding.length === 1 ? "One step before you can dictate" : `${outstanding.length} steps before you can dictate`;
+    element.deckDescription.textContent = "macOS needs to let Waveform hear you and type for you. The steps are just below.";
     return;
   }
 
@@ -2438,9 +2481,9 @@ function renderDictationDeck(): void {
   }
 
   element.deckStatus.textContent = modelReady ? "Ready anywhere" : "Ready on demand";
-  element.deckTitle.textContent = `Hold ${key}, say it, release`;
+  element.deckTitle.textContent = `Hold ${key}, talk, let go`;
   element.deckDescription.textContent = modelReady
-    ? "Words land at your cursor, and stay in Transcripts for easy copying."
+    ? `Your words land where your cursor is. Tap ${key} twice to keep listening; press it again to finish. Esc throws the phrase away.`
     : "Your speech model wakes when you use the shortcut. Nothing leaves this Mac.";
 }
 
@@ -3134,6 +3177,10 @@ function bindDictionary(): void {
 }
 
 function renderDictionary(): void {
+  element.dictationDictionaryNote.textContent =
+    dictionary.length === 0
+      ? "Names and terms Waveform spells right. Nothing added yet."
+      : `${dictionary.length} ${dictionary.length === 1 ? "name or term" : "names and terms"} Waveform spells right.`;
   const query = element.dictionarySearch.value.trim().toLowerCase();
   const shown = query
     ? dictionary.filter(
@@ -3516,7 +3563,7 @@ async function transcribeDroppedFile(file: File): Promise<void> {
     freshId = entries[0]?.id ?? null;
     renderHistory();
     element.dropOverlayText.textContent = trimmed;
-    setDropStage("done", file.name, "Saved to Transcripts");
+    setDropStage("done", file.name, "Saved to Dictations");
   } catch (error) {
     setDropStage(
       "error",
@@ -4751,6 +4798,90 @@ function wireWizard(): void {
 
 function setStatus(message: string): void {
   element.overviewModelState.textContent = message;
+  showToast(message);
+}
+
+// --- Toast and recording strip -------------------------------------------------
+
+let toastTimer: number | null = null;
+
+/**
+ * One brief message at the bottom of the window, whatever page is up.
+ *
+ * Errors used to land in a corner of the Overview page, which is only seen
+ * if the user happens to be there. This is seen from anywhere.
+ */
+function showToast(
+  message: string,
+  options: { tone?: "error"; action?: { label: string; run(): void } } = {},
+): void {
+  const toast = requireElement<HTMLElement>("toast");
+  const text = requireElement<HTMLElement>("toast-text");
+  const action = requireElement<HTMLButtonElement>("toast-action");
+  text.textContent = message;
+  toast.classList.toggle("is-error", options.tone === "error");
+  action.hidden = !options.action;
+  if (options.action) {
+    action.textContent = options.action.label;
+    action.onclick = () => {
+      options.action?.run();
+      toast.hidden = true;
+    };
+  }
+  toast.hidden = false;
+  if (toastTimer !== null) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, options.tone === "error" ? 8_000 : 4_000);
+}
+
+let recordingStrip: { title: string; since: number } | null = null;
+let stripTicker: number | null = null;
+
+/**
+ * While a meeting records, every page but Meetings shows a strip with the
+ * clock and Stop, and the sidebar item carries a dot. A live microphone is
+ * never a surprise.
+ */
+function bindRecordingStrip(): void {
+  requireElement<HTMLButtonElement>("recording-strip-stop").addEventListener("click", () => {
+    void stopRecording();
+  });
+  requireElement<HTMLButtonElement>("recording-strip-open").addEventListener("click", () => {
+    openView("meetings");
+    openRecordingMeeting();
+  });
+  host().onMeetingState((event) => {
+    recordingStrip = event.recording
+      ? { title: event.title ?? "Meeting", since: event.startedAt ?? Date.now() }
+      : null;
+    renderRecordingStrip();
+  });
+  void host()
+    .meetingRecorderStatus()
+    .then((status) => {
+      if (status.recording) {
+        recordingStrip = { title: "Meeting", since: Date.now() };
+        renderRecordingStrip();
+      }
+    })
+    .catch(() => {});
+}
+
+function renderRecordingStrip(): void {
+  const strip = requireElement<HTMLElement>("recording-strip");
+  const dot = requireElement<HTMLElement>("meetings-dot");
+  const onMeetings = !requireElement<HTMLElement>("view-meetings").hidden;
+  dot.hidden = recordingStrip === null;
+  strip.hidden = recordingStrip === null || onMeetings;
+  if (recordingStrip === null) {
+    if (stripTicker !== null) window.clearInterval(stripTicker);
+    stripTicker = null;
+    return;
+  }
+  requireElement<HTMLElement>("recording-strip-text").textContent =
+    `Recording “${recordingStrip.title}” · ${clock(Date.now() - recordingStrip.since)}`;
+  if (stripTicker === null) stripTicker = window.setInterval(renderRecordingStrip, 500);
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {

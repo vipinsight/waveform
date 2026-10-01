@@ -33,6 +33,8 @@ import type {
   MeetingLine,
   RecorderStatus,
   DiarizerInstallEvent,
+  MeetingLevelEvent,
+  MeetingStateEvent,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -170,13 +172,18 @@ const api: DesktopApi = {
     return Uint8Array.from(bytes);
   },
   installDiarizer: () => invoke<void>("install_diarizer"),
+  showMeetings: () => invoke<void>("show_meetings"),
   cancelDiarizerInstall: () => invoke<void>("cancel_diarizer_install"),
   removeDiarizer: () => invoke<void>("remove_diarizer"),
   onMeetingLine: (listener) =>
     subscribe<{ meetingId: string; line: MeetingLine }>("meeting-line", listener),
   onMeetingChanged: (listener) => subscribe<Meeting>("meeting-changed", listener),
-  onMeetingLevel: (listener) =>
-    subscribe<{ meetingId: string; mic: number; system: number | null }>("meeting-level", listener),
+  onMeetingLevel: (listener) => subscribe<MeetingLevelEvent>("meeting-level", listener),
+  onMeetingState: (listener) => subscribe<MeetingStateEvent>("meeting-state", listener),
+  onOpenMeetings: (listener) => subscribe<"record" | "show">("open-meetings", listener),
+  finishMeeting: (id) => invoke<void>("finish_meeting", { id }),
+  tagMeetingSpeakers: (id) => invoke<void>("tag_meeting_speakers", { id }),
+  onCaptureLevel: (listener) => subscribe<number>("capture-level", listener),
   onMeetingsChanged: (listener) => subscribe<unknown>("meetings-changed", () => listener()),
   onDiarizerInstall: (listener) =>
     subscribe<DiarizerInstallEvent>("diarizer-install", listener),
