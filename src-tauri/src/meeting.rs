@@ -370,7 +370,7 @@ impl Recorder {
             started_at: recording.map(|m| m.created_at),
         };
         let _ = self.app.emit("meeting-state", &event);
-        crate::refresh_tray_menu(&self.app);
+        crate::tray::refresh_tray_menu(&self.app);
     }
 
     /// Whether a meeting is being recorded right now.

@@ -82,7 +82,7 @@ fn set_available(app: &AppHandle, version: Option<String>) {
         .unwrap_or(false);
     // The menu bar's badge and menu item follow this.
     if changed {
-        crate::refresh_tray_menu(app);
+        crate::tray::refresh_tray_menu(app);
     }
 }
 
@@ -107,7 +107,7 @@ pub fn spawn_checks(app: AppHandle) {
         tokio::time::sleep(FIRST_CHECK_AFTER).await;
         loop {
             let wanted = {
-                let state = app.state::<crate::AppState>();
+                let state = app.state::<crate::state::AppState>();
                 let settings = state.settings.lock().await;
                 settings.value().automatic_update_check
             };

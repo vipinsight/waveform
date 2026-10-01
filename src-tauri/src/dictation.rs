@@ -647,7 +647,7 @@ impl Dictation {
                 if event.state() != tauri_plugin_global_shortcut::ShortcutState::Pressed {
                     return;
                 }
-                let dictation = app.state::<crate::AppState>().dictation.clone();
+                let dictation = app.state::<crate::state::AppState>().dictation.clone();
                 tauri::async_runtime::spawn(async move {
                     dictation.polish_selection().await;
                 });
@@ -964,7 +964,7 @@ impl Dictation {
         let Some(overlay) = self.app.get_webview_window(OVERLAY_LABEL) else {
             return;
         };
-        crate::place_overlay(&overlay, &settings);
+        crate::overlay_window::place_overlay(&overlay, &settings);
         // Never focus it: focus must stay with the app being dictated into, or
         // the synthetic paste lands in Waveform.
         let _ = overlay.show();
