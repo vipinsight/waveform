@@ -10,9 +10,13 @@ import { describe, expect, it } from "vitest";
  * polish model did exactly that: a 397 MB download standing between a first
  * run and the rest of the wizard.
  *
- * Read from the source because the renderer needs a window to run in.
+ * Read from the source because the renderer needs a window to run in. The
+ * wizard and the setup checklist it draws from are two files, read together.
  */
-const renderer = readFileSync("src/renderer/renderer.ts", "utf8");
+const renderer = [
+  readFileSync("src/renderer/pages/wizard.ts", "utf8"),
+  readFileSync("src/renderer/pages/setup.ts", "utf8"),
+].join("\n");
 
 describe("the wizard's permissions page", () => {
   it("names the permissions it shows rather than excluding what it does not", () => {

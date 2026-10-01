@@ -10,6 +10,8 @@ import type {
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
+import { requireElement } from "./ui/dom";
+import { clock } from "./ui/format";
 
 const BAR_COUNT = 7;
 const BAR_GAP = 2.5;
@@ -238,11 +240,7 @@ function renderMeeting(): void {
   hud.dataset.meeting = recording ? "true" : "false";
   if (recording) {
     hud.dataset.visible = "true";
-    const seconds = Math.max(0, Math.floor((Date.now() - (meetingSince ?? 0)) / 1_000));
-    const h = Math.floor(seconds / 3_600);
-    const m = String(Math.floor((seconds % 3_600) / 60)).padStart(2, "0");
-    const s = String(seconds % 60).padStart(2, "0");
-    meetingClock.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    meetingClock.textContent = clock(Date.now() - (meetingSince ?? 0));
     if (meetingTicker === null) meetingTicker = window.setInterval(renderMeeting, 1_000);
   } else if (meetingTicker !== null) {
     window.clearInterval(meetingTicker);
@@ -879,10 +877,4 @@ function resizeCanvasForDisplay(): void {
   canvas.height = Math.round(height * ratio);
   context?.setTransform(ratio, 0, 0, ratio, 0, 0);
   draw();
-}
-
-function requireElement<T extends HTMLElement>(id: string): T {
-  const node = document.getElementById(id);
-  if (!node) throw new Error(`Missing #${id}`);
-  return node as T;
 }

@@ -26,3 +26,8 @@ export const DEFAULT_POLISH_MODEL_ID: PolishModelId = "qwen3-0.6b-q4";
 export function isPolishModelId(value: unknown): value is PolishModelId {
   return POLISH_MODELS.some((model) => model.id === value);
 }
+
+/** The label for a polish model id, or the id itself for one the table no longer carries. */
+export function polishModelLabel(id: string): string {
+  return POLISH_MODELS.find((model) => model.id === id)?.label ?? id;
+}
