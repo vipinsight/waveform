@@ -77,6 +77,27 @@ impl Track {
 /// The raw speaker label given to every line from the microphone.
 pub const LOCAL_SPEAKER: &str = "me";
 
+/// Something processing skipped or could not do, for the window to show as
+/// a banner with a button rather than a sentence in a corner.
+///
+/// `kind` is one of: `interrupted`, `other-side-not-heard`, `no-summary-key`,
+/// `speaker-tool-missing`, `summary-failed`, `summary-unparsed`,
+/// `nothing-said`. `text` says it in words for anywhere that only has words.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    pub kind: String,
+    pub text: String,
+}
+
+impl Note {
+    pub fn new(kind: &str, text: impl Into<String>) -> Self {
+        Self {
+            kind: kind.to_string(),
+            text: text.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Meeting {
@@ -97,6 +118,8 @@ pub struct Meeting {
     pub summary_model: Option<String>,
     /// Whether the other side of the call was recorded too.
     pub has_system_audio: bool,
+    /// What processing skipped or could not do.
+    pub notes: Vec<Note>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -333,6 +356,19 @@ impl MeetingsStore {
         Ok(meeting)
     }
 
+    pub fn set_notes(&mut self, id: &str, notes: &[Note]) -> Result<(), String> {
+        let json = serde_json::to_string(notes).unwrap_or_else(|_| "[]".into());
+        self.db
+            .with(|connection| {
+                connection.execute(
+                    "UPDATE meetings SET notes = ?2 WHERE id = ?1",
+                    params![id, json],
+                )
+            })
+            .map(|_| ())
+            .map_err(describe)
+    }
+
     pub fn set_summary(&mut self, id: &str, summary: Option<&str>, model: Option<&str>) -> Result<(), String> {
         self.db
             .with(|connection| {
@@ -359,16 +395,20 @@ impl MeetingsStore {
         Ok(())
     }
 
-    /// Meetings left `recording` by a crash are closed as they stand, so the
-    /// list never shows a recording that is not happening.
+    /// Meetings left `recording` or `processing` by a crash are closed as they
+    /// stand, with a note the window turns into "Finish this meeting".
     pub fn close_abandoned(&mut self) -> Result<usize, String> {
+        let note = serde_json::to_string(&[Note::new(
+            "interrupted",
+            "Waveform closed while this was recording. Everything up to that point was kept.",
+        )])
+        .unwrap_or_else(|_| "[]".into());
         self.db
             .with(|connection| {
                 connection.execute(
-                    "UPDATE meetings SET state = 'failed',
-                            stage = 'The app closed while this was recording. The transcript up to that point is kept.'
+                    "UPDATE meetings SET state = 'failed', stage = NULL, notes = ?1
                       WHERE state IN ('recording', 'processing')",
-                    [],
+                    [note],
                 )
             })
             .map_err(describe)
@@ -397,7 +437,7 @@ impl MeetingsStore {
 }
 
 const SELECT_MEETING: &str = "SELECT id, title, created_at, duration_ms, state, stage, language, speech_model,
-                                     speakers, summary, summary_model, has_system_audio
+                                     speakers, summary, summary_model, has_system_audio, notes
                                 FROM meetings";
 
 fn read_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
@@ -416,6 +456,11 @@ fn read_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         summary: row.get(9)?,
         summary_model: row.get(10)?,
         has_system_audio: row.get::<_, i64>(11)? != 0,
+        notes: row
+            .get::<_, String>(12)
+            .ok()
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -587,8 +632,23 @@ mod tests {
         assert_eq!(meetings.close_abandoned().unwrap(), 1);
         let meeting = meetings.get(&id).unwrap().unwrap();
         assert_eq!(meeting.state, State::Failed);
-        assert!(meeting.stage.unwrap().contains("closed"));
+        assert_eq!(meeting.stage, None);
+        assert_eq!(meeting.notes[0].kind, "interrupted");
         assert_eq!(meetings.get(&done).unwrap().unwrap().state, State::Ready);
+    }
+
+    #[test]
+    fn notes_round_trip() {
+        let mut meetings = store();
+        let id = meetings.create("x", "en", "w").unwrap().id;
+        meetings
+            .set_notes(&id, &[Note::new("no-summary-key", "Summaries need a key.")])
+            .unwrap();
+        let meeting = meetings.get(&id).unwrap().unwrap();
+        assert_eq!(meeting.notes.len(), 1);
+        assert_eq!(meeting.notes[0].kind, "no-summary-key");
+        meetings.set_notes(&id, &[]).unwrap();
+        assert!(meetings.get(&id).unwrap().unwrap().notes.is_empty());
     }
 
     #[test]

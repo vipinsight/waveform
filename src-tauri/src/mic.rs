@@ -16,6 +16,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 const OVERLAY_LABEL: &str = "overlay";
+const MAIN_LABEL: &str = "main";
 const BLOCK: usize = 2048;
 const QUEUE: usize = 8;
 
@@ -161,7 +162,16 @@ fn open(preferred_name: &str, app: AppHandle) -> Result<(String, Stream), String
     std::thread::Builder::new()
         .name("waveform-mic".into())
         .spawn(move || {
+            let mut since_level = 0usize;
             while let Ok(block) = receiver.recv() {
+                // A level for the window's microphone meter, a few times a
+                // second: the samples themselves only go to the overlay.
+                since_level += block.samples.len();
+                if since_level >= block.sample_rate as usize / 8 {
+                    since_level = 0;
+                    let level = crate::audio::rms(&block.samples);
+                    let _ = emit.emit_to(MAIN_LABEL, "capture-level", level);
+                }
                 let _ = emit.emit_to(OVERLAY_LABEL, "capture-block", block);
             }
         })

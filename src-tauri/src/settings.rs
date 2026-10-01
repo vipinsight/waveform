@@ -158,6 +158,9 @@ pub struct AppSettings {
     /// opening the wizard on anybody.
     #[serde(default)]
     pub onboarding_completed: bool,
+    /// The one-time note before the first meeting recording has been shown.
+    #[serde(default)]
+    pub meetings_intro_seen: bool,
 }
 
 impl Default for AppSettings {
@@ -205,6 +208,7 @@ impl Default for AppSettings {
             automatic_update_check: true,
             sidebar_collapsed: false,
             onboarding_completed: false,
+            meetings_intro_seen: false,
         }
     }
 }

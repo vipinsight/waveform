@@ -140,6 +140,8 @@ export interface AppSettings {
    * someone mid-sentence is worse than never showing it at all.
    */
   onboardingCompleted: boolean;
+  /** The one-time note before the first meeting recording has been shown. */
+  meetingsIntroSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -180,6 +182,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   automaticUpdateCheck: true,
   sidebarCollapsed: false,
   onboardingCompleted: false,
+  meetingsIntroSeen: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -257,6 +260,8 @@ export function normalizeSettings(
       typeof input.onboardingCompleted === "boolean"
         ? input.onboardingCompleted
         : base.onboardingCompleted,
+    meetingsIntroSeen:
+      typeof input.meetingsIntroSeen === "boolean" ? input.meetingsIntroSeen : base.meetingsIntroSeen,
   };
 }
 

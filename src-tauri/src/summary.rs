@@ -82,22 +82,22 @@ pub fn clock(ms: u64) -> String {
 }
 
 /// Asks the model for the summary and checks its shape, once more if needed.
-pub async fn summarize(key: &str, model: &str, transcript: &str) -> Result<(String, Summary), String> {
+///
+/// The text always comes back when the request succeeded; the parsed
+/// summary only when it had the shape. A model that misses twice is shown
+/// as it came back rather than asked a third time or thrown away.
+pub async fn summarize(key: &str, model: &str, transcript: &str) -> Result<(String, Option<Summary>), String> {
     let transcript = clip_transcript(transcript);
     let first = ask(key, model, PROMPT, &transcript).await?;
     if let Ok(parsed) = parse(&first) {
-        return Ok((first, parsed));
+        return Ok((first, Some(parsed)));
     }
-    // Once more, with the shape in front of it again. A model that misses
-    // twice is shown raw, with a warning, rather than asked a third time.
     let restated = format!(
         "{PROMPT}\n\nYour previous reply did not follow the shape. Reply again, in exactly the shape above, starting with the one-sentence overview."
     );
     let second = ask(key, model, &restated, &transcript).await?;
-    match parse(&second) {
-        Ok(parsed) => Ok((second, parsed)),
-        Err(reason) => Err(format!("The summary did not come back in the expected shape ({reason}).")),
-    }
+    let parsed = parse(&second).ok();
+    Ok((second, parsed))
 }
 
 /// Keeps the most recent part of an overlong transcript, saying so.

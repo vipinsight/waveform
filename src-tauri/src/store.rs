@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// Shared handle to the open database.
 ///
@@ -243,6 +243,14 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                 PRIMARY KEY (meeting_id, idx)
             );
             CREATE INDEX IF NOT EXISTS meeting_lines_time ON meeting_lines(meeting_id, start_ms);",
+        )?;
+    }
+    if version < 4 {
+        // What processing skipped or could not do, as structured notes the
+        // window turns into banners with buttons. Version 3 wrote prose into
+        // `stage`; those meetings keep it there and show it as is.
+        transaction.execute_batch(
+            "ALTER TABLE meetings ADD COLUMN notes TEXT NOT NULL DEFAULT '[]';",
         )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;

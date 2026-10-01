@@ -111,6 +111,8 @@ pub struct AppState {
     polish_downloads: Arc<LocalDownloads>,
     /// Bounds captured when an overlay drag begins, so moves are relative.
     drag_origin: Mutex<Option<(f64, f64)>>,
+    /// Set once a quit has stopped the meeting, so the second exit goes through.
+    quitting_after_stop: AtomicBool,
     /// Mirrors the setting of the same name.
     ///
     /// Window events arrive on the main thread, where blocking on the async
@@ -661,6 +663,18 @@ async fn rename_meeting_speaker(
 #[tauri::command]
 async fn summarize_meeting(state: State<'_, AppState>, id: String) -> Result<MeetingDetail, String> {
     state.recorder.resummarize(&id).await
+}
+
+/// Runs processing again for an interrupted meeting: speakers, playback, summary.
+#[tauri::command]
+async fn finish_meeting(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.recorder.finish(&id).await
+}
+
+/// Tags speakers on a meeting recorded before the speaker tool was installed.
+#[tauri::command]
+async fn tag_meeting_speakers(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.recorder.tag_speakers(&id).await
 }
 
 #[tauri::command]
@@ -1401,6 +1415,7 @@ pub fn run() {
                 rewriter,
                 polish_downloads,
                 drag_origin: Mutex::new(None),
+                quitting_after_stop: AtomicBool::new(false),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
                 overlay_hovered: AtomicBool::new(false),
@@ -1512,6 +1527,8 @@ pub fn run() {
             rename_meeting,
             rename_meeting_speaker,
             summarize_meeting,
+            finish_meeting,
+            tag_meeting_speakers,
             delete_meeting,
             get_meeting_audio,
             install_diarizer,
@@ -1604,6 +1621,24 @@ pub fn run() {
             // waiting with the window still on screen, which is a quit that
             // looks like a freeze. stop() signals the child before it awaits
             // anything, so giving up on the wait still leaves it dying.
+            // Quitting mid-meeting keeps the meeting: the recording is
+            // stopped and saved first, then the quit goes ahead. Nothing is
+            // ever marked interrupted by a deliberate quit.
+            RunEvent::ExitRequested { api, .. } => {
+                let state = app.state::<AppState>();
+                if state.quitting_after_stop.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let recorder = state.recorder.clone();
+                if tauri::async_runtime::block_on(recorder.is_recording()) {
+                    api.prevent_exit();
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = recorder.stop().await;
+                        handle.exit(0);
+                    });
+                }
+            }
             RunEvent::Exit => {
                 let models = app.state::<AppState>().models.clone();
                 let stopping = tauri::async_runtime::spawn(async move { models.stop().await });
@@ -1752,6 +1787,20 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.paste_last().await });
         }
+        "meeting-record" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+        }
+        "meeting-stop" => {
+            let recorder = app.state::<AppState>().recorder.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = recorder.stop().await;
+            });
+        }
+        "meeting-show" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "show");
+        }
         "polish" => {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
@@ -1883,10 +1932,38 @@ fn build_model_menu(
 }
 
 /// Builds menu contents independently of the persistent menu bar icon.
+/// The meeting being recorded, if the recorder can say so without waiting.
+fn state_recording(app: &tauri::AppHandle) -> Option<Meeting> {
+    let recorder = app.state::<AppState>().recorder.clone();
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(std::time::Duration::from_millis(200), recorder.recording())
+            .await
+            .ok()
+            .flatten()
+    })
+}
+
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let name = app_display_name();
     let open = MenuItem::with_id(app, "open", format!("Open {name}"), true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
+    // A live microphone is never a surprise: while a meeting records, the
+    // first thing in the menu says so and stops it.
+    let recording = state_recording(app);
+    let meeting_item = match &recording {
+        Some(meeting) => MenuItem::with_id(
+            app,
+            "meeting-stop",
+            format!("Stop recording “{}”", menu_preview(&meeting.title)),
+            true,
+            None::<&str>,
+        )?,
+        None => MenuItem::with_id(app, "meeting-record", "Record a meeting", true, None::<&str>)?,
+    };
+    let meeting_show = recording
+        .as_ref()
+        .map(|_| MenuItem::with_id(app, "meeting-show", "Show meeting", true, None::<&str>))
+        .transpose()?;
     let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
     let microphone_menu = Submenu::new(app, "Microphone", true)?;
     let state = app.state::<AppState>();
@@ -2039,6 +2116,11 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         items.push(update);
         items.push(&separator);
     }
+    items.push(&meeting_item);
+    if let Some(show) = meeting_show.as_ref() {
+        items.push(show);
+    }
+    items.push(&separator);
     items.extend([
         &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         &separator,
@@ -2094,7 +2176,7 @@ fn tray_icon() -> tauri::Result<tauri::image::Image<'static>> {
 
 /// WebView commands run off the AppKit thread. Tray mutation must return to it
 /// or macOS aborts with a BoardServices threading violation.
-fn refresh_tray_menu(app: &tauri::AppHandle) {
+pub(crate) fn refresh_tray_menu(app: &tauri::AppHandle) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         // Recreating the status item makes macOS remove and reinsert it,

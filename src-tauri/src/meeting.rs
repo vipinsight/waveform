@@ -10,7 +10,7 @@
 use crate::audio::{self, Segmenter, SegmenterOptions, WavWriter};
 use crate::diarize;
 use crate::logs::Logs;
-use crate::meetings::{Line, Meeting, MeetingsStore, State, Track, LOCAL_SPEAKER};
+use crate::meetings::{Line, Meeting, MeetingsStore, Note, State, Track, LOCAL_SPEAKER};
 use crate::mic::{CaptureBlock, MeetingInput};
 use crate::rewrite::Rewriter;
 use crate::summary;
@@ -27,6 +27,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
+const OVERLAY_LABEL: &str = "overlay";
 /// Blocks from the tap helper are read in this many samples at a time;
 /// about 43 ms at 48 kHz, close to the microphone's block.
 const TAP_BLOCK: usize = 2_048;
@@ -78,6 +79,32 @@ struct InstallEvent {
     progress: f32,
 }
 
+/// Which processing steps a run performs.
+#[derive(Clone, Copy)]
+struct Steps {
+    diarize: bool,
+    summary: bool,
+}
+
+impl Steps {
+    fn all() -> Self {
+        Self {
+            diarize: true,
+            summary: true,
+        }
+    }
+}
+
+enum SummaryOutcome {
+    Parsed,
+    Unparsed,
+}
+
+enum SummaryError {
+    NoKey,
+    Failed(String),
+}
+
 /// One track's capture, handed to `spawn_track`.
 struct TrackJob {
     id: String,
@@ -103,6 +130,23 @@ struct LevelEvent {
     mic: f32,
     /// The same for the other side of the call; absent without a tap.
     system: Option<f32>,
+    /// Whether the other side has delivered any audio at all yet. False a
+    /// few seconds in means the permission was not given.
+    other_heard: bool,
+    /// Milliseconds since the meeting started.
+    elapsed_ms: u64,
+}
+
+/// What the HUD and the menu bar need to know: whether a meeting is
+/// recording, and which.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingStateEvent {
+    pub recording: bool,
+    pub meeting_id: Option<String>,
+    pub title: Option<String>,
+    /// Milliseconds since the epoch when recording began.
+    pub started_at: Option<u64>,
 }
 
 struct Active {
@@ -279,21 +323,24 @@ impl Recorder {
         let meter = {
             let app = self.app.clone();
             let meeting_id = id.clone();
+            let system_blocks = system_blocks.clone();
             tauri::async_runtime::spawn(async move {
                 let mut ticks = tokio::time::interval(Duration::from_millis(150));
                 loop {
                     ticks.tick().await;
-                    let _ = app.emit_to(
-                        MAIN_LABEL,
-                        "meeting-level",
-                        LevelEvent {
-                            meeting_id: meeting_id.clone(),
-                            mic: f32::from_bits(mic_level.load(Ordering::Relaxed)),
-                            system: system_level
-                                .as_ref()
-                                .map(|level| f32::from_bits(level.load(Ordering::Relaxed))),
-                        },
-                    );
+                    let event = LevelEvent {
+                        meeting_id: meeting_id.clone(),
+                        mic: f32::from_bits(mic_level.load(Ordering::Relaxed)),
+                        system: system_level
+                            .as_ref()
+                            .map(|level| f32::from_bits(level.load(Ordering::Relaxed))),
+                        other_heard: system_blocks
+                            .as_ref()
+                            .is_some_and(|count| count.load(Ordering::Relaxed) > 0),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    };
+                    let _ = app.emit_to(MAIN_LABEL, "meeting-level", &event);
+                    let _ = app.emit_to(OVERLAY_LABEL, "meeting-level", &event);
                 }
             })
         };
@@ -310,7 +357,31 @@ impl Recorder {
         });
         drop(active);
         self.emit_changed(&meeting).await;
+        self.announce(Some(&meeting));
         Ok(meeting)
+    }
+
+    /// Tells the HUD and the menu bar whether a meeting is recording.
+    fn announce(&self, recording: Option<&Meeting>) {
+        let event = MeetingStateEvent {
+            recording: recording.is_some(),
+            meeting_id: recording.map(|m| m.id.clone()),
+            title: recording.map(|m| m.title.clone()),
+            started_at: recording.map(|m| m.created_at),
+        };
+        let _ = self.app.emit("meeting-state", &event);
+        crate::refresh_tray_menu(&self.app);
+    }
+
+    /// Whether a meeting is being recorded right now.
+    pub async fn is_recording(&self) -> bool {
+        self.active.lock().await.is_some()
+    }
+
+    /// The recording meeting, for the menu bar.
+    pub async fn recording(&self) -> Option<Meeting> {
+        let id = self.active.lock().await.as_ref()?.id.clone();
+        self.meetings.lock().await.get(&id).ok().flatten()
     }
 
     /// Stops the recording, waits for the last phrases to be transcribed,
@@ -319,6 +390,7 @@ impl Recorder {
         let Some(mut active) = self.active.lock().await.take() else {
             return Err("No meeting is being recorded.".into());
         };
+        self.announce(None);
         let id = active.id.clone();
         let duration_ms = active.started.elapsed().as_millis() as u64;
         {
@@ -363,7 +435,7 @@ impl Recorder {
         let cancel = Arc::new(AtomicBool::new(false));
         self.processing.lock().await.insert(id.clone(), cancel.clone());
         tauri::async_runtime::spawn(async move {
-            this.process(&id, cancel).await;
+            this.process(&id, cancel, Steps::all()).await;
         });
 
         self.meetings
@@ -378,6 +450,7 @@ impl Recorder {
         let Some(mut active) = self.active.lock().await.take() else {
             return Ok(());
         };
+        self.announce(None);
         active.stop.store(true, Ordering::Relaxed);
         if let Some(meter) = active.meter.take() {
             meter.abort();
@@ -395,14 +468,15 @@ impl Recorder {
     }
 
     /// Tags speakers, mixes the tracks down for playback, and writes the
-    /// summary. Each step that cannot run says why and the rest goes on; a
-    /// transcript is never lost to a missing tool or a missing key.
-    async fn process(self: &Arc<Self>, id: &str, cancel: Arc<AtomicBool>) {
-        let outcome = self.process_steps(id, &cancel).await;
+    /// summary. Each step that cannot run leaves a note and the rest goes on;
+    /// a transcript is never lost to a missing tool or a missing key.
+    async fn process(self: &Arc<Self>, id: &str, cancel: Arc<AtomicBool>, steps: Steps) {
+        let outcome = self.process_steps(id, &cancel, steps).await;
         let mut store = self.meetings.lock().await;
         match outcome {
-            Ok(note) => {
-                let _ = store.set_state(id, State::Ready, note.as_deref());
+            Ok(notes) => {
+                let _ = store.set_notes(id, &notes);
+                let _ = store.set_state(id, State::Ready, None);
             }
             Err(reason) if reason == crate::download::CANCELLED => {}
             Err(reason) => {
@@ -418,8 +492,46 @@ impl Recorder {
         }
     }
 
-    /// Returns a note for the Ready state when a step was skipped.
-    async fn process_steps(self: &Arc<Self>, id: &str, cancel: &AtomicBool) -> Result<Option<String>, String> {
+    /// Runs processing again for a meeting that was interrupted, or whose
+    /// processing failed. Nothing is re-recorded; the lines are what they are.
+    pub async fn finish(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        self.rerun(id, Steps::all()).await
+    }
+
+    /// Tags speakers only, for a meeting recorded before the tool was installed.
+    pub async fn tag_speakers(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        self.rerun(id, Steps { diarize: true, summary: false }).await
+    }
+
+    async fn rerun(self: &Arc<Self>, id: &str, steps: Steps) -> Result<(), String> {
+        if self.active.lock().await.as_ref().is_some_and(|active| active.id == id) {
+            return Err("Stop the recording first.".into());
+        }
+        if self.processing.lock().await.contains_key(id) {
+            return Err("This meeting is already being finished.".into());
+        }
+        let meeting = self
+            .meetings
+            .lock()
+            .await
+            .get(id)?
+            .ok_or_else(|| "That meeting is gone.".to_string())?;
+        if meeting.state == State::Recording {
+            return Err("This meeting is still recording.".into());
+        }
+        self.set_stage(id, "Finishing up…").await;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.processing.lock().await.insert(id.to_string(), cancel.clone());
+        let this = self.clone();
+        let id = id.to_string();
+        tauri::async_runtime::spawn(async move {
+            this.process(&id, cancel, steps).await;
+        });
+        Ok(())
+    }
+
+    /// The notes the finished meeting carries, one per thing skipped.
+    async fn process_steps(self: &Arc<Self>, id: &str, cancel: &AtomicBool, steps: Steps) -> Result<Vec<Note>, String> {
         let dir = self.meetings.lock().await.dir(id);
         let meeting = self
             .meetings
@@ -427,20 +539,39 @@ impl Recorder {
             .await
             .get(id)?
             .ok_or_else(|| "That meeting is gone.".to_string())?;
-        let mut notes: Vec<String> = Vec::new();
-        if self.silent_tap.lock().await.remove(id).unwrap_or(false) {
-            notes.push(
-                "The other side of the call was not heard. Allow Waveform under System Settings → \
-                 Privacy & Security → Screen & System Audio Recording, then record again."
-                    .into(),
-            );
+        // Notes from a previous run that this run does not revisit are kept.
+        let mut notes: Vec<Note> = meeting
+            .notes
+            .iter()
+            .filter(|note| {
+                !matches!(
+                    note.kind.as_str(),
+                    "interrupted" | "no-summary-key" | "summary-failed" | "summary-unparsed" | "nothing-said"
+                ) && !(steps.diarize && note.kind == "speaker-tool-missing")
+            })
+            .cloned()
+            .collect();
+        if self.silent_tap.lock().await.remove(id).unwrap_or(false)
+            && !notes.iter().any(|note| note.kind == "other-side-not-heard")
+        {
+            notes.push(Note::new(
+                "other-side-not-heard",
+                "The other side of the call wasn't recorded. macOS hadn't given Waveform permission to hear it.",
+            ));
         }
 
-        if meeting.has_system_audio && dir.join("system.wav").is_file() {
+        let lines = self.meetings.lock().await.lines(id)?;
+        if lines.is_empty() {
+            notes.push(Note::new("nothing-said", "Nothing was picked up in this recording."));
+            self.set_stage(id, "Preparing playback…").await;
+            let _ = mixdown(&dir);
+            return Ok(notes);
+        }
+
+        if steps.diarize && meeting.has_system_audio && dir.join("system.wav").is_file() {
             if diarize::is_installed() {
                 self.set_stage(id, "Tagging speakers…").await;
                 let turns = diarize::run(&dir.join("system.wav"), cancel).await?;
-                let lines = self.meetings.lock().await.lines(id)?;
                 let spans: Vec<diarize::Span> = lines
                     .iter()
                     .filter(|line| line.track == Track::System)
@@ -457,8 +588,11 @@ impl Recorder {
                     format!("{id}: {} turn(s), {} line(s) tagged", turns.len(), tags.len()),
                 );
                 self.meetings.lock().await.tag_lines(id, &tags)?;
-            } else {
-                notes.push("Speaker tagging is not installed, so remote lines are not told apart.".into());
+            } else if lines.iter().any(|line| line.track == Track::System) {
+                notes.push(Note::new(
+                    "speaker-tool-missing",
+                    "Everyone else on the call is shown as one speaker.",
+                ));
             }
         }
 
@@ -467,54 +601,111 @@ impl Recorder {
             self.logs.error(&self.app, "meeting", format!("{id}: mixdown: {error}"));
         }
 
-        match self.write_summary(id).await {
-            Ok(()) => {}
-            Err(reason) => notes.push(reason),
+        if steps.summary {
+            match self.write_summary(id).await {
+                Ok(SummaryOutcome::Parsed) => {}
+                Ok(SummaryOutcome::Unparsed) => notes.push(Note::new(
+                    "summary-unparsed",
+                    "The summary is shown as it came back; it did not follow the usual layout.",
+                )),
+                Err(SummaryError::NoKey) => notes.push(Note::new(
+                    "no-summary-key",
+                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                )),
+                Err(SummaryError::Failed(reason)) => notes.push(Note::new("summary-failed", reason)),
+            }
         }
 
-        Ok((!notes.is_empty()).then(|| notes.join(" ")))
+        Ok(notes)
     }
 
     /// Writes (or rewrites) the summary. Needs an OpenRouter key.
-    pub async fn write_summary(self: &Arc<Self>, id: &str) -> Result<(), String> {
+    async fn write_summary(self: &Arc<Self>, id: &str) -> Result<SummaryOutcome, SummaryError> {
         let key = self
             .rewriter
             .open_router_key()
             .await
-            .ok_or("Add an OpenRouter API key in AI Polish to get a summary.")?;
+            .ok_or(SummaryError::NoKey)?;
         let model = self.rewriter.open_router_model().await;
         let (meeting, lines) = {
             let store = self.meetings.lock().await;
-            let meeting = store.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())?;
-            (meeting, store.lines(id)?)
+            let meeting = store
+                .get(id)
+                .map_err(SummaryError::Failed)?
+                .ok_or_else(|| SummaryError::Failed("That meeting is gone.".into()))?;
+            (meeting, store.lines(id).map_err(SummaryError::Failed)?)
         };
         if lines.is_empty() {
-            return Err("Nothing was said, so there is nothing to summarise.".into());
+            return Err(SummaryError::Failed("Nothing was said, so there is nothing to summarise.".into()));
         }
         self.set_stage(id, "Writing the summary…").await;
         let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
-        let (text, _) = summary::summarize(&key, &model, &transcript).await?;
-        self.meetings.lock().await.set_summary(id, Some(&text), Some(&model))?;
-        Ok(())
+        let (text, parsed) = summary::summarize(&key, &model, &transcript)
+            .await
+            .map_err(SummaryError::Failed)?;
+        self.meetings
+            .lock()
+            .await
+            .set_summary(id, Some(&text), Some(&model))
+            .map_err(SummaryError::Failed)?;
+        Ok(if parsed.is_some() {
+            SummaryOutcome::Parsed
+        } else {
+            SummaryOutcome::Unparsed
+        })
     }
 
-    /// Regenerates the summary for a finished meeting, after renames.
+    /// Regenerates the summary for a finished meeting, after renames or once
+    /// a key has been added.
     pub async fn resummarize(self: &Arc<Self>, id: &str) -> Result<MeetingDetail, String> {
-        self.meetings.lock().await.set_state(id, State::Processing, Some("Writing the summary…"))?;
-        if let Ok(Some(meeting)) = self.meetings.lock().await.get(id) {
-            self.emit_changed(&meeting).await;
+        if self.processing.lock().await.contains_key(id) {
+            return Err("This meeting is already being finished.".into());
         }
+        let before = self
+            .meetings
+            .lock()
+            .await
+            .get(id)?
+            .ok_or_else(|| "That meeting is gone.".to_string())?;
+        self.set_stage(id, "Writing the summary…").await;
         let outcome = self.write_summary(id).await;
+        let mut notes: Vec<Note> = before
+            .notes
+            .into_iter()
+            .filter(|note| !matches!(note.kind.as_str(), "no-summary-key" | "summary-failed" | "summary-unparsed"))
+            .collect();
+        let error = match outcome {
+            Ok(SummaryOutcome::Parsed) => None,
+            Ok(SummaryOutcome::Unparsed) => {
+                notes.push(Note::new(
+                    "summary-unparsed",
+                    "The summary is shown as it came back; it did not follow the usual layout.",
+                ));
+                None
+            }
+            Err(SummaryError::NoKey) => {
+                notes.push(Note::new(
+                    "no-summary-key",
+                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                ));
+                Some("Add an OpenRouter API key in AI Polish first.".to_string())
+            }
+            Err(SummaryError::Failed(reason)) => {
+                notes.push(Note::new("summary-failed", reason.clone()));
+                Some(reason)
+            }
+        };
         {
             let mut store = self.meetings.lock().await;
-            match &outcome {
-                Ok(()) => store.set_state(id, State::Ready, None)?,
-                Err(reason) => store.set_state(id, State::Ready, Some(reason))?,
-            }
+            store.set_notes(id, &notes)?;
+            store.set_state(id, State::Ready, None)?;
         }
         let detail = self.detail(id).await?;
         self.emit_changed(&detail.meeting).await;
-        outcome.map(|_| detail)
+        match error {
+            Some(reason) => Err(reason),
+            None => Ok(detail),
+        }
     }
 
     pub async fn rename(self: &Arc<Self>, id: &str, title: &str) -> Result<Meeting, String> {
