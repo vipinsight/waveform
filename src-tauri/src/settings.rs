@@ -77,8 +77,8 @@ pub struct AppSettings {
     /// Language handed to the speech model. Empty asks it to detect, which on a
     /// single dictated phrase it does unreliably.
     pub speech_language: String,
-    /// Names and terms the speech model is primed with before every phrase,
-    /// as the user typed them. Empty primes it with nothing.
+    /// Retired: one release kept a comma list of terms here. It is moved into
+    /// the dictionary on launch and cleared; kept so an older file still loads.
     pub speech_vocabulary: String,
     /// Empty means follow macOS's current default input device.
     pub microphone_device_id: String,

@@ -1846,22 +1846,186 @@ kbd {
   gap: 10px;
 }
 
-.vocabulary-input {
-  width: 100%;
-  padding: 10px 12px;
+/* Dictionary: an add row, then the terms as a plain list. */
+.dictionary-add {
+  display: flex;
+  gap: 8px;
+}
+
+.dictionary-field {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  padding: 0 11px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--surface-sunken);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
-  line-height: 1.5;
-  resize: vertical;
 }
 
-.vocabulary-input::placeholder {
-  color: var(--ink-faint, var(--ink-soft));
-  opacity: 0.7;
+.dictionary-field.is-secondary {
+  flex: 0 1 190px;
+}
+
+.dictionary-field:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dictionary-field::placeholder {
+  color: var(--ink-faint);
+}
+
+.dictionary-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+.dictionary-field.is-search {
+  flex: 0 1 220px;
+  height: 30px;
+}
+
+.dictionary-tools .view-note {
+  margin-left: auto;
+}
+
+.dictionary-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dictionary-term {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.dictionary-term:first-child {
+  border-top: 0;
+}
+
+.dictionary-term-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 560;
+}
+
+.dictionary-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.dictionary-term-heard {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dictionary-term-heard em {
+  font-style: normal;
+  color: var(--ink);
+}
+
+.dictionary-term-uses {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The row's actions are hidden until hover elsewhere; a short list reads
+   better with the remove control always present but quiet. */
+.dictionary-term .entry-action {
+  opacity: 0.55;
+}
+
+.dictionary-term:hover .entry-action {
+  opacity: 1;
+}
+
+.dictionary-empty {
+  margin: 8px 0 4px;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.dictionary-empty:empty {
+  display: none;
+}
+
+/* Editing a transcript in place: the field takes the text's exact place. */
+.entry-editor {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 440;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  resize: none;
+}
+
+.entry-editor:focus {
+  outline: 0;
+}
+
+/* The dictionary's offer after an edit, under the row it came from. */
+.entry-suggest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px 9px 116px;
+  border-top: 1px solid var(--hairline);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 12.5px;
+  animation: entry-in 200ms ease both;
+}
+
+.entry-suggest-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-suggest em {
+  font-style: normal;
+  color: var(--ink-soft);
+}
+
+.pill-button.is-small {
+  height: 26px;
+  padding: 0 11px;
+  font-size: 12px;
 }
 
 /* For rows whose control needs the full width, such as a pasted key: side by

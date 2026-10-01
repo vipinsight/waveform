@@ -12,6 +12,7 @@ mod install;
 mod logs;
 mod hotkey;
 mod dictation;
+mod dictionary;
 mod local_llm;
 mod mic;
 mod model_server;
@@ -26,6 +27,7 @@ mod updates;
 mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
+use dictionary::{DictionaryStore, Suggestion, Term};
 use history::{Dictation as SavedDictation, HistoryStore, NewDictation};
 use local_llm::{LocalDownloads, LocalModelStatus};
 use model_server::{ModelEvent, ModelServer, ModelStatus, MODELS};
@@ -90,6 +92,7 @@ pub struct AppState {
     logs: Arc<logs::Logs>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
+    dictionary: Arc<Mutex<DictionaryStore>>,
     models: Arc<ModelServer>,
     dictation: Arc<Dictation>,
     rewriter: Arc<Rewriter>,
@@ -587,12 +590,16 @@ async fn transcribe(
     wav_bytes: Vec<u8>,
     prior_text: Option<String>,
 ) -> Result<String, String> {
+    let prior = prior_text.as_deref().unwrap_or("");
+    let terms = state.dictionary.lock().await.terms().unwrap_or_default();
     let (model_id, language, prompt) = {
         let settings = state.settings.lock().await.value();
-        let prompt = whisper_cpp::build_prompt(
-            &settings.speech_vocabulary,
-            prior_text.as_deref().unwrap_or(""),
-        );
+        // The terms most likely to come up, as one sentence, after the
+        // carried context: whisper.cpp truncates a long prompt from the
+        // front, so the context is what gives way, never the names.
+        let ranked = dictionary::rank(&terms, prior, now_ms(), dictionary::PROMPT_TERMS);
+        let vocabulary = dictionary::prompt_sentence(&ranked);
+        let prompt = whisper_cpp::build_prompt(&vocabulary, prior);
         (settings.model_id, settings.speech_language, prompt)
     };
     dump_audio(&wav_bytes);
@@ -603,6 +610,36 @@ async fn transcribe(
     let started = std::time::Instant::now();
     let outcome = state.models.transcribe(wav_bytes, &language, &prompt).await;
     let took = started.elapsed().as_millis();
+
+    // What the engine still got wrong, put right from the dictionary, and a
+    // count against every term that came up so the ranking learns from it.
+    let outcome = outcome.map(|text| {
+        let (fixed, corrections) = dictionary::correct(&text, &terms);
+        for correction in &corrections {
+            state.logs.info(
+                &app,
+                "dictionary",
+                format!("{:?} → {:?}", correction.from, correction.to),
+            );
+        }
+        let mut used: Vec<i64> = corrections.iter().map(|c| c.term_id).collect();
+        let lowered = fixed.to_lowercase();
+        used.extend(
+            terms
+                .iter()
+                .filter(|term| dictionary::mentions(&lowered, &term.text))
+                .map(|term| term.id),
+        );
+        used.sort_unstable();
+        used.dedup();
+        if !used.is_empty() {
+            let dictionary = state.dictionary.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = dictionary.lock().await.record_uses(&used);
+            });
+        }
+        fixed
+    });
 
     match &outcome {
         Ok(text) if text.is_empty() => state.logs.info(
@@ -622,6 +659,135 @@ async fn transcribe(
         ),
     }
     outcome
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+// --- Dictionary -------------------------------------------------------------
+
+#[tauri::command]
+async fn get_dictionary(state: State<'_, AppState>) -> Result<Vec<Term>, String> {
+    state.dictionary.lock().await.terms()
+}
+
+/// Adds a term the user typed, or one they accepted from a correction.
+#[tauri::command]
+async fn add_dictionary_term(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    heard_as: Vec<String>,
+    learned: Option<bool>,
+) -> Result<Vec<Term>, String> {
+    let source = if learned.unwrap_or(false) {
+        dictionary::Source::Learned
+    } else {
+        dictionary::Source::Manual
+    };
+    let terms = state.dictionary.lock().await.add(&text, &heard_as, source)?;
+    let _ = app.emit("dictionary-changed", &terms);
+    Ok(terms)
+}
+
+#[tauri::command]
+async fn update_dictionary_term(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+    text: String,
+    heard_as: Vec<String>,
+) -> Result<Vec<Term>, String> {
+    let terms = state.dictionary.lock().await.update(id, &text, &heard_as)?;
+    let _ = app.emit("dictionary-changed", &terms);
+    Ok(terms)
+}
+
+#[tauri::command]
+async fn remove_dictionary_term(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<Vec<Term>, String> {
+    let terms = state.dictionary.lock().await.remove(id)?;
+    let _ = app.emit("dictionary-changed", &terms);
+    Ok(terms)
+}
+
+/// Adds every term in a pasted list, comma or line separated. Existing terms
+/// are kept; nothing is removed by an import.
+#[tauri::command]
+async fn import_dictionary(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<Vec<Term>, String> {
+    let mut dictionary = state.dictionary.lock().await;
+    let mut terms = dictionary.terms()?;
+    for term in split_terms(&text) {
+        terms = dictionary.add(&term, &[], dictionary::Source::Manual)?;
+    }
+    let _ = app.emit("dictionary-changed", &terms);
+    Ok(terms)
+}
+
+/// The user did not want this correction learned.
+#[tauri::command]
+async fn decline_dictionary_suggestion(
+    state: State<'_, AppState>,
+    suggestion: Suggestion,
+) -> Result<(), String> {
+    state.dictionary.lock().await.decline(&suggestion)
+}
+
+/// What a transcript edit returns: the list, and what the edit suggests learning.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditOutcome {
+    entries: Vec<SavedDictation>,
+    suggestions: Vec<Suggestion>,
+}
+
+/// Saves words the user corrected by hand on a saved dictation.
+///
+/// The difference between what was there and what they typed is where the
+/// dictionary learns from, so it is worked out here while both are known.
+#[tauri::command]
+async fn edit_dictation(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+) -> Result<EditOutcome, String> {
+    let mut history = state.history.lock().await;
+    let before = history
+        .entries()?
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .map(|entry| entry.text)
+        .ok_or_else(|| "That dictation is gone.".to_string())?;
+    let entries = history.edit_text(&id, &text)?;
+    drop(history);
+    let _ = app.emit("history-changed", &entries);
+    let suggestions = state
+        .dictionary
+        .lock()
+        .await
+        .suggestions_for(&before, &text)
+        .unwrap_or_default();
+    Ok(EditOutcome { entries, suggestions })
+}
+
+/// Terms out of a pasted list: commas and line breaks separate them.
+fn split_terms(text: &str) -> Vec<String> {
+    text.split(|c: char| c == ',' || c == '\n' || c == ';')
+        .map(|term| term.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|term| !term.is_empty())
+        .collect()
 }
 
 /// The lines held, for a page that has just opened.
@@ -1031,9 +1197,41 @@ pub fn run() {
             let settings = Arc::new(Mutex::new(SettingsStore::load(user_data.clone())));
             let opened = store::Database::open(&user_data);
             let stats = Arc::new(Mutex::new(StatsStore::new(opened.database.clone())));
-            let history = Arc::new(Mutex::new(HistoryStore::new(opened.database)));
+            let history = Arc::new(Mutex::new(HistoryStore::new(opened.database.clone())));
+            let dictionary = Arc::new(Mutex::new(DictionaryStore::new(opened.database)));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
+
+            // The one release before this kept a comma list in settings. It
+            // becomes terms once, and the field is cleared so this does not
+            // run again -- and so the list is not primed twice.
+            let mut opened_notes = opened.notes;
+            if !initial.speech_vocabulary.trim().is_empty() {
+                let imported = split_terms(&initial.speech_vocabulary);
+                let mut store = tauri::async_runtime::block_on(dictionary.lock());
+                let mut outcome = Ok(());
+                for term in &imported {
+                    if let Err(error) = store.add(term, &[], dictionary::Source::Manual) {
+                        outcome = Err(error);
+                        break;
+                    }
+                }
+                drop(store);
+                match outcome {
+                    Ok(()) => {
+                        let mut patch = initial.clone();
+                        patch.speech_vocabulary = String::new();
+                        tauri::async_runtime::block_on(settings.lock()).update(patch);
+                        opened_notes.push(format!(
+                            "moved {} vocabulary term(s) from settings into the dictionary",
+                            imported.len()
+                        ));
+                    }
+                    Err(error) => opened_notes.push(format!(
+                        "the vocabulary setting was left in place: {error}"
+                    )),
+                }
+            }
 
             let logs = Arc::new(logs::Logs::new());
             logs.info(
@@ -1041,7 +1239,7 @@ pub fn run() {
                 "app",
                 format!("Waveform {} starting, model {selected}", app.package_info().version),
             );
-            for note in &opened.notes {
+            for note in &opened_notes {
                 logs.info(app.handle(), "store", note.clone());
             }
 
@@ -1108,6 +1306,7 @@ pub fn run() {
                 logs,
                 stats,
                 history,
+                dictionary,
                 models: models.clone(),
                 dictation: dictation.clone(),
                 rewriter,
@@ -1215,6 +1414,13 @@ pub fn run() {
             set_available_microphones,
             get_stats,
             get_history,
+            get_dictionary,
+            add_dictionary_term,
+            update_dictionary_term,
+            remove_dictionary_term,
+            import_dictionary,
+            decline_dictionary_suggestion,
+            edit_dictation,
             delete_dictation,
             clear_history,
             get_dictation_audio,

@@ -61,3 +61,5 @@ llama-cpp-2 = { version = "0.1.156", default-features = false, features = ["meta
 encoding_rs = "0.8"
 tauri-plugin-updater = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+# Double Metaphone, for the dictionary's "sounds like a term" correction.
+rphonetic = "3.1.0"

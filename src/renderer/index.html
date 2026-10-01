@@ -284,25 +284,60 @@
             </div>
           </div>
 
-          <h2 class="section-label">Vocabulary</h2>
-          <div class="card">
-            <label class="row row-stacked" for="speech-vocabulary">
+          <h2 class="section-label">Dictionary</h2>
+          <!--
+            Names and jargon the engine keeps getting wrong. The terms most
+            likely to come up are read to the engine before each phrase, and
+            anything it still mishears is put right afterwards. Terms arrive
+            two ways: typed here, or offered when a transcript is corrected.
+          -->
+          <div class="card dictionary" id="dictionary">
+            <div class="row row-stacked">
               <span class="row-label">
                 Names and terms to get right
-                <small>
-                  Whisper is primed with these before every phrase. Separate them
-                  with commas: people, products, the jargon it keeps mishearing.
+                <small id="dictionary-hint">
+                  People, products, jargon. Each is read to the engine before a
+                  phrase, and fixed afterwards if it still comes out wrong.
+                  Correcting a transcript offers to add the word here.
                 </small>
               </span>
-              <textarea
-                id="speech-vocabulary"
-                class="vocabulary-input"
-                rows="2"
+              <form class="dictionary-add" id="dictionary-add" autocomplete="off">
+                <input
+                  id="dictionary-text"
+                  class="dictionary-field"
+                  type="text"
+                  placeholder="Term, as it should be typed"
+                  aria-label="Term"
+                  spellcheck="false"
+                  required
+                />
+                <input
+                  id="dictionary-heard"
+                  class="dictionary-field is-secondary"
+                  type="text"
+                  placeholder="Heard as (optional)"
+                  aria-label="What the engine hears instead"
+                  spellcheck="false"
+                />
+                <button class="pill-button is-primary" type="submit">Add</button>
+              </form>
+            </div>
+            <div class="dictionary-tools" id="dictionary-tools" hidden>
+              <input
+                id="dictionary-search"
+                class="dictionary-field is-search"
+                type="search"
+                placeholder="Find a term"
+                aria-label="Find a term"
                 spellcheck="false"
-                placeholder="Tauri, Parakeet, whisper.cpp, Vipin"
-                aria-label="Vocabulary"
-              ></textarea>
-            </label>
+              />
+              <span class="view-note" id="dictionary-count"></span>
+              <button class="pill-button" type="button" id="dictionary-export">Copy list</button>
+            </div>
+            <ul class="dictionary-list" id="dictionary-list" aria-label="Dictionary"></ul>
+            <p class="dictionary-empty" id="dictionary-empty">
+              Nothing yet. Paste a comma-separated list into the term field to add several at once.
+            </p>
           </div>
         </section>
 

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// Shared handle to the open database.
 ///
@@ -193,6 +193,25 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             CREATE TABLE IF NOT EXISTS stats (
                 key   TEXT PRIMARY KEY,
                 value INTEGER NOT NULL
+            );",
+        )?;
+    }
+    if version < 2 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS dictionary (
+                id           INTEGER PRIMARY KEY,
+                text         TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                heard_as     TEXT NOT NULL DEFAULT '[]',
+                source       TEXT NOT NULL,
+                uses         INTEGER NOT NULL DEFAULT 0,
+                last_used_at INTEGER,
+                created_at   INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS dictionary_declined (
+                heard_as TEXT NOT NULL,
+                text     TEXT NOT NULL,
+                count    INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (heard_as, text)
             );",
         )?;
     }

@@ -25,6 +25,9 @@ import type {
   TranscriptionResult,
   UpdateEvent,
   UpdateInfo,
+  DictionaryTerm,
+  DictionarySuggestion,
+  EditOutcome,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -132,6 +135,19 @@ const api: DesktopApi = {
     invoke<SavedDictation[]>("update_dictation", { id, text }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
+  editDictation: (id, text) => invoke<EditOutcome>("edit_dictation", { id, text }),
+
+  getDictionary: () => invoke<DictionaryTerm[]>("get_dictionary"),
+  addDictionaryTerm: (text, heardAs, learned) =>
+    invoke<DictionaryTerm[]>("add_dictionary_term", { text, heardAs, learned: learned ?? false }),
+  updateDictionaryTerm: (id, text, heardAs) =>
+    invoke<DictionaryTerm[]>("update_dictionary_term", { id, text, heardAs }),
+  removeDictionaryTerm: (id) => invoke<DictionaryTerm[]>("remove_dictionary_term", { id }),
+  importDictionary: (text) => invoke<DictionaryTerm[]>("import_dictionary", { text }),
+  declineDictionarySuggestion: (suggestion) =>
+    invoke<void>("decline_dictionary_suggestion", { suggestion }),
+  onDictionaryChanged: (listener) =>
+    subscribe<DictionaryTerm[]>("dictionary-changed", listener),
   getStats: () => invoke<AppStats>("get_stats"),
   onStatsChanged: (listener) => subscribe<AppStats>("stats-changed", listener),
 
