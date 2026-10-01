@@ -4,6 +4,7 @@
 //! shared with the Electron build and reached through the same `window.waveform`
 //! surface. This crate supplies that surface natively.
 
+mod audio;
 mod download;
 mod focus;
 mod gestures;
@@ -11,9 +12,12 @@ mod history;
 mod install;
 mod logs;
 mod hotkey;
+mod diarize;
 mod dictation;
 mod dictionary;
 mod local_llm;
+mod meeting;
+mod meetings;
 mod mic;
 mod model_server;
 mod panel;
@@ -23,11 +27,16 @@ mod rewrite;
 mod settings;
 mod stats;
 mod store;
+mod summary;
+mod transcribe;
 mod updates;
 mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
 use dictionary::{DictionaryStore, Suggestion, Term};
+use meeting::{MeetingDetail, Recorder, RecorderStatus};
+use meetings::{Meeting, MeetingsStore};
+use transcribe::Engine;
 use history::{Dictation as SavedDictation, HistoryStore, NewDictation};
 use local_llm::{LocalDownloads, LocalModelStatus};
 use model_server::{ModelEvent, ModelServer, ModelStatus, MODELS};
@@ -93,6 +102,8 @@ pub struct AppState {
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
     dictionary: Arc<Mutex<DictionaryStore>>,
+    engine: Engine,
+    recorder: Arc<Recorder>,
     models: Arc<ModelServer>,
     dictation: Arc<Dictation>,
     rewriter: Arc<Rewriter>,
@@ -100,6 +111,8 @@ pub struct AppState {
     polish_downloads: Arc<LocalDownloads>,
     /// Bounds captured when an overlay drag begins, so moves are relative.
     drag_origin: Mutex<Option<(f64, f64)>>,
+    /// Set once a quit has stopped the meeting, so the second exit goes through.
+    quitting_after_stop: AtomicBool,
     /// Mirrors the setting of the same name.
     ///
     /// Window events arrive on the main thread, where blocking on the async
@@ -590,82 +603,112 @@ async fn transcribe(
     wav_bytes: Vec<u8>,
     prior_text: Option<String>,
 ) -> Result<String, String> {
-    let prior = prior_text.as_deref().unwrap_or("");
-    let terms = state.dictionary.lock().await.terms().unwrap_or_default();
-    let (model_id, language, prompt) = {
-        let settings = state.settings.lock().await.value();
-        // The terms most likely to come up, as one sentence, after the
-        // carried context: whisper.cpp truncates a long prompt from the
-        // front, so the context is what gives way, never the names.
-        let ranked = dictionary::rank(&terms, prior, now_ms(), dictionary::PROMPT_TERMS);
-        let vocabulary = dictionary::prompt_sentence(&ranked);
-        let prompt = whisper_cpp::build_prompt(&vocabulary, prior);
-        (settings.model_id, settings.speech_language, prompt)
-    };
+    let _ = app;
     dump_audio(&wav_bytes);
-
-    // 44 bytes of header, then 16-bit mono. Reported in seconds because that
-    // is the number worth comparing against what was actually said.
-    let seconds = wav_bytes.len().saturating_sub(44) as f64 / 2.0 / 48_000.0;
-    let started = std::time::Instant::now();
-    let outcome = state.models.transcribe(wav_bytes, &language, &prompt).await;
-    let took = started.elapsed().as_millis();
-
-    // What the engine still got wrong, put right from the dictionary, and a
-    // count against every term that came up so the ranking learns from it.
-    let outcome = outcome.map(|text| {
-        let (fixed, corrections) = dictionary::correct(&text, &terms);
-        for correction in &corrections {
-            state.logs.info(
-                &app,
-                "dictionary",
-                format!("{:?} → {:?}", correction.from, correction.to),
-            );
-        }
-        let mut used: Vec<i64> = corrections.iter().map(|c| c.term_id).collect();
-        let lowered = fixed.to_lowercase();
-        used.extend(
-            terms
-                .iter()
-                .filter(|term| dictionary::mentions(&lowered, &term.text))
-                .map(|term| term.id),
-        );
-        used.sort_unstable();
-        used.dedup();
-        if !used.is_empty() {
-            let dictionary = state.dictionary.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = dictionary.lock().await.record_uses(&used);
-            });
-        }
-        fixed
-    });
-
-    match &outcome {
-        Ok(text) if text.is_empty() => state.logs.info(
-            &app,
-            "engine",
-            format!("{model_id}: {seconds:.1}s in {took}ms, no words found"),
-        ),
-        Ok(text) => state.logs.info(
-            &app,
-            "engine",
-            format!("{model_id}: {seconds:.1}s in {took}ms — {text:?}"),
-        ),
-        Err(error) => state.logs.error(
-            &app,
-            "engine",
-            format!("{model_id}: {seconds:.1}s failed after {took}ms — {error}"),
-        ),
-    }
-    outcome
+    state
+        .engine
+        .transcribe(wav_bytes, prior_text.as_deref().unwrap_or(""), "engine")
+        .await
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
+// --- Meetings ---------------------------------------------------------------
+
+#[tauri::command]
+async fn meeting_recorder_status(state: State<'_, AppState>) -> Result<RecorderStatus, String> {
+    Ok(state.recorder.status().await)
+}
+
+#[tauri::command]
+async fn list_meetings(state: State<'_, AppState>) -> Result<Vec<Meeting>, String> {
+    state.recorder.list().await
+}
+
+#[tauri::command]
+async fn get_meeting(state: State<'_, AppState>, id: String) -> Result<MeetingDetail, String> {
+    state.recorder.detail(&id).await
+}
+
+#[tauri::command]
+async fn start_meeting(state: State<'_, AppState>, title: Option<String>) -> Result<Meeting, String> {
+    state.recorder.start(title.as_deref().unwrap_or("")).await
+}
+
+#[tauri::command]
+async fn stop_meeting(state: State<'_, AppState>) -> Result<Meeting, String> {
+    state.recorder.stop().await
+}
+
+/// Ends the recording and throws it away.
+#[tauri::command]
+async fn cancel_meeting(state: State<'_, AppState>) -> Result<(), String> {
+    state.recorder.cancel().await
+}
+
+#[tauri::command]
+async fn rename_meeting(state: State<'_, AppState>, id: String, title: String) -> Result<Meeting, String> {
+    state.recorder.rename(&id, &title).await
+}
+
+#[tauri::command]
+async fn rename_meeting_speaker(
+    state: State<'_, AppState>,
+    id: String,
+    label: String,
+    name: String,
+) -> Result<Meeting, String> {
+    state.recorder.rename_speaker(&id, &label, &name).await
+}
+
+/// Writes the summary again, after speakers were renamed or a key was added.
+#[tauri::command]
+async fn summarize_meeting(state: State<'_, AppState>, id: String) -> Result<MeetingDetail, String> {
+    state.recorder.resummarize(&id).await
+}
+
+/// Runs processing again for an interrupted meeting: speakers, playback, summary.
+#[tauri::command]
+async fn finish_meeting(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.recorder.finish(&id).await
+}
+
+/// Tags speakers on a meeting recorded before the speaker tool was installed.
+#[tauri::command]
+async fn tag_meeting_speakers(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.recorder.tag_speakers(&id).await
+}
+
+#[tauri::command]
+async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.recorder.delete(&id).await
+}
+
+#[tauri::command]
+async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec<u8>, String> {
+    state.recorder.audio(&id).await
+}
+
+/// Brings the window up on the live meeting; the HUD's clock calls this.
+#[tauri::command]
+async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
+    present_main_window(&app);
+    let _ = app.emit_to(MAIN_LABEL, "open-meetings", "show");
+    Ok(())
+}
+
+#[tauri::command]
+async fn install_diarizer(state: State<'_, AppState>) -> Result<(), String> {
+    state.recorder.install_diarizer().await
+}
+
+#[tauri::command]
+async fn cancel_diarizer_install(state: State<'_, AppState>) -> Result<(), String> {
+    state.recorder.cancel_diarizer_install();
+    Ok(())
+}
+
+#[tauri::command]
+async fn remove_diarizer(state: State<'_, AppState>) -> Result<(), String> {
+    state.recorder.remove_diarizer().await
 }
 
 // --- Dictionary -------------------------------------------------------------
@@ -744,12 +787,14 @@ async fn decline_dictionary_suggestion(
     state.dictionary.lock().await.decline(&suggestion)
 }
 
-/// What a transcript edit returns: the list, and what the edit suggests learning.
+/// What a transcript edit returns: the list, what the edit suggests learning,
+/// and -- when learning is automatic -- what was added without asking.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EditOutcome {
     entries: Vec<SavedDictation>,
     suggestions: Vec<Suggestion>,
+    added: Vec<Suggestion>,
 }
 
 /// Saves words the user corrected by hand on a saved dictation.
@@ -779,12 +824,39 @@ async fn edit_dictation(
         .await
         .suggestions_for(&before, &text)
         .unwrap_or_default();
-    Ok(EditOutcome { entries, suggestions })
+    if state.settings.lock().await.value().dictionary_learning != "auto" {
+        return Ok(EditOutcome {
+            entries,
+            suggestions,
+            added: Vec::new(),
+        });
+    }
+    // Automatic: every term-shaped correction goes straight in, as learned.
+    let mut added = Vec::new();
+    {
+        let mut dictionary = state.dictionary.lock().await;
+        for suggestion in suggestions {
+            if dictionary
+                .add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned)
+                .is_ok()
+            {
+                added.push(suggestion);
+            }
+        }
+        if !added.is_empty() {
+            let _ = app.emit("dictionary-changed", dictionary.terms().unwrap_or_default());
+        }
+    }
+    Ok(EditOutcome {
+        entries,
+        suggestions: Vec::new(),
+        added,
+    })
 }
 
 /// Terms out of a pasted list: commas and line breaks separate them.
 fn split_terms(text: &str) -> Vec<String> {
-    text.split(|c: char| c == ',' || c == '\n' || c == ';')
+    text.split([',', '\n', ';'])
         .map(|term| term.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|term| !term.is_empty())
         .collect()
@@ -1198,7 +1270,8 @@ pub fn run() {
             let opened = store::Database::open(&user_data);
             let stats = Arc::new(Mutex::new(StatsStore::new(opened.database.clone())));
             let history = Arc::new(Mutex::new(HistoryStore::new(opened.database.clone())));
-            let dictionary = Arc::new(Mutex::new(DictionaryStore::new(opened.database)));
+            let dictionary = Arc::new(Mutex::new(DictionaryStore::new(opened.database.clone())));
+            let meetings = Arc::new(Mutex::new(MeetingsStore::new(opened.database)));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
 
@@ -1241,6 +1314,15 @@ pub fn run() {
             );
             for note in &opened_notes {
                 logs.info(app.handle(), "store", note.clone());
+            }
+            // A meeting left recording by a crash is closed as it stands.
+            match tauri::async_runtime::block_on(meetings.lock()).close_abandoned() {
+                Ok(0) | Err(_) => {}
+                Ok(count) => logs.info(
+                    app.handle(),
+                    "meeting",
+                    format!("closed {count} meeting(s) left recording by a previous run"),
+                ),
             }
 
             let handle = app.handle().clone();
@@ -1291,6 +1373,33 @@ pub fn run() {
             // a wait.
             let warming = rewriter.clone();
             tauri::async_runtime::spawn(async move { warming.warm_at_launch().await });
+
+            let engine = Engine {
+                app: app.handle().clone(),
+                logs: logs.clone(),
+                settings: settings.clone(),
+                dictionary: dictionary.clone(),
+                models: models.clone(),
+            };
+            let tap_helper = meeting::find_tap_helper(
+                app.path().resource_dir().ok().as_deref(),
+                &project_root(),
+            );
+            if tap_helper.is_none() {
+                logs.info(
+                    app.handle(),
+                    "meeting",
+                    "no audio tap helper found; meetings will record the microphone only",
+                );
+            }
+            let recorder = Arc::new(Recorder::new(
+                app.handle().clone(),
+                logs.clone(),
+                meetings.clone(),
+                engine.clone(),
+                rewriter.clone(),
+                tap_helper,
+            ));
             let dictation = Dictation::new(
                 app.handle().clone(),
                 logs.clone(),
@@ -1307,11 +1416,14 @@ pub fn run() {
                 stats,
                 history,
                 dictionary,
+                engine,
+                recorder,
                 models: models.clone(),
                 dictation: dictation.clone(),
                 rewriter,
                 polish_downloads,
                 drag_origin: Mutex::new(None),
+                quitting_after_stop: AtomicBool::new(false),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
                 overlay_hovered: AtomicBool::new(false),
@@ -1414,6 +1526,23 @@ pub fn run() {
             set_available_microphones,
             get_stats,
             get_history,
+            meeting_recorder_status,
+            list_meetings,
+            get_meeting,
+            start_meeting,
+            stop_meeting,
+            cancel_meeting,
+            rename_meeting,
+            rename_meeting_speaker,
+            summarize_meeting,
+            finish_meeting,
+            tag_meeting_speakers,
+            delete_meeting,
+            get_meeting_audio,
+            install_diarizer,
+            show_meetings,
+            cancel_diarizer_install,
+            remove_diarizer,
             get_dictionary,
             add_dictionary_term,
             update_dictionary_term,
@@ -1501,6 +1630,24 @@ pub fn run() {
             // waiting with the window still on screen, which is a quit that
             // looks like a freeze. stop() signals the child before it awaits
             // anything, so giving up on the wait still leaves it dying.
+            // Quitting mid-meeting keeps the meeting: the recording is
+            // stopped and saved first, then the quit goes ahead. Nothing is
+            // ever marked interrupted by a deliberate quit.
+            RunEvent::ExitRequested { api, .. } => {
+                let state = app.state::<AppState>();
+                if state.quitting_after_stop.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let recorder = state.recorder.clone();
+                if tauri::async_runtime::block_on(recorder.is_recording()) {
+                    api.prevent_exit();
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = recorder.stop().await;
+                        handle.exit(0);
+                    });
+                }
+            }
             RunEvent::Exit => {
                 let models = app.state::<AppState>().models.clone();
                 let stopping = tauri::async_runtime::spawn(async move { models.stop().await });
@@ -1649,6 +1796,20 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.paste_last().await });
         }
+        "meeting-record" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+        }
+        "meeting-stop" => {
+            let recorder = app.state::<AppState>().recorder.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = recorder.stop().await;
+            });
+        }
+        "meeting-show" => {
+            present_main_window(app);
+            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "show");
+        }
         "polish" => {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
@@ -1780,10 +1941,38 @@ fn build_model_menu(
 }
 
 /// Builds menu contents independently of the persistent menu bar icon.
+/// The meeting being recorded, if the recorder can say so without waiting.
+fn state_recording(app: &tauri::AppHandle) -> Option<Meeting> {
+    let recorder = app.state::<AppState>().recorder.clone();
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(std::time::Duration::from_millis(200), recorder.recording())
+            .await
+            .ok()
+            .flatten()
+    })
+}
+
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let name = app_display_name();
     let open = MenuItem::with_id(app, "open", format!("Open {name}"), true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
+    // A live microphone is never a surprise: while a meeting records, the
+    // first thing in the menu says so and stops it.
+    let recording = state_recording(app);
+    let meeting_item = match &recording {
+        Some(meeting) => MenuItem::with_id(
+            app,
+            "meeting-stop",
+            format!("Stop recording “{}”", menu_preview(&meeting.title)),
+            true,
+            None::<&str>,
+        )?,
+        None => MenuItem::with_id(app, "meeting-record", "Record a meeting", true, None::<&str>)?,
+    };
+    let meeting_show = recording
+        .as_ref()
+        .map(|_| MenuItem::with_id(app, "meeting-show", "Show meeting", true, None::<&str>))
+        .transpose()?;
     let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
     let microphone_menu = Submenu::new(app, "Microphone", true)?;
     let state = app.state::<AppState>();
@@ -1936,6 +2125,11 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         items.push(update);
         items.push(&separator);
     }
+    items.push(&meeting_item);
+    if let Some(show) = meeting_show.as_ref() {
+        items.push(show);
+    }
+    items.push(&separator);
     items.extend([
         &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         &separator,
@@ -1991,7 +2185,7 @@ fn tray_icon() -> tauri::Result<tauri::image::Image<'static>> {
 
 /// WebView commands run off the AppKit thread. Tray mutation must return to it
 /// or macOS aborts with a BoardServices threading violation.
-fn refresh_tray_menu(app: &tauri::AppHandle) {
+pub(crate) fn refresh_tray_menu(app: &tauri::AppHandle) {
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         // Recreating the status item makes macOS remove and reinsert it,

@@ -74,6 +74,7 @@
     },
     "resources": {
       "../dist/native/waveform-hotkey": "waveform-hotkey",
+      "../dist/native/waveform-audiotap": "waveform-audiotap",
       "../scripts/qwen-worker.py": "qwen-worker.py"
     }
   }

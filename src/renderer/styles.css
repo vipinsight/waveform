@@ -2931,13 +2931,13 @@ select {
   content: "";
 }
 
-/* One line, always: a title that wrapped on one page made its card taller
-   than the others. */
+/* Wraps to two lines: an instruction cut short is worse than a taller card. */
 .deck-title {
-  overflow: hidden;
   margin: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   font-size: 24px;
   font-weight: 710;
@@ -2945,13 +2945,12 @@ select {
   line-height: 1.08;
 }
 
-/* One line, cut short rather than wrapping, for the same reason. At the
-   window's default width every description fits. */
 .deck-description {
-  overflow: hidden;
   margin: 7px 0 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   color: rgb(239 240 255 / 73%);
   font-size: 12.5px;
   line-height: 1.55;
@@ -4247,4 +4246,864 @@ select {
   .update-pill[data-state="working"] .update-pill-dot {
     animation: none;
   }
+}
+
+.pill-button.is-danger {
+  color: var(--danger);
+}
+
+/* --- Meetings ------------------------------------------------------------- */
+
+.meetings-setup {
+  margin-bottom: 18px;
+}
+
+.meetings-setup .row {
+  min-height: 54px;
+  gap: 16px;
+}
+
+.meetings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* One meeting in the list: title, when and how long, the summary's first line. */
+.meeting-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title meta"
+    "lede lede";
+  gap: 3px 16px;
+  padding: 13px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: default;
+  transition: background 120ms ease;
+}
+
+.meeting-row:hover {
+  background: var(--surface-sunken);
+}
+
+.meeting-row-title {
+  grid-area: title;
+  font-size: 14.5px;
+  font-weight: 580;
+}
+
+.meeting-row-meta {
+  grid-area: meta;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meeting-row.is-recording .meeting-row-meta {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.meeting-row-lede {
+  grid-area: lede;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-row-lede:empty {
+  display: none;
+}
+
+.meeting-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.meeting-back {
+  align-self: flex-start;
+  margin-bottom: 14px;
+}
+
+.meeting-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title actions"
+    "meta actions";
+  gap: 4px 16px;
+  align-items: center;
+}
+
+.meeting-title {
+  grid-area: title;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 22px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.meeting-title:hover {
+  border-color: var(--hairline);
+}
+
+.meeting-title:focus {
+  outline: 0;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.meeting-head .view-note {
+  grid-area: meta;
+}
+
+.meeting-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 8px;
+}
+
+.meeting-stage {
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.meeting-stage.is-recording {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.meeting-stage.is-failed {
+  color: var(--danger);
+}
+
+.meeting-summary-head,
+.meeting-transcript-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meeting-summary-head .section-label,
+.meeting-transcript-head .section-label {
+  margin-right: auto;
+}
+
+.meeting-summary-head .pill-button,
+.meeting-transcript-head .dictionary-field {
+  margin-top: 18px;
+}
+
+.meeting-summary-note {
+  margin: 4px 2px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.meeting-summary-raw {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.summary-section {
+  padding: 10px 14px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+.summary-section + .summary-section {
+  margin-top: 8px;
+}
+
+.summary-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.summary-section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.summary-section ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.summary-section li + li {
+  margin-top: 3px;
+}
+
+.meeting-overview {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* Copy on a line or a section: there until pointed at. */
+.meeting-line-copy {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.summary-section:hover .meeting-line-copy,
+.meeting-line:hover .meeting-line-copy,
+.meeting-line-copy:focus-visible,
+.meeting-line-copy:disabled {
+  opacity: 1;
+}
+
+.meeting-speakers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.speaker-chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.speaker-chip.is-editing {
+  width: 160px;
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Six hues for remote speakers, and one for this Mac's user. */
+.is-me .meeting-line-speaker,
+.speaker-chip.is-me { color: #2f6fb0; }
+.is-s0 .meeting-line-speaker, .speaker-chip.is-s0 { color: #a8443f; }
+.is-s1 .meeting-line-speaker, .speaker-chip.is-s1 { color: #3f8a4a; }
+.is-s2 .meeting-line-speaker, .speaker-chip.is-s2 { color: #8a5fb0; }
+.is-s3 .meeting-line-speaker, .speaker-chip.is-s3 { color: #b07a1f; }
+.is-s4 .meeting-line-speaker, .speaker-chip.is-s4 { color: #2d8f8a; }
+.is-s5 .meeting-line-speaker, .speaker-chip.is-s5 { color: #8c5a3a; }
+
+.meeting-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.meeting-line {
+  display: grid;
+  grid-template-columns: 62px 120px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.meeting-line:first-child {
+  border-top: 0;
+}
+
+.meeting-line:hover {
+  background: var(--surface-sunken);
+}
+
+.meeting-line.is-empty {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.meeting-line-time {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.meeting-line-time:not(:disabled):hover {
+  color: var(--accent);
+}
+
+.meeting-line-speaker {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-line-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+.meeting-line-text mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 3px;
+}
+
+
+/* --- Toast ------------------------------------------------------------------ */
+
+.toast {
+  position: fixed;
+  right: 50%;
+  bottom: 22px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, 80vw);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+  transform: translateX(50%);
+  animation: entry-in 180ms ease both;
+}
+
+.toast.is-error {
+  background: var(--danger);
+  color: #fff;
+}
+
+.toast .pill-button {
+  background: rgb(255 255 255 / 18%);
+  color: inherit;
+}
+
+/* --- Recording strip and dot ----------------------------------------------- */
+
+.recording-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: 0;
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.recording-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: recording-pulse 1.4s ease-in-out infinite;
+}
+
+.nav-dot[hidden] {
+  display: none;
+}
+
+.pill-button.is-stop {
+  background: var(--danger);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.pill-button.is-stop:hover {
+  background: color-mix(in srgb, var(--danger) 85%, black);
+}
+
+/* --- Meetings: intro, empty state ------------------------------------------- */
+
+.meeting-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgb(28 27 24 / 32%);
+}
+
+.meeting-intro-card {
+  width: min(460px, 86vw);
+  padding: 26px 26px 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
+}
+
+.meeting-intro-card .display {
+  margin: 0 0 10px;
+  font-size: 22px;
+}
+
+.meeting-intro-card p {
+  margin: 0 0 18px;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.meeting-intro-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.meetings-empty .pill-button {
+  margin-top: 6px;
+}
+
+.meetings-empty-setup {
+  margin-top: 26px;
+}
+
+.meetings-empty-setup .row {
+  gap: 16px;
+}
+
+/* --- Meetings: the band under the title ------------------------------------- */
+
+.meeting-band {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 56px;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  font-size: 13px;
+}
+
+.meeting-band.is-recording {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.band-left {
+  display: flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.band-meters {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 18px;
+}
+
+.band-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.band-meter-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.band-meter-track {
+  position: relative;
+  width: 90px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(28 27 24 / 10%);
+}
+
+.band-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.band-meter.is-warn .band-meter-track {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.band-note,
+.band-facts {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.band-facts {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+}
+
+.band-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.band-discard {
+  color: var(--ink-soft);
+}
+
+.band-steps {
+  display: flex;
+  flex: 1;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.band-steps li[data-state="done"] { color: var(--positive, #3f8a4a); }
+.band-steps li[data-state="now"] { color: var(--ink); font-weight: 600; }
+
+/* Copy ▾ and … menus. */
+.copy-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.copy-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: none;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 14%);
+}
+
+.copy-menu.is-open .copy-menu-list {
+  display: grid;
+}
+
+.copy-menu-list button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.copy-menu-list button:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+.copy-menu-list button:disabled {
+  opacity: 0.45;
+}
+
+.copy-menu-list button.is-danger {
+  color: var(--danger);
+}
+
+/* --- Meetings: banners ------------------------------------------------------- */
+
+.meeting-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.meeting-banners:empty {
+  display: none;
+}
+
+.meeting-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.meeting-banner.is-warn {
+  background: color-mix(in srgb, #b07a1f 12%, var(--surface));
+}
+
+.meeting-banner.is-error {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.meeting-banner-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meeting-banner-text span {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.meeting-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.meeting-summary .meeting-banner {
+  margin-top: 6px;
+}
+
+.summary-skeleton {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.summary-skeleton span {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-sunken), var(--hairline-strong), var(--surface-sunken));
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s linear infinite;
+}
+
+.summary-skeleton span:nth-child(2) { width: 82%; }
+.summary-skeleton span:nth-child(3) { width: 64%; }
+
+@keyframes skeleton-shine {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.meeting-transcript-note,
+.meeting-speakers-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.meeting-speakers-prompt {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.speaker-chip.is-unnamed {
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
+.meeting-row-more {
+  grid-area: more;
+  align-self: start;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0;
+}
+
+.meeting-row:hover .meeting-row-more,
+.meeting-row-more:focus-visible {
+  opacity: 1;
+}
+
+.meeting-row {
+  grid-template-columns: 1fr auto auto;
+  grid-template-areas:
+    "title meta more"
+    "lede lede lede";
+  cursor: default;
+}
+
+.meeting-row > .pill-button {
+  grid-area: more;
+  align-self: start;
+}
+
+.meeting-row.is-recording {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--hairline));
+}
+
+
+/* --- Dictation page: inline checklist, practice field ---------------------- */
+
+.dictation-steps {
+  margin: 0;
+  padding: 4px 18px;
+}
+
+.try-card {
+  padding: 12px 14px;
+}
+
+.try-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.try-field {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.try-field:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* A vertical level bar beside the field; the horizontal one sits in a row. */
+.try-meter {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(28 27 24 / 10%);
+}
+
+.try-meter-fill {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: height 90ms linear, width 90ms linear;
+}
+
+.try-meter.is-small {
+  width: 70px;
+  height: 6px;
+}
+
+.try-meter.is-small .try-meter-fill {
+  inset: 0 auto 0 0;
+  height: 100%;
+  width: 0;
+}
+
+.dictation-setup {
+  margin-top: 4px;
 }

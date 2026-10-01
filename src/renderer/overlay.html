@@ -27,6 +27,11 @@
         </svg>
       </button>
 
+      <!-- While a meeting records and dictation is idle: a clock and a stop. -->
+      <div class="hud-meeting" id="hud-meeting" aria-label="Meeting recording">
+        <button id="hud-meeting-open" class="hud-meeting-clock" type="button" title="Show the meeting">00:00</button>
+        <button id="hud-meeting-stop" class="hud-meeting-stop" type="button" aria-label="Stop recording" title="Stop recording">■</button>
+      </div>
       <div class="hud-tip hud-tip-cancel" aria-hidden="true">Cancel</div>
       <div class="hud-tip hud-tip-accept" aria-hidden="true">Finish and Paste</div>
 

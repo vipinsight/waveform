@@ -282,10 +282,111 @@ export interface DictionarySuggestion {
   text: string;
 }
 
+// --- Meetings ---------------------------------------------------------------
+
+export type MeetingState = "recording" | "processing" | "ready" | "failed";
+export type MeetingTrack = "mic" | "system";
+
+export interface Meeting {
+  id: string;
+  title: string;
+  /** Milliseconds since the epoch. */
+  createdAt: number;
+  durationMs: number;
+  state: MeetingState;
+  /** What processing is doing now, or why it failed. */
+  stage: string | null;
+  language: string;
+  speechModel: string;
+  /** Raw speaker label ("me", "speaker_00") to the name the user gave it. */
+  speakers: Record<string, string>;
+  /** The summary text in its fixed shape, when one has been written. */
+  summary: string | null;
+  summaryModel: string | null;
+  hasSystemAudio: boolean;
+  /** What processing skipped or could not do; each becomes a banner with a button. */
+  notes: MeetingNote[];
+}
+
+export type MeetingNoteKind =
+  | "interrupted"
+  | "other-side-not-heard"
+  | "no-summary-key"
+  | "speaker-tool-missing"
+  | "summary-failed"
+  | "summary-unparsed"
+  | "nothing-said";
+
+export interface MeetingNote {
+  kind: MeetingNoteKind | string;
+  text: string;
+}
+
+/** Whether a meeting is recording, for the HUD and the menu bar. */
+export interface MeetingStateEvent {
+  recording: boolean;
+  meetingId: string | null;
+  title: string | null;
+  startedAt: number | null;
+}
+
+export interface MeetingLevelEvent {
+  meetingId: string;
+  mic: number;
+  system: number | null;
+  /** False a few seconds in means the other side's permission was not given. */
+  otherHeard: boolean;
+  elapsedMs: number;
+}
+
+export interface MeetingLine {
+  idx: number;
+  /** Milliseconds from the start of the recording. */
+  startMs: number;
+  endMs: number;
+  track: MeetingTrack;
+  /** Raw label; null for a remote line not yet tagged. */
+  speaker: string | null;
+  text: string;
+}
+
+export interface MeetingSummary {
+  overview: string;
+  topics: { heading: string; points: string[] }[];
+  nextSteps: string[];
+  decisions: string[];
+}
+
+export interface MeetingDetail {
+  meeting: Meeting;
+  lines: MeetingLine[];
+  summary: MeetingSummary | null;
+}
+
+export interface RecorderStatus {
+  /** The meeting being recorded now, if any. */
+  recording: string | null;
+  /** "available", "unsupported" (macOS before 14.2), or "missing" (helper not built). */
+  systemAudio: "available" | "unsupported" | "missing";
+  diarizerInstalled: boolean;
+  diarizerBytes: number;
+  hasOpenRouterKey: boolean;
+  localName: string;
+}
+
+export interface DiarizerInstallEvent {
+  stage: "downloading" | "ready" | "error";
+  message: string;
+  progress: number;
+}
+
 /** What saving a hand edit to a transcript returns. */
 export interface EditOutcome {
   entries: SavedDictation[];
+  /** Offered under the row when learning is set to ask. */
   suggestions: DictionarySuggestion[];
+  /** Added without asking when learning is automatic. */
+  added: DictionarySuggestion[];
 }
 
 export interface AppStats {
@@ -424,6 +525,40 @@ export interface DesktopApi {
   importDictionary(text: string): Promise<DictionaryTerm[]>;
   declineDictionarySuggestion(suggestion: DictionarySuggestion): Promise<void>;
   onDictionaryChanged(listener: (terms: DictionaryTerm[]) => void): () => void;
+
+  meetingRecorderStatus(): Promise<RecorderStatus>;
+  listMeetings(): Promise<Meeting[]>;
+  getMeeting(id: string): Promise<MeetingDetail>;
+  startMeeting(title?: string): Promise<Meeting>;
+  stopMeeting(): Promise<Meeting>;
+  /** Ends the recording and throws it away. */
+  cancelMeeting(): Promise<void>;
+  renameMeeting(id: string, title: string): Promise<Meeting>;
+  renameMeetingSpeaker(id: string, label: string, name: string): Promise<Meeting>;
+  /** Writes the summary again, after renames or once a key is added. */
+  summarizeMeeting(id: string): Promise<MeetingDetail>;
+  deleteMeeting(id: string): Promise<void>;
+  getMeetingAudio(id: string): Promise<Uint8Array>;
+  installDiarizer(): Promise<void>;
+  /** Brings the window up on the live meeting. */
+  showMeetings(): Promise<void>;
+  cancelDiarizerInstall(): Promise<void>;
+  removeDiarizer(): Promise<void>;
+  onMeetingLine(listener: (event: { meetingId: string; line: MeetingLine }) => void): () => void;
+  onMeetingChanged(listener: (meeting: Meeting) => void): () => void;
+  /** Input levels a few times a second while recording; `system` is absent without the other side. */
+  onMeetingLevel(listener: (event: MeetingLevelEvent) => void): () => void;
+  onMeetingState(listener: (event: MeetingStateEvent) => void): () => void;
+  /** The menu bar asked for the Meetings page: "record" starts one, "show" opens the live one. */
+  onOpenMeetings(listener: (mode: "record" | "show") => void): () => void;
+  /** Runs processing again for an interrupted meeting. */
+  finishMeeting(id: string): Promise<void>;
+  /** Tags speakers on a meeting recorded before the speaker tool was installed. */
+  tagMeetingSpeakers(id: string): Promise<void>;
+  /** Microphone level while dictating, a few times a second, for the Dictation page's meter. */
+  onCaptureLevel(listener: (level: number) => void): () => void;
+  onMeetingsChanged(listener: () => void): () => void;
+  onDiarizerInstall(listener: (event: DiarizerInstallEvent) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   /** Every model, and what is on this machine for each. */

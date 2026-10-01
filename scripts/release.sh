@@ -83,7 +83,7 @@ esac
 # at all, however `createUpdaterArtifacts` is set.
 echo "release: building $VERSION"
 # Recompile the helper so a cached development helper cannot bypass signing.
-rm -f dist/native/waveform-hotkey
+rm -f dist/native/waveform-hotkey dist/native/waveform-audiotap
 
 # Path remapping used to strip the checkout path from panic/`strings` output,
 # but `--remap-path-prefix` breaks proc-macro resolution on current rustc
@@ -94,6 +94,7 @@ export CXXFLAGS="${CXXFLAGS:-}"
 
 pnpm exec tauri build --features dist --bundles app,dmg
 [ -x dist/native/waveform-hotkey ] || fail "native hotkey helper was not built"
+[ -x dist/native/waveform-audiotap ] || fail "native audio tap helper was not built"
 
 BUNDLE="src-tauri/target/release/bundle"
 TARBALL="$BUNDLE/macos/Waveform.app.tar.gz"

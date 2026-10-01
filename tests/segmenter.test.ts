@@ -5,6 +5,9 @@ function samples(length: number, amplitude: number): Float32Array {
   return new Float32Array(length).fill(amplitude);
 }
 
+/** A quiet room, not digital zero: exact zeros are a stream that has not started. */
+const ROOM = 0.002;
+
 describe("SpeechSegmenter", () => {
   it("returns one phrase after trailing silence", () => {
     const segmenter = new SpeechSegmenter({
@@ -15,9 +18,9 @@ describe("SpeechSegmenter", () => {
       trailingSilenceMs: 300,
     });
 
-    expect(segmenter.push(samples(100, 0))).toBeNull();
+    expect(segmenter.push(samples(100, ROOM))).toBeNull();
     expect(segmenter.push(samples(200, 0.2))).toBeNull();
-    expect(segmenter.push(samples(300, 0))).toHaveLength(600);
+    expect(segmenter.push(samples(300, ROOM))).toHaveLength(600);
   });
 
   it("ignores clicks shorter than minimum speech duration", () => {
@@ -29,7 +32,7 @@ describe("SpeechSegmenter", () => {
     });
 
     expect(segmenter.push(samples(100, 0.3))).toBeNull();
-    expect(segmenter.push(samples(200, 0))).toBeNull();
+    expect(segmenter.push(samples(200, ROOM))).toBeNull();
   });
 
   it("flushes a valid final phrase", () => {
@@ -147,7 +150,7 @@ describe("short utterances", () => {
 
   it("still drops a release with no speech at all", () => {
     const segmenter = new SpeechSegmenter({ sampleRate: 1000, calibrationMs: 0 });
-    segmenter.push(samples(500, 0));
+    segmenter.push(samples(500, ROOM));
     expect(segmenter.flush()).toBeNull();
   });
 
@@ -160,7 +163,7 @@ describe("short utterances", () => {
   it("keeps a short phrase that ends on a pause mid-session", () => {
     const segmenter = new SpeechSegmenter({ sampleRate: 1000, trailingSilenceMs: 300, calibrationMs: 0 });
     speak(segmenter, 90, 60, 2);
-    expect(segmenter.push(samples(300, 0))).not.toBeNull();
+    expect(segmenter.push(samples(300, ROOM))).not.toBeNull();
   });
   /*
    * People start talking as the bar appears. The room used to be the average
@@ -192,5 +195,58 @@ describe("short utterances", () => {
       const phrases = sentence(new SpeechSegmenter({ sampleRate: rate }), 3000, 2000);
       expect(phrases.reduce((sum, phrase) => sum + phrase.length, 0)).toBe(3000);
     });
+  });
+
+  // The failure seen on a real recording: a stream that opens at digital
+  // silence must not be mistaken for the room.
+  it("waits out warm-up silence before calibrating", () => {
+    const segmenter = new SpeechSegmenter({
+      sampleRate: 1000,
+      preRollMs: 100,
+      minimumSpeechMs: 100,
+      trailingSilenceMs: 300,
+    });
+    const feed = (ms: number, amplitude: number) => {
+      const out = [];
+      for (let fed = 0; fed < ms; fed += 50) {
+        const phrase = segmenter.push(samples(50, amplitude));
+        if (phrase) out.push(phrase);
+      }
+      return out;
+    };
+    expect(feed(300, 0.00003)).toHaveLength(0); // warm-up, not calibration
+    expect(feed(300, 0.01)).toHaveLength(0); // the room, calibrated on
+    const phrases = [...feed(1000, 0.06), ...feed(1000, 0.01)];
+    expect(phrases).toHaveLength(1);
+    expect(phrases[0]!.length).toBeLessThan(2000);
+  });
+
+  // A floor learned too low -- a room that was near-silent when the key went
+  // down and then filled -- heals itself at the first capped phrase.
+  it("relearns the floor from a stretch that never fell silent", () => {
+    const segmenter = new SpeechSegmenter({
+      sampleRate: 1000,
+      preRollMs: 100,
+      minimumSpeechMs: 100,
+      trailingSilenceMs: 300,
+      maximumSegmentMs: 5000,
+    });
+    const feed = (ms: number, amplitude: number) => {
+      const out = [];
+      for (let fed = 0; fed < ms; fed += 50) {
+        const phrase = segmenter.push(samples(50, amplitude));
+        if (phrase) out.push(phrase);
+      }
+      return out;
+    };
+    feed(300, 0.0003); // calibrated on a room far quieter than what follows
+    // Room at 0.01 now reads as speech; only the cap cuts.
+    const capped = feed(6000, 0.01);
+    expect(capped).toHaveLength(1);
+    expect(capped[0]!.length).toBe(5000);
+    // After the cap the floor is the room, so speech then room cuts at the pause.
+    const after = [...feed(1000, 0.06), ...feed(1000, 0.01)];
+    expect(after).toHaveLength(1);
+    expect(after[0]!.length).toBeLessThan(3000);
   });
 });

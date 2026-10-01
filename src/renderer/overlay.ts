@@ -214,11 +214,70 @@ host().onOverlayCursor((point) => {
 /** Which control the pointer is over, as a `data-hover` value. */
 function controlAt(node: Element | null): string {
   const button = node?.closest("button");
+  if (button === meetingStopButton) return "meeting-stop";
+  if (button === meetingClock) return "meeting-open";
   if (button === micButton) return "mic";
   if (button === cancelButton) return "cancel";
   if (button === acceptButton) return "accept";
   return "";
 }
+
+// --- Meeting capsule -----------------------------------------------------------
+//
+// A live microphone is never a surprise: while a meeting records and nobody is
+// dictating, the resting mark becomes a small red capsule with the clock and a
+// stop. Dictation still works; its states take the capsule over and hand back.
+
+const meetingClock = requireElement<HTMLButtonElement>("hud-meeting-open");
+const meetingStopButton = requireElement<HTMLButtonElement>("hud-meeting-stop");
+let meetingSince: number | null = null;
+let meetingTicker: number | null = null;
+
+function renderMeeting(): void {
+  const recording = meetingSince !== null;
+  hud.dataset.meeting = recording ? "true" : "false";
+  if (recording) {
+    hud.dataset.visible = "true";
+    const seconds = Math.max(0, Math.floor((Date.now() - (meetingSince ?? 0)) / 1_000));
+    const h = Math.floor(seconds / 3_600);
+    const m = String(Math.floor((seconds % 3_600) / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    meetingClock.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    if (meetingTicker === null) meetingTicker = window.setInterval(renderMeeting, 1_000);
+  } else if (meetingTicker !== null) {
+    window.clearInterval(meetingTicker);
+    meetingTicker = null;
+    // Back to the resting mark, or away, as the setting says.
+    if (state === "idle") hud.dataset.visible = showFlowBarAlways ? "true" : "false";
+  }
+  reportHitRegion();
+}
+
+host().onMeetingState((event) => {
+  meetingSince = event.recording ? (event.startedAt ?? Date.now()) : null;
+  renderMeeting();
+});
+void host()
+  .meetingRecorderStatus()
+  .then((status) => {
+    if (status.recording) {
+      meetingSince = Date.now();
+      renderMeeting();
+    }
+  })
+  .catch(() => {});
+
+meetingStopButton.addEventListener("click", () => {
+  meetingStopButton.disabled = true;
+  meetingClock.textContent = "Saving…";
+  void host()
+    .stopMeeting()
+    .catch(() => {})
+    .finally(() => {
+      meetingStopButton.disabled = false;
+    });
+});
+meetingClock.addEventListener("click", () => void host().showMeetings());
 
 hud.addEventListener("focusin", (event) => {
   if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {

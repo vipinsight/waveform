@@ -9,5 +9,8 @@
   -->
   <key>NSMicrophoneUsageDescription</key>
   <string>Waveform uses your microphone to transcribe speech locally.</string>
+  <!-- The Notetaker's system-audio tap. macOS asks once, naming this text. -->
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Waveform records what this Mac plays during a meeting, so the other participants are in the transcript. Nothing leaves this Mac.</string>
 </dict>
 </plist>

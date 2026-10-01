@@ -3,6 +3,8 @@ import { AudioCapture, type CaptureHandlers } from "../src/renderer/audio/captur
 
 const RATE = 8_000;
 const BLOCK = 400; // 50ms
+/** A quiet room, not digital zero: exact zeros are a stream that has not started. */
+const ROOM = 0.002;
 
 function block(amplitude: number): Float32Array {
   return new Float32Array(BLOCK).fill(amplitude);
@@ -15,7 +17,7 @@ function feedMs(capture: AudioCapture, ms: number, amplitude: number): void {
 /** Room, a phrase, and the pause that cuts it. */
 function speak(capture: AudioCapture): void {
   feedMs(capture, 1_000, 0.2);
-  feedMs(capture, 800, 0);
+  feedMs(capture, 800, ROOM);
 }
 
 function harness(
@@ -62,7 +64,7 @@ describe("AudioCapture", () => {
 
     await capture.start();
     // Calibration: 250ms of room before anything counts as speech.
-    feedMs(capture, 300, 0);
+    feedMs(capture, 300, ROOM);
     speak(capture);
     speak(capture);
     capture.stop();
@@ -76,13 +78,13 @@ describe("AudioCapture", () => {
     const { capture, priors } = harness(async () => ({ text: "words" }));
 
     await capture.start();
-    feedMs(capture, 300, 0);
+    feedMs(capture, 300, ROOM);
     speak(capture);
     capture.stop();
     await settled(capture);
 
     await capture.start();
-    feedMs(capture, 300, 0);
+    feedMs(capture, 300, ROOM);
     speak(capture);
     capture.stop();
     await settled(capture);
@@ -98,7 +100,7 @@ describe("AudioCapture", () => {
     });
 
     await capture.start();
-    feedMs(capture, 300, 0);
+    feedMs(capture, 300, ROOM);
     speak(capture);
     speak(capture);
     capture.stop();
@@ -124,7 +126,7 @@ describe("AudioCapture", () => {
     });
 
     await capture.start();
-    feedMs(capture, 300, 0);
+    feedMs(capture, 300, ROOM);
     speak(capture);
     speak(capture);
     capture.stop();

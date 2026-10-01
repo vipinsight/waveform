@@ -19,3 +19,4 @@ src-tauri/gen/schemas/
 *.p12
 *.pfx
 *.mobileprovision
+.claude/worktrees/

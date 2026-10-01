@@ -180,6 +180,16 @@ impl Rewriter {
         self.status().await
     }
 
+    /// The OpenRouter key, for callers with their own request to make.
+    pub async fn open_router_key(&self) -> Option<String> {
+        self.key.lock().await.clone()
+    }
+
+    /// The OpenRouter model the user chose for polish.
+    pub async fn open_router_model(&self) -> String {
+        self.settings.lock().await.value().open_router_model
+    }
+
     pub async fn clear_key(&self) -> AiStatus {
         *self.key.lock().await = None;
         *self.memory_only.lock().await = false;
@@ -581,7 +591,7 @@ fn unwrap_text(text: &str) -> String {
     inner.trim().to_string()
 }
 
-fn describe_failure(status: u16, body: &str) -> String {
+pub(crate) fn describe_failure(status: u16, body: &str) -> String {
     let detail = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|value| {

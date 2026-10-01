@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 5;
 
 /// Shared handle to the open database.
 ///
@@ -213,6 +213,55 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                 count    INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (heard_as, text)
             );",
+        )?;
+    }
+    if version < 3 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meetings (
+                id               TEXT PRIMARY KEY,
+                title            TEXT NOT NULL,
+                created_at       INTEGER NOT NULL,
+                duration_ms      INTEGER NOT NULL DEFAULT 0,
+                state            TEXT NOT NULL,
+                stage            TEXT,
+                language         TEXT NOT NULL,
+                speech_model     TEXT NOT NULL,
+                speakers         TEXT NOT NULL DEFAULT '{}',
+                summary          TEXT,
+                summary_model    TEXT,
+                has_system_audio INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS meetings_created_at ON meetings(created_at DESC);
+            CREATE TABLE IF NOT EXISTS meeting_lines (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                idx        INTEGER NOT NULL,
+                start_ms   INTEGER NOT NULL,
+                end_ms     INTEGER NOT NULL,
+                track      TEXT NOT NULL,
+                speaker    TEXT,
+                text       TEXT NOT NULL,
+                PRIMARY KEY (meeting_id, idx)
+            );
+            CREATE INDEX IF NOT EXISTS meeting_lines_time ON meeting_lines(meeting_id, start_ms);",
+        )?;
+    }
+    if version < 4 {
+        // What processing skipped or could not do, as structured notes the
+        // window turns into banners with buttons. Version 3 wrote prose into
+        // `stage`; those meetings keep it there and show it as is.
+        transaction.execute_batch(
+            "ALTER TABLE meetings ADD COLUMN notes TEXT NOT NULL DEFAULT '[]';",
+        )?;
+    }
+    if version < 5 {
+        // Meetings closed by version 3 wrote their interruption as prose in
+        // `stage`; the window now wants it as a note with a button.
+        transaction.execute(
+            "UPDATE meetings
+                SET notes = '[{\"kind\":\"interrupted\",\"text\":\"Waveform closed while this was recording. Everything up to that point was kept.\"}]',
+                    stage = NULL
+              WHERE state = 'failed' AND stage LIKE 'The app closed%'",
+            [],
         )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;

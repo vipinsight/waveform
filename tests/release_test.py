@@ -49,7 +49,7 @@ printf '%s\\n' "$@" > "$TEST_ROOT/upload-args"
 mkdir -p "$TEST_ROOT/upload"
 for arg do [ ! -f "$arg" ] || cp "$arg" "$TEST_ROOT/upload/"; done''')
         self.tool('pnpm', '''mkdir -p dist/native src-tauri/target/release/bundle/macos/Waveform.app src-tauri/target/release/bundle/dmg
-[ "${TEST_MISSING_HELPER:-}" = 1 ] || { touch dist/native/waveform-hotkey; chmod +x dist/native/waveform-hotkey; }
+[ "${TEST_MISSING_HELPER:-}" = 1 ] || { touch dist/native/waveform-hotkey dist/native/waveform-audiotap; chmod +x dist/native/waveform-hotkey dist/native/waveform-audiotap; }
 printf archive > src-tauri/target/release/bundle/macos/Waveform.app.tar.gz
 printf signature > src-tauri/target/release/bundle/macos/Waveform.app.tar.gz.sig
 printf dmg > "src-tauri/target/release/bundle/dmg/Waveform_${TEST_VERSION}_aarch64.dmg"''')
