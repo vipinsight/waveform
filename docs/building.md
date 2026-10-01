@@ -118,6 +118,13 @@ same Whisper `small`. It wanted a 2.5 GB virtual environment to be slower at it,
 so it was removed. If you installed it, the environment it left behind is
 `~/Library/Application Support/Waveform/whisper` and nothing needs it now.
 
+## Finding your way around
+
+[architecture.md](architecture.md#where-the-code-lives) maps the modules: in
+`src-tauri/src/`, `lib.rs` only lists them and the Tauri commands sit under
+`commands/` by domain; in `src/renderer/`, each section of the window is a
+file under `pages/` and `renderer.ts` only wires them together.
+
 ## Commands
 
 ```bash

@@ -61,15 +61,15 @@ guards the other side of it. The TypeScript equivalent is `isSpeechModelId`.
 
 1. `#model-list` is an empty `role="radiogroup"`
    ([index.html:374](../src/renderer/index.html)); the rows are built at runtime.
-2. `renderModels()` ([renderer.ts:621](../src/renderer/renderer.ts)) asks for
+2. `renderModels()` ([pages/models.ts](../src/renderer/pages/models.ts)) asks for
    `getModelCatalog()` and emits one `<button role="radio" data-model=…>` per
    entry. A model that cannot run is listed rather than hidden — the page's job
    is to say what is available and what it would take to have it — so it gets
    `aria-disabled="true"` and a line naming the setup command.
-3. A delegated click handler ([renderer.ts:209](../src/renderer/renderer.ts))
+3. A delegated click handler (`bindModels()` in the same file)
    validates the id with `isSpeechModelId`, ignores disabled rows, and calls
    `host().selectModel(id)`.
-4. `select_model` ([lib.rs:300](../src-tauri/src/lib.rs)) **persists before
+4. `select_model` ([commands/models.rs](../src-tauri/src/commands/models.rs)) **persists before
    starting**: otherwise the choice is lost on relaunch, and the next
    `settings-changed` broadcast snaps the picker back to the stored value.
 5. `ModelServer::select()` stops the previous engine only if the id actually
@@ -80,10 +80,10 @@ Two things about this are easy to miss:
 - `model(id)` ([model_server.rs:178](../src-tauri/src/model_server.rs)) resolves
   an unknown id to `MODELS[0]` — whichever model is first — rather than failing.
 - `select_model` is not the only entry point. Changing `modelId` through
-  `update_settings` reselects too ([lib.rs:211](../src-tauri/src/lib.rs)).
+  `update_settings` reselects too ([commands/settings.rs](../src-tauri/src/commands/settings.rs)).
 
 At launch the stored model is selected eagerly
-([lib.rs:695](../src-tauri/src/lib.rs)) so the first dictation is not the thing
+([bootstrap.rs](../src-tauri/src/bootstrap.rs)) so the first dictation is not the thing
 that waits for it.
 
 ## Three mechanisms
@@ -192,7 +192,9 @@ resamplers in the tree.
 
 The bytes cross as a JSON number array, because Tauri IPC is JSON
 ([tauri-bridge.ts:79](../src/renderer/tauri-bridge.ts)). `transcribe`
-([lib.rs:324](../src-tauri/src/lib.rs)) reads the language from settings **per
+([commands/speech.rs](../src-tauri/src/commands/speech.rs), through
+`Engine::transcribe` in [transcribe.rs](../src-tauri/src/transcribe.rs)) reads the
+language from settings **per
 phrase** rather than fixing it when the engine starts, so changing it takes
 effect on the next phrase instead of after a reload.
 
