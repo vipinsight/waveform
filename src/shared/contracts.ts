@@ -259,6 +259,35 @@ export interface SavedDictation {
   polishModel?: string | null;
 }
 
+/** A name or term the speech engine should get right. */
+export interface DictionaryTerm {
+  id: number;
+  /** How it should be typed. */
+  text: string;
+  /** What the engine tends to hear instead. */
+  heardAs: string[];
+  /** Typed by the user, or accepted from a correction they made. */
+  source: "manual" | "learned";
+  /** Phrases it was prompted into or corrected in. */
+  uses: number;
+  lastUsedAt: number | null;
+  createdAt: number;
+}
+
+/** A term a transcript edit suggests learning. */
+export interface DictionarySuggestion {
+  /** What the engine wrote. */
+  heardAs: string;
+  /** What the user changed it to. */
+  text: string;
+}
+
+/** What saving a hand edit to a transcript returns. */
+export interface EditOutcome {
+  entries: SavedDictation[];
+  suggestions: DictionarySuggestion[];
+}
+
 export interface AppStats {
   words: number;
   phrases: number;
@@ -384,6 +413,17 @@ export interface DesktopApi {
   /** Replaces the words on a saved dictation after re-running the engine. */
   updateDictation(id: string, text: string): Promise<SavedDictation[]>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
+  /** Saves words the user corrected by hand, and says what that suggests learning. */
+  editDictation(id: string, text: string): Promise<EditOutcome>;
+
+  getDictionary(): Promise<DictionaryTerm[]>;
+  addDictionaryTerm(text: string, heardAs: string[], learned?: boolean): Promise<DictionaryTerm[]>;
+  updateDictionaryTerm(id: number, text: string, heardAs: string[]): Promise<DictionaryTerm[]>;
+  removeDictionaryTerm(id: number): Promise<DictionaryTerm[]>;
+  /** Adds every term in a pasted, comma- or line-separated list. */
+  importDictionary(text: string): Promise<DictionaryTerm[]>;
+  declineDictionarySuggestion(suggestion: DictionarySuggestion): Promise<void>;
+  onDictionaryChanged(listener: (terms: DictionaryTerm[]) => void): () => void;
   getStats(): Promise<AppStats>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   /** Every model, and what is on this machine for each. */

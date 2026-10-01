@@ -71,6 +71,13 @@
             </svg>
             <span>Dictation</span>
           </button>
+          <button class="nav-item" type="button" data-view="dictionary">
+            <svg data-icon="book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 7v14" />
+              <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+            </svg>
+            <span>Dictionary</span>
+          </button>
           <button class="nav-item" type="button" data-view="ai">
             <svg data-icon="wand" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M11.667 5.834 14.167 8.334M4.167 5v3.334M15.833 11.667V15M5.833 6.667H2.5M17.5 13.334h-3.333M18.033 3.034l-1.066-1.067a1.25 1.25 0 0 0-1.768 0L1.967 15.534a1.25 1.25 0 0 0 0 1.767l1.066 1.067a1.25 1.25 0 0 0 1.768 0L18.033 4.467a1.25 1.25 0 0 0 0-1.767Z" />
@@ -284,25 +291,71 @@
             </div>
           </div>
 
-          <h2 class="section-label">Vocabulary</h2>
-          <div class="card">
-            <label class="row row-stacked" for="speech-vocabulary">
+        </section>
+
+        <!--
+          Names and jargon the engine keeps getting wrong. A page of its own:
+          the list grows, people come back to it, and it is read by every
+          engine rather than being one more dictation setting.
+        -->
+        <section class="view" id="view-dictionary" hidden>
+          <div class="view-head">
+            <h1 class="display">Dictionary</h1>
+            <span class="view-note">Read to the engine before every phrase</span>
+          </div>
+          <!--
+            Names and jargon the engine keeps getting wrong. The terms most
+            likely to come up are read to the engine before each phrase, and
+            anything it still mishears is put right afterwards. Terms arrive
+            two ways: typed here, or offered when a transcript is corrected.
+          -->
+          <div class="card dictionary" id="dictionary">
+            <div class="row row-stacked">
               <span class="row-label">
                 Names and terms to get right
-                <small>
-                  Whisper is primed with these before every phrase. Separate them
-                  with commas: people, products, the jargon it keeps mishearing.
+                <small id="dictionary-hint">
+                  People, products, jargon. Each is read to the engine before a
+                  phrase, and fixed afterwards if it still comes out wrong.
+                  Correcting a transcript offers to add the word here.
                 </small>
               </span>
-              <textarea
-                id="speech-vocabulary"
-                class="vocabulary-input"
-                rows="2"
+              <form class="dictionary-add" id="dictionary-add" autocomplete="off">
+                <input
+                  id="dictionary-text"
+                  class="dictionary-field"
+                  type="text"
+                  placeholder="Term, as it should be typed"
+                  aria-label="Term"
+                  spellcheck="false"
+                  required
+                />
+                <input
+                  id="dictionary-heard"
+                  class="dictionary-field is-secondary"
+                  type="text"
+                  placeholder="Heard as (optional)"
+                  aria-label="What the engine hears instead"
+                  spellcheck="false"
+                />
+                <button class="pill-button is-primary" type="submit">Add</button>
+              </form>
+            </div>
+            <div class="dictionary-tools" id="dictionary-tools" hidden>
+              <input
+                id="dictionary-search"
+                class="dictionary-field is-search"
+                type="search"
+                placeholder="Find a term"
+                aria-label="Find a term"
                 spellcheck="false"
-                placeholder="Tauri, Parakeet, whisper.cpp, Vipin"
-                aria-label="Vocabulary"
-              ></textarea>
-            </label>
+              />
+              <span class="view-note" id="dictionary-count"></span>
+              <button class="pill-button" type="button" id="dictionary-export">Copy list</button>
+            </div>
+            <ul class="dictionary-list" id="dictionary-list" aria-label="Dictionary"></ul>
+            <p class="dictionary-empty" id="dictionary-empty">
+              Nothing yet. Paste a comma-separated list into the term field to add several at once.
+            </p>
           </div>
         </section>
 

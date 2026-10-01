@@ -791,8 +791,9 @@ impl ModelServer {
     /// it takes effect on the next phrase instead of after a reload.
     ///
     /// `prompt` primes the decoder with text (see `whisper_cpp::build_prompt`).
-    /// Only whisper.cpp takes one: Parakeet has no prompt input, and the Qwen
-    /// worker does not plumb one through yet.
+    /// whisper.cpp takes it as its initial prompt and Qwen as its context
+    /// text; Parakeet has no prompt input, so for it the dictionary can only
+    /// act on the words that come back.
     pub async fn transcribe(
         &self,
         wav: Vec<u8>,
@@ -807,7 +808,7 @@ impl ModelServer {
         let id = self.selected.lock().await.clone();
         match runtime(model(&id).engine) {
             Runtime::Http => self.transcribe_parakeet(wav, language).await,
-            Runtime::Worker(spec) => self.transcribe_worker(spec, wav, language).await,
+            Runtime::Worker(spec) => self.transcribe_worker(spec, wav, language, prompt).await,
             Runtime::InProcess => self.transcribe_whisper_cpp(wav, language, prompt).await,
         }
     }
@@ -1103,6 +1104,7 @@ impl ModelServer {
         spec: &WorkerSpec,
         wav: Vec<u8>,
         language: &str,
+        prompt: &str,
     ) -> Result<String, String> {
         let job_id;
         let request;
@@ -1124,6 +1126,8 @@ impl ModelServer {
                 // Null, not "", so the worker can pass it straight through to
                 // an engine that reads null as "detect".
                 "language": (!language.is_empty()).then(|| language.to_string()),
+                // Qwen reads this as hot words and context; empty primes nothing.
+                "context": prompt,
             })
             .to_string();
 

@@ -12,6 +12,8 @@ import type {
   PolishModelStatus,
   ResourceUsage,
   UpdateEvent,
+  DictionaryTerm,
+  DictionarySuggestion,
 } from "../shared/contracts";
 import {
   HOTKEY_BINDINGS,
@@ -79,7 +81,15 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
-  speechVocabulary: requireElement<HTMLTextAreaElement>("speech-vocabulary"),
+  dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
+  dictionaryText: requireElement<HTMLInputElement>("dictionary-text"),
+  dictionaryHeard: requireElement<HTMLInputElement>("dictionary-heard"),
+  dictionaryTools: requireElement<HTMLElement>("dictionary-tools"),
+  dictionarySearch: requireElement<HTMLInputElement>("dictionary-search"),
+  dictionaryCount: requireElement<HTMLElement>("dictionary-count"),
+  dictionaryExport: requireElement<HTMLButtonElement>("dictionary-export"),
+  dictionaryList: requireElement<HTMLUListElement>("dictionary-list"),
+  dictionaryEmpty: requireElement<HTMLElement>("dictionary-empty"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
   dictationKeyboard: requireElement<HTMLElement>("dictation-keyboard"),
   dictationKeyboardCaption: requireElement<HTMLElement>("dictation-keyboard-caption"),
@@ -427,6 +437,17 @@ function wireEvents(): void {
     entries = next;
     renderHistory();
   });
+  host().onDictionaryChanged((next) => {
+    dictionary = next;
+    renderDictionary();
+  });
+  void host()
+    .getDictionary()
+    .then((next) => {
+      dictionary = next;
+      renderDictionary();
+    })
+    .catch(() => {});
 
   bindGroup(".nav[aria-label='Sections'] [data-view]", (button) =>
     showView(button.dataset.view ?? "dictate"),
@@ -674,10 +695,7 @@ function wireEvents(): void {
   element.transcribeDropToggle.addEventListener("change", () => {
     void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
   });
-  // On change rather than input: the terms matter per phrase, not per key.
-  element.speechVocabulary.addEventListener("change", () => {
-    void patchSettings({ speechVocabulary: element.speechVocabulary.value });
-  });
+  bindDictionary();
   element.logCopy.addEventListener("click", () => {
     const text = logLines
       .map((line) => `${new Date(line.at).toISOString()} ${line.source} ${line.message}`)
@@ -764,7 +782,7 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictation", "dictionary", "overview", "models", "ai"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
   // Both lists describe files on the disk, which arrive while the section is
@@ -942,10 +960,6 @@ function applySettings(next: AppSettings): void {
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
   element.transcribeDropToggle.checked = next.transcribeOnDrop;
-  // Not while it is being typed in: a settings echo would move the caret.
-  if (document.activeElement !== element.speechVocabulary) {
-    element.speechVocabulary.value = next.speechVocabulary;
-  }
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
@@ -2717,6 +2731,8 @@ function renderEntry(entry: SavedDictation): HTMLElement {
   const text = document.createElement("p");
   text.className = "entry-text";
   text.textContent = entry.text;
+  text.title = "Double-click to edit";
+  text.addEventListener("dblclick", () => beginEntryEdit(entry, text));
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
@@ -2776,6 +2792,13 @@ function entryMenuItems(
   text: HTMLElement,
 ): EntryMenuItem[] {
   const items: EntryMenuItem[] = [];
+  if (entry.transcribedText !== "" || !entry.hasAudio) {
+    items.push({
+      label: "Edit text",
+      icon: EDIT_ICON,
+      onSelect: () => beginEntryEdit(entry, text),
+    });
+  }
   if (entry.hasAudio) {
     items.push({
       label: "Retry transcript",
@@ -2935,6 +2958,238 @@ function audioFileName(createdAt: number): string {
 /**
  * Runs the speech engine again on a saved recording and updates that row.
  */
+// --- Transcript editing and the dictionary ---------------------------------
+
+/** Pencil, matching the other row glyphs. */
+const EDIT_ICON =
+  '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" />';
+
+/**
+ * Turns an entry's text into a field, saving on Enter or blur.
+ *
+ * A correction here is the one moment the app can see what the engine wrote
+ * and what the user meant side by side, so the save also asks the dictionary
+ * what it would learn, and offers that under the row.
+ */
+function beginEntryEdit(entry: SavedDictation, text: HTMLElement): void {
+  if (text.parentElement?.querySelector(".entry-editor")) return;
+  const before = entry.text;
+  const editor = document.createElement("textarea");
+  editor.className = "entry-editor";
+  editor.value = before;
+  editor.rows = Math.max(1, Math.min(6, Math.ceil(before.length / 70)));
+  editor.setAttribute("aria-label", "Edit transcript");
+  text.replaceWith(editor);
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+
+  let settled = false;
+  const finish = (save: boolean) => {
+    if (settled) return;
+    settled = true;
+    const after = editor.value.trim();
+    editor.replaceWith(text);
+    if (!save || !after || after === before) return;
+    void saveEntryEdit(entry, after, text);
+  };
+  editor.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  editor.addEventListener("blur", () => finish(true));
+}
+
+async function saveEntryEdit(entry: SavedDictation, after: string, text: HTMLElement): Promise<void> {
+  try {
+    const outcome = await host().editDictation(entry.id, after);
+    entries = outcome.entries;
+    entry.text = after;
+    text.textContent = after;
+    setStatus("Transcript updated");
+    const row = text.closest(".entry");
+    if (row && outcome.suggestions.length > 0) {
+      offerSuggestions(row as HTMLElement, outcome.suggestions);
+    }
+  } catch (error) {
+    text.textContent = entry.text;
+    setStatus(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * One line under the row per suggestion: add it, or not this time.
+ *
+ * Asked, never assumed: an edit is as often a rewording as a fix, and a
+ * dictionary full of rewordings makes every prompt worse.
+ */
+function offerSuggestions(row: HTMLElement, suggestions: DictionarySuggestion[]): void {
+  row.querySelectorAll(".entry-suggest").forEach((node) => node.remove());
+  for (const suggestion of suggestions) {
+    const bar = document.createElement("div");
+    bar.className = "entry-suggest";
+    bar.setAttribute("role", "status");
+
+    const prompt = document.createElement("span");
+    prompt.className = "entry-suggest-text";
+    prompt.append("Add ");
+    const term = document.createElement("strong");
+    term.textContent = suggestion.text;
+    prompt.append(term, " to the dictionary? It was heard as ");
+    const heard = document.createElement("em");
+    heard.textContent = suggestion.heardAs;
+    prompt.append(heard, ".");
+
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "pill-button is-primary is-small";
+    add.textContent = "Add";
+    add.addEventListener("click", () => {
+      add.disabled = true;
+      void host()
+        .addDictionaryTerm(suggestion.text, [suggestion.heardAs], true)
+        .then(() => {
+          bar.remove();
+          setStatus(`Added ${suggestion.text} to the dictionary`);
+        })
+        .catch((error: unknown) => {
+          add.disabled = false;
+          setStatus(error instanceof Error ? error.message : String(error));
+        });
+    });
+
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "pill-button is-small";
+    skip.textContent = "Not now";
+    skip.addEventListener("click", () => {
+      bar.remove();
+      void host().declineDictionarySuggestion(suggestion).catch(() => {});
+    });
+
+    bar.append(prompt, add, skip);
+    row.after(bar);
+  }
+}
+
+let dictionary: DictionaryTerm[] = [];
+
+/** Above this many terms the list gets a search field. */
+const DICTIONARY_SEARCH_FROM = 8;
+
+function bindDictionary(): void {
+  element.dictionaryAdd.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = element.dictionaryText.value.trim();
+    if (!text) return;
+    const heard = element.dictionaryHeard.value
+      .split(",")
+      .map((variant) => variant.trim())
+      .filter(Boolean);
+    // A pasted list adds every term in it; a single term can carry its mis-hearings.
+    const request =
+      text.includes(",") || text.includes("\n")
+        ? host().importDictionary(text)
+        : host().addDictionaryTerm(text, heard, false);
+    void request
+      .then((next) => {
+        dictionary = next;
+        renderDictionary();
+        element.dictionaryText.value = "";
+        element.dictionaryHeard.value = "";
+        element.dictionaryText.focus();
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : String(error));
+      });
+  });
+  element.dictionarySearch.addEventListener("input", renderDictionary);
+  element.dictionaryExport.addEventListener("click", () => {
+    void navigator.clipboard.writeText(dictionary.map((term) => term.text).join(", "));
+    element.dictionaryExport.textContent = "Copied";
+    setTimeout(() => {
+      element.dictionaryExport.textContent = "Copy list";
+    }, 1200);
+  });
+}
+
+function renderDictionary(): void {
+  const query = element.dictionarySearch.value.trim().toLowerCase();
+  const shown = query
+    ? dictionary.filter(
+        (term) =>
+          term.text.toLowerCase().includes(query) ||
+          term.heardAs.some((variant) => variant.toLowerCase().includes(query)),
+      )
+    : dictionary;
+
+  element.dictionaryTools.hidden = dictionary.length < DICTIONARY_SEARCH_FROM;
+  element.dictionaryCount.textContent =
+    dictionary.length === 1 ? "1 term" : `${dictionary.length} terms`;
+  element.dictionaryEmpty.hidden = dictionary.length > 0;
+  element.dictionaryEmpty.textContent =
+    dictionary.length === 0
+      ? "Nothing yet. Paste a comma-separated list into the term field to add several at once."
+      : "";
+  if (dictionary.length > 0 && shown.length === 0) {
+    element.dictionaryEmpty.hidden = false;
+    element.dictionaryEmpty.textContent = "No term matches that.";
+  }
+
+  element.dictionaryList.replaceChildren(...shown.map(renderDictionaryTerm));
+}
+
+function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
+  const item = document.createElement("li");
+  item.className = "dictionary-term";
+
+  const name = document.createElement("span");
+  name.className = "dictionary-term-text";
+  name.textContent = term.text;
+  if (term.source === "learned") {
+    const tag = document.createElement("span");
+    tag.className = "dictionary-tag";
+    tag.textContent = "Learned";
+    tag.title = "Added from a correction you made to a transcript";
+    name.append(tag);
+  }
+
+  const heard = document.createElement("span");
+  heard.className = "dictionary-term-heard";
+  if (term.heardAs.length > 0) {
+    heard.append("heard as ");
+    term.heardAs.forEach((variant, index) => {
+      if (index > 0) heard.append(", ");
+      const chip = document.createElement("em");
+      chip.textContent = variant;
+      heard.append(chip);
+    });
+  }
+
+  const uses = document.createElement("span");
+  uses.className = "dictionary-term-uses";
+  uses.textContent = term.uses === 0 ? "" : term.uses === 1 ? "used once" : `used ${term.uses}×`;
+
+  const remove = iconButton("Remove term", TRASH_ICON, "is-danger", () => {
+    void host()
+      .removeDictionaryTerm(term.id)
+      .then((next) => {
+        dictionary = next;
+        renderDictionary();
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : String(error));
+      });
+  });
+
+  item.append(name, heard, uses, remove);
+  return item;
+}
+
 async function retryHistoryTranscription(
   entry: SavedDictation,
   button: HTMLButtonElement,

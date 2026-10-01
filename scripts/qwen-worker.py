@@ -93,7 +93,9 @@ def main():
             # None asks Qwen to detect, which on a single phrase it does
             # unreliably, so the caller names a language when it can.
             language = language_name(request.get("language"))
-            result = model.transcribe(audio=audio_url, language=language)[0]
+            # Names and the session so far; Qwen takes them as context text.
+            context = request.get("context") or ""
+            result = model.transcribe(audio=audio_url, context=context, language=language)[0]
             send(
                 {
                     "type": "result",

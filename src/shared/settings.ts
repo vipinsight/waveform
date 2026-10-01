@@ -39,8 +39,9 @@ export interface AppSettings {
   /** Language handed to the speech model. Empty asks it to detect. */
   speechLanguage: SpeechLanguageCode;
   /**
-   * Names and terms the speech model is primed with before every phrase, as
-   * typed. Empty primes it with nothing.
+   * Retired: one release kept a comma list of terms here. The host moves it
+   * into the dictionary on launch and clears it; the field stays so an older
+   * settings file still loads.
    */
   speechVocabulary: string;
   /** Empty means let macOS choose its current default input. */

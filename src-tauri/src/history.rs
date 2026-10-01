@@ -188,6 +188,35 @@ impl HistoryStore {
         self.entries()
     }
 
+    /// Replaces the words a user corrected by hand.
+    ///
+    /// Unlike `update_text`, this is not the engine speaking again: the edit
+    /// goes on the text the user was looking at -- the polished one when
+    /// polish ran -- and the engine's own words stay underneath, so the
+    /// dictionary can still learn what was heard and what it should have been.
+    pub fn edit_text(&mut self, id: &str, text: &str) -> Result<Vec<Dictation>, String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err("Nothing to save.".into());
+        }
+        let changed = self
+            .db
+            .with(|connection| {
+                connection.execute(
+                    "UPDATE dictations
+                        SET polished_text = CASE WHEN polished_text IS NULL THEN NULL ELSE ?2 END,
+                            transcribed_text = CASE WHEN polished_text IS NULL THEN ?2 ELSE transcribed_text END
+                      WHERE id = ?1",
+                    params![id, trimmed],
+                )
+            })
+            .map_err(describe)?;
+        if changed == 0 {
+            return Err("That dictation is gone.".into());
+        }
+        self.entries()
+    }
+
     pub fn clear(&mut self) -> Result<Vec<Dictation>, String> {
         let files = self
             .db
@@ -582,6 +611,34 @@ mod tests {
         assert_eq!(entries[0].polish_model, None);
         assert!(entries[0].has_audio);
         assert_eq!(history.audio(&id).unwrap(), wav);
+    }
+
+    #[test]
+    fn a_hand_edit_changes_the_shown_text_and_keeps_the_engines_words() {
+        let mut history = store();
+        let plain = history.add(spoken("towery is the shell", None)).unwrap()[0].id.clone();
+        let entries = history.edit_text(&plain, "Tauri is the shell").unwrap();
+        let entry = entries.iter().find(|e| e.id == plain).unwrap();
+        assert_eq!(entry.text, "Tauri is the shell");
+        assert_eq!(entry.transcribed_text, "Tauri is the shell");
+
+        let polished = history
+            .add(NewDictation {
+                transcribed: "um towery is the shell",
+                polished: Some("Towery is the shell."),
+                speech_model: "m",
+                polish_model: Some("p"),
+                wav: None,
+            })
+            .unwrap()[0]
+            .id
+            .clone();
+        let entries = history.edit_text(&polished, "Tauri is the shell.").unwrap();
+        let entry = entries.iter().find(|e| e.id == polished).unwrap();
+        assert_eq!(entry.text, "Tauri is the shell.");
+        assert_eq!(entry.polished_text.as_deref(), Some("Tauri is the shell."));
+        assert_eq!(entry.transcribed_text, "um towery is the shell");
+        assert_eq!(entry.polish_model.as_deref(), Some("p"));
     }
 
     #[test]
