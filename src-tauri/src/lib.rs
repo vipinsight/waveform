@@ -21,11 +21,12 @@ mod resources;
 mod rewrite;
 mod settings;
 mod stats;
+mod store;
 mod updates;
 mod whisper_cpp;
 
 use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
-use history::{Dictation as SavedDictation, HistoryStore};
+use history::{Dictation as SavedDictation, HistoryStore, NewDictation};
 use local_llm::{LocalDownloads, LocalModelStatus};
 use model_server::{ModelEvent, ModelServer, ModelStatus, MODELS};
 use rewrite::{AiStatus, Rewriter};
@@ -330,7 +331,7 @@ async fn update_settings(
 
 #[tauri::command]
 async fn get_history(state: State<'_, AppState>) -> Result<Vec<SavedDictation>, String> {
-    Ok(state.history.lock().await.entries())
+    state.history.lock().await.entries()
 }
 
 #[tauri::command]
@@ -339,7 +340,7 @@ async fn delete_dictation(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<SavedDictation>, String> {
-    let entries = state.history.lock().await.remove(&id);
+    let entries = state.history.lock().await.remove(&id)?;
     let _ = app.emit("history-changed", &entries);
     Ok(entries)
 }
@@ -349,7 +350,7 @@ async fn clear_history(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<SavedDictation>, String> {
-    let entries = state.history.lock().await.clear();
+    let entries = state.history.lock().await.clear()?;
     let _ = app.emit("history-changed", &entries);
     Ok(entries)
 }
@@ -423,11 +424,14 @@ async fn save_dictation(
     text: String,
     wav_bytes: Option<Vec<u8>>,
 ) -> Result<Vec<SavedDictation>, String> {
-    let entries = state
-        .history
-        .lock()
-        .await
-        .add(&text, wav_bytes.as_deref());
+    let speech_model = state.settings.lock().await.value().model_id;
+    let entries = state.history.lock().await.add(NewDictation {
+        transcribed: &text,
+        polished: None,
+        speech_model: &speech_model,
+        polish_model: None,
+        wav: wav_bytes.as_deref(),
+    })?;
     let _ = app.emit("history-changed", &entries);
     Ok(entries)
 }
@@ -1017,8 +1021,9 @@ pub fn run() {
             std::fs::create_dir_all(&user_data).ok();
 
             let settings = Arc::new(Mutex::new(SettingsStore::load(user_data.clone())));
-            let stats = Arc::new(Mutex::new(StatsStore::load(user_data.clone())));
-            let history = Arc::new(Mutex::new(HistoryStore::load(user_data.clone())));
+            let opened = store::Database::open(&user_data);
+            let stats = Arc::new(Mutex::new(StatsStore::new(opened.database.clone())));
+            let history = Arc::new(Mutex::new(HistoryStore::new(opened.database)));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
             let selected = initial.model_id.clone();
 
@@ -1028,6 +1033,9 @@ pub fn run() {
                 "app",
                 format!("Waveform {} starting, model {selected}", app.package_info().version),
             );
+            for note in &opened.notes {
+                logs.info(app.handle(), "store", note.clone());
+            }
 
             let handle = app.handle().clone();
             let recorder = logs.clone();
@@ -1604,7 +1612,9 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .history
         .try_lock()
         .ok()
-        .and_then(|history| history.entries().first().map(|entry| entry.text.clone()));
+        .and_then(|history| history.entries().ok())
+        .and_then(|entries| entries.into_iter().find(SavedDictation::has_words))
+        .map(|entry| entry.text);
     let paste_last = MenuItem::with_id(
         app,
         "paste-last",

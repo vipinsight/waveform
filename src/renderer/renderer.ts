@@ -2563,7 +2563,7 @@ function renderHistory(): void {
   const matches =
     query === ""
       ? entries
-      : entries.filter((entry) => entry.text.toLowerCase().includes(query.toLowerCase()));
+      : entries.filter((entry) => entryMatches(entry, query));
 
   // Both cards stay in the tree; renderDictationDeck decides which is showing.
   element.history.replaceChildren(element.onboard, element.modelDeck);
@@ -2667,6 +2667,27 @@ function renderDay(day: SavedDictation[]): HTMLElement {
   return section;
 }
 
+/**
+ * Whether a search hits an entry. The words as spoken count as well as the
+ * polished ones: what someone remembers saying is not always what polish
+ * left on the page.
+ */
+function entryMatches(entry: SavedDictation, query: string): boolean {
+  const needle = query.toLowerCase();
+  if (entry.text.toLowerCase().includes(needle)) return true;
+  return Boolean(entry.transcribedText?.toLowerCase().includes(needle));
+}
+
+/** Which models made an entry, for the tooltip on its time. */
+function entryProvenance(entry: SavedDictation): string {
+  const parts: string[] = [];
+  if (entry.speechModel && entry.speechModel !== "unknown") {
+    parts.push(`Transcribed by ${entry.speechModel}`);
+  }
+  if (entry.polishModel) parts.push(`Polished by ${entry.polishModel}`);
+  return parts.join("\n");
+}
+
 function renderEntry(entry: SavedDictation): HTMLElement {
   const article = document.createElement("article");
   const isActive = playback?.id === entry.id;
@@ -2680,7 +2701,9 @@ function renderEntry(entry: SavedDictation): HTMLElement {
   const time = document.createElement("span");
   time.className = "entry-time";
   time.textContent = formatTime(entry.createdAt);
-  time.title = new Date(entry.createdAt).toLocaleString();
+  time.title = [new Date(entry.createdAt).toLocaleString(), entryProvenance(entry)]
+    .filter(Boolean)
+    .join("\n");
 
   const text = document.createElement("p");
   text.className = "entry-text";
@@ -2750,6 +2773,15 @@ function entryMenuItems(
       icon: RETRY_ICON,
       // The trigger shows the busy state: the menu is gone by then.
       onSelect: () => void retryHistoryTranscription(entry, trigger, text),
+    });
+  }
+  // Polish rewrote this one; the words as spoken are still worth having.
+  if (entry.polishedText && entry.transcribedText) {
+    const original = entry.transcribedText;
+    items.push({
+      label: "Copy original transcript",
+      icon: COPY_ICON,
+      onSelect: () => void navigator.clipboard.writeText(original),
     });
   }
   items.push({

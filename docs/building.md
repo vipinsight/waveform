@@ -101,6 +101,7 @@ Everything lands under Application Support:
 
 | What | Path |
 | --- | --- |
+| Dictations and lifetime counters | `~/Library/Application Support/Waveform/waveform.db` (SQLite, WAL mode; `audio/<id>.wav` beside it holds each recording) |
 | Whisper weights | `~/Library/Application Support/Waveform/models/whisper/` (`Waveform Dev/…` from `pnpm app`) |
 | Parakeet weights | `~/Library/Application Support/Waveform/models/parakeet/` |
 | Qwen weights | `~/Library/Application Support/Waveform/models/qwen/` |

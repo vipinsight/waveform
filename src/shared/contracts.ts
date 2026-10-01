@@ -245,11 +245,18 @@ export interface PolishModelStatus {
 
 export interface SavedDictation {
   id: string;
+  /** What the list shows: the polished text when there is one, else the transcript. */
   text: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
   /** Whether a local WAV exists for playback. */
   hasAudio?: boolean;
+  /** What the speech model returned. Empty when it found no words. */
+  transcribedText?: string;
+  /** What AI Polish made of it, when it ran. */
+  polishedText?: string | null;
+  speechModel?: string;
+  polishModel?: string | null;
 }
 
 export interface AppStats {

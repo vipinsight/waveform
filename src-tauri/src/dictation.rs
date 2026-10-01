@@ -5,7 +5,7 @@
 //! told about it.
 
 use crate::gestures::{Command, GestureMachine};
-use crate::history::HistoryStore;
+use crate::history::{HistoryStore, NewDictation};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
 use crate::model_server::ModelServer;
 use crate::rewrite::Rewriter;
@@ -429,11 +429,12 @@ impl Dictation {
     pub async fn paste_last(self: &Arc<Self>) {
         let text = {
             let history = self.history.lock().await;
-            // A failed attempt's placeholder is not something anyone said.
+            // A failed attempt's row is not something anyone said.
             history
                 .entries()
+                .unwrap_or_default()
                 .into_iter()
-                .find(|entry| !crate::history::is_placeholder(&entry.text))
+                .find(|entry| entry.has_words())
                 .map(|entry| entry.text)
         };
         let Some(text) = text else { return };
@@ -760,12 +761,15 @@ impl Dictation {
             let Some(wav) = crate::history::concat_mono_wavs(&clips) else {
                 return;
             };
-            let entries = self
-                .history
-                .lock()
-                .await
-                .add("", Some(wav.as_slice()));
-            let _ = self.app.emit("history-changed", entries);
+            let speech_model = self.settings.lock().await.value().model_id;
+            self.save_dictation(NewDictation {
+                transcribed: "",
+                polished: None,
+                speech_model: &speech_model,
+                polish_model: None,
+                wav: Some(wav.as_slice()),
+            })
+            .await;
             return;
         }
 
@@ -807,8 +811,21 @@ impl Dictation {
         }
 
         let wav = crate::history::concat_mono_wavs(&clips);
-        let entries = self.history.lock().await.add(&text, wav.as_deref());
-        let _ = self.app.emit("history-changed", entries);
+        let settings = self.settings.lock().await.value();
+        let polished = (text != joined).then_some(text.as_str());
+        let polish_model = if settings.polish_engine == "local" {
+            settings.local_model_id.as_str()
+        } else {
+            settings.open_router_model.as_str()
+        };
+        self.save_dictation(NewDictation {
+            transcribed: &joined,
+            polished,
+            speech_model: &settings.model_id,
+            polish_model: polished.map(|_| polish_model),
+            wav: wav.as_deref(),
+        })
+        .await;
 
         let _ = self.app.emit_to(
             MAIN_LABEL,
@@ -1012,6 +1029,19 @@ impl Dictation {
                 phrase: None,
             },
         );
+    }
+
+    /// Writes a dictation to history and tells the window, or says why not.
+    ///
+    /// The words were already pasted by the time this runs, so a failure here
+    /// is a lost record, not a lost dictation -- worth a message, not a retry.
+    async fn save_dictation(&self, dictation: NewDictation<'_>) {
+        match self.history.lock().await.add(dictation) {
+            Ok(entries) => {
+                let _ = self.app.emit("history-changed", entries);
+            }
+            Err(message) => self.report_error(&message).await,
+        }
     }
 
     async fn report_error(&self, message: &str) {
