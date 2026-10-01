@@ -4,6 +4,7 @@
 //! shared with the Electron build and reached through the same `window.waveform`
 //! surface. This crate supplies that surface natively.
 
+mod audio;
 mod download;
 mod focus;
 mod gestures;
@@ -14,6 +15,7 @@ mod hotkey;
 mod dictation;
 mod dictionary;
 mod local_llm;
+mod meetings;
 mod mic;
 mod model_server;
 mod panel;

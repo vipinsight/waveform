@@ -88,7 +88,8 @@ cd "$ROOT"
 # while the engine was still shutting down.
 dev_still_running() {
   pgrep -f "$APP/Contents/MacOS/Waveform" >/dev/null 2>&1 \
-    || pgrep -f "$APP/Contents/Resources/waveform-hotkey" >/dev/null 2>&1
+    || pgrep -f "$APP/Contents/Resources/waveform-hotkey" >/dev/null 2>&1 \
+    || pgrep -f "$APP/Contents/Resources/waveform-audiotap" >/dev/null 2>&1
 }
 
 wait_for_dev_exit() {
@@ -153,6 +154,10 @@ cp icons/waveform.icns "$APP/Contents/Resources/icon.icns"
 if [ -x dist/native/waveform-hotkey ]; then
   cp dist/native/waveform-hotkey "$APP/Contents/Resources/waveform-hotkey"
 fi
+# The system-audio tap for meetings, a sibling process for the same reason.
+if [ -x dist/native/waveform-audiotap ]; then
+  cp dist/native/waveform-audiotap "$APP/Contents/Resources/waveform-audiotap"
+fi
 
 # The Qwen engine is a Python script, not a library. Bundling it keeps the app
 # independent of the checkout it was built from.
@@ -171,6 +176,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.3.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSMicrophoneUsageDescription</key><string>Waveform uses your microphone to transcribe speech locally.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Waveform records what this Mac plays during a meeting, so the other participants are in the transcript. Nothing leaves this Mac.</string>
 </dict></plist>
 PLIST
 

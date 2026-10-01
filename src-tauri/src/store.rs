@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// Shared handle to the open database.
 ///
@@ -213,6 +213,36 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                 count    INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (heard_as, text)
             );",
+        )?;
+    }
+    if version < 3 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meetings (
+                id               TEXT PRIMARY KEY,
+                title            TEXT NOT NULL,
+                created_at       INTEGER NOT NULL,
+                duration_ms      INTEGER NOT NULL DEFAULT 0,
+                state            TEXT NOT NULL,
+                stage            TEXT,
+                language         TEXT NOT NULL,
+                speech_model     TEXT NOT NULL,
+                speakers         TEXT NOT NULL DEFAULT '{}',
+                summary          TEXT,
+                summary_model    TEXT,
+                has_system_audio INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS meetings_created_at ON meetings(created_at DESC);
+            CREATE TABLE IF NOT EXISTS meeting_lines (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                idx        INTEGER NOT NULL,
+                start_ms   INTEGER NOT NULL,
+                end_ms     INTEGER NOT NULL,
+                track      TEXT NOT NULL,
+                speaker    TEXT,
+                text       TEXT NOT NULL,
+                PRIMARY KEY (meeting_id, idx)
+            );
+            CREATE INDEX IF NOT EXISTS meeting_lines_time ON meeting_lines(meeting_id, start_ms);",
         )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
