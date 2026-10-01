@@ -1,10 +1,27 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const html = readFileSync("src/renderer/index.html", "utf8");
 const overlayHtml = readFileSync("src/renderer/overlay.html", "utf8");
 const css = readFileSync("src/renderer/styles.css", "utf8");
 const overlayCss = readFileSync("src/renderer/overlay.css", "utf8");
+
+/**
+ * Every source file behind the main window, concatenated. The window is one
+ * bundle built from `renderer.ts`, its pages and its shared helpers, and a
+ * class or id any of them names has to be in the markup and the stylesheet.
+ * The overlay is its own window with its own stylesheet, so it is read apart.
+ */
+function mainWindowSource(): string {
+  const files = ["src/renderer", "src/renderer/pages", "src/renderer/ui"].flatMap((dir) =>
+    readdirSync(dir)
+      .filter((name) => name.endsWith(".ts") && name !== "overlay.ts")
+      .map((name) => join(dir, name)),
+  );
+  return files.map((file) => readFileSync(file, "utf8")).join("\n");
+}
+const renderer = mainWindowSource();
 
 function classesIn(markup: string): string[] {
   const found = new Set<string>();
@@ -37,7 +54,6 @@ describe("stylesheet covers the markup", () => {
    * still pass. This reads the classes the renderer assigns instead.
    */
   it("styles every class the renderer assigns at runtime", () => {
-    const renderer = readFileSync("src/renderer/renderer.ts", "utf8");
     const assigned = [...renderer.matchAll(/className = "([^"]+)"/g)].flatMap((match) =>
       match[1]!.split(/\s+/),
     );
@@ -127,7 +143,6 @@ describe("stylesheet covers the markup", () => {
 
 describe("markup provides what the renderer requires", () => {
   it("defines every element looked up by id", () => {
-    const renderer = readFileSync("src/renderer/renderer.ts", "utf8");
     const required = [...renderer.matchAll(/requireElement<[^>]+>\("([^"]+)"\)/g)].map(
       (match) => match[1]!,
     );

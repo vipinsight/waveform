@@ -36,6 +36,52 @@ pressed while another app is frontmost, or type into one. That needs a
 newline-delimited JSON over stdio, which is why it survived the move from
 Electron untouched.
 
+## Where the code lives
+
+Both sides are split the same way: one file per thing, and an entry point
+that only assembles them.
+
+**The Rust host** (`src-tauri/src/`). `lib.rs` is the module list and
+`run()`, nothing else.
+
+| Module | What it is |
+| --- | --- |
+| `bootstrap.rs` | Launch: opens the stores, builds the engines and the recorder, creates the windows, and handles the Reopen and Exit run events |
+| `commands/` | Every `#[tauri::command]`, one file per thing it acts on: `settings`, `history`, `dictionary`, `meetings`, `models`, `speech`, `polish`, `dictation`, `overlay`, `updates`, `logs`, `app`. `commands::handler()` lists them all |
+| `state.rs` | `AppState`, what the commands and menus share |
+| `menu.rs`, `tray.rs` | The application menu and the menu bar icon; `menu::handle_menu_action` serves both |
+| `windows.rs`, `overlay_window.rs` | The two webviews by name; the HUD's size, placement and hover poll |
+| `bundle.rs` | What the binary knows about its `.app`: display name, data directory, checkout root |
+| `dictation.rs`, `gestures.rs`, `hotkey.rs`, `focus.rs` | A dictation session, from key press to paste |
+| `meeting.rs`, `meetings.rs`, `audio.rs`, `diarize.rs`, `summary.rs` | Recording a meeting and what is done with it afterwards |
+| `model_server.rs`, `whisper_cpp.rs`, `transcribe.rs`, `install.rs`, `download.rs` | The speech engines and their weights |
+| `rewrite.rs`, `local_llm.rs` | AI Polish, hosted and local |
+| `settings.rs`, `history.rs`, `dictionary.rs`, `stats.rs`, `store.rs` | What is kept on disk |
+| `logs.rs`, `resources.rs`, `updates.rs`, `clock.rs`, `paths.rs`, `panel.rs`, `mic.rs` | The rest: the log, the usage monitor, the updater, one clock, where files live, the non-activating panel, native capture |
+
+A command is named by the string the renderer invokes it with, so the names
+in `commands/` are part of the contract and the grouping is only for reading.
+
+**The window** (`src/renderer/`). `renderer.ts` installs the bridge, loads
+what every page needs at start, subscribes to the host, and fans a settings
+change out to the pages.
+
+| Module | What it is |
+| --- | --- |
+| `pages/` | One file per section of the window: `history`, `dictation`, `setup`, `dictionary`, `meetings`, `models`, `polish`, `overview`, `settings-panel`, `logs`, `updates`, `wizard`. Each owns its elements, its state and its events, and exports what other pages need of it |
+| `state.ts` | The facts more than one page reads, and `patchSettings` |
+| `navigation.ts` | Which section is on screen |
+| `drop-transcribe.ts`, `recording-strip.ts` | Features that belong to no page: the file-drop overlay, the strip shown while a meeting records |
+| `ui/` | `dom.ts` (finding elements, the Lucide glyphs), `format.ts` (sizes, times, clocks), `toast.ts` |
+| `overlay.ts` | The HUD, a separate window with its own bundle |
+| `audio/` | Capture, segmentation, gain and WAV encoding, shared by both windows |
+| `host.ts`, `tauri-bridge.ts` | The `window.waveform` surface and its Tauri implementation |
+
+`src/shared/` is the contract between the two: `contracts.ts` names every
+command, event and payload, and the tables beside it (`models.ts`,
+`polish-models.ts`, `settings.ts`, …) are mirrored by Rust and compared by
+tests.
+
 ## Why the helper is separate
 
 It does the two things macOS will not let the app do from inside its own

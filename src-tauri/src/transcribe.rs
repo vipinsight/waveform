@@ -5,6 +5,7 @@
 //! has its recorded mis-hearings put right and every term that came up is
 //! counted, so the ranking learns from use.
 
+use crate::clock::now_ms;
 use crate::dictionary::{self, DictionaryStore};
 use crate::logs::Logs;
 use crate::model_server::ModelServer;
@@ -98,9 +99,3 @@ impl Engine {
     }
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
-}

@@ -48,17 +48,6 @@ export function hotkeyCaption(binding: HotkeyBinding): string {
 }
 
 /**
- * The binding as a menu lists it: the glyph, then the name in full.
- *
- * The glyph is the same character the pill shows, so the two name the key the
- * same way. Fn's glyph is its name, so it is not printed twice.
- */
-export function hotkeyMenuLabel(binding: HotkeyBinding): string {
-  if (binding.glyph.toLowerCase() === binding.label.toLowerCase()) return binding.label;
-  return `${binding.glyph}  ${binding.label}`;
-}
-
-/**
  * The key as a keycap prints it: the glyph, and an arrow for which side.
  *
  * The glyph alone cannot tell Left Option from Right Option, and they are
@@ -75,13 +64,4 @@ export function hotkeyArrow(binding: HotkeyBinding): string {
   if (binding.side === "right") return "→";
   if (binding.side === "left") return "←";
   return "";
-}
-
-export function hotkeyKeyCode(id: HotkeyBindingId): number | null {
-  return getHotkeyBinding(id)?.keyCode ?? null;
-}
-
-/** Maps a raw key code seen by the native helper back to a binding, for the recorder UI. */
-export function hotkeyForKeyCode(keyCode: number): HotkeyBinding | null {
-  return HOTKEY_BINDINGS.find((binding) => binding.keyCode === keyCode) ?? null;
 }

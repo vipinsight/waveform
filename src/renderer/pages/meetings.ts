@@ -6,8 +6,10 @@ import type {
   MeetingNote,
   MeetingSummary,
   RecorderStatus,
-} from "../shared/contracts";
-import { host } from "./host";
+} from "../../shared/contracts";
+import { host } from "../host";
+import { requireElement } from "../ui/dom";
+import { clock, duration, formatBytes } from "../ui/format";
 
 /**
  * The Meetings page: a list of recordings, and one open at a time with its
@@ -34,28 +36,28 @@ interface Options {
 }
 
 const element = {
-  search: byId<HTMLInputElement>("meetings-search"),
-  record: byId<HTMLButtonElement>("meeting-record"),
-  intro: byId<HTMLElement>("meeting-intro"),
-  introStart: byId<HTMLButtonElement>("meeting-intro-start"),
-  introCancel: byId<HTMLButtonElement>("meeting-intro-cancel"),
-  empty: byId<HTMLElement>("meetings-empty"),
-  emptyRecord: byId<HTMLButtonElement>("meetings-empty-record"),
-  emptySetup: byId<HTMLElement>("meetings-empty-setup"),
-  list: byId<HTMLElement>("meetings-list"),
-  noMatch: byId<HTMLElement>("meetings-no-match"),
-  detail: byId<HTMLElement>("meeting-detail"),
-  back: byId<HTMLButtonElement>("meeting-back"),
-  title: byId<HTMLInputElement>("meeting-title"),
-  band: byId<HTMLElement>("meeting-band"),
-  banners: byId<HTMLElement>("meeting-banners"),
-  summary: byId<HTMLElement>("meeting-summary"),
-  transcriptHead: byId<HTMLElement>("meeting-transcript-head"),
-  transcriptNote: byId<HTMLElement>("meeting-transcript-note"),
-  find: byId<HTMLInputElement>("meeting-find"),
-  speakers: byId<HTMLElement>("meeting-speakers"),
-  speakersPrompt: byId<HTMLElement>("meeting-speakers-prompt"),
-  lines: byId<HTMLOListElement>("meeting-lines"),
+  search: requireElement<HTMLInputElement>("meetings-search"),
+  record: requireElement<HTMLButtonElement>("meeting-record"),
+  intro: requireElement<HTMLElement>("meeting-intro"),
+  introStart: requireElement<HTMLButtonElement>("meeting-intro-start"),
+  introCancel: requireElement<HTMLButtonElement>("meeting-intro-cancel"),
+  empty: requireElement<HTMLElement>("meetings-empty"),
+  emptyRecord: requireElement<HTMLButtonElement>("meetings-empty-record"),
+  emptySetup: requireElement<HTMLElement>("meetings-empty-setup"),
+  list: requireElement<HTMLElement>("meetings-list"),
+  noMatch: requireElement<HTMLElement>("meetings-no-match"),
+  detail: requireElement<HTMLElement>("meeting-detail"),
+  back: requireElement<HTMLButtonElement>("meeting-back"),
+  title: requireElement<HTMLInputElement>("meeting-title"),
+  band: requireElement<HTMLElement>("meeting-band"),
+  banners: requireElement<HTMLElement>("meeting-banners"),
+  summary: requireElement<HTMLElement>("meeting-summary"),
+  transcriptHead: requireElement<HTMLElement>("meeting-transcript-head"),
+  transcriptNote: requireElement<HTMLElement>("meeting-transcript-note"),
+  find: requireElement<HTMLInputElement>("meeting-find"),
+  speakers: requireElement<HTMLElement>("meeting-speakers"),
+  speakersPrompt: requireElement<HTMLElement>("meeting-speakers-prompt"),
+  lines: requireElement<HTMLOListElement>("meeting-lines"),
 };
 
 let options: Options = {
@@ -376,7 +378,7 @@ function renderEmpty(): void {
     rows.push(setupRow("Your microphone only", "This copy of Waveform can only record your microphone."));
   }
   if (!status.diarizerInstalled) {
-    rows.push(diarizerRow("Tell speakers apart", `A ${megabytes(status.diarizerBytes)} download, kept on this Mac. Without it, everyone else on the call is one voice.`));
+    rows.push(diarizerRow("Tell speakers apart", `A ${formatBytes(status.diarizerBytes)} download, kept on this Mac. Without it, everyone else on the call is one voice.`));
   }
   if (!status.hasOpenRouterKey) {
     const row = setupRow(
@@ -1043,7 +1045,7 @@ function renderTranscriptNote(): void {
     );
   } else {
     const button = diarizerButton();
-    if (!installing) button.textContent = `Tell speakers apart (${megabytes(status?.diarizerBytes ?? 0)})`;
+    if (!installing) button.textContent = `Tell speakers apart (${formatBytes(status?.diarizerBytes ?? 0)})`;
     element.transcriptNote.append(button);
   }
 }
@@ -1266,33 +1268,4 @@ function flash(button: HTMLButtonElement, text: string): void {
     button.textContent = was;
     button.disabled = false;
   }, 1_100);
-}
-
-export function clock(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1_000));
-  const h = Math.floor(seconds / 3_600);
-  const m = Math.floor((seconds % 3_600) / 60);
-  const s = seconds % 60;
-  const mm = String(m).padStart(2, "0");
-  const ss = String(s).padStart(2, "0");
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
-function duration(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 1) return `${Math.round(ms / 1_000)} s`;
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
-}
-
-function megabytes(bytes: number): string {
-  return `${Math.round(bytes / 1_000_000)} MB`;
-}
-
-function byId<T extends HTMLElement>(id: string): T {
-  const node = document.getElementById(id);
-  if (!node) throw new Error(`Missing #${id}`);
-  return node as T;
 }

@@ -4,6 +4,7 @@
 //! listening, what happens to each finished phrase, and how the interface is
 //! told about it.
 
+use crate::windows::{MAIN_LABEL, OVERLAY_LABEL};
 use crate::gestures::{Command, GestureMachine};
 use crate::history::{HistoryStore, NewDictation};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
@@ -19,8 +20,6 @@ use tokio::sync::Mutex;
 use std::time::Instant;
 use tokio::time::{interval, Duration};
 
-const OVERLAY_LABEL: &str = "overlay";
-const MAIN_LABEL: &str = "main";
 /// The gesture machine's tap window has to be polled; this is fine-grained
 /// enough that a released tap is never perceptibly late.
 const TICK: Duration = Duration::from_millis(50);
@@ -647,7 +646,7 @@ impl Dictation {
                 if event.state() != tauri_plugin_global_shortcut::ShortcutState::Pressed {
                     return;
                 }
-                let dictation = app.state::<crate::AppState>().dictation.clone();
+                let dictation = app.state::<crate::state::AppState>().dictation.clone();
                 tauri::async_runtime::spawn(async move {
                     dictation.polish_selection().await;
                 });
@@ -964,7 +963,7 @@ impl Dictation {
         let Some(overlay) = self.app.get_webview_window(OVERLAY_LABEL) else {
             return;
         };
-        crate::place_overlay(&overlay, &settings);
+        crate::overlay_window::place_overlay(&overlay, &settings);
         // Never focus it: focus must stay with the app being dictated into, or
         // the synthetic paste lands in Waveform.
         let _ = overlay.show();
