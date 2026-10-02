@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  HALF_YEAR_WEEKS,
   calendar,
   dayKey,
+  firstDay,
   insights,
   localDate,
   milestoneProgress,
   monthBars,
   monthChange,
+  monthDelta,
   streakLine,
 } from "../src/shared/activity";
 import type { Activity } from "../src/shared/contracts";
@@ -79,6 +82,13 @@ describe("calendar", () => {
     expect(columns[0]?.cells[0]?.day).toBe("2025-09-29");
   });
 
+  it("draws half a year when asked, ending on the same week", () => {
+    const columns = calendar("2026-10-02", [], HALF_YEAR_WEEKS);
+    expect(columns).toHaveLength(26);
+    expect(columns[25]?.cells[4]?.day).toBe("2026-10-02");
+    expect(columns[0]?.cells[0]?.day).toBe("2026-04-06");
+  });
+
   it("shades days by their share of the busiest day", () => {
     const columns = calendar("2026-10-02", [
       { day: "2026-10-02", words: 400, phrases: 10 },
@@ -99,38 +109,79 @@ describe("calendar", () => {
     expect(labels.length).toBeGreaterThanOrEqual(12);
   });
 
+  /*
+   * Someone who started in September should not see a year of labelled,
+   * empty months behind their first week. The grid is still drawn, so today
+   * sits where it always does, but the time before is unlabelled and marked.
+   */
+  it("keeps the months before the first words quiet", () => {
+    const columns = calendar("2026-10-02", [{ day: "2026-09-15", words: 50, phrases: 2 }], HALF_YEAR_WEEKS);
+    const labels = columns.map((c) => c.monthLabel).filter(Boolean);
+    // September began before the first word, so it is named at the week the
+    // words start in; October has not begun a column yet in this window.
+    expect(labels).toEqual(["Sep"]);
+    const labelled = columns.find((c) => c.monthLabel === "Sep")!;
+    expect(labelled.cells.some((cell) => cell.day === "2026-09-15")).toBe(true);
+    const cells = columns.flatMap((c) => c.cells);
+    expect(cells.find((cell) => cell.day === "2026-09-14")?.before).toBe(true);
+    expect(cells.find((cell) => cell.day === "2026-09-15")?.before).toBe(false);
+    expect(cells.find((cell) => cell.day === "2026-10-02")?.before).toBe(false);
+    expect(firstDay([{ day: "2026-09-15", words: 50, phrases: 2 }, { day: "2026-09-01", words: 0, phrases: 0 }])).toBe("2026-09-15");
+    expect(firstDay([])).toBeNull();
+  });
+
   it("reads days as local dates", () => {
     expect(dayKey(localDate("2026-03-01"))).toBe("2026-03-01");
   });
 });
 
 describe("monthBars", () => {
-  it("fills twelve months ending this month, quiet ones at zero", () => {
+  it("runs from the first month with words to this month, quiet ones at zero", () => {
     const bars = monthBars("2026-10-02", [
       { month: "2026-10", words: 300, phrases: 9, activeDays: 2 },
       { month: "2026-08", words: 50, phrases: 1, activeDays: 1 },
     ]);
+    expect(bars.map((b) => b.month)).toEqual(["2026-08", "2026-09", "2026-10"]);
+    expect(bars[0]).toMatchObject({ words: 50, label: "Aug 2026" });
+    expect(bars[1]?.words).toBe(0);
+    expect(bars[2]).toMatchObject({ month: "2026-10", words: 300, current: true, label: "Oct" });
+  });
+
+  it("is this month alone before any words", () => {
+    const bars = monthBars("2026-10-02", []);
+    expect(bars).toHaveLength(1);
+    expect(bars[0]).toMatchObject({ month: "2026-10", words: 0, current: true, label: "Oct" });
+  });
+
+  it("keeps the most recent twelve of a longer run, naming the year where it changes", () => {
+    const bars = monthBars("2026-10-02", [{ month: "2024-03", words: 10, phrases: 1, activeDays: 1 }]);
     expect(bars).toHaveLength(12);
-    expect(bars[0]?.month).toBe("2025-11");
     expect(bars[0]?.label).toBe("Nov 2025");
-    expect(bars[11]).toMatchObject({ month: "2026-10", words: 300, current: true, label: "Oct" });
-    expect(bars[9]?.words).toBe(50);
-    expect(bars[10]?.words).toBe(0);
     expect(bars.find((b) => b.month === "2026-01")?.label).toBe("Jan 2026");
+    expect(bars[11]?.month).toBe("2026-10");
   });
 
   it("compares this month with last", () => {
-    expect(monthChange(monthBars("2026-10-02", [
+    const up = monthBars("2026-10-02", [
       { month: "2026-10", words: 140, phrases: 1, activeDays: 1 },
       { month: "2026-09", words: 100, phrases: 1, activeDays: 1 },
-    ]))).toBe("Up 40% on last month");
-    expect(monthChange(monthBars("2026-10-02", [
+    ]);
+    expect(monthDelta(up)).toBe(40);
+    expect(monthChange(up)).toBe("Up 40% on last month");
+    const down = monthBars("2026-10-02", [
       { month: "2026-10", words: 88, phrases: 1, activeDays: 1 },
       { month: "2026-09", words: 100, phrases: 1, activeDays: 1 },
-    ]))).toBe("Down 12% on last month");
-    expect(monthChange(monthBars("2026-10-02", [
+    ]);
+    expect(monthDelta(down)).toBe(-12);
+    expect(monthChange(down)).toBe("Down 12% on last month");
+    const quiet = monthBars("2026-10-02", [
       { month: "2026-10", words: 10, phrases: 1, activeDays: 1 },
-    ]))).toBe("First words of the year so far");
+      { month: "2026-08", words: 10, phrases: 1, activeDays: 1 },
+    ]);
+    expect(monthDelta(quiet)).toBeNull();
+    expect(monthChange(quiet)).toBe("Back after a quiet month");
+    // One month is nothing to compare with.
+    expect(monthChange(monthBars("2026-10-02", [{ month: "2026-10", words: 10, phrases: 1, activeDays: 1 }]))).toBe("");
     expect(monthChange(monthBars("2026-10-02", []))).toBe("");
   });
 });

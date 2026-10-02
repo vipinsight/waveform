@@ -111,6 +111,8 @@ export interface CalendarCell {
   level: number;
   /** True for days after today, which are drawn but empty. */
   future: boolean;
+  /** True for days before the first one with words: drawn, but kept quiet. */
+  before: boolean;
 }
 
 export interface CalendarColumn {
@@ -121,7 +123,10 @@ export interface CalendarColumn {
 }
 
 const WEEK = 7;
-const COLUMNS = 53;
+/** A year of weeks, as a commit graph draws it. */
+export const YEAR_WEEKS = 53;
+/** Half a year: what fits beside the months at ordinary window widths. */
+export const HALF_YEAR_WEEKS = 26;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function monthName(index: number): string {
@@ -141,23 +146,38 @@ export function dayKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** The earliest day with words, or null with none. The list is oldest first, but this does not trust it. */
+export function firstDay(days: DayStat[]): string | null {
+  let first: string | null = null;
+  for (const stat of days) {
+    if (stat.words > 0 && (first === null || stat.day < first)) first = stat.day;
+  }
+  return first;
+}
+
 /**
- * Fifty-three columns of weeks ending with the week that holds today,
- * Monday at the top, like a commit graph. Intensity is relative to the
- * busiest day in view, so a light week still shows against a heavy year.
+ * `weeks` columns of weeks ending with the week that holds today, Monday at
+ * the top, like a commit graph. Intensity is relative to the busiest day in
+ * view, so a light week still shows against a heavy year. Days before the
+ * first one with words are marked `before`, and months that lie wholly
+ * before it carry no label: the grid is drawn, but nothing points at the
+ * time before the user started.
  */
-export function calendar(today: string, days: DayStat[]): CalendarColumn[] {
+export function calendar(today: string, days: DayStat[], weeks = YEAR_WEEKS): CalendarColumn[] {
   const byDay = new Map(days.map((d) => [d.day, d]));
   const end = localDate(today);
-  // Back to the Monday of this week, then 52 more weeks.
+  // Back to the Monday of this week, then the rest of the weeks.
   const weekday = (end.getDay() + 6) % WEEK;
   const start = new Date(end);
-  start.setDate(end.getDate() - weekday - (COLUMNS - 1) * WEEK);
+  start.setDate(end.getDate() - weekday - (weeks - 1) * WEEK);
   const max = Math.max(0, ...days.map((d) => d.words));
+  const began = firstDay(days);
   const columns: CalendarColumn[] = [];
   const cursor = new Date(start);
   let lastMonth = -1;
-  for (let c = 0; c < COLUMNS; c += 1) {
+  /** A month that began before the first word, waiting to be named at it. */
+  let pending: string | null = null;
+  for (let c = 0; c < weeks; c += 1) {
     const cells: CalendarCell[] = [];
     const firstMonth = cursor.getMonth();
     for (let r = 0; r < WEEK; r += 1) {
@@ -170,12 +190,23 @@ export function calendar(today: string, days: DayStat[]): CalendarColumn[] {
         phrases: stat?.phrases ?? 0,
         level: words === 0 || max === 0 ? 0 : Math.max(1, Math.ceil((words / max) * 4)),
         future: cursor > end,
+        before: began !== null && key < began,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
     // A label where a month begins, skipping the very first column so the
     // label row does not start with a stub of a month already half gone.
-    const monthLabel = firstMonth !== lastMonth && c > 0 ? monthName(firstMonth) : "";
+    // A month that began before the first word is named at the column the
+    // words start in instead, so a late starter still sees where they are.
+    const wholeColumnBefore = cells.every((cell) => cell.before);
+    let monthLabel = "";
+    if (firstMonth !== lastMonth && c > 0) {
+      if (wholeColumnBefore) pending = monthName(firstMonth);
+      else monthLabel = monthName(firstMonth);
+    } else if (pending !== null && !wholeColumnBefore) {
+      monthLabel = pending;
+    }
+    if (monthLabel) pending = null;
     lastMonth = firstMonth;
     columns.push({ cells, monthLabel });
   }
@@ -193,16 +224,32 @@ export interface MonthBar {
   current: boolean;
 }
 
-/** The last `count` months ending this month, quiet months included. */
+/**
+ * The months from the first one with words through this month, quiet
+ * months between them included, at most `count` of the most recent. With no
+ * words yet, this month alone. Nothing is drawn for the time before the
+ * user started.
+ */
 export function monthBars(today: string, months: MonthStat[], count = 12): MonthBar[] {
   const byMonth = new Map(months.map((m) => [m.month, m]));
   const end = localDate(today);
+  const thisMonth = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}`;
+  let earliest = thisMonth;
+  for (const stat of months) {
+    if (stat.words > 0 && stat.month < earliest) earliest = stat.month;
+  }
+  const [firstYear = end.getFullYear(), firstMonth = end.getMonth() + 1] = earliest.split("-").map(Number);
+  const span = (end.getFullYear() - firstYear) * 12 + (end.getMonth() + 1 - firstMonth) + 1;
+  const shown = Math.max(1, Math.min(count, span));
   const bars: MonthBar[] = [];
-  for (let i = count - 1; i >= 0; i -= 1) {
+  for (let i = shown - 1; i >= 0; i -= 1) {
     const date = new Date(end.getFullYear(), end.getMonth() - i, 1);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     const stat = byMonth.get(key);
-    const label = date.getMonth() === 0 || i === count - 1 ? `${monthName(date.getMonth())} ${date.getFullYear()}` : monthName(date.getMonth());
+    const label =
+      (date.getMonth() === 0 || i === shown - 1) && shown > 1
+        ? `${monthName(date.getMonth())} ${date.getFullYear()}`
+        : monthName(date.getMonth());
     bars.push({
       month: key,
       label,
@@ -215,15 +262,29 @@ export function monthBars(today: string, months: MonthStat[], count = 12): Month
   return bars;
 }
 
-/** "Up 40% on last month", "Down 12%", "Same as last month", or "" with no last month. */
-export function monthChange(bars: MonthBar[]): string {
-  if (bars.length < 2) return "";
+/**
+ * This month against last, as a percentage: positive is up, negative is
+ * down, zero is level. Null when there is no last month to compare with,
+ * or last month had nothing (a share of nothing is not a number).
+ */
+export function monthDelta(bars: MonthBar[]): number | null {
+  if (bars.length < 2) return null;
   const now = bars[bars.length - 1]?.words ?? 0;
   const before = bars[bars.length - 2]?.words ?? 0;
-  if (before === 0) return now > 0 ? "First words of the year so far" : "";
-  const change = Math.round(((now - before) / before) * 100);
-  if (change === 0) return "Same as last month";
-  return change > 0 ? `Up ${change}% on last month` : `Down ${Math.abs(change)}% on last month`;
+  if (before === 0) return null;
+  return Math.round(((now - before) / before) * 100);
+}
+
+/** "Up 40% on last month", "Down 12% on last month", "Same as last month", "Back after a quiet month", or "". */
+export function monthChange(bars: MonthBar[]): string {
+  const delta = monthDelta(bars);
+  if (delta === null) {
+    if (bars.length < 2) return "";
+    const now = bars[bars.length - 1]?.words ?? 0;
+    return now > 0 ? "Back after a quiet month" : "";
+  }
+  if (delta === 0) return "Same as last month";
+  return delta > 0 ? `Up ${delta}% on last month` : `Down ${Math.abs(delta)}% on last month`;
 }
 
 /** A line for the streak header. */

@@ -6542,13 +6542,170 @@ select {
   display: none;
 }
 
-/* --- Overview: activity calendar, insights, milestones, months ------------ */
+/* --- Overview: hero, activity calendar, months, insights, milestones -------- */
 
+/*
+ * The home screen. One big number with the streak beside it, then two rows
+ * of two cards: the half-year calendar beside the months, what the words
+ * add up to beside the milestones. The machine's own rows and the privacy
+ * note come last. Under ~760px the pairs stack. The accent is the only
+ * colour that means anything: the days, the bars and the milestones all
+ * speak in it.
+ */
+.view-overview {
+  container-type: inline-size;
+  container-name: overview;
+}
+
+.overview-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 32px;
+  align-items: end;
+  padding: 26px 28px 24px;
+  margin-bottom: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 20px;
+  background: linear-gradient(140deg, var(--accent-soft), var(--surface-raised) 60%);
+  box-shadow: var(--shadow-card);
+}
+
+.overview-hero-label {
+  margin: 0 0 2px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overview-hero-number {
+  margin: 0;
+  min-height: 56px;
+  font-size: 52px;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: 26px;
+  margin-top: 12px;
+}
+
+/* The streak as a pill: a dot that glows while one is running. */
+.streak-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 580;
+  font-variant-numeric: tabular-nums;
+}
+
+.streak-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+
+.streak-pill.is-live {
+  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
+  color: var(--ink);
+}
+
+.streak-pill.is-live .streak-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  animation: streak-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes streak-glow {
+  0%, 100% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
+}
+
+.overview-hero-side {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 10px;
+}
+
+.hero-stat {
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 12px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+}
+
+.hero-stat b {
+  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stat span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.overview-grid + .section-label {
+  margin-top: 14px;
+}
+
+/* The raised card every part of the home screen sits in. */
+.overview-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.overview-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* The two in a row stand the same height, whatever each holds. */
 .activity-panel,
-.insight-panel,
-.milestone-panel,
 .months-panel {
-  padding: 16px 18px;
+  min-height: 236px;
+}
+
+.overview-hero-main {
+  min-width: 0;
 }
 
 .activity-head {
@@ -6556,55 +6713,97 @@ select {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  min-height: 20px;
+  margin-bottom: 14px;
 }
 
+/* --- Overview: the calendar ----------------------------------------------- */
+
+/* Month names over the columns, weekdays down the side, the grid itself
+   sized by the card, so today is always in view and nothing scrolls. */
 .activity-calendar {
-  overflow-x: auto;
-  padding-bottom: 2px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 6px;
+  min-height: 118px;
+  margin-bottom: 10px;
 }
 
-.activity-months,
-.activity-grid {
-  display: grid;
-  grid-template-columns: repeat(53, 11px);
-  gap: 3px;
-  width: max-content;
+.activity-calendar:empty {
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface-hover) 50%, var(--surface-sunken) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s linear infinite;
+}
+
+.activity-corner {
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .activity-months {
-  margin-bottom: 4px;
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(26, minmax(0, 1fr));
+  gap: 3px;
+  height: 14px;
   color: var(--ink-faint);
-  font-size: 10px;
-  line-height: 12px;
+  font-size: 10.5px;
+  font-weight: 540;
+  line-height: 14px;
 }
 
 .activity-months span {
-  white-space: nowrap;
   overflow: visible;
+  white-space: nowrap;
+}
+
+.activity-weekdays {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  color: var(--ink-faint);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.activity-weekdays span {
+  display: flex;
+  align-items: center;
+  min-width: 22px;
 }
 
 .activity-grid {
-  grid-template-rows: repeat(7, 11px);
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(26, minmax(0, 1fr));
+  grid-template-rows: repeat(7, auto);
   grid-auto-flow: column;
+  gap: 3px;
 }
 
 .activity-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 2.5px;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 3px;
   background: var(--surface-sunken);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 4%);
-  transition: transform 120ms ease;
+  transition: transform 120ms ease, opacity 200ms ease;
 }
 
 .activity-cell:hover {
-  transform: scale(1.25);
+  transform: scale(1.3);
+  z-index: 1;
 }
 
-.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 28%, var(--surface-sunken)); }
-.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 52%, var(--surface-sunken)); }
-.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 76%, var(--surface-sunken)); }
+.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
+.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
+.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
 .activity-cell[data-level="4"] { background: var(--accent); }
 
 .activity-cell.is-future {
@@ -6612,8 +6811,64 @@ select {
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 3%);
 }
 
+/* The time before the first word: there, but not pointed at. */
+.activity-cell.is-before {
+  opacity: 0.4;
+}
+
 .activity-cell.is-today {
-  box-shadow: 0 0 0 1.5px var(--accent);
+  box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 3.5px var(--accent);
+}
+
+.activity-calendar.is-loading .activity-cell {
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface-hover) 50%, var(--surface-sunken) 75%);
+  background-size: 400% 100%;
+  animation: skeleton-shine 1.6s linear infinite;
+}
+
+/* One tooltip, moved over whichever day is pointed at. */
+.activity-tip {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+  animation: tip-in 120ms ease both;
+}
+
+.activity-tip::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: var(--tip-arrow, 50%);
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 2px;
+}
+
+.activity-tip strong {
+  font-weight: 600;
+}
+
+.activity-tip-date {
+  opacity: 0.7;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 .activity-legend {
@@ -6621,7 +6876,7 @@ select {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  margin-top: 8px;
+  margin-top: auto;
   color: var(--ink-faint);
   font-size: 11px;
 }
@@ -6630,171 +6885,346 @@ select {
   display: inline-block;
   width: 11px;
   height: 11px;
-  border-radius: 2.5px;
+  border-radius: 3px;
   background: var(--surface-sunken);
 }
 
-.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 28%, var(--surface-sunken)); }
-.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 52%, var(--surface-sunken)); }
-.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 76%, var(--surface-sunken)); }
+.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
+.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
+.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
 .activity-legend i[data-level="4"] { background: var(--accent); }
 
 .activity-legend span + i { margin-left: 4px; }
 .activity-legend i + span { margin-left: 4px; }
 
-.overview-duo {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+/* --- Overview: by month --------------------------------------------------- */
+
+.months-this {
+  margin: -8px 0 10px;
+  min-height: 15px;
 }
 
-@media (max-width: 720px) {
-  .overview-duo {
-    grid-template-columns: 1fr;
-  }
-}
-
-.insight-panel .section-label,
-.milestone-panel .section-label {
-  margin: 0 0 10px;
-}
-
-.insight-headline {
-  margin: 0 0 6px;
-  font-family: var(--font-display, inherit);
-  font-size: 24px;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-}
-
-.insight-lede {
-  margin: 0 0 10px;
-  color: var(--ink-soft);
-  font-size: 13px;
-}
-
-.insight-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: 13px;
-}
-
-.insight-list li {
-  display: flex;
+/* Up or down on last month, said once, in a tone. */
+.change-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-
-.insight-list li::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.6;
-}
-
-.milestone-next {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.milestone-next strong {
-  font-variant-numeric: tabular-nums;
-}
-
-.milestone-bar {
-  position: relative;
-  height: 8px;
-  margin: 8px 0 12px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
   border-radius: 999px;
   background: var(--surface-sunken);
-  overflow: hidden;
-}
-
-.milestone-bar i {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.milestone-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.milestone-chip {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--accent-soft, rgb(50 132 208 / 12%));
-  color: var(--accent);
+  color: var(--ink-soft);
   font-size: 11.5px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.milestone-chip.is-next {
-  background: transparent;
-  color: var(--ink-faint);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  font-weight: 500;
+.change-pill::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
 }
 
+.change-pill.is-up {
+  background: color-mix(in srgb, var(--positive) 14%, transparent);
+  color: var(--positive);
+}
+
+.change-pill.is-up::before {
+  border-bottom: 6px solid currentColor;
+}
+
+.change-pill.is-down {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.change-pill.is-down::before {
+  border-top: 6px solid currentColor;
+}
+
+.change-pill.is-flat::before {
+  display: none;
+}
+
+/* Bars on a baseline; the current month in the accent, the quiet ones a stub. */
 .month-bars {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 6px;
-  align-items: end;
-  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  gap: 8px;
+  height: 148px;
+  margin-top: auto;
+}
+
+.month-bars:empty {
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface-hover) 50%, var(--surface-sunken) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s linear infinite;
+}
+
+.month-bars.is-few {
+  justify-content: center;
+  gap: 28px;
 }
 
 .month-bar {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
-  height: 100%;
+  gap: 5px;
   min-width: 0;
+  max-width: 64px;
+  height: 100%;
 }
 
 .month-bar i {
   display: block;
   width: 100%;
-  max-width: 28px;
-  min-height: 2px;
-  border-radius: 4px 4px 2px 2px;
-  background: color-mix(in srgb, var(--accent) 45%, var(--surface-sunken));
-  transition: height 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  max-width: 34px;
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  background: color-mix(in srgb, var(--accent) 42%, var(--surface-sunken));
+  transition: height 500ms cubic-bezier(0.2, 0.8, 0.2, 1), background 200ms ease;
+}
+
+.month-bar:hover i {
+  background: color-mix(in srgb, var(--accent) 65%, var(--surface-sunken));
+}
+
+.month-bar.is-quiet i {
+  background: var(--hairline-strong);
 }
 
 .month-bar.is-current i {
   background: var(--accent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.month-bar.is-current:hover i {
+  background: var(--accent-hover);
+}
+
+/* The baseline the bars stand on, with the labels under it. */
 .month-bar small {
+  width: 100%;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline-strong);
   color: var(--ink-faint);
-  font-size: 10px;
+  font-size: 10.5px;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+}
+
+.month-bar.is-current small {
+  color: var(--ink);
+  font-weight: 620;
 }
 
 .month-bar b {
   color: var(--ink-soft);
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 560;
   font-variant-numeric: tabular-nums;
+}
+
+.month-bar.is-current b {
+  color: var(--accent);
+}
+
+/* --- Overview: what the words add up to ----------------------------------- */
+
+.insight-panel .overview-card-title {
+  margin-bottom: 14px;
+}
+
+.insight-lede {
+  margin: 0 0 4px;
+  min-height: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.insight-headline {
+  margin: 0 0 10px;
+  min-height: 34px;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.insight-list {
+  margin: auto 0 0;
+  min-height: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --- Overview: milestones ------------------------------------------------- */
+
+.milestone-next {
+  margin: 0 0 18px;
+  min-height: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.milestone-next strong {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every milestone on one track; the fill runs to where the words are. */
+.milestone-track {
+  position: relative;
+  height: 44px;
+  margin-top: auto;
+}
+
+.milestone-track::before,
+.milestone-fill {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 0;
+  height: 4px;
+  border-radius: 4px;
+}
+
+.milestone-track::before {
+  right: 0;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 4%);
+}
+
+.milestone-fill {
+  width: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, var(--surface-raised)), var(--accent));
+  transition: width 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.milestone-nodes {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+.milestone-node {
+  position: relative;
+  display: flex;
+  width: 14px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.milestone-node i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1.5px var(--hairline-strong);
+  transition: background 300ms ease, box-shadow 300ms ease, transform 300ms ease;
+}
+
+.milestone-node.is-reached i {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface-raised);
+}
+
+.milestone-node.is-latest i {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 3.5px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.milestone-node.is-next i {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 2px var(--surface-raised);
+}
+
+.milestone-node small {
+  position: absolute;
+  top: 20px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 560;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone-node.is-latest small {
+  color: var(--accent);
+}
+
+.milestone-node.is-next small {
+  color: var(--ink);
+}
+
+/* Reached while the page is open: the node rings out, the card warms. */
+.milestone-node.is-new i {
+  animation: milestone-pop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both, milestone-ring 1.6s ease-out 2;
+}
+
+@keyframes milestone-pop {
+  from { transform: scale(0.4); }
+}
+
+@keyframes milestone-ring {
+  0% { box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 14px transparent; }
+}
+
+.milestone-panel.is-celebrating {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--shadow-card), 0 0 0 4px var(--accent-soft);
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+
+.milestone-panel.is-celebrating #milestone-remaining {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Overview: narrow ----------------------------------------------------- */
+
+@container overview (max-width: 760px) {
+  .overview-hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    padding: 22px 22px 20px;
+  }
+
+  .overview-hero-number {
+    font-size: 44px;
+  }
+
+  .overview-hero-side {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+#view-overview [hidden] {
+  display: none;
 }
