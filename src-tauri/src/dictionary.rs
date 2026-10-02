@@ -512,7 +512,10 @@ pub fn correct(text: &str, terms: &[Term]) -> (String, Vec<Correction>) {
         .filter(|term| !term.heard_as.is_empty() || term.uses >= 3)
         .filter(|term| !term.text.contains(' '))
         .collect();
-    if phonetic.is_empty() {
+    // Single-word terms, for the spelling pass: a term is how the word is
+    // typed, so a word that is the term in another case takes its case.
+    let single: Vec<&Term> = terms.iter().filter(|term| !term.text.contains(' ')).collect();
+    if phonetic.is_empty() && single.is_empty() {
         return (result, corrections);
     }
     let metaphone = DoubleMetaphone::default();
@@ -524,10 +527,15 @@ pub fn correct(text: &str, terms: &[Term]) -> (String, Vec<Correction>) {
         rebuilt.push_str(&result[last..begin]);
         let word = &result[begin..end];
         let plain = bare(word);
-        let replacement = if plain.is_empty() || known.contains(&plain) {
+        let replacement = if plain.is_empty() {
             None
+        } else if known.contains(&plain) {
+            single
+                .iter()
+                .find(|term| bare(&term.text) == plain && term.text != word)
+                .copied()
         } else {
-            phonetic.iter().find(|term| sounds_like(&metaphone, &plain, &bare(&term.text)))
+            phonetic.iter().find(|term| sounds_like(&metaphone, &plain, &bare(&term.text))).copied()
         };
         match replacement {
             Some(term) => {
@@ -923,6 +931,15 @@ mod tests {
         let (text, fixes) = correct("write it down, right now", &terms);
         assert_eq!(text, "write it down, right now");
         assert!(fixes.is_empty());
+    }
+
+    /// The term is how the word is typed, so "ZiShan" becomes "Zishan".
+    #[test]
+    fn a_term_in_the_wrong_case_takes_the_terms_case() {
+        let terms = vec![term(1, "Zishan", &[])];
+        let (text, fixes) = correct("Set up a call with ZiShan and zishan.", &terms);
+        assert_eq!(text, "Set up a call with Zishan and Zishan.");
+        assert_eq!(fixes.len(), 2);
     }
 
     #[test]
