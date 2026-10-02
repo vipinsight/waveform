@@ -329,7 +329,7 @@
           The host records and transcribes; this page shows what it reports.
           One rule shapes it: a live microphone is never a surprise.
         -->
-        <section class="view" id="view-meetings" hidden>
+        <section class="view view-meetings" id="view-meetings" hidden>
           <div class="view-head">
             <h1 class="display">Meetings</h1>
             <span class="head-tools">
@@ -339,20 +339,44 @@
                 type="search"
                 placeholder="Search meetings"
                 aria-label="Search meetings"
+                aria-keyshortcuts="Meta+F"
                 spellcheck="false"
               />
-              <button id="meeting-record" class="pill-button is-primary" type="button">Record</button>
+              <button id="meeting-record" class="pill-button is-primary record-button" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                <span id="meeting-record-label">Record</span>
+              </button>
             </span>
           </div>
 
-          <!-- Once, before the first recording: what is about to happen. -->
-          <div id="meeting-intro" class="meeting-intro" role="dialog" aria-labelledby="meeting-intro-title" hidden>
+          <!-- Once, before the first recording: what is about to happen, and the
+               one permission it needs. Escape, the backdrop and the close button
+               all put it away. -->
+          <div id="meeting-intro" class="meeting-intro" role="dialog" aria-modal="true" aria-labelledby="meeting-intro-title" aria-describedby="meeting-intro-lede" hidden>
             <div class="meeting-intro-card">
+              <button id="meeting-intro-close" class="sheet-close" type="button" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+              <span class="meeting-intro-glyph" aria-hidden="true"><span class="recording-dot"></span></span>
               <h2 id="meeting-intro-title" class="display">Before your first recording</h2>
-              <p>
+              <p id="meeting-intro-lede">
                 Waveform will ask macOS to let it hear the other side of the call, then start
-                recording. Allow it once; nothing you record leaves this Mac.
+                recording. macOS asks once.
               </p>
+              <ul class="meeting-intro-facts">
+                <li>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>
+                  <span>Both sides are recorded: your microphone, and what the Mac plays.</span>
+                </li>
+                <li>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                  <span>The transcript is written on this Mac as you talk, and a summary when you stop.</span>
+                </li>
+                <li>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <span>Nothing you record leaves this Mac.</span>
+                </li>
+              </ul>
               <div class="meeting-intro-actions">
                 <button id="meeting-intro-cancel" class="pill-button" type="button">Not now</button>
                 <button id="meeting-intro-start" class="pill-button is-primary" type="button">Allow and start recording</button>
@@ -360,53 +384,94 @@
             </div>
           </div>
 
-          <!-- No meetings yet: the first run lives here, not in a wizard. -->
-          <div id="meetings-empty" class="empty-state meetings-empty" hidden>
-            <p class="empty-headline display">Record a call, get the notes.</p>
-            <p class="empty-hint">
-              Waveform records both sides of a call, writes the transcript on this Mac as you
-              talk, and sums it up when you stop.
-            </p>
-            <button id="meetings-empty-record" class="pill-button is-primary" type="button">Record a meeting</button>
-            <div id="meetings-empty-setup" class="card meetings-empty-setup"></div>
+          <!-- No meetings yet: what the page does, the one button, and the setup
+               that is still open. The first run lives here, not in a wizard. -->
+          <div id="meetings-empty" class="meetings-empty" hidden>
+            <div class="meetings-hero">
+              <span class="meetings-hero-glyph" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </span>
+              <p class="empty-headline display">Record a call, get the notes.</p>
+              <p class="empty-hint">
+                Waveform records both sides of a call and writes the transcript as you talk.
+                When you stop, it sums the meeting up: what it was about, next steps, decisions.
+              </p>
+              <button id="meetings-empty-record" class="pill-button is-primary is-large record-button" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                Record a meeting
+              </button>
+              <p class="meetings-hero-note">Recordings and transcripts stay on this Mac.</p>
+            </div>
+            <div id="meetings-empty-setup" class="meetings-setup-grid"></div>
           </div>
 
           <div id="meetings-permission" class="meeting-banner is-warn meetings-permission" hidden></div>
-          <div id="meetings-list" class="meetings-list" hidden></div>
-          <p id="meetings-no-match" class="dictionary-empty" hidden>No meeting matches that.</p>
 
-          <section id="meeting-detail" class="meeting-detail" hidden>
-            <button id="meeting-back" class="link meeting-back" type="button">← All meetings</button>
-            <input
-              id="meeting-title"
-              class="meeting-title"
-              type="text"
-              aria-label="Meeting title"
-              placeholder="Untitled meeting"
-              spellcheck="false"
-              maxlength="200"
-            />
-            <div id="meeting-band" class="meeting-band" aria-live="polite"></div>
-            <div id="meeting-banners" class="meeting-banners"></div>
-            <section id="meeting-summary" class="meeting-summary" hidden></section>
-            <section class="meeting-transcript">
-              <div class="meeting-transcript-head" id="meeting-transcript-head">
-                <h2 class="section-label">Transcript</h2>
-                <input
-                  id="meeting-find"
-                  class="dictionary-field is-search"
-                  type="search"
-                  placeholder="Find in transcript"
-                  aria-label="Find in transcript"
-                  spellcheck="false"
-                />
+          <!-- Two panes on a wide window, one at a time on a narrow one. The
+               shell's data-open says which pane the narrow layout shows. -->
+          <div id="meetings-shell" class="meetings-shell" data-open="false" hidden>
+            <aside class="meetings-pane meetings-pane-list">
+              <div id="meetings-list" class="meetings-list" role="listbox" aria-label="Meetings"></div>
+              <p id="meetings-no-match" class="meetings-no-match" hidden>No meeting matches that.</p>
+            </aside>
+
+            <section class="meetings-pane meetings-pane-detail" aria-live="off">
+              <div id="meeting-placeholder" class="meeting-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <p>Pick a meeting to read it</p>
+                <small>Or press Record to start one. Use ↑ ↓ to move through the list.</small>
               </div>
-              <p id="meeting-transcript-note" class="meeting-transcript-note" hidden></p>
-              <p id="meeting-speakers-prompt" class="meeting-speakers-prompt" hidden></p>
-              <div id="meeting-speakers" class="meeting-speakers" hidden></div>
-              <ol id="meeting-lines" class="meeting-lines"></ol>
+
+              <section id="meeting-detail" class="meeting-detail" hidden>
+                <header class="meeting-detail-head" id="meeting-detail-head">
+                  <button id="meeting-back" class="meeting-back" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                    All meetings
+                  </button>
+                  <div class="meeting-title-row">
+                    <input
+                      id="meeting-title"
+                      class="meeting-title"
+                      type="text"
+                      aria-label="Meeting title"
+                      title="Click to rename"
+                      placeholder="Untitled meeting"
+                      spellcheck="false"
+                      maxlength="200"
+                    />
+                    <div id="meeting-actions" class="meeting-actions"></div>
+                  </div>
+                  <p id="meeting-meta" class="meeting-meta"></p>
+                  <button id="meeting-progress" class="meeting-progress" type="button" aria-label="Playback position" hidden>
+                    <span class="meeting-progress-fill"></span>
+                  </button>
+                </header>
+
+                <div class="meeting-detail-body">
+                  <div id="meeting-band" class="meeting-band" aria-live="polite"></div>
+                  <div id="meeting-banners" class="meeting-banners"></div>
+                  <section id="meeting-summary" class="meeting-summary" hidden></section>
+                  <section class="meeting-transcript">
+                    <div class="meeting-transcript-head" id="meeting-transcript-head">
+                      <h2 class="section-label">Transcript</h2>
+                      <input
+                        id="meeting-find"
+                        class="dictionary-field is-search"
+                        type="search"
+                        placeholder="Find in transcript"
+                        aria-label="Find in transcript"
+                        spellcheck="false"
+                      />
+                    </div>
+                    <p id="meeting-transcript-note" class="meeting-transcript-note" hidden></p>
+                    <p id="meeting-speakers-prompt" class="meeting-speakers-prompt" hidden></p>
+                    <div id="meeting-speakers" class="meeting-speakers" hidden></div>
+                    <ol id="meeting-lines" class="meeting-lines"></ol>
+                  </section>
+                </div>
+              </section>
             </section>
-          </section>
+          </div>
         </section>
 
         <section class="view" id="view-dictionary" hidden>
