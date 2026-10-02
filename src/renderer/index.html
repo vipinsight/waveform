@@ -460,51 +460,73 @@
         <section class="view" id="view-dictionary" hidden>
           <div class="view-head">
             <h1 class="display">Dictionary</h1>
-            <span class="view-note">Names and terms Waveform should spell right</span>
+            <span class="head-tools">
+              <input
+                id="dictionary-search"
+                class="dictionary-field is-search"
+                type="search"
+                placeholder="Find a term"
+                aria-label="Find a term"
+                spellcheck="false"
+              />
+            </span>
           </div>
+
           <!--
-            Names and jargon the engine keeps getting wrong. The terms most
-            likely to come up are read to the engine before each phrase, and
-            anything it still mishears is put right afterwards. Terms arrive
-            two ways: typed here, or offered when a transcript is corrected.
+            Teaching Waveform the words it gets wrong. One field to add a term,
+            a table of what it knows, and the one setting about how it learns.
+            The explanation sits with the field until there is a list to look at.
           -->
-          <div class="card dictionary" id="dictionary">
-            <div class="row row-stacked">
-              <span class="row-label">
-                Names and terms to get right
-                <small id="dictionary-hint">
-                  People, products, jargon. Waveform listens for these and fixes
-                  them if they still come out wrong. Fixing a dictation offers to
-                  add the word here.
-                </small>
-              </span>
-              <form class="dictionary-add" id="dictionary-add" autocomplete="off">
-                <input
-                  id="dictionary-text"
-                  class="dictionary-field"
-                  type="text"
-                  placeholder="Term, as it should be typed"
-                  aria-label="Term"
-                  spellcheck="false"
-                  required
-                />
-                <input
-                  id="dictionary-heard"
-                  class="dictionary-field is-secondary"
-                  type="text"
-                  placeholder="Heard as (optional)"
-                  aria-label="What the engine hears instead"
-                  spellcheck="false"
-                />
-                <button class="pill-button is-primary" type="submit">Add</button>
-              </form>
+          <section class="dictionary-add-card" id="dictionary-add-card">
+            <div class="dictionary-add-copy">
+              <p class="empty-headline display" id="dictionary-headline">Teach Waveform the words it gets wrong.</p>
+              <p class="empty-hint" id="dictionary-lede">
+                Names, products, jargon. Add them here and Waveform listens for them
+                before each phrase, and spells them your way if they still come out wrong.
+              </p>
             </div>
+            <form class="dictionary-add" id="dictionary-add" autocomplete="off">
+              <input
+                id="dictionary-text"
+                class="dictionary-field is-large"
+                type="text"
+                placeholder="Add a name or term — or paste a list, separated by commas"
+                aria-label="Term"
+                spellcheck="false"
+                required
+              />
+              <button class="pill-button is-primary" type="submit">Add</button>
+            </form>
+            <div class="dictionary-suggest" id="dictionary-suggest" hidden>
+              <span>Start with</span>
+            </div>
+          </section>
+
+          <div class="dictionary-tools" id="dictionary-tools" hidden>
+            <span class="view-note" id="dictionary-count"></span>
+            <button class="pill-button" type="button" id="dictionary-export">Copy list</button>
+          </div>
+
+          <div class="dictionary-table" id="dictionary-table" hidden>
+            <div class="dictionary-head" aria-hidden="true">
+              <span>Term</span>
+              <span>Heard as</span>
+              <span>Added</span>
+              <span>Used</span>
+              <span></span>
+            </div>
+            <ul class="dictionary-list" id="dictionary-list" aria-label="Dictionary"></ul>
+          </div>
+          <p class="dictionary-empty" id="dictionary-empty" hidden></p>
+
+          <h2 class="section-label">How it learns</h2>
+          <div class="card">
             <div class="row">
               <span class="row-label">
-                When I correct a transcript
+                When I fix a word in a saved dictation
                 <small>
-                  Editing a saved transcript shows what the engine heard and what you meant.
-                  Ask before adding the word, or add it straight away.
+                  Double-click a dictation in <button class="link" type="button" id="dictionary-open-dictations">Dictations</button>
+                  to correct it. Waveform sees what it heard and what you meant, and can add the word here.
                 </small>
               </span>
               <span class="row-actions">
@@ -514,22 +536,6 @@
                 </div>
               </span>
             </div>
-            <div class="dictionary-tools" id="dictionary-tools" hidden>
-              <input
-                id="dictionary-search"
-                class="dictionary-field is-search"
-                type="search"
-                placeholder="Find a term"
-                aria-label="Find a term"
-                spellcheck="false"
-              />
-              <span class="view-note" id="dictionary-count"></span>
-              <button class="pill-button" type="button" id="dictionary-export">Copy list</button>
-            </div>
-            <ul class="dictionary-list" id="dictionary-list" aria-label="Dictionary"></ul>
-            <p class="dictionary-empty" id="dictionary-empty">
-              Nothing yet. Paste a comma-separated list into the term field to add several at once.
-            </p>
           </div>
         </section>
 
