@@ -271,23 +271,6 @@
             <ol class="onboard-steps card dictation-steps" id="dictation-steps"></ol>
           </section>
 
-          <h2 class="section-label">Try it here</h2>
-          <div class="card try-card">
-            <label class="try-row" for="dictation-try">
-              <textarea
-                id="dictation-try"
-                class="try-field"
-                rows="2"
-                spellcheck="false"
-                placeholder="Click here, hold the key and say a sentence. Let go and watch."
-                aria-label="Practice field"
-              ></textarea>
-              <span class="try-meter" aria-label="Microphone level" title="Microphone level">
-                <span class="try-meter-fill" id="dictation-try-level"></span>
-              </span>
-            </label>
-          </div>
-
           <h2 class="section-label">Key to hold</h2>
           <div class="dictation-key">
             <div class="keyboard" id="dictation-keyboard" role="radiogroup" aria-label="Key to hold"></div>
@@ -334,37 +317,6 @@
             </div>
           </div>
 
-          <h2 class="section-label">Also here</h2>
-          <div class="card">
-            <div class="row">
-              <span class="row-label">
-                Language
-                <small>What you dictate in. Choosing one beats guessing on short phrases.</small>
-              </span>
-              <span class="row-actions">
-                <select id="dictation-language" aria-label="Dictation language"></select>
-              </span>
-            </div>
-            <div class="row">
-              <span class="row-label">
-                Microphone
-                <small id="dictation-mic-name">Auto-detect</small>
-              </span>
-              <span class="row-actions">
-                <span class="try-meter is-small" aria-hidden="true"><span class="try-meter-fill" id="dictation-mic-level"></span></span>
-                <button id="dictation-mic-change" class="pill-button" type="button">Change</button>
-              </span>
-            </div>
-            <div class="row">
-              <span class="row-label">
-                Dictionary
-                <small id="dictation-dictionary-note">Names and terms Waveform spells right.</small>
-              </span>
-              <span class="row-actions">
-                <button id="dictation-dictionary-open" class="pill-button" type="button">Open Dictionary</button>
-              </span>
-            </div>
-          </div>
         </section>
 
         <!--

@@ -81,15 +81,8 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
-  dictationLanguage: requireElement<HTMLSelectElement>("dictation-language"),
   dictationSetup: requireElement<HTMLElement>("dictation-setup"),
   dictationSteps: requireElement<HTMLOListElement>("dictation-steps"),
-  dictationTryLevel: requireElement<HTMLElement>("dictation-try-level"),
-  dictationMicLevel: requireElement<HTMLElement>("dictation-mic-level"),
-  dictationMicName: requireElement<HTMLElement>("dictation-mic-name"),
-  dictationMicChange: requireElement<HTMLButtonElement>("dictation-mic-change"),
-  dictationDictionaryNote: requireElement<HTMLElement>("dictation-dictionary-note"),
-  dictationDictionaryOpen: requireElement<HTMLButtonElement>("dictation-dictionary-open"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
   dictionaryText: requireElement<HTMLInputElement>("dictionary-text"),
   dictionaryAddCard: requireElement<HTMLElement>("dictionary-add-card"),
@@ -504,25 +497,6 @@ function wireEvents(): void {
   });
   element.deckSettings.addEventListener("click", () => {
     element.dictationSetup.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-  element.dictationLanguage.addEventListener("change", () => {
-    const value = element.dictationLanguage.value;
-    if (isSpeechLanguage(value)) void patchSettings({ speechLanguage: value });
-  });
-  element.dictationMicChange.addEventListener("click", () => toggleSettings(true, "audio"));
-  element.dictationDictionaryOpen.addEventListener("click", () => openView("dictionary"));
-  // The microphone's level while dictating: proof the mic is live before
-  // anyone blames the app.
-  let levelFade: number | null = null;
-  host().onCaptureLevel((level) => {
-    const amount = `${Math.min(100, Math.round(Math.sqrt(Math.min(1, level * 4)) * 100))}%`;
-    element.dictationTryLevel.style.height = amount;
-    element.dictationMicLevel.style.width = amount;
-    if (levelFade !== null) window.clearTimeout(levelFade);
-    levelFade = window.setTimeout(() => {
-      element.dictationTryLevel.style.height = "0%";
-      element.dictationMicLevel.style.width = "0%";
-    }, 600);
   });
 
   bindDropTranscribe();
@@ -998,8 +972,6 @@ function applySettings(next: AppSettings): void {
   void renderModels();
   renderLanguageSelect();
   renderMicrophoneSelect();
-  element.dictationMicName.textContent =
-    next.microphoneDeviceName || "Auto-detect: the built-in microphone unless you pick one";
   renderKeyboard(element.dictationKeyboard, element.dictationKeyboardCaption);
   element.menubarToggle.checked = next.menuBarIcon;
   element.launchAtLoginToggle.checked = next.launchAtLogin;
@@ -2347,12 +2319,12 @@ function formatBytes(bytes: number): string {
 }
 
 function renderLanguageSelect(): void {
-  for (const select of [element.speechLanguage, element.dictationLanguage]) {
-    if (select.options.length === 0) {
-      select.append(...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)));
-    }
-    select.value = settings.speechLanguage;
+  if (element.speechLanguage.options.length === 0) {
+    element.speechLanguage.append(
+      ...SPEECH_LANGUAGES.map(({ code, label }) => new Option(label, code)),
+    );
   }
+  element.speechLanguage.value = settings.speechLanguage;
 }
 
 function resolveSetupStep(id: string): void {
@@ -3061,10 +3033,6 @@ function bindDictionary(): void {
 }
 
 function renderDictionary(): void {
-  element.dictationDictionaryNote.textContent =
-    dictionary.length === 0
-      ? "Names and terms Waveform spells right. Nothing added yet."
-      : `${dictionary.length} ${dictionary.length === 1 ? "name or term" : "names and terms"} Waveform spells right.`;
   const query = element.dictionarySearch.value.trim().toLowerCase();
   const shown = query
     ? dictionary.filter(
