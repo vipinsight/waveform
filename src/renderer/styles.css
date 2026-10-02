@@ -5107,3 +5107,24 @@ select {
 .dictation-setup {
   margin-top: 4px;
 }
+
+/* Every container above that sets its own display must also honour `hidden`,
+   or the attribute loses to the class and a dismissed dialog stays up. */
+.meeting-intro[hidden],
+.recording-strip[hidden],
+.toast[hidden],
+.meetings-empty[hidden],
+.meetings-list[hidden],
+.meeting-detail[hidden],
+.meeting-band[hidden],
+.meeting-banners[hidden],
+.meeting-summary[hidden],
+.meeting-speakers[hidden],
+.meeting-transcript-note[hidden],
+.meeting-speakers-prompt[hidden],
+.dictation-setup[hidden],
+.copy-menu-list[hidden],
+.band-meters[hidden],
+.meeting-row[hidden] {
+  display: none;
+}

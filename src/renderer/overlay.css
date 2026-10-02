@@ -595,3 +595,7 @@ body {
   opacity: 0.5;
   cursor: wait;
 }
+
+.hud-meeting[hidden] {
+  display: none;
+}
