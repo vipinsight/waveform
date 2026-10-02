@@ -587,6 +587,44 @@
             </div>
           </div>
 
+          <!-- A year of days, like a commit graph: how often, not what. -->
+          <div class="panel activity-panel">
+            <div class="activity-head">
+              <span class="row-label">Every day you dictated<small id="activity-streak">—</small></span>
+              <span class="view-note" id="activity-active-days"></span>
+            </div>
+            <div class="activity-calendar" id="activity-calendar" role="img" aria-label="Words dictated per day over the last year"></div>
+            <div class="activity-legend" aria-hidden="true">
+              <span>Less</span><i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i><span>More</span>
+            </div>
+          </div>
+
+          <div class="overview-duo">
+            <div class="panel insight-panel">
+              <h2 class="section-label">What your words add up to</h2>
+              <p class="insight-headline" id="insight-headline">—</p>
+              <p class="insight-lede" id="insight-lede"></p>
+              <ul class="insight-list" id="insight-list"></ul>
+            </div>
+            <div class="panel milestone-panel">
+              <h2 class="section-label">Milestones</h2>
+              <div class="milestone-next">
+                <span id="milestone-next-label">—</span>
+                <span class="view-note" id="milestone-remaining"></span>
+              </div>
+              <div class="milestone-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="milestone-progress"><i id="milestone-fill"></i></div>
+              <div class="milestone-chips" id="milestone-chips"></div>
+            </div>
+          </div>
+
+          <div class="panel months-panel">
+            <div class="activity-head">
+              <span class="row-label">By month<small id="months-change"></small></span>
+              <span class="view-note" id="months-this"></span>
+            </div>
+            <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month over the last year"></div>
+          </div>
+
           <div class="panel">
             <div class="row">
               <span class="row-label">Speech model<small id="overview-model">—</small></span>

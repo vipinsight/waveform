@@ -158,6 +158,15 @@ about 140 MB rather than several hundred. The status bar shows live CPU and
 memory for the app and the engine together, since the engine is the larger
 consumer of both.
 
+## Overview
+
+The first page keeps count: words, phrases and sessions, lifetime, and a
+calendar of the last year with a square per day, deeper in colour the more you
+dictated. Under it, what the total adds up to in pages, stories, screenplays
+and novels, the milestones you have passed and the next one, and the last
+twelve months side by side. Only counts are kept, by day, in the database on
+this Mac; never the words themselves.
+
 ## Dictations
 
 The **Dictations** view keeps every dictation, newest first, with when it was

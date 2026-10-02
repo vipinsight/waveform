@@ -6541,3 +6541,260 @@ select {
 #view-meetings [hidden] {
   display: none;
 }
+
+/* --- Overview: activity calendar, insights, milestones, months ------------ */
+
+.activity-panel,
+.insight-panel,
+.milestone-panel,
+.months-panel {
+  padding: 16px 18px;
+}
+
+.activity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.activity-calendar {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.activity-months,
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(53, 11px);
+  gap: 3px;
+  width: max-content;
+}
+
+.activity-months {
+  margin-bottom: 4px;
+  color: var(--ink-faint);
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.activity-months span {
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.activity-grid {
+  grid-template-rows: repeat(7, 11px);
+  grid-auto-flow: column;
+}
+
+.activity-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 4%);
+  transition: transform 120ms ease;
+}
+
+.activity-cell:hover {
+  transform: scale(1.25);
+}
+
+.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 28%, var(--surface-sunken)); }
+.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 52%, var(--surface-sunken)); }
+.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 76%, var(--surface-sunken)); }
+.activity-cell[data-level="4"] { background: var(--accent); }
+
+.activity-cell.is-future {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 3%);
+}
+
+.activity-cell.is-today {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.activity-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.activity-legend i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background: var(--surface-sunken);
+}
+
+.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 28%, var(--surface-sunken)); }
+.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 52%, var(--surface-sunken)); }
+.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 76%, var(--surface-sunken)); }
+.activity-legend i[data-level="4"] { background: var(--accent); }
+
+.activity-legend span + i { margin-left: 4px; }
+.activity-legend i + span { margin-left: 4px; }
+
+.overview-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .overview-duo {
+    grid-template-columns: 1fr;
+  }
+}
+
+.insight-panel .section-label,
+.milestone-panel .section-label {
+  margin: 0 0 10px;
+}
+
+.insight-headline {
+  margin: 0 0 6px;
+  font-family: var(--font-display, inherit);
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.insight-lede {
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.insight-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.insight-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insight-list li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.milestone-next {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.milestone-next strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone-bar {
+  position: relative;
+  height: 8px;
+  margin: 8px 0 12px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.milestone-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.milestone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.milestone-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgb(50 132 208 / 12%));
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone-chip.is-next {
+  background: transparent;
+  color: var(--ink-faint);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-weight: 500;
+}
+
+.month-bars {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+  align-items: end;
+  height: 120px;
+}
+
+.month-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+}
+
+.month-bar i {
+  display: block;
+  width: 100%;
+  max-width: 28px;
+  min-height: 2px;
+  border-radius: 4px 4px 2px 2px;
+  background: color-mix(in srgb, var(--accent) 45%, var(--surface-sunken));
+  transition: height 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.month-bar.is-current i {
+  background: var(--accent);
+}
+
+.month-bar small {
+  color: var(--ink-faint);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.month-bar b {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}

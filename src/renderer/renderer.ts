@@ -39,6 +39,8 @@ import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import { calendar, insights, milestoneProgress, monthBars, monthChange, streakLine } from "../shared/activity";
+import type { Activity } from "../shared/contracts";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
 import {
@@ -145,6 +147,20 @@ const element = {
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
+  activityStreak: requireElement<HTMLElement>("activity-streak"),
+  activityActiveDays: requireElement<HTMLElement>("activity-active-days"),
+  activityCalendar: requireElement<HTMLElement>("activity-calendar"),
+  insightHeadline: requireElement<HTMLElement>("insight-headline"),
+  insightLede: requireElement<HTMLElement>("insight-lede"),
+  insightList: requireElement<HTMLElement>("insight-list"),
+  milestoneNextLabel: requireElement<HTMLElement>("milestone-next-label"),
+  milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
+  milestoneProgress: requireElement<HTMLElement>("milestone-progress"),
+  milestoneFill: requireElement<HTMLElement>("milestone-fill"),
+  milestoneChips: requireElement<HTMLElement>("milestone-chips"),
+  monthsChange: requireElement<HTMLElement>("months-change"),
+  monthsThis: requireElement<HTMLElement>("months-this"),
+  monthBars: requireElement<HTMLElement>("month-bars"),
   overviewModel: requireElement<HTMLElement>("overview-model"),
   overviewModelState: requireElement<HTMLElement>("overview-model-state"),
   overviewCpu: requireElement<HTMLElement>("overview-cpu"),
@@ -377,6 +393,7 @@ async function bootstrap(): Promise<void> {
   applySettings(await host().getSettings());
   void refreshMicrophones();
   renderStats(await host().getStats());
+  void refreshActivity();
   entries = await host().getHistory();
   renderHistory();
   // Falls back to the bare name: a version that failed to load should not be
@@ -437,7 +454,10 @@ function wireEvents(): void {
     showModelsTab("speech");
   });
   host().onOpenShortcutSettings(() => openView("dictation"));
-  host().onStatsChanged(renderStats);
+  host().onStatsChanged((stats) => {
+    renderStats(stats);
+    void refreshActivity();
+  });
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
     freshId = next.length > entries.length ? (next[0]?.id ?? null) : null;
@@ -814,6 +834,9 @@ function showView(view: string): void {
   // The levels say what they need before they can run, and what they need is
   // a key or a download that could have arrived while the section was closed.
   if (view === "ai") void host().getAiStatus().then(renderAiStatus);
+  // The calendar follows the clock as much as the counts: a day may have
+  // turned since the page was last up.
+  if (view === "overview") void refreshActivity();
   // Labels are what name the devices, and WebKit hands them over only once
   // the microphone has been asked for.
   if (view === "dictation") void refreshMicrophones(true);
@@ -4817,4 +4840,152 @@ function requireElement<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`Missing #${id}`);
   return node as T;
+}
+
+// --- Overview: calendar, insights, milestones, months -----------------------
+
+/** Pulls the activity counts and redraws the Overview's lower half. */
+async function refreshActivity(): Promise<void> {
+  try {
+    renderActivity(await host().getActivity());
+  } catch {
+    // The counters still show; the calendar just stays as it was.
+  }
+}
+
+function renderActivity(activity: Activity): void {
+  renderActivityCalendar(activity);
+  renderInsights();
+  renderMonths(activity);
+}
+
+function renderActivityCalendar(activity: Activity): void {
+  element.activityStreak.textContent = streakLine(activity);
+  element.activityActiveDays.textContent =
+    activity.activeDays === 0
+      ? "Nothing yet"
+      : activity.activeDays === 1
+        ? "1 day with words"
+        : `${activity.activeDays.toLocaleString()} days with words`;
+
+  const columns = calendar(activity.today, activity.days);
+  const months = document.createElement("div");
+  months.className = "activity-months";
+  const grid = document.createElement("div");
+  grid.className = "activity-grid";
+  for (const column of columns) {
+    const label = document.createElement("span");
+    label.textContent = column.monthLabel;
+    months.append(label);
+    for (const cell of column.cells) {
+      const box = document.createElement("i");
+      box.className = "activity-cell";
+      box.dataset.level = String(cell.level);
+      if (cell.future) box.classList.add("is-future");
+      if (cell.day === activity.today) box.classList.add("is-today");
+      if (!cell.future) {
+        const date = new Date(cell.day + "T12:00:00");
+        const when = date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+        box.title =
+          cell.words === 0
+            ? `${when} · nothing`
+            : `${when} · ${cell.words.toLocaleString()} ${cell.words === 1 ? "word" : "words"} in ${cell.phrases} ${cell.phrases === 1 ? "phrase" : "phrases"}`;
+      }
+      grid.append(box);
+    }
+  }
+  element.activityCalendar.replaceChildren(months, grid);
+  // Today is at the right edge; start the view there on narrow windows.
+  element.activityCalendar.scrollLeft = element.activityCalendar.scrollWidth;
+}
+
+/** Uses the lifetime word count the stats already show. */
+function renderInsights(): void {
+  const words = Number(element.statWords.textContent?.replace(/[^\d]/g, "") ?? 0) || 0;
+  const lines = insights(words);
+  const headline = lines.find((line) => line.headline) ?? lines[0];
+  element.insightHeadline.textContent = headline ? headline.text : "—";
+  element.insightLede.textContent =
+    words === 0
+      ? "Dictate something and this starts counting."
+      : `${words.toLocaleString()} words dictated so far, which is about`;
+  element.insightList.replaceChildren(
+    ...lines
+      .filter((line) => !line.headline)
+      .map((line) => {
+        const item = document.createElement("li");
+        item.textContent = line.text;
+        return item;
+      }),
+  );
+  // Put the lede before the headline in reading order: "N words, about / 3 novels".
+  element.insightHeadline.before(element.insightLede);
+
+  const progress = milestoneProgress(words);
+  if (progress.next === null) {
+    element.milestoneNextLabel.textContent = "Every milestone reached";
+    element.milestoneRemaining.textContent = "";
+  } else {
+    element.milestoneNextLabel.replaceChildren(
+      document.createTextNode("Next: "),
+      Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
+    );
+    element.milestoneRemaining.textContent = `${progress.remaining.toLocaleString()} to go`;
+  }
+  const percent = Math.round(progress.fraction * 100);
+  element.milestoneFill.style.width = `${percent}%`;
+  element.milestoneProgress.setAttribute("aria-valuenow", String(percent));
+  const chips = progress.reached.map((milestone) => {
+    const chip = document.createElement("span");
+    chip.className = "milestone-chip";
+    chip.textContent = shortCount(milestone);
+    chip.title = `${milestone.toLocaleString()} words`;
+    return chip;
+  });
+  if (progress.next !== null) {
+    const next = document.createElement("span");
+    next.className = "milestone-chip is-next";
+    next.textContent = shortCount(progress.next);
+    next.title = `${progress.next.toLocaleString()} words, next`;
+    chips.push(next);
+  }
+  element.milestoneChips.replaceChildren(...chips);
+}
+
+/** 1,000 → "1k", 2,500,000 → "2.5M". */
+function shortCount(value: number): string {
+  if (value >= 1_000_000) {
+    const m = value / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  if (value >= 1_000) return `${value / 1_000}k`;
+  return String(value);
+}
+
+function renderMonths(activity: Activity): void {
+  const bars = monthBars(activity.today, activity.months);
+  const current = bars[bars.length - 1];
+  element.monthsChange.textContent = monthChange(bars);
+  element.monthsThis.textContent = current
+    ? current.words === 0
+      ? "Nothing this month yet"
+      : `This month: ${current.words.toLocaleString()} words on ${current.activeDays} ${current.activeDays === 1 ? "day" : "days"}`
+    : "";
+  const max = Math.max(1, ...bars.map((bar) => bar.words));
+  element.monthBars.replaceChildren(
+    ...bars.map((bar) => {
+      const column = document.createElement("div");
+      column.className = "month-bar";
+      if (bar.current) column.classList.add("is-current");
+      column.title = `${bar.label}: ${bar.words.toLocaleString()} words, ${bar.phrases.toLocaleString()} phrases`;
+      const value = document.createElement("b");
+      value.textContent = bar.words === 0 ? "" : shortCount(Math.round(bar.words / 100) * 100 || bar.words);
+      const fill = document.createElement("i");
+      fill.style.height = `${Math.max(2, Math.round((bar.words / max) * 84))}px`;
+      const label = document.createElement("small");
+      label.textContent = bar.label.split(" ")[0] ?? bar.label;
+      column.append(value, fill, label);
+      return column;
+    }),
+  );
 }
