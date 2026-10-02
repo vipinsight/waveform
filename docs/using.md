@@ -201,19 +201,30 @@ seconds, the page says so and offers to open System Settings.
 
 Press **Stop** and Waveform finishes the last phrases, tells the remote speakers
 apart (a one-time 65 MB download, kept on this Mac), prepares playback, and
-writes the summary. The summary has a fixed shape: one sentence on what the
-meeting was about, two to four topics with points, **Next steps** with who took
-each one, and **Decisions**. Each part has its own Copy, and **Copy ▾** offers
-the summary, the transcript, or both.
+writes the summary. The summary has a fixed shape: a title of a few words, one
+sentence on what the meeting was about, two to four topics with points, **Next
+steps** with who took each one, and **Decisions**. The title becomes the
+meeting's name unless you have given it one yourself; clearing a name you gave
+hands the naming back. Each part has its own Copy, and **Copy ▾** offers the
+summary, the transcript, or both.
 
+A recording stopped under twenty seconds, or one in which nothing was said,
+is offered up at once: **Discard** deletes it, **Keep** keeps it. Discarding
+while the notes are still being written is fine.
+
+The open meeting shows **Summary** and **Transcript** as two tabs; the
+transcript tab carries its line count, and **←** and **→** switch between them.
 Click a speaker chip to name them; after a rename, one click rewrites the
 summary with the names. Click a timestamp to play from there; **Find in
-transcript** filters the lines.
+transcript** filters the lines. The **…** menu has **Save audio…**, which puts
+the recording in Downloads as "Title – date time.wav" and shows it in Finder,
+and **Delete meeting…**, which asks on the page itself rather than in a dialog.
 
-On a wide window the list sits beside the open meeting, grouped by day; on a
-narrow one they take turns, with **All meetings** to go back. Click the title
-to rename it. **⌘F** finds a meeting, **↑** and **↓** move through the list,
-and **Esc** closes whatever is up.
+On a wide window the list sits beside the open meeting, grouped by day, with
+the search field at the top of the list; on a narrow one they take turns, with
+**All meetings** to go back. Click the title to rename it. **⌘F** finds a
+meeting, **↑** and **↓** move through the list, and **Esc** closes whatever is
+up.
 
 Summaries use OpenRouter and need the API key from **AI Polish**. Transcription
 stays on this Mac; only the transcript text is sent for the summary, and only

@@ -690,6 +690,33 @@ async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec
     state.recorder.audio(&id).await
 }
 
+/// Copies a meeting's recording into Downloads as "<title> – <date time>.wav"
+/// and shows it in Finder. Downloads rather than a save panel, for the same
+/// reasons as `save_dictation_audio`; the name is made here from the title
+/// and the meeting's own start time, and made unique if one is already there.
+#[tauri::command]
+async fn export_meeting_audio(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
+    let meeting = state.recorder.meeting(&id).await?;
+    let source = state.recorder.audio_path(&id).await?;
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|_| "Could not find the Downloads folder.".to_string())?;
+    let stem = export_file_stem(&format!(
+        "{} – {}",
+        meeting.title,
+        meetings::local_stamp(meeting.created_at)
+    ));
+    let path = unused_path(&dir, &stem);
+    std::fs::copy(&source, &path).map_err(|error| format!("Could not save the audio: {error}"))?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// The Wave Bar finished showing a notice.
 #[tauri::command]
 async fn overlay_notice_done(state: State<'_, AppState>) -> Result<(), String> {
@@ -1512,6 +1539,7 @@ pub fn run() {
             tag_meeting_speakers,
             delete_meeting,
             get_meeting_audio,
+            export_meeting_audio,
             install_diarizer,
             show_meetings,
             probe_system_audio,

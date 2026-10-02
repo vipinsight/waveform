@@ -120,6 +120,12 @@ pub struct Meeting {
     pub has_system_audio: bool,
     /// What processing skipped or could not do.
     pub notes: Vec<Note>,
+    /// Whether the user chose the title. Until they do, the summary names
+    /// the meeting.
+    pub user_titled: bool,
+    /// Whether a recording exists on disk to play or save. Read from the
+    /// folder, not the row, so a file removed by hand is not promised.
+    pub has_audio: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -176,9 +182,10 @@ impl MeetingsStore {
                     "{SELECT_MEETING} ORDER BY created_at DESC, rowid DESC"
                 ))?;
                 let rows = select.query_map([], read_meeting)?;
-                rows.collect()
+                rows.collect::<rusqlite::Result<Vec<Meeting>>>()
             })
             .map_err(describe)
+            .map(|meetings| meetings.into_iter().map(|meeting| self.with_audio(meeting)).collect())
     }
 
     pub fn get(&self, id: &str) -> Result<Option<Meeting>, String> {
@@ -189,6 +196,12 @@ impl MeetingsStore {
                     .optional()
             })
             .map_err(describe)
+            .map(|meeting| meeting.map(|meeting| self.with_audio(meeting)))
+    }
+
+    fn with_audio(&self, mut meeting: Meeting) -> Meeting {
+        meeting.has_audio = recording_in(&self.dir(&meeting.id)).is_some();
+        meeting
     }
 
     pub fn lines(&self, id: &str) -> Result<Vec<Line>, String> {
@@ -301,17 +314,21 @@ impl MeetingsStore {
             .map_err(describe)
     }
 
-    pub fn set_title(&mut self, id: &str, title: &str) -> Result<Meeting, String> {
-        let created_at = self
-            .get(id)?
-            .ok_or_else(|| "That meeting is gone.".to_string())?
-            .created_at;
-        let title = clean_title(title, created_at);
+    /// Sets the title. From the user, it is theirs from then on (clearing it
+    /// hands the naming back); from the summary, it never claims to be.
+    pub fn set_title(&mut self, id: &str, title: &str, by_user: bool) -> Result<Meeting, String> {
+        let current = self.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())?;
+        let cleaned = clean_title(title, current.created_at);
+        let user_titled = if by_user {
+            !title.trim().is_empty()
+        } else {
+            current.user_titled
+        };
         self.db
             .with(|connection| {
                 connection.execute(
-                    "UPDATE meetings SET title = ?2 WHERE id = ?1",
-                    params![id, title],
+                    "UPDATE meetings SET title = ?2, user_titled = ?3 WHERE id = ?1",
+                    params![id, cleaned, user_titled as i64],
                 )
             })
             .map_err(describe)?;
@@ -437,8 +454,17 @@ impl MeetingsStore {
 }
 
 const SELECT_MEETING: &str = "SELECT id, title, created_at, duration_ms, state, stage, language, speech_model,
-                                     speakers, summary, summary_model, has_system_audio, notes
+                                     speakers, summary, summary_model, has_system_audio, notes, user_titled
                                 FROM meetings";
+
+/// The recording to play or save: both sides mixed, or whichever exists.
+/// A header alone (44 bytes) is a file that was opened and never written.
+pub fn recording_in(dir: &std::path::Path) -> Option<PathBuf> {
+    ["mixed.wav", "mic.wav", "system.wav"]
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| std::fs::metadata(path).is_ok_and(|meta| meta.len() > 44))
+}
 
 fn read_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
     let state: String = row.get(4)?;
@@ -461,6 +487,8 @@ fn read_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
             .ok()
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default(),
+        user_titled: row.get::<_, i64>(13)? != 0,
+        has_audio: false,
     })
 }
 
@@ -476,12 +504,7 @@ fn clean_title(title: &str, created_at: u64) -> String {
 
 /// "Meeting, 1 Oct 14:30" in local time, so two in one day stay apart.
 pub fn default_title(created_at: u64) -> String {
-    // Local time without pulling in a timezone crate: ask the C library.
-    let seconds = (created_at / 1_000) as libc_time_t;
-    let mut tm = unsafe { std::mem::zeroed::<libc_tm>() };
-    unsafe {
-        localtime_r(&seconds, &mut tm);
-    }
+    let tm = local_time(created_at);
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
@@ -490,6 +513,30 @@ pub fn default_title(created_at: u64) -> String {
         "Meeting, {} {month} {:02}:{:02}",
         tm.tm_mday, tm.tm_hour, tm.tm_min
     )
+}
+
+/// "2026-10-02 14.30" in local time: sorts in a folder, and has no colon,
+/// which Finder would show as a slash.
+pub fn local_stamp(created_at: u64) -> String {
+    let tm = local_time(created_at);
+    format!(
+        "{:04}-{:02}-{:02} {:02}.{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min
+    )
+}
+
+/// Local time without pulling in a timezone crate: ask the C library.
+fn local_time(created_at: u64) -> libc_tm {
+    let seconds = (created_at / 1_000) as libc_time_t;
+    let mut tm = unsafe { std::mem::zeroed::<libc_tm>() };
+    unsafe {
+        localtime_r(&seconds, &mut tm);
+    }
+    tm
 }
 
 #[allow(non_camel_case_types)]
@@ -597,7 +644,7 @@ mod tests {
         meetings.set_summary(&id, Some("One line.\n\nNext Steps\n- none"), Some("gpt")).unwrap();
         meetings.set_has_system_audio(&id, true).unwrap();
         meetings.set_state(&id, State::Ready, None).unwrap();
-        let meeting = meetings.set_title(&id, " Weekly  sync ").unwrap();
+        let meeting = meetings.set_title(&id, " Weekly  sync ", true).unwrap();
         assert_eq!(meeting.title, "Weekly sync");
         assert_eq!(meeting.state, State::Ready);
         assert_eq!(meeting.stage, None);
@@ -665,5 +712,53 @@ mod tests {
         let title = default_title(1_790_000_000_000);
         assert!(title.starts_with("Meeting, "));
         assert!(title.contains(':'));
+    }
+
+    #[test]
+    fn the_file_stamp_sorts_and_has_no_colon() {
+        let stamp = local_stamp(1_790_000_000_000);
+        assert_eq!(stamp.len(), "2026-10-02 14.30".len(), "{stamp}");
+        assert!(stamp.starts_with("20"));
+        assert!(!stamp.contains(':'));
+    }
+
+    /// The summary names a meeting only until the user does; clearing the
+    /// title hands the naming back.
+    #[test]
+    fn the_users_title_is_kept_over_the_summarys() {
+        let mut meetings = store();
+        let id = meetings.create("", "en", "w").unwrap().id;
+        assert!(!meetings.get(&id).unwrap().unwrap().user_titled);
+
+        let named = meetings.set_title(&id, "Launch Timing", false).unwrap();
+        assert_eq!(named.title, "Launch Timing");
+        assert!(!named.user_titled, "a title from the summary is not the user's");
+
+        let chosen = meetings.set_title(&id, "Friday sync", true).unwrap();
+        assert!(chosen.user_titled);
+        // The summary's later attempt would be refused by the caller; the
+        // store itself keeps the flag for the auto path.
+        let again = meetings.set_title(&id, "Other Name", false).unwrap();
+        assert!(again.user_titled);
+
+        let cleared = meetings.set_title(&id, "   ", true).unwrap();
+        assert!(cleared.title.starts_with("Meeting, "));
+        assert!(!cleared.user_titled);
+    }
+
+    #[test]
+    fn has_audio_reads_the_folder_not_the_row() {
+        let mut meetings = store();
+        let id = meetings.create("x", "en", "w").unwrap().id;
+        assert!(!meetings.get(&id).unwrap().unwrap().has_audio);
+        let dir = meetings.dir(&id);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A header alone is a file that was never written to.
+        std::fs::write(dir.join("mic.wav"), vec![0u8; 44]).unwrap();
+        assert!(!meetings.get(&id).unwrap().unwrap().has_audio);
+        std::fs::write(dir.join("mic.wav"), vec![0u8; 1_000]).unwrap();
+        assert!(meetings.get(&id).unwrap().unwrap().has_audio);
+        assert!(meetings.list().unwrap()[0].has_audio);
+        assert_eq!(recording_in(&dir), Some(dir.join("mic.wav")));
     }
 }

@@ -4725,6 +4725,14 @@ select {
   border-right: 1px solid var(--hairline);
 }
 
+.meetings-search {
+  display: block;
+  width: 100%;
+  flex: none;
+  height: 32px;
+  margin: 0 0 14px;
+}
+
 .meetings-pane-detail {
   position: relative;
   padding: 0 2px 36px 28px;
@@ -4901,39 +4909,8 @@ select {
   color: var(--warn);
 }
 
-.meeting-row-foot > .pill-button,
-.meeting-row-delete {
+.meeting-row-foot > .pill-button {
   margin-left: auto;
-}
-
-/* Delete sits at the row's foot, there once pointed at, never a surprise. */
-.meeting-row-delete {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-faint);
-  opacity: 0;
-  transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
-}
-
-.meeting-row:hover .meeting-row-delete,
-.meeting-row:focus-within .meeting-row-delete,
-.meeting-row-delete:focus-visible {
-  opacity: 1;
-}
-
-.meeting-row-delete:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.meeting-row-delete svg {
-  width: 13px;
-  height: 13px;
 }
 
 .meeting-row.is-recording {
@@ -5290,6 +5267,9 @@ select {
   height: 10px;
   margin: 0;
   animation: recording-pulse 1.4s ease-in-out infinite, live-ring 1.6s ease-out infinite;
+  /* The one sign that audio is arriving: a little brighter with it. */
+  filter: brightness(calc(0.85 + var(--live-level, 0) * 0.5));
+  transition: filter 120ms linear;
 }
 
 @keyframes live-ring {
@@ -5305,50 +5285,6 @@ select {
   letter-spacing: -0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-.live-meters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px 28px;
-}
-
-.live-meter {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.live-meter-label {
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 540;
-}
-
-.live-meter-track {
-  position: relative;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-.live-meter-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--positive)));
-  transition: width 90ms linear;
-}
-
-.live-meter.is-warn .live-meter-label {
-  color: var(--danger);
-}
-
-.live-meter.is-warn .live-meter-track {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
 .live-note {
@@ -5368,25 +5304,56 @@ select {
 .live-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
 
-.live-actions .pill-button.is-stop {
+.live-stop {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 18px;
-  border-radius: 11px;
-  font-size: 13.5px;
-  font-weight: 600;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--danger) 28%, transparent);
+  gap: 10px;
+  height: 44px;
+  padding: 0 24px 0 20px;
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: 640;
+  letter-spacing: 0.005em;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--danger) 30%, transparent),
+    0 8px 22px color-mix(in srgb, var(--danger) 30%, transparent);
+  transition: background 130ms ease, box-shadow 160ms ease, transform 120ms ease;
 }
 
-.live-actions .pill-button.is-stop svg {
-  width: 12px;
-  height: 12px;
+.live-stop svg {
+  width: 14px;
+  height: 14px;
   fill: currentColor;
+}
+
+.live-stop:hover {
+  background: color-mix(in srgb, var(--danger) 88%, black);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--danger) 30%, transparent),
+    0 12px 28px color-mix(in srgb, var(--danger) 36%, transparent);
+  transform: translateY(-1px);
+}
+
+.live-stop:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.live-stop:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 3px;
+}
+
+/* "Throw this recording away?" in the Stop's place, until answered. */
+.live-actions.is-asking {
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface-raised));
+  animation: banner-in 220ms ease both;
 }
 
 .live-discard {
@@ -5585,6 +5552,122 @@ select {
   margin-bottom: 14px;
 }
 
+/* Questions the page asks in place of a dialog: delete this, keep that. */
+.meeting-confirm,
+.meeting-short {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  font-size: 13px;
+  line-height: 1.45;
+  animation: banner-in 220ms ease both;
+}
+
+.meeting-confirm {
+  border-color: color-mix(in srgb, var(--danger) 36%, transparent);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface-raised));
+}
+
+.meeting-short {
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+  background: color-mix(in srgb, var(--warn) 7%, var(--surface-raised));
+}
+
+.meeting-confirm .meeting-banner-text strong,
+.meeting-short .meeting-banner-text strong {
+  font-weight: 600;
+}
+
+/* --- Meetings: tabs ------------------------------------------------------------ */
+
+.meeting-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(100%, 360px);
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--surface-sunken);
+}
+
+.meeting-tabs-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.meeting-tabs[data-tab="transcript"] .meeting-tabs-thumb {
+  transform: translateX(100%);
+}
+
+.meeting-tab {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 580;
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+
+.meeting-tab:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.meeting-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.meeting-tab:disabled {
+  color: var(--ink-faint);
+}
+
+.meeting-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.meeting-tab-count {
+  margin-left: 2px;
+  color: var(--ink-faint);
+  font-weight: 540;
+  font-variant-numeric: tabular-nums;
+}
+
+.meeting-tab[aria-selected="true"] .meeting-tab-count {
+  color: var(--ink-soft);
+}
+
+/* The panel coming in eases a few pixels up, rather than appearing. */
+.meeting-panel {
+  animation: panel-in 180ms ease both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 /* --- Meetings: summary ------------------------------------------------------- */
 
 .meeting-summary {
@@ -5593,20 +5676,20 @@ select {
   gap: 10px;
 }
 
-.meeting-summary-head,
+.meeting-summary-by {
+  align-self: flex-end;
+  margin: -4px 2px 0;
+}
+
 .meeting-transcript-head {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
-.meeting-summary-head .section-label,
-.meeting-transcript-head .section-label {
-  margin: 0 auto 0 2px;
-}
-
 .meeting-transcript-head .dictionary-field {
-  flex: 0 1 220px;
+  flex: 0 1 260px;
 }
 
 .summary-card {

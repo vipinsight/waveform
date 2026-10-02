@@ -11,7 +11,7 @@ import { host } from "./host";
 
 /**
  * The Meetings page: a list of recordings on the left, and the one that is
- * open on the right, with its summary first and its transcript under it.
+ * open on the right, its summary and transcript a tab apart.
  *
  * The host does the recording and transcribing; this file only shows what
  * it reports and asks it for changes. Nothing here has to survive the
@@ -19,11 +19,12 @@ import { host } from "./host";
  *
  * One rule shapes the page: a live microphone is never a surprise. While a
  * meeting records, the header button is Stop with a running clock, the list
- * pins the recording row with its own Stop, and the open meeting is a card
- * that moves with the audio it is hearing.
+ * pins the recording row with its own Stop, and the open meeting is a calm
+ * card with the clock and one unmistakable Stop.
  *
- * Nothing on the page is a timer pretending to be progress. The live card's
- * meters are the host's levels; the finishing steps are the host's stages.
+ * Nothing on the page is a timer pretending to be progress, and nothing is a
+ * browser dialog: the web view has none, so every question -- delete this,
+ * throw that away, keep this short one -- is asked inline, where it applies.
  */
 
 interface Options {
@@ -59,9 +60,16 @@ const element = {
   actions: byId<HTMLElement>("meeting-actions"),
   meta: byId<HTMLElement>("meeting-meta"),
   progress: byId<HTMLButtonElement>("meeting-progress"),
+  confirm: byId<HTMLElement>("meeting-confirm"),
+  short: byId<HTMLElement>("meeting-short"),
   band: byId<HTMLElement>("meeting-band"),
   banners: byId<HTMLElement>("meeting-banners"),
+  tabs: byId<HTMLElement>("meeting-tabs"),
+  tabSummary: byId<HTMLButtonElement>("meeting-tab-summary"),
+  tabTranscript: byId<HTMLButtonElement>("meeting-tab-transcript"),
+  tabCount: byId<HTMLElement>("meeting-tab-count"),
   summary: byId<HTMLElement>("meeting-summary"),
+  transcript: byId<HTMLElement>("meeting-transcript"),
   transcriptHead: byId<HTMLElement>("meeting-transcript-head"),
   transcriptNote: byId<HTMLElement>("meeting-transcript-note"),
   find: byId<HTMLInputElement>("meeting-find"),
@@ -69,6 +77,11 @@ const element = {
   speakersPrompt: byId<HTMLElement>("meeting-speakers-prompt"),
   lines: byId<HTMLOListElement>("meeting-lines"),
 };
+
+type Tab = "summary" | "transcript";
+
+/** A recording stopped under this is offered up for discarding. */
+const SHORT_MS = 20_000;
 
 let options: Options = {
   openView: () => {},
@@ -96,9 +109,16 @@ let probing = false;
 /** The ask above the list was waved away for this launch. */
 let permissionDismissed = false;
 /** The live card's moving parts, updated in place rather than rebuilt. */
-let live: { key: string; clock: HTMLElement; mic: HTMLElement; system: HTMLElement | null } | null = null;
+let live: { key: string; clock: HTMLElement; dot: HTMLElement } | null = null;
 /** Where focus should return when the first-run sheet closes. */
 let introReturnTo: HTMLElement | null = null;
+/** The tab the user chose this session; null means the page decides. */
+let chosenTab: Tab | null = null;
+/** Inline questions that are up. */
+let confirmDelete = false;
+let confirmDiscard = false;
+/** Short recordings the user said to keep, for this launch. */
+const shortKept = new Set<string>();
 
 export function bindMeetings(given: Options): void {
   options = given;
@@ -138,6 +158,9 @@ export function bindMeetings(given: Options): void {
   element.detail.parentElement?.addEventListener("scroll", (event) => {
     element.detailHead.classList.toggle("is-stuck", (event.target as HTMLElement).scrollTop > 2);
   });
+  element.tabSummary.addEventListener("click", () => chooseTab("summary"));
+  element.tabTranscript.addEventListener("click", () => chooseTab("transcript"));
+  element.tabs.addEventListener("keydown", onTabKey);
 
   // One listener for every menu on the page, rather than one per menu built.
   document.addEventListener(
@@ -229,6 +252,8 @@ function onKey(event: KeyboardEvent): void {
 
   if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") {
     event.preventDefault();
+    // On a narrow window the list is behind the open meeting; go back first.
+    if (openId && isNarrow()) openMeeting(null);
     element.search.focus();
     element.search.select();
     return;
@@ -237,6 +262,15 @@ function onKey(event: KeyboardEvent): void {
   if (event.key === "Escape") {
     if (closeMenus()) {
       event.stopPropagation();
+      return;
+    }
+    if (confirmDelete || confirmDiscard) {
+      event.stopPropagation();
+      confirmDelete = false;
+      confirmDiscard = false;
+      live = null;
+      renderConfirm();
+      renderBand();
       return;
     }
     if (!element.intro.hidden) {
@@ -434,6 +468,7 @@ async function record(): Promise<void> {
 async function stop(): Promise<void> {
   if (stopping) return;
   stopping = true;
+  confirmDiscard = false;
   renderRecordButton();
   renderBand();
   try {
@@ -447,27 +482,38 @@ async function stop(): Promise<void> {
   }
 }
 
-async function discard(): Promise<void> {
+/** Throws the live recording away; the card has already asked. */
+async function discardRecording(): Promise<void> {
   if (!detail || detail.meeting.state !== "recording") return;
-  const elapsed = recordingSince ? clock(Date.now() - recordingSince) : "";
-  if (!window.confirm(`Throw this recording away?${elapsed ? ` The ${elapsed} recorded so far will be deleted.` : ""}`)) {
-    return;
-  }
+  confirmDiscard = false;
   try {
     await host().cancelMeeting();
     openMeeting(null);
     await refreshList();
+    options.toast("Discarded");
   } catch (error) {
     showError(error);
   }
 }
 
-async function remove(meeting: Meeting): Promise<void> {
-  if (!window.confirm(`Delete “${meeting.title}” and its recording? This cannot be undone.`)) return;
+/** Deletes a finished meeting; the bar or the short-recording offer has asked. */
+async function deleteMeeting(meeting: Meeting, said: string): Promise<void> {
+  confirmDelete = false;
   try {
     await host().deleteMeeting(meeting.id);
     if (openId === meeting.id) openMeeting(null);
     await refreshList();
+    options.toast(said);
+  } catch (error) {
+    showError(error);
+    renderConfirm();
+  }
+}
+
+async function saveAudio(meeting: Meeting): Promise<void> {
+  try {
+    await host().exportMeetingAudio(meeting.id);
+    options.toast("Saved to Downloads");
   } catch (error) {
     showError(error);
   }
@@ -805,24 +851,11 @@ function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTM
   if (meeting.state !== "recording") foot.append(duration(meeting.durationMs));
   const badge = rowBadge(meeting);
   if (badge) foot.append(badge);
-
   if (meeting.state === "recording") {
     const stopButton = linkButton("Stop", () => void stop());
     stopButton.className = "pill-button is-stop is-small";
     stopButton.addEventListener("click", (event) => event.stopPropagation());
     foot.append(stopButton);
-  } else {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "meeting-row-delete";
-    more.title = "Delete";
-    more.setAttribute("aria-label", `Delete ${meeting.title}`);
-    more.append(icon("trash"));
-    more.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void remove(meeting);
-    });
-    foot.append(more);
   }
 
   row.append(title, time, lede, foot);
@@ -831,7 +864,14 @@ function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTM
 
 function rowLede(meeting: Meeting): string {
   if (meeting.state !== "ready") return "";
-  return meeting.summary?.split("\n").find((line) => line.trim()) ?? "";
+  // The summary's first line is the overview; a Title line, if the model
+  // wrote one, is already the row's title.
+  return (
+    meeting.summary
+      ?.split("\n")
+      .map((line) => line.trim())
+      .find((line) => line && !/^\*{0,2}title:/i.test(line)) ?? ""
+  );
 }
 
 /** A small word on the row for anything that is not simply "ready". */
@@ -865,6 +905,8 @@ function openMeeting(id: string | null): void {
   openId = id;
   detail = null;
   namesChanged = false;
+  confirmDelete = false;
+  confirmDiscard = false;
   live = null;
   element.detail.hidden = id === null;
   element.find.value = "";
@@ -895,8 +937,11 @@ function renderDetail(): void {
   if (!detail) return;
   if (document.activeElement !== element.title) element.title.value = detail.meeting.title;
   renderHead();
+  renderConfirm();
+  renderShort();
   renderBand();
   renderBanners();
+  renderTabs();
   renderSummary();
   renderTranscriptNote();
   renderSpeakers();
@@ -934,6 +979,7 @@ function renderHead(): void {
   const playing = Boolean(playback && !playback.audio.paused);
   const play = iconButton(playing ? "pause" : "play", playing ? "Pause" : "Play", () => void togglePlay(), true);
   play.id = "meeting-play";
+  play.disabled = !meeting.hasAudio;
   const copy = dropdown(iconButton("copy", "Copy", () => {}, true), "Copy", [
     { label: "Copy summary", icon: "sparkles", run: () => copyText(copy, "Summary", detail?.meeting.summary ? summaryTextOf(detail) : null), disabled: !meeting.summary },
     { label: "Copy transcript", icon: "text", run: () => copyText(copy, "Transcript", detail && detail.lines.length > 0 ? transcriptText(detail) : null), disabled: detail.lines.length === 0 },
@@ -954,9 +1000,10 @@ function renderHead(): void {
   copy.querySelector("button")?.append(icon("chevron"));
   const more = dropdown(iconButton("more", "More", () => {}), "More", [
     { label: "Rename", icon: "pencil", run: () => { element.title.focus(); element.title.select(); } },
-    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey },
+    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey || detail.lines.length === 0 },
+    { label: "Save audio…", icon: "download", run: () => void saveAudio(meeting), disabled: !meeting.hasAudio },
     "divider",
-    { label: "Delete meeting…", icon: "trash", run: () => void remove(meeting), danger: true },
+    { label: "Delete meeting…", icon: "trash", run: askDelete, danger: true },
   ]);
   element.actions.append(play, copy, more);
 }
@@ -1003,6 +1050,89 @@ function iconButton(glyph: IconName, label: string, run: () => void, withLabel =
   if (withLabel) button.append(label);
   button.addEventListener("click", run);
   return button;
+}
+
+// --- Inline questions ----------------------------------------------------------
+
+function askDelete(): void {
+  confirmDelete = true;
+  renderConfirm();
+  element.detail.parentElement?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+  element.confirm.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
+}
+
+/** "Delete this meeting?" at the top of the detail, until answered. */
+function renderConfirm(): void {
+  if (!detail || !confirmDelete) {
+    element.confirm.hidden = true;
+    element.confirm.replaceChildren();
+    return;
+  }
+  const { meeting } = detail;
+  element.confirm.hidden = false;
+  element.confirm.setAttribute("aria-label", "Delete this meeting?");
+  const text = document.createElement("div");
+  text.className = "meeting-banner-text";
+  const strong = document.createElement("strong");
+  strong.textContent = `Delete “${meeting.title}” and its recording?`;
+  const small = document.createElement("span");
+  small.textContent = "This cannot be undone.";
+  text.append(strong, small);
+  const actions = document.createElement("div");
+  actions.className = "meeting-banner-actions";
+  const yes = linkButton("Delete", () => void deleteMeeting(meeting, "Deleted"));
+  yes.className = "pill-button is-stop";
+  const no = linkButton("Cancel", () => {
+    confirmDelete = false;
+    renderConfirm();
+  });
+  no.dataset.cancel = "1";
+  actions.append(yes, no);
+  element.confirm.replaceChildren(text, actions);
+}
+
+/**
+ * Why a just-stopped recording is probably not worth keeping, or null. Said
+ * as soon as Stop lands, so nobody waits a minute for notes on twelve seconds.
+ */
+function shortReason(): string | null {
+  if (!detail) return null;
+  const { meeting } = detail;
+  if (meeting.state === "recording" || shortKept.has(meeting.id)) return null;
+  if (meeting.durationMs > 0 && meeting.durationMs < SHORT_MS) {
+    return `Short recording — ${duration(meeting.durationMs)}, nothing much in it.`;
+  }
+  const nothing =
+    meeting.notes.some((note) => note.kind === "nothing-said") || (meeting.state === "ready" && detail.lines.length === 0);
+  if (nothing) return `Nothing was picked up — ${duration(meeting.durationMs)} of silence.`;
+  return null;
+}
+
+/** The offer to discard a short or empty recording: Discard, or Keep. */
+function renderShort(): void {
+  const reason = shortReason();
+  element.short.hidden = reason === null;
+  element.short.replaceChildren();
+  if (reason === null || !detail) return;
+  const { meeting } = detail;
+  const text = document.createElement("div");
+  text.className = "meeting-banner-text";
+  const strong = document.createElement("strong");
+  strong.textContent = reason;
+  const small = document.createElement("span");
+  small.textContent = meeting.state === "processing" ? "Discarding now stops the finishing too." : "Keep it, or let it go.";
+  text.append(strong, small);
+  const actions = document.createElement("div");
+  actions.className = "meeting-banner-actions";
+  const discard = linkButton("Discard", () => void deleteMeeting(meeting, "Discarded"));
+  discard.className = "pill-button is-stop";
+  const keep = linkButton("Keep", () => {
+    shortKept.add(meeting.id);
+    renderShort();
+    renderBanners();
+  });
+  actions.append(discard, keep);
+  element.short.append(text, actions);
 }
 
 /**
@@ -1065,13 +1195,15 @@ function renderBand(): void {
 }
 
 /**
- * Built once per situation and then only moved: the clock and the meters
- * change many times a second, and rebuilding them would reset their motion.
+ * Built once per situation and then only moved: the clock changes twice a
+ * second and the dot brightens with the audio, and rebuilding them would
+ * reset their motion. Calm on purpose: no meters, nothing that says who is
+ * speaking.
  */
 function renderLiveCard(meeting: Meeting): void {
   const hasOther = status?.systemAudio === "available" && meeting.hasSystemAudio;
   const unheard = hasOther && level ? !level.otherHeard && level.elapsedMs > 5_000 : false;
-  const key = [hasOther, unheard, probing].join("|");
+  const key = [hasOther, unheard, probing, confirmDiscard].join("|");
   if (live && live.key === key && element.band.firstElementChild?.classList.contains("live-card")) {
     updateLive();
     return;
@@ -1092,16 +1224,6 @@ function renderLiveCard(meeting: Meeting): void {
   clockText.className = "live-clock";
   head.append(state, clockText);
 
-  const meters = document.createElement("div");
-  meters.className = "live-meters";
-  const mic = meter("You");
-  meters.append(mic.wrap);
-  let system: ReturnType<typeof meter> | null = null;
-  if (hasOther) {
-    system = meter("Other side", unheard);
-    meters.append(system.wrap);
-  }
-
   const note = document.createElement("p");
   note.className = "live-note";
   if (!hasOther) {
@@ -1117,52 +1239,114 @@ function renderLiveCard(meeting: Meeting): void {
 
   const actions = document.createElement("div");
   actions.className = "live-actions";
-  const stopButton = document.createElement("button");
-  stopButton.type = "button";
-  stopButton.className = "pill-button is-stop";
-  stopButton.append(icon("stop", true), "Stop");
-  stopButton.addEventListener("click", () => void stop());
-  const discardButton = document.createElement("button");
-  discardButton.type = "button";
-  discardButton.className = "link live-discard";
-  discardButton.textContent = "Discard";
-  discardButton.addEventListener("click", () => void discard());
-  actions.append(stopButton, discardButton);
+  if (confirmDiscard) {
+    actions.classList.add("is-asking");
+    const text = document.createElement("div");
+    text.className = "meeting-banner-text";
+    const strong = document.createElement("strong");
+    strong.textContent = "Throw this recording away?";
+    const small = document.createElement("span");
+    const elapsed = clock(Date.now() - (recordingSince ?? meeting.createdAt));
+    small.textContent = `The ${elapsed} recorded so far will be deleted.`;
+    text.append(strong, small);
+    const buttons = document.createElement("div");
+    buttons.className = "meeting-banner-actions";
+    const yes = linkButton("Discard", () => void discardRecording());
+    yes.className = "pill-button is-stop";
+    const no = linkButton("Keep recording", () => {
+      confirmDiscard = false;
+      live = null;
+      renderBand();
+    });
+    no.dataset.cancel = "1";
+    buttons.append(yes, no);
+    actions.append(text, buttons);
+  } else {
+    const stopButton = document.createElement("button");
+    stopButton.type = "button";
+    stopButton.className = "pill-button is-stop live-stop";
+    stopButton.append(icon("stop", true), "Stop");
+    stopButton.title = "Stop recording and keep it";
+    stopButton.addEventListener("click", () => void stop());
+    const discardButton = document.createElement("button");
+    discardButton.type = "button";
+    discardButton.className = "link live-discard";
+    discardButton.textContent = "Discard";
+    discardButton.addEventListener("click", () => {
+      confirmDiscard = true;
+      live = null;
+      renderBand();
+      element.band.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
+    });
+    actions.append(stopButton, discardButton);
+  }
 
-  card.append(head, meters, note, actions);
+  card.append(head, note, actions);
   element.band.replaceChildren(card);
-  live = { key, clock: clockText, mic: mic.fill, system: system?.fill ?? null };
+  live = { key, clock: clockText, dot };
   updateLive();
 }
 
 function updateLive(): void {
   if (!live || !detail) return;
   live.clock.textContent = clock(Date.now() - (recordingSince ?? detail.meeting.createdAt));
-  live.mic.style.width = meterWidth(level?.mic ?? 0);
-  if (live.system) live.system.style.width = meterWidth(level?.system ?? 0);
+  // The one sign that audio is arriving: the dot brightens with it.
+  const loudest = Math.max(level?.mic ?? 0, level?.system ?? 0);
+  live.dot.style.setProperty("--live-level", String(Math.min(1, Math.sqrt(Math.min(1, loudest * 4)))));
 }
 
-/** A labelled level bar; `warn` marks a track that should be heard and is not. */
-function meter(label: string, warn = false): { wrap: HTMLElement; fill: HTMLElement } {
-  const wrap = document.createElement("div");
-  wrap.className = `live-meter${warn ? " is-warn" : ""}`;
-  const name = document.createElement("span");
-  name.className = "live-meter-label";
-  name.textContent = label;
-  const track = document.createElement("span");
-  track.className = "live-meter-track";
-  track.setAttribute("role", "meter");
-  track.setAttribute("aria-label", `${label} level`);
-  const fill = document.createElement("span");
-  fill.className = "live-meter-fill";
-  track.append(fill);
-  wrap.append(name, track);
-  return { wrap, fill };
+// --- Tabs ------------------------------------------------------------------------
+
+/** The tab showing: the user's pick this session, else Summary when there is one. */
+function activeTab(): Tab {
+  if (!detail) return "transcript";
+  if (detail.meeting.state === "recording") return "transcript";
+  if (chosenTab) return chosenTab;
+  return detail.summary || detail.meeting.summary ? "summary" : "transcript";
 }
 
-/** RMS to a bar: speech sits around 0.02–0.1, so a square root gives it room. */
-function meterWidth(value: number): string {
-  return `${Math.min(100, Math.round(Math.sqrt(Math.min(1, value * 4)) * 100))}%`;
+function chooseTab(tab: Tab): void {
+  if (element.tabSummary.disabled && tab === "summary") return;
+  const before = activeTab();
+  chosenTab = tab;
+  renderTabs();
+  if (before !== tab) replay(tab === "summary" ? element.summary : element.transcript);
+}
+
+function renderTabs(): void {
+  if (!detail) return;
+  const tab = activeTab();
+  element.tabSummary.disabled = detail.meeting.state === "recording";
+  element.tabSummary.setAttribute("aria-disabled", String(element.tabSummary.disabled));
+  element.tabs.dataset.tab = tab;
+  for (const [button, name] of [
+    [element.tabSummary, "summary"],
+    [element.tabTranscript, "transcript"],
+  ] as const) {
+    button.setAttribute("aria-selected", String(name === tab));
+    button.tabIndex = name === tab ? 0 : -1;
+  }
+  element.summary.hidden = tab !== "summary";
+  element.transcript.hidden = tab !== "transcript";
+  updateTabCount();
+}
+
+function updateTabCount(): void {
+  const count = detail?.lines.length ?? 0;
+  element.tabCount.textContent = count > 0 ? ` · ${count}` : "";
+}
+
+/** ← and → move between the tabs; Home and End jump. */
+function onTabKey(event: KeyboardEvent): void {
+  const order: Tab[] = ["summary", "transcript"];
+  const current = activeTab();
+  let next: Tab | null = null;
+  if (event.key === "ArrowRight" || event.key === "End") next = "transcript";
+  else if (event.key === "ArrowLeft" || event.key === "Home") next = "summary";
+  if (!next || next === current || (next === "summary" && element.tabSummary.disabled)) return;
+  event.preventDefault();
+  chooseTab(next);
+  (order.indexOf(next) === 0 ? element.tabSummary : element.tabTranscript).focus();
 }
 
 // --- Menus -------------------------------------------------------------------
@@ -1298,9 +1482,8 @@ function bannerFor(note: MeetingNote, meeting: Meeting): HTMLElement | null {
             ],
       );
     case "nothing-said":
-      return banner("info", "Nothing was picked up in this recording.", "", [
-        linkButton("Delete", () => void remove(meeting)),
-      ]);
+      // The offer above says it with buttons; once kept, a quiet word is enough.
+      return shortReason() !== null ? null : banner("info", "Nothing was picked up in this recording.", "", []);
     // These are shown where they matter: in the summary or transcript.
     case "no-summary-key":
     case "summary-failed":
@@ -1355,26 +1538,16 @@ function renderSummary(): void {
   if (!detail) return;
   const { meeting, summary } = detail;
   element.summary.replaceChildren();
-  // Nothing said means nothing to summarise; the banner above has said so.
-  const nothingToShow = !summary && meeting.state !== "processing" && meeting.notes.some((note) => note.kind === "nothing-said");
-  element.summary.hidden = meeting.state === "recording" || nothingToShow;
-  if (element.summary.hidden) return;
-
-  const head = document.createElement("div");
-  head.className = "meeting-summary-head";
-  const heading = document.createElement("h2");
-  heading.className = "section-label";
-  heading.textContent = "Summary";
-  head.append(heading);
-  if (summary && meeting.summaryModel) {
-    const by = document.createElement("span");
-    by.className = "view-note";
-    by.textContent = `Written by ${meeting.summaryModel.split("/").pop() ?? meeting.summaryModel}`;
-    head.append(by);
-  }
-  element.summary.append(head);
+  if (meeting.state === "recording") return;
 
   const noteOf = (kind: string) => meeting.notes.find((note) => note.kind === kind);
+
+  if (summary && meeting.summaryModel) {
+    const by = document.createElement("p");
+    by.className = "view-note meeting-summary-by";
+    by.textContent = `Written by ${meeting.summaryModel.split("/").pop() ?? meeting.summaryModel}`;
+    element.summary.append(by);
+  }
 
   if (meeting.state === "processing") {
     element.summary.append(skeleton());
@@ -1394,7 +1567,12 @@ function renderSummary(): void {
   }
 
   if (!summary) {
-    if (noteOf("no-summary-key") || !status?.hasOpenRouterKey) {
+    if (noteOf("nothing-said") || detail.lines.length === 0) {
+      const quiet = document.createElement("p");
+      quiet.className = "meeting-summary-note";
+      quiet.textContent = "Nothing was said, so there is nothing to summarise.";
+      element.summary.append(quiet);
+    } else if (noteOf("no-summary-key") || !status?.hasOpenRouterKey) {
       element.summary.append(
         banner("info", "No summary yet.", "Summaries need an OpenRouter key; the transcript stays on this Mac.", [
           linkButton("Add key", () => options.openView("ai"), true),
@@ -1650,7 +1828,7 @@ function renderLines(): void {
       time.append(icon("play", true), clock(line.startMs));
       time.title = "Play from here";
       time.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
-      time.disabled = meeting.state === "recording";
+      time.disabled = meeting.state === "recording" || !meeting.hasAudio;
       time.addEventListener("click", () => void playFrom(line.startMs));
 
       const who = document.createElement("span");
@@ -1686,6 +1864,7 @@ function renderLines(): void {
   if (meeting.state === "recording" && !query) {
     element.lines.lastElementChild?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }
+  updateTabCount();
   markPlayingLine();
 }
 
@@ -1897,6 +2076,7 @@ const ICONS = {
   pencil:
     '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
+  download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
   headphones:
     '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
   users:

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 /// Shared handle to the open database.
 ///
@@ -262,6 +262,15 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                     stage = NULL
               WHERE state = 'failed' AND stage LIKE 'The app closed%'",
             [],
+        )?;
+    }
+    if version < 6 {
+        // Whether the user chose the title. The summary names a meeting on
+        // its own unless they did. Meetings from before carry no record of
+        // it, so any title that is not the stamped default is taken as theirs.
+        transaction.execute_batch(
+            "ALTER TABLE meetings ADD COLUMN user_titled INTEGER NOT NULL DEFAULT 0;
+             UPDATE meetings SET user_titled = 1 WHERE title NOT LIKE 'Meeting, %';",
         )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
