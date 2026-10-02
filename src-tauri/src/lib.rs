@@ -32,7 +32,7 @@ mod transcribe;
 mod updates;
 mod whisper_cpp;
 
-use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
+use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus, Notice};
 use dictionary::{DictionaryStore, Suggestion, Term};
 use meeting::{MeetingDetail, Recorder, RecorderStatus};
 use meetings::{Meeting, MeetingsStore};
@@ -687,6 +687,13 @@ async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec
     state.recorder.audio(&id).await
 }
 
+/// The Wave Bar finished showing a notice.
+#[tauri::command]
+async fn overlay_notice_done(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.notice_done().await;
+    Ok(())
+}
+
 /// Asks macOS for permission to hear the other side of a call.
 #[tauri::command]
 async fn probe_system_audio(state: State<'_, AppState>) -> Result<String, String> {
@@ -1339,6 +1346,24 @@ pub fn run() {
                 rewriter.clone(),
                 tap_helper,
             ));
+            let notices = Arc::new(std::sync::Mutex::new(None::<Arc<Dictation>>));
+            {
+                let notices = notices.clone();
+                recorder.set_notifier(Box::new(move |text: String, duration_ms: u64| {
+                    let Some(dictation) = notices.lock().ok().and_then(|slot| slot.clone()) else {
+                        return;
+                    };
+                    tauri::async_runtime::spawn(async move {
+                        dictation
+                            .notice(Notice {
+                                text,
+                                duration_ms,
+                                action: None,
+                            })
+                            .await;
+                    });
+                }));
+            }
             let dictation = Dictation::new(
                 app.handle().clone(),
                 logs.clone(),
@@ -1349,6 +1374,10 @@ pub fn run() {
                 rewriter.clone(),
                 models.clone(),
             );
+
+            if let Ok(mut slot) = notices.lock() {
+                *slot = Some(dictation.clone());
+            }
 
             app.manage(AppState {
                 settings,
@@ -1482,6 +1511,7 @@ pub fn run() {
             install_diarizer,
             show_meetings,
             probe_system_audio,
+            overlay_notice_done,
             cancel_diarizer_install,
             remove_diarizer,
             get_dictionary,

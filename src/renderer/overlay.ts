@@ -7,6 +7,7 @@ import type {
   DictationMode,
   DictationSink,
   DictationState,
+  OverlayNotice,
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -290,49 +291,51 @@ meetingStopButton.addEventListener("click", () => {
 });
 meetingClock.addEventListener("click", () => void host().showMeetings());
 
-// A word the user fixed where it landed is now a term; a brief note says so
-// beside the bar, which is the only part of Waveform in view at that moment.
+// Notices: a line beside the bar for things that happen with the window
+// closed -- a word learned, a meeting saved. The host brings the overlay up
+// for them and is told when they are gone, so it can hide the bar again.
 const hudNote = requireElement<HTMLElement>("hud-note");
 const hudNoteText = requireElement<HTMLElement>("hud-note-text");
 const hudNoteUndo = requireElement<HTMLButtonElement>("hud-note-undo");
 let hudNoteTimer: number | null = null;
-let hudNoteTerms: { id: number; text: string }[] = [];
-const HUD_NOTE_MS = 7_000;
+let hudNoteAction: OverlayNotice["action"] = null;
 
 function hideHudNote(): void {
   hudNote.hidden = true;
-  hudNoteTerms = [];
+  hudNoteAction = null;
   reportHitRegion();
+  void host().overlayNoticeDone();
 }
 
-host().onDictionaryLearned((terms) => {
-  hudNoteTerms = terms;
-  hudNoteText.textContent = `Added ${terms.map((term) => term.text).join(", ")} to the dictionary`;
-  hudNoteUndo.hidden = false;
+host().onOverlayNotice((notice) => {
+  hudNoteAction = notice.action;
+  hudNoteText.textContent = notice.text;
+  hudNoteUndo.hidden = notice.action === null;
+  hudNoteUndo.disabled = false;
   hudNoteUndo.textContent = "Undo";
   hudNote.hidden = false;
-  // A fresh bar so the drain starts again for this note.
+  // A fresh bar so the drain starts again for this notice.
   const bar = requireElement<HTMLElement>("hud-note-bar");
   const fresh = bar.cloneNode(true) as HTMLElement;
-  fresh.style.setProperty("--note-ms", `${HUD_NOTE_MS}ms`);
+  fresh.style.setProperty("--note-ms", `${notice.durationMs}ms`);
   bar.replaceWith(fresh);
   if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
-  hudNoteTimer = window.setTimeout(hideHudNote, HUD_NOTE_MS);
+  hudNoteTimer = window.setTimeout(hideHudNote, notice.durationMs);
   reportHitRegion();
 });
 
 hudNoteUndo.addEventListener("click", () => {
-  const terms = hudNoteTerms;
+  const action = hudNoteAction;
+  if (!action) return;
   hudNoteUndo.disabled = true;
-  void Promise.all(terms.map((term) => host().removeDictionaryTerm(term.id)))
+  void Promise.all(action.ids.map((id) => host().removeDictionaryTerm(id)))
     .then(() => {
-      hudNoteText.textContent = `Removed ${terms.map((term) => term.text).join(", ")}`;
+      hudNoteText.textContent = "Removed";
       hudNoteUndo.hidden = true;
       if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
-      hudNoteTimer = window.setTimeout(hideHudNote, 1_800);
+      hudNoteTimer = window.setTimeout(hideHudNote, 1_600);
     })
-    .catch(() => {})
-    .finally(() => {
+    .catch(() => {
       hudNoteUndo.disabled = false;
     });
 });

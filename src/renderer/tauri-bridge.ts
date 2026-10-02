@@ -35,6 +35,7 @@ import type {
   MeetingLevelEvent,
   MeetingStateEvent,
   LearnedTerm,
+  OverlayNotice,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -143,6 +144,8 @@ const api: DesktopApi = {
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
   onDictionaryLearned: (listener) => subscribe<LearnedTerm[]>("dictionary-learned", listener),
+  onOverlayNotice: (listener) => subscribe<OverlayNotice>("overlay-notice", listener),
+  overlayNoticeDone: () => invoke<void>("overlay_notice_done"),
 
   getDictionary: () => invoke<DictionaryTerm[]>("get_dictionary"),
   addDictionaryTerm: (text, heardAs, learned) =>

@@ -180,7 +180,11 @@ pub struct Recorder {
     silent_tap: Mutex<HashMap<String, bool>>,
     installing: AtomicBool,
     install_cancel: Arc<AtomicBool>,
+    /// Says something beside the Wave Bar; set once the bar's owner exists.
+    notifier: std::sync::Mutex<Option<Notifier>>,
 }
+
+type Notifier = Box<dyn Fn(String, u64) + Send + Sync>;
 
 impl Recorder {
     pub fn new(
@@ -203,6 +207,21 @@ impl Recorder {
             silent_tap: Mutex::new(HashMap::new()),
             installing: AtomicBool::new(false),
             install_cancel: Arc::new(AtomicBool::new(false)),
+            notifier: std::sync::Mutex::new(None),
+        }
+    }
+
+    pub fn set_notifier(&self, notifier: Notifier) {
+        if let Ok(mut slot) = self.notifier.lock() {
+            *slot = Some(notifier);
+        }
+    }
+
+    fn notify(&self, text: impl Into<String>, duration_ms: u64) {
+        if let Ok(slot) = self.notifier.lock() {
+            if let Some(notifier) = slot.as_ref() {
+                notifier(text.into(), duration_ms);
+            }
         }
     }
 
@@ -445,6 +464,7 @@ impl Recorder {
         if let Ok(Some(meeting)) = self.meetings.lock().await.get(&id) {
             self.emit_changed(&meeting).await;
         }
+        self.notify("Saved. Finishing the notes…", 4_000);
 
         if let Some(meter) = active.meter.take() {
             meter.abort();
@@ -532,6 +552,14 @@ impl Recorder {
         drop(store);
         self.processing.lock().await.remove(id);
         if let Some(meeting) = meeting {
+            match meeting.state {
+                State::Ready if meeting.summary.is_some() => {
+                    self.notify(format!("Notes ready: {}", meeting.title), 6_000)
+                }
+                State::Ready => self.notify(format!("Saved: {}", meeting.title), 5_000),
+                State::Failed => self.notify("The meeting could not be finished", 6_000),
+                _ => {}
+            }
             self.emit_changed(&meeting).await;
         }
     }

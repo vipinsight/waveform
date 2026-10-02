@@ -113,6 +113,23 @@ struct Session {
     stop_when_speech_ends: bool,
 }
 
+/// Something said beside the Wave Bar, where it is seen with the window closed.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notice {
+    pub text: String,
+    /// Milliseconds the notice stays; a bar drains over it.
+    pub duration_ms: u64,
+    pub action: Option<NoticeAction>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum NoticeAction {
+    /// Removes the terms just learned.
+    UndoDictionary { ids: Vec<i64> },
+}
+
 /// A term just learned from a correction, with enough to undo it.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -471,7 +488,33 @@ impl Dictation {
         let terms = store.terms().unwrap_or_default();
         drop(store);
         let _ = self.app.emit("dictionary-changed", terms);
+        let names = learned.iter().map(|term| format!("“{}”", term.text)).collect::<Vec<_>>().join(", ");
+        let ids = learned.iter().map(|term| term.id).collect();
         let _ = self.app.emit("dictionary-learned", learned);
+        self.notice(Notice {
+            text: format!("Added {names}"),
+            duration_ms: 7_000,
+            action: Some(NoticeAction::UndoDictionary { ids }),
+        })
+        .await;
+    }
+
+    /// Shows a notice beside the Wave Bar, bringing the overlay up for it if
+    /// the bar is resting hidden. The overlay says when it is done, and
+    /// `notice_done` puts things back.
+    pub async fn notice(&self, notice: Notice) {
+        self.show_overlay().await;
+        let _ = self.app.emit_to(OVERLAY_LABEL, "overlay-notice", notice);
+    }
+
+    /// The notice has gone; hide the overlay again unless something else
+    /// wants it on screen.
+    pub async fn notice_done(&self) {
+        let busy = self.session.lock().await.is_some();
+        let always = self.settings.lock().await.value().show_flow_bar_always;
+        if !busy && !always {
+            self.hide_overlay();
+        }
     }
 
     async fn run_command(self: &Arc<Self>, command: Command) {

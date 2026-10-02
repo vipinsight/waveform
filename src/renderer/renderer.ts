@@ -2984,9 +2984,9 @@ function deleteEntry(entry: SavedDictation): void {
 async function saveEntryAudio(entry: SavedDictation): Promise<void> {
   try {
     const path = await host().saveDictationAudio(entry.id, audioFileName(entry.createdAt));
-    setStatus(`Saved ${path.split("/").pop() ?? "the audio"} to Downloads`);
+    showToast(`Saved ${path.split("/").pop() ?? "the audio"} to Downloads`);
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   }
 }
 
@@ -3155,7 +3155,11 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
   name.value = term.text;
   name.setAttribute("aria-label", "Term");
   name.spellcheck = false;
-  name.title = "Click to edit the spelling";
+  // A learned term says so in its tooltip rather than in a column.
+  name.title =
+    term.source === "learned"
+      ? "Learned from a correction you made. Click to edit the spelling."
+      : "Click to edit the spelling";
   name.addEventListener("change", () => {
     const text = name.value.trim();
     if (!text || text === term.text) {
@@ -3171,12 +3175,6 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       name.blur();
     }
   });
-
-  const source = document.createElement("span");
-  source.className = "dictionary-term-source";
-  source.textContent = term.source === "learned" ? "Learned" : "You";
-  source.title =
-    term.source === "learned" ? "Added from a correction you made to a dictation" : "Typed here";
 
   const uses = document.createElement("span");
   uses.className = "dictionary-term-uses";
@@ -3196,7 +3194,7 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       });
   });
 
-  item.append(name, source, uses, remove);
+  item.append(name, uses, remove);
   return item;
 }
 
@@ -3208,22 +3206,22 @@ async function retryHistoryTranscription(
   if (button.disabled) return;
   button.disabled = true;
   button.classList.add("is-busy");
-  setStatus("Retrying transcription…");
+  showToast("Retrying transcription…");
   try {
     const bytes = await host().getDictationAudio(entry.id);
     const { text } = await host().transcribe(bytes);
     const trimmed = text.trim();
     if (!trimmed) {
-      setStatus("No words found in that recording.");
+      showToast("No words found in that recording.");
       return;
     }
     entries = await host().updateDictation(entry.id, trimmed);
     freshId = entry.id;
     entry.text = trimmed;
     textNode.textContent = trimmed;
-    setStatus("Transcription updated");
+    showToast("Transcription updated");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   } finally {
     button.disabled = false;
     button.classList.remove("is-busy");
@@ -3278,7 +3276,7 @@ async function togglePlayback(id: string, button: HTMLButtonElement): Promise<vo
   } catch (error) {
     stopPlayback();
     setPlaybackButton(button, false);
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   }
 }
 
@@ -4745,7 +4743,6 @@ function wireWizard(): void {
 
 function setStatus(message: string): void {
   element.overviewModelState.textContent = message;
-  showToast(message);
 }
 
 // --- Toast and recording strip -------------------------------------------------

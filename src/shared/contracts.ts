@@ -274,6 +274,13 @@ export interface DictionaryTerm {
   createdAt: number;
 }
 
+/** A notice shown beside the Wave Bar, with the window closed or not. */
+export interface OverlayNotice {
+  text: string;
+  durationMs: number;
+  action: { kind: "undoDictionary"; ids: number[] } | null;
+}
+
 /** A term just learned from a correction, with enough to undo it. */
 export interface LearnedTerm {
   id: number;
@@ -515,6 +522,10 @@ export interface DesktopApi {
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   /** Terms just learned from a correction the user made where a dictation landed. */
   onDictionaryLearned(listener: (terms: LearnedTerm[]) => void): () => void;
+  /** Something to say beside the Wave Bar; the overlay shows it. */
+  onOverlayNotice(listener: (notice: OverlayNotice) => void): () => void;
+  /** The Wave Bar finished showing a notice. */
+  overlayNoticeDone(): Promise<void>;
 
   getDictionary(): Promise<DictionaryTerm[]>;
   addDictionaryTerm(text: string, heardAs: string[], learned?: boolean): Promise<DictionaryTerm[]>;
