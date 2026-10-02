@@ -72,8 +72,10 @@ private final class SystemTap {
     description.name = "Waveform meeting tap"
     description.uuid = UUID()
     description.muteBehavior = .unmuted
+    // Left at the initializer's value: true means "every process except
+    // those listed", and the list is empty. Set to false, the tap would
+    // capture only the listed processes, which is to say nothing.
     description.isPrivate = true
-    description.isExclusive = false
 
     var tap = AudioObjectID(kAudioObjectUnknown)
     var err = AudioHardwareCreateProcessTap(description, &tap)
