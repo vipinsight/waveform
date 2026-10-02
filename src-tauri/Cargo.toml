@@ -63,3 +63,12 @@ tauri-plugin-updater = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 # Double Metaphone, for the dictionary's "sounds like a term" correction.
 rphonetic = "3.1.0"
+
+[profile.release]
+# Cargo's default here is strip = "debuginfo", which runs Apple's strip over
+# every artifact, proc-macro dylibs included. On macOS 26 with Xcode 27 the
+# stripped dylibs come back with a mis-aligned LINKEDIT string pool and dyld
+# refuses to load them, so the release build dies on serde_derive before it
+# reaches our own code. Debug info is not generated in release anyway; keeping
+# the symbol table costs a little size and nothing else.
+strip = "none"
