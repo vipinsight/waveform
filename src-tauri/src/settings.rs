@@ -138,6 +138,9 @@ pub struct AppSettings {
     /// Transcribe an audio file dropped anywhere on the window. Beta, so off
     /// until asked for.
     pub transcribe_on_drop: bool,
+    /// Show the Meetings section and its menu bar items. Beta, so off until
+    /// asked for in Labs.
+    pub meetings_enabled: bool,
     /// Drop out of the Dock while the window is closed, leaving only the menu
     /// bar icon. Ignored unless `menu_bar_icon` is on, or the app would have
     /// no visible presence at all.
@@ -204,6 +207,7 @@ impl Default for AppSettings {
             launch_at_login: true,
             show_flow_bar_always: true,
             transcribe_on_drop: false,
+            meetings_enabled: false,
             hide_dock_when_closed: true,
             automatic_update_check: true,
             sidebar_collapsed: false,

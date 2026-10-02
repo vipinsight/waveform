@@ -185,6 +185,10 @@ pasting.
 **Meetings** records a call, writes the transcript on this Mac as you talk, and
 sums it up when you stop.
 
+Meetings is still in development. Switch it on under **Settings → Labs**; the
+Meetings section then appears in the sidebar, marked Beta, along with "Record
+a meeting" in the menu bar icon.
+
 Press **Record** before the call. Waveform records your microphone and, on
 macOS 14.2 or later, what the Mac is playing — the other side of the call. macOS
 asks once for permission to hear the other side; allow it under **Screen &

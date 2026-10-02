@@ -118,6 +118,8 @@ export interface AppSettings {
   showFlowBarAlways: boolean;
   /** Transcribe an audio file dropped anywhere on the window (beta). */
   transcribeOnDrop: boolean;
+  /** Show the Meetings section and its menu bar items (beta). */
+  meetingsEnabled: boolean;
   /** Leave the Dock while the window is closed; needs `menuBarIcon`. */
   hideDockWhenClosed: boolean;
   /** Fold the sidebar away. Kept here so it survives a restart. */
@@ -177,6 +179,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showFlowBarAlways: true,
   // Beta, so off until asked for.
   transcribeOnDrop: false,
+  meetingsEnabled: false,
   hideDockWhenClosed: true,
   automaticUpdateCheck: true,
   sidebarCollapsed: false,
@@ -246,6 +249,8 @@ export function normalizeSettings(
         : base.showFlowBarAlways,
     transcribeOnDrop:
       typeof input.transcribeOnDrop === "boolean" ? input.transcribeOnDrop : base.transcribeOnDrop,
+    meetingsEnabled:
+      typeof input.meetingsEnabled === "boolean" ? input.meetingsEnabled : base.meetingsEnabled,
     hideDockWhenClosed:
       typeof input.hideDockWhenClosed === "boolean"
         ? input.hideDockWhenClosed

@@ -371,6 +371,10 @@ kbd {
   gap: 6px;
 }
 
+.nav-item[hidden] {
+  display: none;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -2021,7 +2025,7 @@ kbd {
 .dictionary-head,
 .dictionary-term {
   display: grid;
-  grid-template-columns: 1fr 64px 36px;
+  grid-template-columns: 1fr 36px;
   gap: 12px;
   align-items: center;
   padding: 8px 14px;
@@ -2149,12 +2153,6 @@ kbd {
 .dictionary-term-source {
   color: var(--ink-soft);
   font-size: 12px;
-}
-
-.dictionary-term-uses {
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 .dictionary-term .entry-action {

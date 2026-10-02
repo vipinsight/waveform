@@ -63,7 +63,7 @@
             <span>Dictations</span>
             <span class="nav-badge" id="setup-badge" hidden></span>
           </button>
-          <button class="nav-item" type="button" data-view="meetings">
+          <button class="nav-item" type="button" data-view="meetings" id="nav-meetings" hidden>
             <svg data-icon="users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
@@ -72,6 +72,7 @@
             </svg>
             <span>Meetings</span>
             <span class="nav-dot" id="meetings-dot" hidden aria-label="Recording"></span>
+            <span class="nav-tag">Beta</span>
           </button>
           <button class="nav-item" type="button" data-view="dictation">
             <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -521,13 +522,11 @@
 
           <div class="dictionary-tools" id="dictionary-tools" hidden>
             <span class="view-note" id="dictionary-count"></span>
-            <button class="pill-button" type="button" id="dictionary-export">Copy list</button>
           </div>
 
           <div class="dictionary-table" id="dictionary-table" hidden>
             <div class="dictionary-head" aria-hidden="true">
               <span>Term</span>
-              <span>Used</span>
               <span></span>
             </div>
             <ul class="dictionary-list" id="dictionary-list" aria-label="Dictionary"></ul>
@@ -1256,6 +1255,21 @@
                 </small>
               </span>
               <span class="row-actions"><input id="transcribe-drop-toggle" type="checkbox" class="switch" /></span>
+            </label>
+          </div>
+
+          <h2 class="section-label">Meetings</h2>
+          <div class="card">
+            <label class="row">
+              <span class="row-label">
+                <span class="row-title">Meetings <span class="nav-tag">Beta</span></span>
+                <small>
+                  Record a call from this Mac, with both sides, and get a transcript
+                  and notes. Adds a Meetings section to the sidebar and to the menu bar
+                  icon. Still in development, so it may change.
+                </small>
+              </span>
+              <span class="row-actions"><input id="meetings-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
         </section>
