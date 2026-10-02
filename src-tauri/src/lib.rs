@@ -473,6 +473,12 @@ async fn get_stats(state: State<'_, AppState>) -> Result<AppStats, String> {
     Ok(state.stats.lock().await.value())
 }
 
+/// The calendar, months and streaks behind the Overview.
+#[tauri::command]
+async fn get_activity(state: State<'_, AppState>) -> Result<stats::Activity, String> {
+    Ok(state.stats.lock().await.activity())
+}
+
 #[tauri::command]
 async fn get_model_state(state: State<'_, AppState>) -> Result<ModelEvent, String> {
     Ok(state.models.state().await)
@@ -1525,6 +1531,7 @@ pub fn run() {
             update_settings,
             set_available_microphones,
             get_stats,
+            get_activity,
             get_history,
             meeting_recorder_status,
             list_meetings,

@@ -7,6 +7,7 @@
  */
 import type {
   AiStatus,
+  Activity,
   AppStats,
   CaptureBlock,
   DesktopApi,
@@ -193,6 +194,7 @@ const api: DesktopApi = {
   onDiarizerInstall: (listener) =>
     subscribe<DiarizerInstallEvent>("diarizer-install", listener),
   getStats: () => invoke<AppStats>("get_stats"),
+  getActivity: () => invoke<Activity>("get_activity"),
   onStatsChanged: (listener) => subscribe<AppStats>("stats-changed", listener),
 
   getHotkeyStatus: () => invoke<HotkeyStatus>("get_hotkey_status"),

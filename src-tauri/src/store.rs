@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 /// Shared handle to the open database.
 ///
@@ -272,6 +272,38 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             "ALTER TABLE meetings ADD COLUMN user_titled INTEGER NOT NULL DEFAULT 0;
              UPDATE meetings SET user_titled = 1 WHERE title NOT LIKE 'Meeting, %';",
         )?;
+    }
+    if version < 7 {
+        // Words per local day, for the Overview calendar. Dictations that are
+        // still on disk seed it; the lifetime counters stay the source of
+        // the totals, since dictations can be deleted and days cannot.
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS daily_stats (
+                day     TEXT PRIMARY KEY,
+                words   INTEGER NOT NULL DEFAULT 0,
+                phrases INTEGER NOT NULL DEFAULT 0
+            );",
+        )?;
+        let rows: Vec<(String, i64)> = {
+            let mut select = transaction.prepare(
+                "SELECT date(created_at / 1000, 'unixepoch', 'localtime'), transcribed_text FROM dictations",
+            )?;
+            let rows = select
+                .query_map([], |row| {
+                    let day: String = row.get(0)?;
+                    let text: String = row.get(1)?;
+                    Ok((day, text.split_whitespace().count() as i64))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            rows
+        };
+        for (day, words) in rows {
+            transaction.execute(
+                "INSERT INTO daily_stats (day, words, phrases) VALUES (?1, ?2, 1)
+                 ON CONFLICT(day) DO UPDATE SET words = words + excluded.words, phrases = phrases + 1",
+                rusqlite::params![day, words],
+            )?;
+        }
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()
