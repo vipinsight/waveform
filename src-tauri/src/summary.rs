@@ -23,6 +23,9 @@ const MAX_TRANSCRIPT_CHARS: usize = 120_000;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
+    /// A few words naming the meeting, when the model gave them. Becomes the
+    /// meeting's title unless the user has chosen one.
+    pub title: Option<String>,
     pub overview: String,
     pub topics: Vec<Section>,
     pub next_steps: Vec<String>,
@@ -93,7 +96,7 @@ pub async fn summarize(key: &str, model: &str, transcript: &str) -> Result<(Stri
         return Ok((first, Some(parsed)));
     }
     let restated = format!(
-        "{PROMPT}\n\nYour previous reply did not follow the shape. Reply again, in exactly the shape above, starting with the one-sentence overview."
+        "{PROMPT}\n\nYour previous reply did not follow the shape. Reply again, in exactly the shape above, starting with the Title line and then the one-sentence overview."
     );
     let second = ask(key, model, &restated, &transcript).await?;
     let parsed = parse(&second).ok();
@@ -151,7 +154,8 @@ async fn ask(key: &str, model: &str, system: &str, transcript: &str) -> Result<S
 
 /// Reads the fixed shape. Forgiving about blank lines and markdown bullets,
 /// strict about the parts: an overview, at least one topic, and both closing
-/// sections in order.
+/// sections in order. The title line is optional: replies written before it
+/// was asked for, and models that skip it, still parse.
 pub fn parse(text: &str) -> Result<Summary, String> {
     let lines: Vec<&str> = text
         .lines()
@@ -160,10 +164,16 @@ pub fn parse(text: &str) -> Result<Summary, String> {
         .collect();
     let mut index = 0;
 
+    let title = lines.first().and_then(|line| title_line(line));
+    if title.is_some() {
+        index += 1;
+    }
+
     let overview = lines
-        .first()
+        .get(index)
         .filter(|line| !is_point(line))
         .map(|line| strip_markdown(line))
+        .filter(|line| !line.is_empty())
         .ok_or("no overview sentence")?;
     index += 1;
 
@@ -230,11 +240,37 @@ pub fn parse(text: &str) -> Result<Summary, String> {
         decisions.push("Nothing was decided.".to_string());
     }
     Ok(Summary {
+        title,
         overview,
         topics,
         next_steps,
         decisions,
     })
+}
+
+/// `Title: …` as a short title, or nothing when the line is not one. The
+/// title is kept to one line, without a closing period, and no longer than
+/// a window title bar would show.
+fn title_line(line: &str) -> Option<String> {
+    let cleaned = strip_markdown(line);
+    let rest = cleaned
+        .get(..6)
+        .filter(|head| head.eq_ignore_ascii_case("title:"))
+        .map(|_| &cleaned[6..])?;
+    let title: String = rest
+        .replace("**", "")
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '“' || c == '”')
+        .trim_end_matches('.')
+        .trim()
+        .chars()
+        .take(80)
+        .collect();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
+    }
 }
 
 fn is_point(line: &str) -> bool {
@@ -263,12 +299,39 @@ mod tests {
     #[test]
     fn parses_the_shape_into_sections() {
         let summary = parse(SAMPLE).unwrap();
+        assert_eq!(summary.title, None);
         assert_eq!(summary.overview, "Team reviewed the release plan and who owns what.");
         assert_eq!(summary.topics.len(), 2);
         assert_eq!(summary.topics[0].heading, "Release Timing");
         assert_eq!(summary.topics[0].points, vec!["Ship Thursday if QA signs off", "Friday is the fallback"]);
         assert_eq!(summary.next_steps, vec!["(Priya) Draft the changelog", "(Vipin) Book the QA slot"]);
         assert_eq!(summary.decisions, vec!["Thursday is the target"]);
+    }
+
+    #[test]
+    fn a_title_line_becomes_the_title_and_the_overview_follows() {
+        let text = format!("Title: Release Plan Review.\n\n{SAMPLE}");
+        let summary = parse(&text).unwrap();
+        assert_eq!(summary.title.as_deref(), Some("Release Plan Review"));
+        assert_eq!(summary.overview, "Team reviewed the release plan and who owns what.");
+        assert_eq!(summary.topics.len(), 2);
+        assert_eq!(summary.decisions, vec!["Thursday is the target"]);
+    }
+
+    #[test]
+    fn the_title_line_is_read_however_the_model_dressed_it() {
+        let text = format!("**Title:** “Q3 Hiring Plan”\n{SAMPLE}");
+        assert_eq!(parse(&text).unwrap().title.as_deref(), Some("Q3 Hiring Plan"));
+        let text = format!("TITLE: Launch timing\n{SAMPLE}");
+        assert_eq!(parse(&text).unwrap().title.as_deref(), Some("Launch timing"));
+        // An empty title line is no title, and the overview must still follow.
+        let text = format!("Title:\n{SAMPLE}");
+        assert!(parse(&text).is_err());
+    }
+
+    #[test]
+    fn a_title_alone_is_not_a_summary() {
+        assert!(parse("Title: Just a name").is_err());
     }
 
     #[test]

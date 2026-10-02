@@ -334,15 +334,6 @@
           <div class="view-head">
             <h1 class="display">Meetings</h1>
             <span class="head-tools">
-              <input
-                id="meetings-search"
-                class="dictionary-field is-search"
-                type="search"
-                placeholder="Search meetings"
-                aria-label="Search meetings"
-                aria-keyshortcuts="Meta+F"
-                spellcheck="false"
-              />
               <button id="meeting-record" class="pill-button is-primary record-button" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                 <span id="meeting-record-label">Record</span>
@@ -412,6 +403,15 @@
                shell's data-open says which pane the narrow layout shows. -->
           <div id="meetings-shell" class="meetings-shell" data-open="false" hidden>
             <aside class="meetings-pane meetings-pane-list">
+              <input
+                id="meetings-search"
+                class="dictionary-field is-search meetings-search"
+                type="search"
+                placeholder="Search meetings"
+                aria-label="Search meetings"
+                aria-keyshortcuts="Meta+F"
+                spellcheck="false"
+              />
               <div id="meetings-list" class="meetings-list" role="listbox" aria-label="Meetings"></div>
               <p id="meetings-no-match" class="meetings-no-match" hidden>No meeting matches that.</p>
             </aside>
@@ -449,12 +449,24 @@
                 </header>
 
                 <div class="meeting-detail-body">
+                  <!-- Questions the page asks inline, never in a browser dialog. -->
+                  <div id="meeting-confirm" class="meeting-confirm" role="alertdialog" aria-live="assertive" hidden></div>
+                  <div id="meeting-short" class="meeting-short" role="status" hidden></div>
                   <div id="meeting-band" class="meeting-band" aria-live="polite"></div>
                   <div id="meeting-banners" class="meeting-banners"></div>
-                  <section id="meeting-summary" class="meeting-summary" hidden></section>
-                  <section class="meeting-transcript">
+
+                  <!-- Summary and transcript take turns; the thumb slides to the one showing. -->
+                  <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Summary or transcript" data-tab="summary">
+                    <span class="meeting-tabs-thumb" aria-hidden="true"></span>
+                    <button id="meeting-tab-summary" class="meeting-tab" role="tab" type="button" aria-selected="true" aria-controls="meeting-summary">Summary</button>
+                    <button id="meeting-tab-transcript" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-transcript" tabindex="-1">
+                      Transcript<span id="meeting-tab-count" class="meeting-tab-count"></span>
+                    </button>
+                  </div>
+
+                  <section id="meeting-summary" class="meeting-summary meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-summary" hidden></section>
+                  <section id="meeting-transcript" class="meeting-transcript meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-transcript">
                     <div class="meeting-transcript-head" id="meeting-transcript-head">
-                      <h2 class="section-label">Transcript</h2>
                       <input
                         id="meeting-find"
                         class="dictionary-field is-search"

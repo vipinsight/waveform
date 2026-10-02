@@ -320,6 +320,10 @@ export interface Meeting {
   hasSystemAudio: boolean;
   /** What processing skipped or could not do; each becomes a banner with a button. */
   notes: MeetingNote[];
+  /** Whether the user chose the title; until then the summary names the meeting. */
+  userTitled: boolean;
+  /** Whether a recording exists on disk to play or save. */
+  hasAudio: boolean;
 }
 
 export type MeetingNoteKind =
@@ -365,6 +369,8 @@ export interface MeetingLine {
 }
 
 export interface MeetingSummary {
+  /** A few words naming the meeting, when the model gave them. */
+  title: string | null;
   overview: string;
   topics: { heading: string; points: string[] }[];
   nextSteps: string[];
@@ -549,6 +555,8 @@ export interface DesktopApi {
   summarizeMeeting(id: string): Promise<MeetingDetail>;
   deleteMeeting(id: string): Promise<void>;
   getMeetingAudio(id: string): Promise<Uint8Array>;
+  /** Copies the recording into Downloads and reveals it; resolves to its path. */
+  exportMeetingAudio(id: string): Promise<string>;
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;

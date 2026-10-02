@@ -720,11 +720,21 @@ impl Recorder {
         let (text, parsed) = summary::summarize(&key, &model, &transcript)
             .await
             .map_err(SummaryError::Failed)?;
-        self.meetings
-            .lock()
-            .await
-            .set_summary(id, Some(&text), Some(&model))
-            .map_err(SummaryError::Failed)?;
+        {
+            let mut store = self.meetings.lock().await;
+            store
+                .set_summary(id, Some(&text), Some(&model))
+                .map_err(SummaryError::Failed)?;
+            // The summary names the meeting, unless the user already has.
+            if let Some(title) = parsed.as_ref().and_then(|summary| summary.title.as_deref()) {
+                let user_titled = store.get(id).ok().flatten().is_some_and(|current| current.user_titled);
+                if !user_titled {
+                    if let Err(error) = store.set_title(id, title, false) {
+                        self.logs.error(&self.app, "meeting", format!("{id}: title: {error}"));
+                    }
+                }
+            }
+        }
         Ok(if parsed.is_some() {
             SummaryOutcome::Parsed
         } else {
@@ -785,10 +795,19 @@ impl Recorder {
         }
     }
 
+    /// The user's title, kept over whatever the summary would have said.
     pub async fn rename(self: &Arc<Self>, id: &str, title: &str) -> Result<Meeting, String> {
-        let meeting = self.meetings.lock().await.set_title(id, title)?;
+        let meeting = self.meetings.lock().await.set_title(id, title, true)?;
         self.emit_changed(&meeting).await;
         Ok(meeting)
+    }
+
+    pub async fn meeting(&self, id: &str) -> Result<Meeting, String> {
+        self.meetings
+            .lock()
+            .await
+            .get(id)?
+            .ok_or_else(|| "That meeting is gone.".to_string())
     }
 
     pub async fn rename_speaker(self: &Arc<Self>, id: &str, label: &str, name: &str) -> Result<Meeting, String> {
@@ -811,15 +830,14 @@ impl Recorder {
 
     /// The recording for playback: both sides mixed, or whichever exists.
     pub async fn audio(&self, id: &str) -> Result<Vec<u8>, String> {
+        let path = self.audio_path(id).await?;
+        std::fs::read(&path).map_err(|error| format!("The recording could not be read: {error}"))
+    }
+
+    /// Where the recording is: the same choice as `audio`, as a path to copy.
+    pub async fn audio_path(&self, id: &str) -> Result<PathBuf, String> {
         let dir = self.meetings.lock().await.dir(id);
-        for name in ["mixed.wav", "mic.wav", "system.wav"] {
-            if let Ok(bytes) = std::fs::read(dir.join(name)) {
-                if bytes.len() > 44 {
-                    return Ok(bytes);
-                }
-            }
-        }
-        Err("This meeting has no recording.".into())
+        crate::meetings::recording_in(&dir).ok_or_else(|| "This meeting has no recording.".to_string())
     }
 
     /// Downloads the speaker tool, reporting progress to the window.

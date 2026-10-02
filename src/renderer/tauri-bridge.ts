@@ -174,6 +174,7 @@ const api: DesktopApi = {
     const bytes = await invoke<number[]>("get_meeting_audio", { id });
     return Uint8Array.from(bytes);
   },
+  exportMeetingAudio: (id) => invoke<string>("export_meeting_audio", { id }),
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),
   probeSystemAudio: () => invoke<"heard" | "silent" | "unsupported" | "missing">("probe_system_audio"),
