@@ -93,7 +93,6 @@ const element = {
   dictionaryTools: requireElement<HTMLElement>("dictionary-tools"),
   dictionarySearch: requireElement<HTMLInputElement>("dictionary-search"),
   dictionaryCount: requireElement<HTMLElement>("dictionary-count"),
-  dictionaryExport: requireElement<HTMLButtonElement>("dictionary-export"),
   dictionaryList: requireElement<HTMLUListElement>("dictionary-list"),
   dictionaryEmpty: requireElement<HTMLElement>("dictionary-empty"),
   microphoneSelect: requireElement<HTMLSelectElement>("microphone-select"),
@@ -141,6 +140,8 @@ const element = {
   dropOverlayCopy: requireElement<HTMLButtonElement>("drop-overlay-copy"),
   dropOverlayClose: requireElement<HTMLButtonElement>("drop-overlay-close"),
   transcribeDropToggle: requireElement<HTMLInputElement>("transcribe-drop-toggle"),
+  meetingsToggle: requireElement<HTMLInputElement>("meetings-toggle"),
+  navMeetings: requireElement<HTMLElement>("nav-meetings"),
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
@@ -703,6 +704,9 @@ function wireEvents(): void {
   element.transcribeDropToggle.addEventListener("change", () => {
     void patchSettings({ transcribeOnDrop: element.transcribeDropToggle.checked });
   });
+  element.meetingsToggle.addEventListener("change", () => {
+    void patchSettings({ meetingsEnabled: element.meetingsToggle.checked });
+  });
   bindDictionary();
   bindMeetings({
     openView,
@@ -977,6 +981,12 @@ function applySettings(next: AppSettings): void {
   element.launchAtLoginToggle.checked = next.launchAtLogin;
   element.flowBarToggle.checked = next.showFlowBarAlways;
   element.transcribeDropToggle.checked = next.transcribeOnDrop;
+  element.meetingsToggle.checked = next.meetingsEnabled;
+  // Meetings lives in Labs: the section appears only once it is switched
+  // on, and switching it off while it is open leaves the page rather than
+  // showing a section the sidebar no longer offers.
+  element.navMeetings.hidden = !next.meetingsEnabled;
+  if (!next.meetingsEnabled && !requireElement<HTMLElement>("view-meetings").hidden) showView("overview");
   for (const button of Array.from(
     document.querySelectorAll<HTMLElement>("#dictionary-learning [data-learning]"),
   )) {
@@ -3023,13 +3033,6 @@ function bindDictionary(): void {
       },
     });
   });
-  element.dictionaryExport.addEventListener("click", () => {
-    void navigator.clipboard.writeText(dictionary.map((term) => term.text).join(", "));
-    element.dictionaryExport.textContent = "Copied";
-    setTimeout(() => {
-      element.dictionaryExport.textContent = "Copy list";
-    }, 1200);
-  });
 }
 
 function renderDictionary(): void {
@@ -3144,10 +3147,6 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
     }
   });
 
-  const uses = document.createElement("span");
-  uses.className = "dictionary-term-uses";
-  uses.textContent = term.uses === 0 ? "—" : term.uses === 1 ? "once" : `${term.uses}×`;
-  uses.title = "How often it has come up in your dictations";
 
   const remove = iconButton("Remove term", TRASH_ICON, "is-danger", () => {
     void host()
@@ -3162,7 +3161,7 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       });
   });
 
-  item.append(name, uses, remove);
+  item.append(name, remove);
   return item;
 }
 

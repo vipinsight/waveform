@@ -16,6 +16,8 @@ describe("DEFAULT_SETTINGS", () => {
   it("leaves transcribing dropped audio off", () => {
     expect(DEFAULT_SETTINGS.transcribeOnDrop).toBe(false);
     expect(normalizeSettings({ transcribeOnDrop: true }).transcribeOnDrop).toBe(true);
+    expect(DEFAULT_SETTINGS.meetingsEnabled).toBe(false);
+    expect(normalizeSettings({ meetingsEnabled: true }).meetingsEnabled).toBe(true);
     const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
     expect(rust).toContain("transcribe_on_drop: false,");
   });

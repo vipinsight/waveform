@@ -311,6 +311,9 @@ async fn update_settings(
     if next.show_flow_bar_always != previous.show_flow_bar_always {
         state.dictation.apply_flow_bar_setting().await;
     }
+    if next.meetings_enabled != previous.meetings_enabled && next.menu_bar_icon {
+        refresh_tray_menu(&app);
+    }
     if next.microphone_device_id != previous.microphone_device_id
         || next.microphone_device_name != previous.microphone_device_name
     {
@@ -2096,7 +2099,11 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         items.push(update);
         items.push(&separator);
     }
-    items.push(&meeting_item);
+    // Meetings is a Labs feature: its items appear once it is switched on,
+    // and whenever a recording is live, which is never something to hide.
+    if settings.meetings_enabled || recording.is_some() {
+        items.push(&meeting_item);
+    }
     if let Some(show) = meeting_show.as_ref() {
         items.push(show);
     }
