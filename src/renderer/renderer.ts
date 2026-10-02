@@ -93,7 +93,12 @@ const element = {
   dictationDictionaryOpen: requireElement<HTMLButtonElement>("dictation-dictionary-open"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
   dictionaryText: requireElement<HTMLInputElement>("dictionary-text"),
-  dictionaryHeard: requireElement<HTMLInputElement>("dictionary-heard"),
+  dictionaryAddCard: requireElement<HTMLElement>("dictionary-add-card"),
+  dictionaryHeadline: requireElement<HTMLElement>("dictionary-headline"),
+  dictionaryLede: requireElement<HTMLElement>("dictionary-lede"),
+  dictionarySuggest: requireElement<HTMLElement>("dictionary-suggest"),
+  dictionaryTable: requireElement<HTMLElement>("dictionary-table"),
+  dictionaryOpenDictations: requireElement<HTMLButtonElement>("dictionary-open-dictations"),
   dictionaryTools: requireElement<HTMLElement>("dictionary-tools"),
   dictionarySearch: requireElement<HTMLInputElement>("dictionary-search"),
   dictionaryCount: requireElement<HTMLElement>("dictionary-count"),
@@ -3136,32 +3141,22 @@ let dictionary: DictionaryTerm[] = [];
 /** Above this many terms the list gets a search field. */
 const DICTIONARY_SEARCH_FROM = 8;
 
+/** The macOS account's name, offered as the first term; fetched once. */
+let suggestedName: string | null = null;
+
 function bindDictionary(): void {
   element.dictionaryAdd.addEventListener("submit", (event) => {
     event.preventDefault();
-    const text = element.dictionaryText.value.trim();
-    if (!text) return;
-    const heard = element.dictionaryHeard.value
-      .split(",")
-      .map((variant) => variant.trim())
-      .filter(Boolean);
-    // A pasted list adds every term in it; a single term can carry its mis-hearings.
-    const request =
-      text.includes(",") || text.includes("\n")
-        ? host().importDictionary(text)
-        : host().addDictionaryTerm(text, heard, false);
-    void request
-      .then((next) => {
-        dictionary = next;
-        renderDictionary();
-        element.dictionaryText.value = "";
-        element.dictionaryHeard.value = "";
-        element.dictionaryText.focus();
-      })
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : String(error));
-      });
+    void addDictionaryTerms(element.dictionaryText.value);
   });
+  element.dictionaryOpenDictations.addEventListener("click", () => openView("dictate"));
+  void host()
+    .meetingRecorderStatus()
+    .then((status) => {
+      suggestedName = status.localName && status.localName !== "Me" ? status.localName : null;
+      renderDictionary();
+    })
+    .catch(() => {});
   element.dictionarySearch.addEventListener("input", renderDictionary);
   bindGroup("#dictionary-learning [data-learning]", (button) => {
     const value = button.dataset.learning;
@@ -3190,52 +3185,150 @@ function renderDictionary(): void {
       )
     : dictionary;
 
-  element.dictionaryTools.hidden = dictionary.length < DICTIONARY_SEARCH_FROM;
+  const empty = dictionary.length === 0;
+  // The explanation is for someone with nothing yet; once there is a list,
+  // the field alone says what it is for.
+  element.dictionaryAddCard.classList.toggle("is-compact", !empty);
+  element.dictionaryHeadline.hidden = !empty;
+  element.dictionaryLede.hidden = !empty;
+  element.dictionaryTools.hidden = empty;
+  element.dictionarySearch.hidden = dictionary.length < DICTIONARY_SEARCH_FROM;
   element.dictionaryCount.textContent =
     dictionary.length === 1 ? "1 term" : `${dictionary.length} terms`;
-  element.dictionaryEmpty.hidden = dictionary.length > 0;
-  element.dictionaryEmpty.textContent =
-    dictionary.length === 0
-      ? "Nothing yet. Paste a comma-separated list into the term field to add several at once."
-      : "";
-  if (dictionary.length > 0 && shown.length === 0) {
-    element.dictionaryEmpty.hidden = false;
-    element.dictionaryEmpty.textContent = "No term matches that.";
+  element.dictionaryTable.hidden = empty || shown.length === 0;
+  element.dictionaryEmpty.hidden = !(dictionary.length > 0 && shown.length === 0);
+  element.dictionaryEmpty.textContent = "No term matches that.";
+
+  // One-click starts: the account's name, and the words people most often
+  // need spelled right.
+  element.dictionarySuggest.hidden = !empty;
+  if (empty) {
+    element.dictionarySuggest.replaceChildren("Start with");
+    const starts = [suggestedName, "your company", "a product you work on"].filter(
+      (value): value is string => Boolean(value),
+    );
+    for (const start of starts) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "dictionary-chip";
+      chip.textContent = start === suggestedName ? start : start;
+      if (start === suggestedName) {
+        chip.addEventListener("click", () => void addDictionaryTerms(start));
+      } else {
+        chip.addEventListener("click", () => {
+          element.dictionaryText.placeholder = `Type ${start}, then press Add`;
+          element.dictionaryText.focus();
+        });
+      }
+      element.dictionarySuggest.append(chip);
+    }
   }
 
   element.dictionaryList.replaceChildren(...shown.map(renderDictionaryTerm));
+}
+
+/** Adds one term, or every term in a pasted list. */
+async function addDictionaryTerms(raw: string): Promise<void> {
+  const text = raw.trim();
+  if (!text) return;
+  try {
+    dictionary =
+      text.includes(",") || text.includes("\n") || text.includes(";")
+        ? await host().importDictionary(text)
+        : await host().addDictionaryTerm(text, [], false);
+    renderDictionary();
+    element.dictionaryText.value = "";
+    element.dictionaryText.focus();
+    showToast(text.includes(",") ? "Added to the dictionary." : `Added ${text}.`);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
+  }
+}
+
+/** Saves a term's spelling and mis-hearings as edited in its row. */
+async function saveDictionaryTerm(term: DictionaryTerm, text: string, heardAs: string[]): Promise<void> {
+  try {
+    dictionary = await host().updateDictionaryTerm(term.id, text, heardAs);
+    renderDictionary();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
+    renderDictionary();
+  }
 }
 
 function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "dictionary-term";
 
-  const name = document.createElement("span");
+  // The spelling, editable in place: click, type, Enter.
+  const name = document.createElement("input");
   name.className = "dictionary-term-text";
-  name.textContent = term.text;
-  if (term.source === "learned") {
-    const tag = document.createElement("span");
-    tag.className = "dictionary-tag";
-    tag.textContent = "Learned";
-    tag.title = "Added from a correction you made to a transcript";
-    name.append(tag);
-  }
+  name.value = term.text;
+  name.setAttribute("aria-label", "Term");
+  name.spellcheck = false;
+  name.title = "Click to edit the spelling";
+  name.addEventListener("change", () => {
+    const text = name.value.trim();
+    if (!text || text === term.text) {
+      name.value = term.text;
+      return;
+    }
+    void saveDictionaryTerm(term, text, term.heardAs);
+  });
+  name.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") name.blur();
+    if (event.key === "Escape") {
+      name.value = term.text;
+      name.blur();
+    }
+  });
 
+  // What the engine hears instead: chips, each removable, plus a field to
+  // add one. These are what the after-decoding fix keys on.
   const heard = document.createElement("span");
   heard.className = "dictionary-term-heard";
-  if (term.heardAs.length > 0) {
-    heard.append("heard as ");
-    term.heardAs.forEach((variant, index) => {
-      if (index > 0) heard.append(", ");
-      const chip = document.createElement("em");
-      chip.textContent = variant;
-      heard.append(chip);
+  for (const variant of term.heardAs) {
+    const chip = document.createElement("span");
+    chip.className = "dictionary-heard-chip";
+    chip.append(variant);
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.setAttribute("aria-label", `Remove "${variant}"`);
+    drop.textContent = "×";
+    drop.addEventListener("click", () => {
+      void saveDictionaryTerm(term, term.text, term.heardAs.filter((known) => known !== variant));
     });
+    chip.append(drop);
+    heard.append(chip);
   }
+  const addHeard = document.createElement("input");
+  addHeard.className = "dictionary-heard-add";
+  addHeard.placeholder = term.heardAs.length === 0 ? "What it's heard as…" : "+ another";
+  addHeard.setAttribute("aria-label", `What ${term.text} is heard as`);
+  addHeard.spellcheck = false;
+  addHeard.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const value = addHeard.value.trim();
+    if (!value) return;
+    void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
+  });
+  addHeard.addEventListener("blur", () => {
+    const value = addHeard.value.trim();
+    if (value) void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
+  });
+  heard.append(addHeard);
+
+  const source = document.createElement("span");
+  source.className = "dictionary-term-source";
+  source.textContent = term.source === "learned" ? "Learned" : "You";
+  source.title =
+    term.source === "learned" ? "Added from a correction you made to a dictation" : "Typed here";
 
   const uses = document.createElement("span");
   uses.className = "dictionary-term-uses";
-  uses.textContent = term.uses === 0 ? "" : term.uses === 1 ? "used once" : `used ${term.uses}×`;
+  uses.textContent = term.uses === 0 ? "—" : term.uses === 1 ? "once" : `${term.uses}×`;
+  uses.title = "How often it has come up in your dictations";
 
   const remove = iconButton("Remove term", TRASH_ICON, "is-danger", () => {
     void host()
@@ -3243,13 +3336,14 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       .then((next) => {
         dictionary = next;
         renderDictionary();
+        showToast(`Removed ${term.text}.`);
       })
       .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : String(error));
+        showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
       });
   });
 
-  item.append(name, heard, uses, remove);
+  item.append(name, heard, source, uses, remove);
   return item;
 }
 
