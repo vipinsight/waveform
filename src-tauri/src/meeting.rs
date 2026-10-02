@@ -648,7 +648,13 @@ impl Recorder {
         if steps.diarize && meeting.has_system_audio && dir.join("system.wav").is_file() {
             if diarize::is_installed() {
                 self.set_stage(id, "Tagging speakers…").await;
-                let turns = diarize::run(&dir.join("system.wav"), cancel).await?;
+                // The speaker models read 16 kHz; the track is kept at the
+                // device's rate, so a resampled copy is made for them and
+                // thrown away after.
+                let input = diarizer_input(&dir)?;
+                let turns = diarize::run(&input, cancel).await;
+                let _ = std::fs::remove_file(&input);
+                let turns = turns?;
                 let spans: Vec<diarize::Span> = lines
                     .iter()
                     .filter(|line| line.track == Track::System)
@@ -1100,6 +1106,22 @@ fn mixdown(dir: &Path) -> Result<(), String> {
 }
 
 /// Reads one of our own WAVs: a 44-byte header, then mono PCM16.
+/// Writes the other side's track again at the speaker models' 16 kHz and
+/// returns where. Removed by the caller once the models have read it.
+fn diarizer_input(dir: &Path) -> Result<PathBuf, String> {
+    const DIARIZER_RATE: u32 = 16_000;
+    let (samples, rate) =
+        read_pcm16(&dir.join("system.wav")).ok_or("The other side's track could not be read.")?;
+    let samples = if rate == DIARIZER_RATE {
+        samples
+    } else {
+        resample_linear(&samples, rate, DIARIZER_RATE)
+    };
+    let path = dir.join("speakers-16k.wav");
+    std::fs::write(&path, audio::encode_wav(&samples, DIARIZER_RATE)).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 fn read_pcm16(path: &Path) -> Option<(Vec<f32>, u32)> {
     let bytes = std::fs::read(path).ok()?;
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" {
