@@ -10,8 +10,8 @@ import type {
 import { host } from "./host";
 
 /**
- * The Meetings page: a list of recordings, and one open at a time with its
- * summary and transcript.
+ * The Meetings page: a list of recordings on the left, and the one that is
+ * open on the right, with its summary first and its transcript under it.
  *
  * The host does the recording and transcribing; this file only shows what
  * it reports and asks it for changes. Nothing here has to survive the
@@ -19,8 +19,11 @@ import { host } from "./host";
  *
  * One rule shapes the page: a live microphone is never a surprise. While a
  * meeting records, the header button is Stop with a running clock, the list
- * pins the recording row with its own Stop, and the detail shows that audio
- * is actually being heard.
+ * pins the recording row with its own Stop, and the open meeting is a card
+ * that moves with the audio it is hearing.
+ *
+ * Nothing on the page is a timer pretending to be progress. The live card's
+ * meters are the host's levels; the finishing steps are the host's stages.
  */
 
 interface Options {
@@ -34,20 +37,28 @@ interface Options {
 }
 
 const element = {
+  view: byId<HTMLElement>("view-meetings"),
   search: byId<HTMLInputElement>("meetings-search"),
   record: byId<HTMLButtonElement>("meeting-record"),
   intro: byId<HTMLElement>("meeting-intro"),
   introStart: byId<HTMLButtonElement>("meeting-intro-start"),
   introCancel: byId<HTMLButtonElement>("meeting-intro-cancel"),
+  introClose: byId<HTMLButtonElement>("meeting-intro-close"),
   empty: byId<HTMLElement>("meetings-empty"),
   emptyRecord: byId<HTMLButtonElement>("meetings-empty-record"),
   emptySetup: byId<HTMLElement>("meetings-empty-setup"),
-  list: byId<HTMLElement>("meetings-list"),
   permission: byId<HTMLElement>("meetings-permission"),
+  shell: byId<HTMLElement>("meetings-shell"),
+  list: byId<HTMLElement>("meetings-list"),
   noMatch: byId<HTMLElement>("meetings-no-match"),
+  placeholder: byId<HTMLElement>("meeting-placeholder"),
   detail: byId<HTMLElement>("meeting-detail"),
+  detailHead: byId<HTMLElement>("meeting-detail-head"),
   back: byId<HTMLButtonElement>("meeting-back"),
   title: byId<HTMLInputElement>("meeting-title"),
+  actions: byId<HTMLElement>("meeting-actions"),
+  meta: byId<HTMLElement>("meeting-meta"),
+  progress: byId<HTMLButtonElement>("meeting-progress"),
   band: byId<HTMLElement>("meeting-band"),
   banners: byId<HTMLElement>("meeting-banners"),
   summary: byId<HTMLElement>("meeting-summary"),
@@ -84,6 +95,10 @@ let otherSide: "heard" | "silent" | "unsupported" | "missing" | null = null;
 let probing = false;
 /** The ask above the list was waved away for this launch. */
 let permissionDismissed = false;
+/** The live card's moving parts, updated in place rather than rebuilt. */
+let live: { key: string; clock: HTMLElement; mic: HTMLElement; system: HTMLElement | null } | null = null;
+/** Where focus should return when the first-run sheet closes. */
+let introReturnTo: HTMLElement | null = null;
 
 export function bindMeetings(given: Options): void {
   options = given;
@@ -92,6 +107,10 @@ export function bindMeetings(given: Options): void {
   element.emptyRecord.addEventListener("click", () => void onRecordButton());
   element.introStart.addEventListener("click", () => void startFromIntro());
   element.introCancel.addEventListener("click", hideIntro);
+  element.introClose.addEventListener("click", hideIntro);
+  element.intro.addEventListener("click", (event) => {
+    if (event.target === element.intro) hideIntro();
+  });
   element.back.addEventListener("click", () => openMeeting(null));
   element.title.addEventListener("change", () => {
     if (!openId) return;
@@ -102,9 +121,33 @@ export function bindMeetings(given: Options): void {
   });
   element.title.addEventListener("keydown", (event) => {
     if (event.key === "Enter") element.title.blur();
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      if (detail) element.title.value = detail.meeting.title;
+      element.title.blur();
+    }
   });
   element.search.addEventListener("input", renderList);
   element.find.addEventListener("input", renderLines);
+  element.progress.addEventListener("click", (event) => {
+    if (!playback || !Number.isFinite(playback.audio.duration)) return;
+    const box = element.progress.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+    playback.audio.currentTime = fraction * playback.audio.duration;
+  });
+  element.detail.parentElement?.addEventListener("scroll", (event) => {
+    element.detailHead.classList.toggle("is-stuck", (event.target as HTMLElement).scrollTop > 2);
+  });
+
+  // One listener for every menu on the page, rather than one per menu built.
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!(event.target as HTMLElement).closest(".copy-menu")) closeMenus();
+    },
+    { capture: true },
+  );
+  document.addEventListener("keydown", onKey);
 
   host().onMeetingLine(({ meetingId, line }) => {
     if (!detail || detail.meeting.id !== meetingId) return;
@@ -175,6 +218,70 @@ export async function stopRecording(): Promise<void> {
   await stop();
 }
 
+// --- Keyboard ------------------------------------------------------------------
+
+/**
+ * ⌘F finds; Escape puts away the nearest thing that is up; the arrows walk
+ * the list, and the open meeting follows them.
+ */
+function onKey(event: KeyboardEvent): void {
+  if (element.view.hidden) return;
+
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    element.search.focus();
+    element.search.select();
+    return;
+  }
+
+  if (event.key === "Escape") {
+    if (closeMenus()) {
+      event.stopPropagation();
+      return;
+    }
+    if (!element.intro.hidden) {
+      event.stopPropagation();
+      hideIntro();
+      return;
+    }
+    // A field with text in it clears first; the page steps back only after.
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement && active.value) return;
+    if (openId && isNarrow()) {
+      event.stopPropagation();
+      openMeeting(null);
+    }
+    return;
+  }
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !(element.list.contains(active) || active === element.search)) return;
+    const rows = Array.from(element.list.querySelectorAll<HTMLElement>(".meeting-row"));
+    if (rows.length === 0) return;
+    event.preventDefault();
+    const down = event.key === "ArrowDown";
+    let index = rows.findIndex((row) => row.contains(active));
+    if (index === -1) index = rows.findIndex((row) => row.dataset.id === openId);
+    const next = index === -1 ? (down ? 0 : rows.length - 1) : Math.min(rows.length - 1, Math.max(0, index + (down ? 1 : -1)));
+    const id = rows[next]?.dataset.id;
+    if (!id) return;
+    if (id !== openId) openMeeting(id);
+    focusRow(id);
+  }
+}
+
+function focusRow(id: string): void {
+  const row = element.list.querySelector<HTMLElement>(`.meeting-row[data-id="${CSS.escape(id)}"]`);
+  row?.focus();
+  row?.scrollIntoView({ block: "nearest" });
+}
+
+/** True when the panes take turns: the back button is only drawn then. */
+function isNarrow(): boolean {
+  return getComputedStyle(element.back).display !== "none";
+}
+
 // --- Data --------------------------------------------------------------------
 
 async function refreshStatus(): Promise<void> {
@@ -194,6 +301,7 @@ async function refreshStatus(): Promise<void> {
   renderBanners();
   renderTranscriptNote();
   renderSummary();
+  renderHead();
 }
 
 async function refreshList(): Promise<void> {
@@ -249,12 +357,17 @@ async function onRecordButton(): Promise<void> {
 }
 
 function showIntro(): void {
+  const active = document.activeElement;
+  introReturnTo = active instanceof HTMLElement && active !== document.body ? active : element.record;
   element.intro.hidden = false;
   element.introStart.focus();
 }
 
 function hideIntro(): void {
+  if (element.intro.hidden) return;
   element.intro.hidden = true;
+  (introReturnTo ?? element.record).focus();
+  introReturnTo = null;
 }
 
 /**
@@ -292,6 +405,7 @@ async function probeOtherSide(): Promise<typeof otherSide> {
   }
   renderEmpty();
   renderBanners();
+  live = null;
   renderBand();
   renderPermissionAsk();
   if (otherSide === "heard") options.toast("Allowed. The other side of your calls will be recorded.");
@@ -366,22 +480,25 @@ function renderRecordButton(): void {
   element.record.classList.toggle("is-stop", recording);
   element.record.classList.toggle("is-primary", !recording);
   element.record.disabled = stopping;
-  element.record.textContent = stopping
+  const label = stopping
     ? "Stopping…"
     : recording
-      ? `■ Stop ${recordingSince ? clock(Date.now() - recordingSince) : ""}`.trim()
+      ? `Stop ${recordingSince ? clock(Date.now() - recordingSince) : ""}`.trim()
       : "Record";
+  element.record.replaceChildren(icon(recording ? "stop" : "mic", recording), label);
   element.record.title = recording ? "Stop recording and keep it" : "Record a meeting";
   if (recording) startTicker();
   else if (!detail || detail.meeting.state !== "recording") stopTicker();
 }
 
+/** Twice a second: the clocks move; nothing else is rebuilt. */
 function startTicker(): void {
   if (ticker !== null) return;
   ticker = window.setInterval(() => {
     renderRecordButton();
-    if (detail?.meeting.state === "recording") renderBand();
-    renderList();
+    if (detail?.meeting.state === "recording") updateLive();
+    const row = element.list.querySelector<HTMLElement>(".meeting-row.is-recording .meeting-row-time");
+    if (row && recordingSince) row.textContent = clock(Date.now() - recordingSince);
   }, 500);
 }
 
@@ -400,65 +517,95 @@ function renderEmpty(): void {
   element.emptySetup.replaceChildren();
   if (!status) return;
 
-  const rows: HTMLElement[] = [];
+  const cards: HTMLElement[] = [];
   if (status.systemAudio === "available") {
-    const row = setupRow(
-      "Hear the other side of the call",
-      otherSide === "heard"
-        ? "Allowed. Both sides of a call are recorded."
-        : otherSide === "silent"
-          ? "macOS hasn't allowed it. Turn on Waveform under Screen & System Audio Recording, then check again."
-          : "macOS asks once. Nothing you record leaves this Mac.",
-    );
-    if (otherSide !== "heard") {
-      row.append(
-        linkButton(probing ? "Asking macOS…" : otherSide === "silent" ? "Check again" : "Allow", () => void probeOtherSide(), true),
-      );
-      if (otherSide === "silent") row.append(linkButton("Open System Settings", openAudioCaptureSettings));
+    const heard = otherSide === "heard";
+    const actions: HTMLElement[] = [];
+    if (!heard) {
+      actions.push(linkButton(probing ? "Asking macOS…" : otherSide === "silent" ? "Check again" : "Allow", () => void probeOtherSide(), true));
+      if (otherSide === "silent") actions.push(linkButton("Open System Settings", openAudioCaptureSettings));
     }
-    rows.push(row);
-  } else if (status.systemAudio === "unsupported") {
-    rows.push(
-      setupRow(
+    cards.push(
+      setupCard(
+        "headphones",
         "Hear the other side of the call",
-        "Needs macOS 14.2 or later; until then only your microphone is recorded.",
+        heard
+          ? "Allowed. Both sides of a call are recorded."
+          : otherSide === "silent"
+            ? "macOS hasn't allowed it. Turn on Waveform under Screen & System Audio Recording, then check again."
+            : "macOS asks once. Nothing you record leaves this Mac.",
+        { done: heard, actions },
       ),
     );
+  } else if (status.systemAudio === "unsupported") {
+    cards.push(
+      setupCard("headphones", "Hear the other side of the call", "Needs macOS 14.2 or later; until then only your microphone is recorded."),
+    );
   } else {
-    rows.push(setupRow("Your microphone only", "This copy of Waveform can only record your microphone."));
+    cards.push(setupCard("headphones", "Your microphone only", "This copy of Waveform can only record your microphone."));
   }
   if (!status.diarizerInstalled) {
-    rows.push(diarizerRow("Tell speakers apart", `A ${megabytes(status.diarizerBytes)} download, kept on this Mac. Without it, everyone else on the call is one voice.`));
+    cards.push(
+      setupCard(
+        "users",
+        "Tell speakers apart",
+        installing
+          ? installing.message
+          : `A ${megabytes(status.diarizerBytes)} download, kept on this Mac. Without it, everyone else on the call is one voice.`,
+        { actions: [diarizerButton()], progress: installing ? installing.progress : null },
+      ),
+    );
   }
   if (!status.hasOpenRouterKey) {
-    const row = setupRow(
-      "Write a summary",
-      "Summaries use OpenRouter and need a key. Transcripts never leave this Mac; the summary sends only the text.",
+    cards.push(
+      setupCard(
+        "sparkles",
+        "Write a summary",
+        "Summaries use OpenRouter and need a key. Transcripts never leave this Mac; the summary sends only the text.",
+        { actions: [linkButton("Add key", () => options.openView("ai"))] },
+      ),
     );
-    row.append(linkButton("Add key", () => options.openView("ai")));
-    rows.push(row);
   }
-  element.emptySetup.append(...rows);
+  element.emptySetup.append(...cards);
 }
 
-function setupRow(title: string, detailText: string): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "row";
-  const label = document.createElement("span");
-  label.className = "row-label";
-  label.append(title);
-  const small = document.createElement("small");
-  small.textContent = detailText;
-  label.append(small);
-  row.append(label);
-  return row;
-}
-
-/** The speaker-tool row, with its download button or progress. */
-function diarizerRow(title: string, detailText: string): HTMLElement {
-  const row = setupRow(title, installing ? installing.message : detailText);
-  row.append(diarizerButton());
-  return row;
+/** One thing still to set up, or done: an icon, a line on why, a button. */
+function setupCard(
+  glyph: IconName,
+  title: string,
+  body: string,
+  extra: { done?: boolean; actions?: HTMLElement[]; progress?: number | null } = {},
+): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "setup-card";
+  if (extra.done) card.classList.add("is-done");
+  const mark = document.createElement("span");
+  mark.className = "setup-card-icon";
+  mark.append(icon(extra.done ? "check" : glyph));
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const text = document.createElement("p");
+  text.textContent = body;
+  card.append(mark, heading, text);
+  if (extra.progress !== null && extra.progress !== undefined) {
+    const bar = document.createElement("div");
+    bar.className = "setup-card-progress";
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuenow", String(Math.round(extra.progress * 100)));
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.round(extra.progress * 100)}%`;
+    bar.append(fill);
+    card.append(bar);
+  }
+  if (extra.actions && extra.actions.length > 0) {
+    const row = document.createElement("div");
+    row.className = "setup-card-actions";
+    row.append(...extra.actions);
+    card.append(row);
+  }
+  return card;
 }
 
 function diarizerButton(): HTMLButtonElement {
@@ -505,13 +652,69 @@ function renderList(): void {
           (meeting.summary ?? "").toLowerCase().includes(query),
       )
     : meetings;
-  // The recording row first, whatever the dates say.
-  const ordered = [...shown].sort((a, b) => Number(b.state === "recording") - Number(a.state === "recording"));
 
-  element.list.replaceChildren(...ordered.map(renderListRow));
-  element.list.hidden = openId !== null || meetings.length === 0;
+  element.shell.hidden = meetings.length === 0;
+  element.shell.dataset.open = String(openId !== null);
+  element.placeholder.hidden = openId !== null;
+  element.list.replaceChildren(...groupRows(shown));
+  element.noMatch.hidden = meetings.length === 0 || shown.length > 0;
   renderPermissionAsk();
-  element.noMatch.hidden = openId !== null || meetings.length === 0 || shown.length > 0;
+}
+
+/**
+ * The list in sections: the recording first, whatever the dates say, then
+ * today, yesterday, the week, and months before that.
+ */
+function groupRows(shown: Meeting[]): HTMLElement[] {
+  const groups = new Map<string, { label: string; live: boolean; rows: Meeting[] }>();
+  const selectedOrFirst = openId ?? shown[0]?.id ?? null;
+  for (const meeting of shown) {
+    const key = meeting.state === "recording" ? "live" : groupKey(meeting.createdAt);
+    const group = groups.get(key) ?? { label: key === "live" ? "Now" : groupLabel(meeting.createdAt), live: key === "live", rows: [] };
+    group.rows.push(meeting);
+    groups.set(key, group);
+  }
+  const ordered = Array.from(groups.entries()).sort(([a], [b]) => Number(b === "live") - Number(a === "live"));
+  return ordered.map(([key, group]) => {
+    const section = document.createElement("div");
+    section.className = "meetings-group";
+    if (group.live) section.classList.add("is-live");
+    section.setAttribute("role", "group");
+    section.setAttribute("aria-label", group.label);
+    const label = document.createElement("h3");
+    label.className = "meetings-group-label";
+    label.textContent = group.label;
+    section.append(label, ...group.rows.map((meeting) => renderListRow(meeting, key, meeting.id === selectedOrFirst)));
+    return section;
+  });
+}
+
+function groupKey(at: number): string {
+  const days = daysAgo(at);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return "week";
+  const date = new Date(at);
+  return `${date.getFullYear()}-${date.getMonth()}`;
+}
+
+function groupLabel(at: number): string {
+  const days = daysAgo(at);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "This week";
+  const date = new Date(at);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString([], sameYear ? { month: "long" } : { month: "long", year: "numeric" });
+}
+
+function daysAgo(at: number): number {
+  const start = (ts: number) => {
+    const date = new Date(ts);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  };
+  return Math.round((start(Date.now()) - start(at)) / 86_400_000);
 }
 
 /**
@@ -520,7 +723,6 @@ function renderList(): void {
  */
 function renderPermissionAsk(): void {
   const show =
-    openId === null &&
     meetings.length > 0 &&
     status?.systemAudio === "available" &&
     otherSide !== "heard" &&
@@ -553,12 +755,19 @@ function renderPermissionAsk(): void {
   element.permission.append(text, actions);
 }
 
-function renderListRow(meeting: Meeting): HTMLElement {
+function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTMLElement {
   const row = document.createElement("div");
   row.className = `meeting-row is-${meeting.state}`;
-  row.tabIndex = 0;
-  row.setAttribute("role", "button");
-  const open = () => openMeeting(meeting.id);
+  row.dataset.id = meeting.id;
+  row.tabIndex = focusable ? 0 : -1;
+  row.setAttribute("role", "option");
+  row.setAttribute("aria-selected", String(meeting.id === openId));
+  // The rows are rebuilt on open, so focus is put back on the one chosen:
+  // the arrows keep working from there.
+  const open = () => {
+    openMeeting(meeting.id);
+    focusRow(meeting.id);
+  };
   row.addEventListener("click", open);
   row.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -574,83 +783,96 @@ function renderListRow(meeting: Meeting): HTMLElement {
     dot.className = "recording-dot";
     title.append(dot);
   }
-  title.append(meeting.title);
+  const name = document.createElement("span");
+  name.textContent = meeting.title;
+  title.append(name);
 
-  const meta = document.createElement("span");
-  meta.className = "meeting-row-meta";
-  meta.textContent = rowMeta(meeting);
+  const time = document.createElement("span");
+  time.className = "meeting-row-time";
+  time.textContent =
+    meeting.state === "recording"
+      ? clock(Date.now() - (recordingSince ?? meeting.createdAt))
+      : group === "today" || group === "yesterday"
+        ? timeOfDay(meeting.createdAt)
+        : shortDate(meeting.createdAt);
 
   const lede = document.createElement("span");
   lede.className = "meeting-row-lede";
   lede.textContent = rowLede(meeting);
 
-  row.append(title, meta, lede);
+  const foot = document.createElement("span");
+  foot.className = "meeting-row-foot";
+  if (meeting.state !== "recording") foot.append(duration(meeting.durationMs));
+  const badge = rowBadge(meeting);
+  if (badge) foot.append(badge);
 
   if (meeting.state === "recording") {
     const stopButton = linkButton("Stop", () => void stop());
     stopButton.className = "pill-button is-stop is-small";
     stopButton.addEventListener("click", (event) => event.stopPropagation());
-    row.append(stopButton);
+    foot.append(stopButton);
   } else {
     const more = document.createElement("button");
     more.type = "button";
-    more.className = "meeting-row-more";
+    more.className = "meeting-row-delete";
     more.title = "Delete";
     more.setAttribute("aria-label", `Delete ${meeting.title}`);
-    more.textContent = "Delete";
+    more.append(icon("trash"));
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       void remove(meeting);
     });
-    row.append(more);
+    foot.append(more);
   }
+
+  row.append(title, time, lede, foot);
   return row;
 }
 
-function rowMeta(meeting: Meeting): string {
-  const when = new Date(meeting.createdAt).toLocaleString([], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  if (meeting.state === "recording") {
-    return `Recording · ${clock(Date.now() - (recordingSince ?? meeting.createdAt))}`;
-  }
-  return [when, duration(meeting.durationMs)].join(" · ");
+function rowLede(meeting: Meeting): string {
+  if (meeting.state !== "ready") return "";
+  return meeting.summary?.split("\n").find((line) => line.trim()) ?? "";
 }
 
-function rowLede(meeting: Meeting): string {
+/** A small word on the row for anything that is not simply "ready". */
+function rowBadge(meeting: Meeting): HTMLElement | null {
+  const make = (text: string, tone: "live" | "busy" | "warn" | "plain") => {
+    const badge = document.createElement("span");
+    badge.className = "meeting-row-badge";
+    if (tone !== "plain") badge.classList.add(`is-${tone}`);
+    badge.textContent = text;
+    return badge;
+  };
   switch (meeting.state) {
     case "recording":
-      return "";
+      return make("Live", "live");
     case "processing":
-      return "Finishing up…";
+      return make("Finishing…", "busy");
     case "failed":
-      return meeting.notes.some((note) => note.kind === "interrupted") ? "Interrupted" : (meeting.stage ?? "Stopped early");
-    default: {
-      const overview = meeting.summary?.split("\n").find((line) => line.trim());
-      if (overview) return overview;
-      if (meeting.notes.some((note) => note.kind === "other-side-not-heard")) return "Your side only";
-      if (meeting.notes.some((note) => note.kind === "nothing-said")) return "Nothing was picked up";
-      return "";
-    }
+      return make(meeting.notes.some((note) => note.kind === "interrupted") ? "Interrupted" : "Stopped early", "warn");
+    default:
+      if (meeting.notes.some((note) => note.kind === "other-side-not-heard")) return make("Your side only", "plain");
+      if (meeting.notes.some((note) => note.kind === "nothing-said")) return make("Nothing picked up", "plain");
+      return null;
   }
 }
 
 // --- One meeting -------------------------------------------------------------
 
 function openMeeting(id: string | null): void {
+  const changed = id !== openId;
   stopPlayback();
   openId = id;
   detail = null;
   namesChanged = false;
+  live = null;
   element.detail.hidden = id === null;
   element.find.value = "";
   renderList();
   renderEmpty();
   if (id) {
+    if (changed) replay(element.detail);
+    element.detail.parentElement?.scrollTo({ top: 0 });
     const known = meetings.find((meeting) => meeting.id === id);
     if (known) {
       detail = { meeting: known, lines: [], summary: null };
@@ -662,9 +884,17 @@ function openMeeting(id: string | null): void {
   }
 }
 
+/** Runs an element's entrance animation again. */
+function replay(node: HTMLElement): void {
+  node.style.animation = "none";
+  void node.offsetWidth;
+  node.style.animation = "";
+}
+
 function renderDetail(): void {
   if (!detail) return;
   if (document.activeElement !== element.title) element.title.value = detail.meeting.title;
+  renderHead();
   renderBand();
   renderBanners();
   renderSummary();
@@ -674,209 +904,353 @@ function renderDetail(): void {
   if (detail.meeting.state === "recording") startTicker();
 }
 
-/** The band under the title: the one place that says what is happening. */
+/** The sticky head: when, how long, who, and what can be done with it. */
+function renderHead(): void {
+  if (!detail) return;
+  const { meeting } = detail;
+
+  element.meta.replaceChildren();
+  if (meeting.state === "recording") {
+    element.meta.append(`Started ${timeOfDay(meeting.createdAt)}`);
+  } else {
+    const parts: (string | HTMLElement)[] = [longWhen(meeting.createdAt)];
+    if (meeting.durationMs > 0) parts.push(duration(meeting.durationMs));
+    const people = participants();
+    if (people) parts.push(people);
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        const sep = document.createElement("span");
+        sep.className = "meeting-meta-sep";
+        sep.textContent = "·";
+        element.meta.append(sep);
+      }
+      element.meta.append(part);
+    });
+  }
+
+  element.actions.replaceChildren();
+  if (meeting.state === "recording" || meeting.state === "processing") return;
+
+  const playing = Boolean(playback && !playback.audio.paused);
+  const play = iconButton(playing ? "pause" : "play", playing ? "Pause" : "Play", () => void togglePlay(), true);
+  play.id = "meeting-play";
+  const copy = dropdown(iconButton("copy", "Copy", () => {}, true), "Copy", [
+    { label: "Copy summary", icon: "sparkles", run: () => copyText(copy, "Summary", detail?.meeting.summary ? summaryTextOf(detail) : null), disabled: !meeting.summary },
+    { label: "Copy transcript", icon: "text", run: () => copyText(copy, "Transcript", detail && detail.lines.length > 0 ? transcriptText(detail) : null), disabled: detail.lines.length === 0 },
+    {
+      label: "Copy both",
+      icon: "copy",
+      run: () =>
+        copyText(
+          copy,
+          "Summary and transcript",
+          detail && detail.lines.length > 0
+            ? [detail.meeting.summary ? summaryTextOf(detail) : null, "Transcript", transcriptText(detail)].filter(Boolean).join("\n\n")
+            : null,
+        ),
+      disabled: detail.lines.length === 0,
+    },
+  ]);
+  copy.querySelector("button")?.append(icon("chevron"));
+  const more = dropdown(iconButton("more", "More", () => {}), "More", [
+    { label: "Rename", icon: "pencil", run: () => { element.title.focus(); element.title.select(); } },
+    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey },
+    "divider",
+    { label: "Delete meeting…", icon: "trash", run: () => void remove(meeting), danger: true },
+  ]);
+  element.actions.append(play, copy, more);
+}
+
+/** Who spoke: a dot per voice in its colour, then the names. */
+function participants(): HTMLElement | null {
+  if (!detail || detail.lines.length === 0) return null;
+  const labels = Array.from(new Set(detail.lines.map((line) => line.speaker).filter((label): label is string => Boolean(label))));
+  if (labels.length === 0) return null;
+  const wrap = document.createElement("span");
+  wrap.className = "meeting-meta-people";
+  for (const label of labels) {
+    const dot = document.createElement("span");
+    dot.className = `speaker-dot ${speakerClass(label)}`;
+    wrap.append(dot);
+  }
+  const names = labels.map((label) => speakerName(label, detail!.meeting));
+  const text = document.createElement("span");
+  text.textContent = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
+  wrap.append(text);
+  return wrap;
+}
+
+function copyText(trigger: HTMLElement, what: string, text: string | null): void {
+  if (text === null) return;
+  const button = trigger.querySelector("button");
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      if (button) copied(button);
+      options.toast(`${what} copied`);
+    })
+    .catch(showError);
+}
+
+/** A head action: an icon, and a word beside it when there is room for one. */
+function iconButton(glyph: IconName, label: string, run: () => void, withLabel = false): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = withLabel ? "pill-button" : "pill-button is-icon";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.append(icon(glyph, glyph === "play" || glyph === "pause"));
+  if (withLabel) button.append(label);
+  button.addEventListener("click", run);
+  return button;
+}
+
+/**
+ * The host's finishing stages, in the order it runs them. The first is this
+ * page's own: Stop is in flight and the host has not answered yet.
+ */
+const STEPS: { label: string; stage: string | null; when?: () => boolean }[] = [
+  { label: "Saving the recording", stage: null },
+  { label: "Transcribing the last phrases", stage: "Finishing the last phrases" },
+  { label: "Tagging speakers", stage: "Tagging speakers", when: () => Boolean(status?.diarizerInstalled) },
+  { label: "Preparing playback", stage: "Preparing playback" },
+  { label: "Writing the summary", stage: "Writing the summary", when: () => Boolean(status?.hasOpenRouterKey) },
+];
+
+/** The card under the head: live while recording, steps while finishing. */
 function renderBand(): void {
   if (!detail) return;
   const { meeting } = detail;
   const band = element.band;
-  band.replaceChildren();
-  band.className = `meeting-band is-${meeting.state}`;
 
-  if (meeting.state === "recording") {
-    const elapsed = clock(Date.now() - (recordingSince ?? meeting.createdAt));
-    const left = document.createElement("div");
-    left.className = "band-left";
-    const dot = document.createElement("span");
-    dot.className = "recording-dot";
-    const label = document.createElement("strong");
-    label.textContent = `Recording · ${elapsed}`;
-    left.append(dot, label);
-
-    const meters = document.createElement("div");
-    meters.className = "band-meters";
-    meters.append(meter("You", level?.mic ?? 0));
-    if (status?.systemAudio === "available" && meeting.hasSystemAudio) {
-      const unheard = level ? !level.otherHeard && level.elapsedMs > 5_000 : false;
-      meters.append(meter("Other side", level?.system ?? 0, unheard));
-      if (unheard) {
-        const warn = document.createElement("span");
-        warn.className = "band-note is-warn";
-        warn.append("Waveform can't hear the other side yet. ");
-        warn.append(linkButton(probing ? "Asking macOS…" : "Allow", () => void probeOtherSide(), true));
-        warn.append(linkButton("Open System Settings", openAudioCaptureSettings));
-        meters.append(warn);
-      }
-    } else {
-      const only = document.createElement("span");
-      only.className = "band-note";
-      only.textContent = "Only your microphone is being recorded.";
-      meters.append(only);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "band-actions";
-    const stopButton = linkButton(stopping ? "Stopping…" : "■ Stop", () => void stop());
-    stopButton.className = "pill-button is-stop";
-    stopButton.disabled = stopping;
-    const discardButton = document.createElement("button");
-    discardButton.type = "button";
-    discardButton.className = "link band-discard";
-    discardButton.textContent = "Discard";
-    discardButton.addEventListener("click", () => void discard());
-    actions.append(stopButton, discardButton);
-    band.append(left, meters, actions);
+  if (meeting.state === "recording" && !stopping) {
+    renderLiveCard(meeting);
     return;
   }
+  live = null;
 
-  if (meeting.state === "processing") {
-    const steps = ["Finishing the last phrases", "Tagging speakers", "Preparing playback", "Writing the summary"];
+  if (meeting.state === "processing" || (meeting.state === "recording" && stopping)) {
+    band.className = "meeting-band is-processing";
+    const steps = STEPS.filter((step) => step.when?.() ?? true);
     const current = (meeting.stage ?? "").replace(/…$/, "");
-    const currentIndex = steps.findIndex((step) => current.startsWith(step));
+    let currentIndex = stopping ? 0 : steps.findIndex((step) => step.stage !== null && current.startsWith(step.stage));
+    if (currentIndex === -1) currentIndex = 1;
+
+    const card = document.createElement("div");
+    card.className = "steps-card";
     const list = document.createElement("ol");
     list.className = "band-steps";
+    list.setAttribute("aria-label", "Finishing the meeting");
     steps.forEach((step, index) => {
       const item = document.createElement("li");
-      const state = currentIndex === -1 ? "pending" : index < currentIndex ? "done" : index === currentIndex ? "now" : "pending";
+      const state = index < currentIndex ? "done" : index === currentIndex ? "now" : "pending";
       item.dataset.state = state;
-      item.textContent = state === "done" ? `✓ ${step}` : state === "now" ? `${step}…` : step;
+      const mark = document.createElement("span");
+      mark.className = "step-mark";
+      mark.append(icon("check"));
+      item.append(mark, step.label);
+      if (state === "now") item.setAttribute("aria-current", "step");
       list.append(item);
     });
-    const sub = document.createElement("span");
+    const sub = document.createElement("p");
     sub.className = "band-note";
     sub.textContent = "Usually under a minute. You can leave this page.";
-    band.append(list, sub);
+    card.append(list, sub);
+    band.replaceChildren(card);
     return;
   }
 
-  // Ready or failed: facts and actions.
-  const facts = document.createElement("span");
-  facts.className = "band-facts";
-  const speakers = new Set(detail.lines.map((line) => line.speaker).filter(Boolean));
-  facts.textContent = [
-    duration(meeting.durationMs),
-    speakers.size > 0 ? `${speakers.size} ${speakers.size === 1 ? "speaker" : "speakers"}` : null,
-    new Date(meeting.createdAt).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  band.className = "meeting-band";
+  band.replaceChildren();
+}
+
+/**
+ * Built once per situation and then only moved: the clock and the meters
+ * change many times a second, and rebuilding them would reset their motion.
+ */
+function renderLiveCard(meeting: Meeting): void {
+  const hasOther = status?.systemAudio === "available" && meeting.hasSystemAudio;
+  const unheard = hasOther && level ? !level.otherHeard && level.elapsedMs > 5_000 : false;
+  const key = [hasOther, unheard, probing].join("|");
+  if (live && live.key === key && element.band.firstElementChild?.classList.contains("live-card")) {
+    updateLive();
+    return;
+  }
+
+  element.band.className = "meeting-band is-recording";
+  const card = document.createElement("div");
+  card.className = "live-card";
+
+  const head = document.createElement("div");
+  head.className = "live-head";
+  const state = document.createElement("span");
+  state.className = "live-status";
+  const dot = document.createElement("span");
+  dot.className = "recording-dot";
+  state.append(dot, "Recording");
+  const clockText = document.createElement("span");
+  clockText.className = "live-clock";
+  head.append(state, clockText);
+
+  const meters = document.createElement("div");
+  meters.className = "live-meters";
+  const mic = meter("You");
+  meters.append(mic.wrap);
+  let system: ReturnType<typeof meter> | null = null;
+  if (hasOther) {
+    system = meter("Other side", unheard);
+    meters.append(system.wrap);
+  }
+
+  const note = document.createElement("p");
+  note.className = "live-note";
+  if (!hasOther) {
+    note.textContent = "Only your microphone is being recorded.";
+  } else if (unheard) {
+    note.classList.add("is-warn");
+    note.append("Waveform can't hear the other side yet. ");
+    note.append(linkButton(probing ? "Asking macOS…" : "Allow", () => void probeOtherSide(), true));
+    note.append(linkButton("Open System Settings", openAudioCaptureSettings));
+  } else {
+    note.textContent = "Both sides are being recorded. Lines appear a few seconds after each sentence ends.";
+  }
 
   const actions = document.createElement("div");
-  actions.className = "band-actions";
-  const play = linkButton(playback && !playback.audio.paused ? "❚❚ Pause" : "▶ Play", () => void togglePlay());
-  play.id = "meeting-play";
-  const copy = copyMenu();
-  const more = dropdown("…", "More", [
-    { label: "Rename", run: () => { element.title.focus(); element.title.select(); } },
-    { label: "Rewrite summary", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey },
-    { label: "Delete meeting…", run: () => void remove(meeting), danger: true },
-  ]);
-  actions.append(play, copy, more);
-  band.append(facts, actions);
+  actions.className = "live-actions";
+  const stopButton = document.createElement("button");
+  stopButton.type = "button";
+  stopButton.className = "pill-button is-stop";
+  stopButton.append(icon("stop", true), "Stop");
+  stopButton.addEventListener("click", () => void stop());
+  const discardButton = document.createElement("button");
+  discardButton.type = "button";
+  discardButton.className = "link live-discard";
+  discardButton.textContent = "Discard";
+  discardButton.addEventListener("click", () => void discard());
+  actions.append(stopButton, discardButton);
+
+  card.append(head, meters, note, actions);
+  element.band.replaceChildren(card);
+  live = { key, clock: clockText, mic: mic.fill, system: system?.fill ?? null };
+  updateLive();
 }
 
-interface DropdownItem {
-  label: string;
-  run(): void;
-  disabled?: boolean;
-  danger?: boolean;
+function updateLive(): void {
+  if (!live || !detail) return;
+  live.clock.textContent = clock(Date.now() - (recordingSince ?? detail.meeting.createdAt));
+  live.mic.style.width = meterWidth(level?.mic ?? 0);
+  if (live.system) live.system.style.width = meterWidth(level?.system ?? 0);
 }
 
-/** A pill that opens a small menu beneath it; closes on choice or click away. */
-function dropdown(label: string, aria: string, items: DropdownItem[]): HTMLElement {
+/** A labelled level bar; `warn` marks a track that should be heard and is not. */
+function meter(label: string, warn = false): { wrap: HTMLElement; fill: HTMLElement } {
+  const wrap = document.createElement("div");
+  wrap.className = `live-meter${warn ? " is-warn" : ""}`;
+  const name = document.createElement("span");
+  name.className = "live-meter-label";
+  name.textContent = label;
+  const track = document.createElement("span");
+  track.className = "live-meter-track";
+  track.setAttribute("role", "meter");
+  track.setAttribute("aria-label", `${label} level`);
+  const fill = document.createElement("span");
+  fill.className = "live-meter-fill";
+  track.append(fill);
+  wrap.append(name, track);
+  return { wrap, fill };
+}
+
+/** RMS to a bar: speech sits around 0.02–0.1, so a square root gives it room. */
+function meterWidth(value: number): string {
+  return `${Math.min(100, Math.round(Math.sqrt(Math.min(1, value * 4)) * 100))}%`;
+}
+
+// --- Menus -------------------------------------------------------------------
+
+type DropdownItem = { label: string; icon?: IconName; run(): void; disabled?: boolean; danger?: boolean } | "divider";
+
+/**
+ * A button that opens a small menu beneath it. Closes on a choice, on
+ * Escape, on a click anywhere else; the arrows move through it.
+ */
+function dropdown(trigger: HTMLButtonElement, aria: string, items: DropdownItem[]): HTMLElement {
   const wrap = document.createElement("span");
   wrap.className = "copy-menu";
-  const button = linkButton(label, () => wrap.classList.toggle("is-open"));
-  button.setAttribute("aria-label", aria);
-  button.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-label", aria);
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
   const menu = document.createElement("div");
   menu.className = "copy-menu-list";
   menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", aria);
+
   for (const item of items) {
+    if (item === "divider") {
+      menu.append(document.createElement("hr"));
+      continue;
+    }
     const entry = document.createElement("button");
     entry.type = "button";
     entry.setAttribute("role", "menuitem");
-    entry.textContent = item.label;
+    entry.tabIndex = -1;
+    if (item.icon) entry.append(icon(item.icon));
+    entry.append(item.label);
     entry.disabled = Boolean(item.disabled);
     if (item.danger) entry.classList.add("is-danger");
     entry.addEventListener("click", () => {
-      wrap.classList.remove("is-open");
+      closeMenus();
       item.run();
     });
     menu.append(entry);
   }
-  wrap.append(button, menu);
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (!wrap.contains(event.target as Node)) wrap.classList.remove("is-open");
-    },
-    { capture: true },
-  );
-  return wrap;
-}
 
-/** A labelled level bar; `warn` marks a track that should be heard and is not. */
-function meter(label: string, value: number, warn = false): HTMLElement {
-  const wrap = document.createElement("span");
-  wrap.className = `band-meter${warn ? " is-warn" : ""}`;
-  const name = document.createElement("span");
-  name.className = "band-meter-label";
-  name.textContent = label;
-  const track = document.createElement("span");
-  track.className = "band-meter-track";
-  const fill = document.createElement("span");
-  fill.className = "band-meter-fill";
-  // RMS to a bar: speech sits around 0.02–0.1, so a square root gives it room.
-  fill.style.width = `${Math.min(100, Math.round(Math.sqrt(Math.min(1, value * 4)) * 100))}%`;
-  track.append(fill);
-  wrap.append(name, track);
-  return wrap;
-}
-
-/** Copy ▾: summary, transcript, or both. */
-function copyMenu(): HTMLElement {
-  const wrap = document.createElement("span");
-  wrap.className = "copy-menu";
-  const button = linkButton("Copy ▾", () => {
-    wrap.classList.toggle("is-open");
+  const entries = () => Array.from(menu.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not(:disabled)"));
+  trigger.addEventListener("click", (event) => {
+    const open = wrap.classList.contains("is-open");
+    closeMenus();
+    if (open) return;
+    wrap.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    // Opened from the keyboard: land on the first choice.
+    if (event.detail === 0) entries()[0]?.focus();
   });
-  const menu = document.createElement("div");
-  menu.className = "copy-menu-list";
-  menu.setAttribute("role", "menu");
-  const item = (label: string, text: () => string | null) => {
-    const entry = document.createElement("button");
-    entry.type = "button";
-    entry.setAttribute("role", "menuitem");
-    entry.textContent = label;
-    const value = text();
-    entry.disabled = value === null;
-    entry.addEventListener("click", () => {
-      wrap.classList.remove("is-open");
-      const current = text();
-      if (current === null) return;
-      void navigator.clipboard.writeText(current);
-      options.toast(`${label.replace("Copy ", "")} copied`);
-    });
-    return entry;
-  };
-  menu.append(
-    item("Copy summary", () => (detail?.meeting.summary ? summaryTextOf(detail) : null)),
-    item("Copy transcript", () => (detail && detail.lines.length > 0 ? transcriptText(detail) : null)),
-    item("Copy both", () =>
-      detail && detail.lines.length > 0
-        ? [detail.meeting.summary ? summaryTextOf(detail) : null, "Transcript", transcriptText(detail)].filter(Boolean).join("\n\n")
-        : null,
-    ),
-  );
-  wrap.append(button, menu);
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (!wrap.contains(event.target as Node)) wrap.classList.remove("is-open");
-    },
-    { capture: true },
-  );
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" && wrap.classList.contains("is-open")) {
+      event.preventDefault();
+      entries()[0]?.focus();
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    const all = entries();
+    const at = all.findIndex((entry) => entry === document.activeElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const next = event.key === "ArrowDown" ? (at + 1) % all.length : (at - 1 + all.length) % all.length;
+      all[next]?.focus();
+    } else if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenus();
+      trigger.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      (event.key === "Home" ? all[0] : all[all.length - 1])?.focus();
+    }
+  });
+
+  wrap.append(trigger, menu);
   return wrap;
+}
+
+/** Closes every open menu on the page; true if there was one. */
+function closeMenus(): boolean {
+  let any = false;
+  for (const open of element.view.querySelectorAll<HTMLElement>(".copy-menu.is-open")) {
+    open.classList.remove("is-open");
+    open.querySelector("[aria-haspopup]")?.setAttribute("aria-expanded", "false");
+    any = true;
+  }
+  return any;
 }
 
 // --- Banners from notes --------------------------------------------------------
@@ -927,7 +1301,7 @@ function bannerFor(note: MeetingNote, meeting: Meeting): HTMLElement | null {
       return banner("info", "Nothing was picked up in this recording.", "", [
         linkButton("Delete", () => void remove(meeting)),
       ]);
-    // These three are shown where they matter: in the summary or transcript.
+    // These are shown where they matter: in the summary or transcript.
     case "no-summary-key":
     case "summary-failed":
     case "summary-unparsed":
@@ -941,6 +1315,7 @@ function bannerFor(note: MeetingNote, meeting: Meeting): HTMLElement | null {
 function banner(tone: "info" | "warn" | "error", title: string, body: string, actions: HTMLElement[]): HTMLElement {
   const box = document.createElement("div");
   box.className = `meeting-banner is-${tone}`;
+  box.setAttribute("role", tone === "error" ? "alert" : "status");
   const text = document.createElement("div");
   text.className = "meeting-banner-text";
   const strong = document.createElement("strong");
@@ -980,8 +1355,10 @@ function renderSummary(): void {
   if (!detail) return;
   const { meeting, summary } = detail;
   element.summary.replaceChildren();
-  element.summary.hidden = meeting.state === "recording";
-  if (meeting.state === "recording") return;
+  // Nothing said means nothing to summarise; the banner above has said so.
+  const nothingToShow = !summary && meeting.state !== "processing" && meeting.notes.some((note) => note.kind === "nothing-said");
+  element.summary.hidden = meeting.state === "recording" || nothingToShow;
+  if (element.summary.hidden) return;
 
   const head = document.createElement("div");
   head.className = "meeting-summary-head";
@@ -989,16 +1366,18 @@ function renderSummary(): void {
   heading.className = "section-label";
   heading.textContent = "Summary";
   head.append(heading);
+  if (summary && meeting.summaryModel) {
+    const by = document.createElement("span");
+    by.className = "view-note";
+    by.textContent = `Written by ${meeting.summaryModel.split("/").pop() ?? meeting.summaryModel}`;
+    head.append(by);
+  }
   element.summary.append(head);
 
   const noteOf = (kind: string) => meeting.notes.find((note) => note.kind === kind);
 
   if (meeting.state === "processing") {
-    const skeleton = document.createElement("div");
-    skeleton.className = "summary-skeleton";
-    skeleton.setAttribute("aria-label", "Summary is being written");
-    skeleton.append(...[0, 1, 2].map(() => document.createElement("span")));
-    element.summary.append(skeleton);
+    element.summary.append(skeleton());
     return;
   }
 
@@ -1027,9 +1406,7 @@ function renderSummary(): void {
           linkButton("Try again", () => void rewriteSummary(), true),
         ]),
       );
-    } else if (noteOf("nothing-said")) {
-      // The banner above already says so.
-    } else if (meeting.summary) {
+    } else if (meeting.summary && noteOf("summary-unparsed")) {
       // Text came back but not in the usual layout.
       const label = document.createElement("p");
       label.className = "meeting-summary-note";
@@ -1038,6 +1415,9 @@ function renderSummary(): void {
       raw.className = "meeting-summary-raw";
       raw.textContent = meeting.summary;
       element.summary.append(label, raw, linkButton("Try again", () => void rewriteSummary()));
+    } else if (meeting.summary) {
+      // The host has a summary this page has not fetched yet; it is on its way.
+      element.summary.append(skeleton());
     } else {
       element.summary.append(
         banner("info", "No summary yet.", "", [linkButton("Write summary", () => void rewriteSummary(), true)]),
@@ -1046,15 +1426,28 @@ function renderSummary(): void {
     return;
   }
 
+  const card = document.createElement("div");
+  card.className = "summary-card";
   const overview = document.createElement("p");
   overview.className = "meeting-overview";
   overview.textContent = summary.overview;
-  element.summary.append(summarySection(null, [summary.overview], overview));
+  card.append(summarySection(null, [summary.overview], overview));
   for (const topic of summary.topics) {
-    element.summary.append(summarySection(topic.heading, topic.points));
+    card.append(summarySection(topic.heading, topic.points));
   }
-  element.summary.append(summarySection("Next steps", summary.nextSteps));
-  element.summary.append(summarySection("Decisions", summary.decisions));
+  card.append(summarySection("Next steps", summary.nextSteps));
+  card.append(summarySection("Decisions", summary.decisions));
+  element.summary.append(card);
+}
+
+/** The shape of a summary, shimmering, while one is being written or fetched. */
+function skeleton(): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "summary-skeleton";
+  box.setAttribute("role", "status");
+  box.setAttribute("aria-label", "Summary is being written");
+  box.append(...[0, 1, 2, 3, 4].map(() => document.createElement("span")));
+  return box;
 }
 
 async function rewriteSummary(): Promise<void> {
@@ -1083,17 +1476,12 @@ function summarySection(heading: string | null, points: string[], body?: HTMLEle
     const title = document.createElement("h3");
     title.textContent = heading;
     top.append(title);
+  } else {
+    top.append(document.createElement("span"));
   }
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.className = "meeting-line-copy";
-  copy.textContent = "Copy";
-  copy.title = heading ? `Copy ${heading}` : "Copy the overview";
-  copy.addEventListener("click", () => {
-    const text = heading ? `${heading}\n${points.map((point) => `- ${point}`).join("\n")}` : points.join("\n");
-    void navigator.clipboard.writeText(text);
-    flash(copy, "Copied");
-  });
+  const copy = copyButton(heading ? `Copy ${heading}` : "Copy the overview", () =>
+    heading ? `${heading}\n${points.map((point) => `- ${point}`).join("\n")}` : points.join("\n"),
+  );
   top.append(copy);
   section.append(top);
   if (body) {
@@ -1103,6 +1491,12 @@ function summarySection(heading: string | null, points: string[], body?: HTMLEle
     for (const point of points) {
       const item = document.createElement("li");
       item.textContent = point;
+      list.append(item);
+    }
+    if (points.length === 0) {
+      const item = document.createElement("li");
+      item.textContent = "None";
+      item.style.color = "var(--ink-faint)";
       list.append(item);
     }
     section.append(list);
@@ -1178,8 +1572,11 @@ function renderSpeakers(): void {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = `speaker-chip ${speakerClass(label)}${meeting.speakers[label] || label === "me" ? "" : " is-unnamed"}`;
-      chip.textContent = `✎ ${speakerName(label, meeting)}`;
+      const dot = document.createElement("span");
+      dot.className = "speaker-dot";
+      chip.append(dot, speakerName(label, meeting), icon("pencil"));
       chip.title = "Click to rename";
+      chip.setAttribute("aria-label", `Rename ${speakerName(label, meeting)}`);
       chip.disabled = meeting.state === "recording" && label !== "me";
       chip.addEventListener("click", () => renameSpeaker(label, chip));
       return chip;
@@ -1216,11 +1613,16 @@ function renameSpeaker(label: string, chip: HTMLButtonElement): void {
   };
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") finishEdit(true);
-    if (event.key === "Escape") finishEdit(false);
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      finishEdit(false);
+      chip.focus();
+    }
   });
   field.addEventListener("blur", () => finishEdit(true));
 }
 
+/** The same hue for a voice wherever it appears. */
 function speakerClass(label: string): string {
   if (label === "me") return "is-me";
   const match = /^speaker_(\d+)$/.exec(label);
@@ -1233,16 +1635,21 @@ function renderLines(): void {
   const query = element.find.value.trim().toLowerCase();
   const shown = query ? detail.lines.filter((line) => line.text.toLowerCase().includes(query)) : detail.lines;
 
+  let previous: string | null | undefined;
   element.lines.replaceChildren(
     ...shown.map((line) => {
       const item = document.createElement("li");
       item.className = `meeting-line ${speakerClass(line.speaker ?? "")}`;
+      item.dataset.idx = String(line.idx);
+      if (!query && previous !== undefined && previous === line.speaker) item.classList.add("is-continued");
+      previous = line.speaker;
 
       const time = document.createElement("button");
       time.type = "button";
       time.className = "meeting-line-time";
-      time.textContent = clock(line.startMs);
+      time.append(icon("play", true), clock(line.startMs));
       time.title = "Play from here";
+      time.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
       time.disabled = meeting.state === "recording";
       time.addEventListener("click", () => void playFrom(line.startMs));
 
@@ -1254,15 +1661,7 @@ function renderLines(): void {
       text.className = "meeting-line-text";
       text.append(...highlight(line.text, query));
 
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.className = "meeting-line-copy";
-      copy.textContent = "Copy";
-      copy.title = "Copy this line";
-      copy.addEventListener("click", () => {
-        void navigator.clipboard.writeText(line.text);
-        flash(copy, "Copied");
-      });
+      const copy = copyButton("Copy this line", () => line.text);
 
       item.append(time, who, text, copy);
       return item;
@@ -1271,12 +1670,12 @@ function renderLines(): void {
   if (detail.lines.length === 0) {
     const empty = document.createElement("li");
     empty.className = "meeting-line is-empty";
-    empty.textContent =
-      meeting.state === "recording"
-        ? "Listening. Lines appear a few seconds after each sentence ends."
-        : meeting.state === "processing"
-          ? "Finishing the last phrases…"
-          : "Nothing was picked up in this recording.";
+    if (meeting.state === "recording") {
+      empty.classList.add("is-live");
+      empty.append("Listening. Lines appear a few seconds after each sentence ends.", listening());
+    } else {
+      empty.textContent = meeting.state === "processing" ? "Finishing the last phrases…" : "Nothing was picked up in this recording.";
+    }
     element.lines.append(empty);
   } else if (shown.length === 0) {
     const empty = document.createElement("li");
@@ -1285,8 +1684,18 @@ function renderLines(): void {
     element.lines.append(empty);
   }
   if (meeting.state === "recording" && !query) {
-    element.lines.lastElementChild?.scrollIntoView({ block: "nearest" });
+    element.lines.lastElementChild?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }
+  markPlayingLine();
+}
+
+/** Three dots that take turns: the page is listening, not stuck. */
+function listening(): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.className = "listening";
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
+  return wrap;
 }
 
 function highlight(text: string, query: string): (string | HTMLElement)[] {
@@ -1323,9 +1732,13 @@ async function ensurePlayback(): Promise<HTMLAudioElement | null> {
   const url = URL.createObjectURL(new Blob([copy], { type: "audio/wav" }));
   const audio = new Audio(url);
   for (const name of ["ended", "pause", "play"]) {
-    audio.addEventListener(name, renderBand);
+    audio.addEventListener(name, renderHead);
+  }
+  for (const name of ["timeupdate", "loadedmetadata", "seeked"]) {
+    audio.addEventListener(name, updateProgress);
   }
   playback = { audio, url };
+  element.progress.hidden = false;
   return audio;
 }
 
@@ -1352,10 +1765,42 @@ async function playFrom(ms: number): Promise<void> {
 }
 
 function stopPlayback(): void {
+  element.progress.hidden = true;
+  markPlayingLine(null);
   if (!playback) return;
   playback.audio.pause();
   URL.revokeObjectURL(playback.url);
   playback = null;
+}
+
+/** The bar under the head and the line being heard follow the audio. */
+function updateProgress(): void {
+  if (!playback || !detail) return;
+  const { audio } = playback;
+  const fraction = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.currentTime / audio.duration : 0;
+  const fill = element.progress.querySelector<HTMLElement>(".meeting-progress-fill");
+  if (fill) fill.style.transform = `scaleX(${fraction})`;
+  element.progress.setAttribute("aria-valuetext", `${clock(audio.currentTime * 1_000)} of ${clock(audio.duration * 1_000)}`);
+  const at = audio.currentTime * 1_000;
+  let current: number | null = null;
+  for (const line of detail.lines) {
+    if (line.startMs <= at) current = line.idx;
+    else break;
+  }
+  markPlayingLine(current);
+}
+
+function markPlayingLine(idx?: number | null): void {
+  if (idx === undefined) {
+    if (!playback || playback.audio.paused) idx = null;
+    else {
+      updateProgress();
+      return;
+    }
+  }
+  element.lines.querySelector(".meeting-line.is-playing")?.classList.remove("is-playing");
+  if (idx === null) return;
+  element.lines.querySelector(`.meeting-line[data-idx="${idx}"]`)?.classList.add("is-playing");
 }
 
 // --- Helpers -----------------------------------------------------------------
@@ -1364,14 +1809,38 @@ function showError(error: unknown): void {
   options.toast(error instanceof Error ? error.message : String(error), { tone: "error" });
 }
 
-function flash(button: HTMLButtonElement, text: string): void {
-  const was = button.textContent;
-  button.textContent = text;
-  button.disabled = true;
+/** Copy, with a tick in its place for a moment once pressed. */
+function copyButton(title: string, text: () => string): HTMLButtonElement {
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "meeting-line-copy";
+  copy.append(icon("copy"), "Copy");
+  copy.title = title;
+  copy.setAttribute("aria-label", title);
+  copy.addEventListener("click", () => {
+    void navigator.clipboard
+      .writeText(text())
+      .then(() => copied(copy))
+      .catch(showError);
+  });
+  return copy;
+}
+
+function copied(button: HTMLButtonElement): void {
+  if (button.dataset.copied) return;
+  button.dataset.copied = "1";
+  const was = Array.from(button.childNodes);
+  button.classList.add("is-copied");
+  button.replaceChildren(icon("check"), "Copied");
   setTimeout(() => {
-    button.textContent = was;
-    button.disabled = false;
-  }, 1_100);
+    button.replaceChildren(...was);
+    button.classList.remove("is-copied");
+    delete button.dataset.copied;
+  }, 1_200);
+}
+
+function reducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 export function clock(ms: number): string {
@@ -1393,8 +1862,68 @@ function duration(ms: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
+function timeOfDay(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function shortDate(at: number): string {
+  return new Date(at).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+}
+
+function longWhen(at: number): string {
+  const date = new Date(at);
+  const days = daysAgo(at);
+  const day =
+    days === 0 ? "Today" : days === 1 ? "Yesterday" : date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+  return `${day} at ${timeOfDay(at)}`;
+}
+
 function megabytes(bytes: number): string {
   return `${Math.round(bytes / 1_000_000)} MB`;
+}
+
+// --- Icons -------------------------------------------------------------------
+
+/** Lucide outlines, drawn inline so they take the text's colour. */
+const ICONS = {
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  pencil:
+    '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  headphones:
+    '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
+  users:
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sparkles:
+    '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+  text: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+} as const;
+
+type IconName = keyof typeof ICONS;
+
+function icon(name: IconName, filled = false): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  if (filled) {
+    svg.setAttribute("fill", "currentColor");
+    svg.setAttribute("stroke", "none");
+  } else {
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+  }
+  svg.innerHTML = ICONS[name];
+  return svg;
 }
 
 function byId<T extends HTMLElement>(id: string): T {

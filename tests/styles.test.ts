@@ -45,6 +45,21 @@ describe("stylesheet covers the markup", () => {
     expect(assigned.filter((name) => !css.includes(`.${name}`))).toEqual([]);
   });
 
+  /*
+   * The Meetings page builds its list rows, live card, finishing steps,
+   * menus and transcript lines at runtime, so the markup scan does not see
+   * them either. Static assignments are read; the state suffixes added with
+   * classList (is-recording, is-s3) are built from a fixed set in the page.
+   */
+  it("styles every class the Meetings page assigns at runtime", () => {
+    const meetings = readFileSync("src/renderer/meetings.ts", "utf8");
+    const assigned = [...meetings.matchAll(/className = [`"]([^`"$]+)[`"]/g)].flatMap((match) =>
+      match[1]!.trim().split(/\s+/),
+    );
+    expect(assigned.length).toBeGreaterThan(20);
+    expect(assigned.filter((name) => !css.includes(`.${name}`))).toEqual([]);
+  });
+
   it("styles every class the overlay uses", () => {
     const unstyled = classesIn(overlayHtml).filter(
       (name) => !overlayCss.includes(`.${name}`),
