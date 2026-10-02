@@ -167,12 +167,37 @@ private final class CorrectionWatcher {
   private var range: Range<String.Index>?
   private var deadline: DispatchWorkItem?
   private var settle: DispatchWorkItem?
+  /// Polls the value once a second as well: web views and Electron apps do
+  /// not always post value-changed notifications for a contenteditable.
+  private var poll: Timer?
+  private var lastPolled = ""
   private let lifetime: TimeInterval = 120
 
-  func begin(pasted: String) {
+  func begin(pasted: String, attempt: Int = 0) {
     end()
-    guard let target = focusedElement() else { return }
-    guard let value = stringValue(of: target), let found = value.range(of: pasted) else { return }
+    guard let target = focusedElement() else {
+      // Chromium and Electron apps build their accessibility tree only once a
+      // client asks for it. The first ask switches it on; a moment later the
+      // focused element is there. Three tries, half a second apart.
+      if attempt < 3 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+          self?.begin(pasted: pasted, attempt: attempt + 1)
+        }
+      } else {
+        note("no focused element to watch")
+      }
+      return
+    }
+    var role: CFTypeRef?
+    AXUIElementCopyAttributeValue(target, kAXRoleAttribute as CFString, &role)
+    guard let value = stringValue(of: target) else {
+      note("focused \(role as? String ?? "element") has no readable text; cannot watch")
+      return
+    }
+    guard let found = value.range(of: pasted) else {
+      note("pasted text not found in the focused \(role as? String ?? "element") (\(value.count) chars); cannot watch")
+      return
+    }
     element = target
     baseline = value
     range = found
@@ -185,7 +210,15 @@ private final class CorrectionWatcher {
       let watcher = Unmanaged<CorrectionWatcher>.fromOpaque(refcon).takeUnretainedValue()
       watcher.changed()
     }
-    guard AXObserverCreate(pid, callback, &created) == .success, let observer = created else { return }
+    guard AXObserverCreate(pid, callback, &created) == .success, let observer = created else {
+      note("could not observe the focused element")
+      return
+    }
+    note("watching the \(role as? String ?? "element") for corrections")
+    lastPolled = value
+    poll = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+      self?.polled()
+    }
     let refcon = Unmanaged.passUnretained(self).toOpaque()
     AXObserverAddNotification(observer, target, kAXValueChangedNotification as CFString, refcon)
     AXObserverAddNotification(observer, target, kAXUIElementDestroyedNotification as CFString, refcon)
@@ -195,6 +228,24 @@ private final class CorrectionWatcher {
     let stop = DispatchWorkItem { [weak self] in self?.end() }
     deadline = stop
     DispatchQueue.main.asyncAfter(deadline: .now() + lifetime, execute: stop)
+  }
+
+  private func note(_ message: String) {
+    emit(["type": "debug", "message": "corrections: \(message)"])
+  }
+
+  /// Once a second: a value that differs from the baseline and has held still
+  /// for a whole second is an edit that has finished.
+  private func polled() {
+    guard let element else { return }
+    guard let value = stringValue(of: element) else {
+      end()
+      return
+    }
+    defer { lastPolled = value }
+    if value != baseline && value == lastPolled {
+      compare()
+    }
   }
 
   /// Called on every value change; waits for typing to pause before reading.
@@ -233,6 +284,8 @@ private final class CorrectionWatcher {
     }
     if after != before {
       emit(["type": "correction", "before": before, "after": after])
+    } else {
+      note("field changed outside the pasted text")
     }
     baseline = value
     self.range = start..<end
@@ -241,6 +294,8 @@ private final class CorrectionWatcher {
   func end() {
     deadline?.cancel()
     settle?.cancel()
+    poll?.invalidate()
+    poll = nil
     if let observer {
       CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
@@ -250,8 +305,21 @@ private final class CorrectionWatcher {
     baseline = ""
   }
 
+  /// The focused element, asked of the frontmost app rather than the system:
+  /// the app's own element is what Chromium watches to switch accessibility
+  /// on, and `AXManualAccessibility` asks it to in so many words.
   private func focusedElement() -> AXUIElement? {
     var focused: CFTypeRef?
+    if let app = NSWorkspace.shared.frontmostApplication {
+      let application = AXUIElementCreateApplication(app.processIdentifier)
+      AXUIElementSetAttributeValue(application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+      AXUIElementSetAttributeValue(application, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+      if AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focused)
+        == .success, let element = focused, CFGetTypeID(element) == AXUIElementGetTypeID()
+      {
+        return (element as! AXUIElement)
+      }
+    }
     let system = AXUIElementCreateSystemWide()
     guard
       AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)

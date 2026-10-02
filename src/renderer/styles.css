@@ -1981,7 +1981,7 @@ kbd {
 .dictionary-head,
 .dictionary-term {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(200px, 1.6fr) 72px 56px 36px;
+  grid-template-columns: 1fr 90px 64px 36px;
   gap: 12px;
   align-items: center;
   padding: 8px 14px;

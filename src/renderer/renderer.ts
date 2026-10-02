@@ -3172,42 +3172,6 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
     }
   });
 
-  // What the engine hears instead: chips, each removable, plus a field to
-  // add one. These are what the after-decoding fix keys on.
-  const heard = document.createElement("span");
-  heard.className = "dictionary-term-heard";
-  for (const variant of term.heardAs) {
-    const chip = document.createElement("span");
-    chip.className = "dictionary-heard-chip";
-    chip.append(variant);
-    const drop = document.createElement("button");
-    drop.type = "button";
-    drop.setAttribute("aria-label", `Remove "${variant}"`);
-    drop.textContent = "×";
-    drop.addEventListener("click", () => {
-      void saveDictionaryTerm(term, term.text, term.heardAs.filter((known) => known !== variant));
-    });
-    chip.append(drop);
-    heard.append(chip);
-  }
-  const addHeard = document.createElement("input");
-  addHeard.className = "dictionary-heard-add";
-  addHeard.placeholder = term.heardAs.length === 0 ? "What it's heard as…" : "+ another";
-  addHeard.setAttribute("aria-label", `What ${term.text} is heard as`);
-  addHeard.spellcheck = false;
-  addHeard.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const value = addHeard.value.trim();
-    if (!value) return;
-    void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
-  });
-  addHeard.addEventListener("blur", () => {
-    const value = addHeard.value.trim();
-    if (value) void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
-  });
-  heard.append(addHeard);
-
   const source = document.createElement("span");
   source.className = "dictionary-term-source";
   source.textContent = term.source === "learned" ? "Learned" : "You";
@@ -3232,7 +3196,7 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       });
   });
 
-  item.append(name, heard, source, uses, remove);
+  item.append(name, source, uses, remove);
   return item;
 }
 

@@ -411,6 +411,7 @@ impl Dictation {
                 }
             }
             HelperEvent::Correction { before, after } => self.learn_from_correction(&before, &after).await,
+            HelperEvent::Debug { message } => self.logs.info(&self.app, "helper", message),
             HelperEvent::Selection { .. } => {}
         }
     }

@@ -53,6 +53,10 @@ pub enum HelperEvent {
         before: String,
         after: String,
     },
+    /// Something the helper wants in the app log.
+    Debug {
+        message: String,
+    },
     Selection {
         ok: bool,
         #[serde(default)]
