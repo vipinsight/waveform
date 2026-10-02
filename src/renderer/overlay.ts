@@ -178,10 +178,21 @@ enableDragging();
 let reportedRegion = "";
 
 function reportHitRegion(): void {
-  const rect = hud.getBoundingClientRect();
+  let rect = hud.getBoundingClientRect();
   // The skirt that makes a six-pixel bar catchable is part of the target.
   const padX = state === "idle" ? 4 : 0;
   const padY = state === "idle" ? 7 : 0;
+  // A note with an Undo in it has to be clickable too, so the region grows
+  // to cover both while it shows.
+  const note = document.getElementById("hud-note");
+  if (note && !note.hidden) {
+    const noteRect = note.getBoundingClientRect();
+    const left = Math.min(rect.left, noteRect.left);
+    const top = Math.min(rect.top, noteRect.top);
+    const right = Math.max(rect.right, noteRect.right);
+    const bottom = Math.max(rect.bottom, noteRect.bottom);
+    rect = new DOMRect(left, top, right - left, bottom - top);
+  }
   const region = {
     x: Math.round(rect.left - padX),
     y: Math.round(rect.top - padY),
@@ -282,14 +293,48 @@ meetingClock.addEventListener("click", () => void host().showMeetings());
 // A word the user fixed where it landed is now a term; a brief note says so
 // beside the bar, which is the only part of Waveform in view at that moment.
 const hudNote = requireElement<HTMLElement>("hud-note");
+const hudNoteText = requireElement<HTMLElement>("hud-note-text");
+const hudNoteUndo = requireElement<HTMLButtonElement>("hud-note-undo");
 let hudNoteTimer: number | null = null;
+let hudNoteTerms: { id: number; text: string }[] = [];
+const HUD_NOTE_MS = 7_000;
+
+function hideHudNote(): void {
+  hudNote.hidden = true;
+  hudNoteTerms = [];
+  reportHitRegion();
+}
+
 host().onDictionaryLearned((terms) => {
-  hudNote.textContent = `Added ${terms.join(", ")} to the dictionary`;
+  hudNoteTerms = terms;
+  hudNoteText.textContent = `Added ${terms.map((term) => term.text).join(", ")} to the dictionary`;
+  hudNoteUndo.hidden = false;
+  hudNoteUndo.textContent = "Undo";
   hudNote.hidden = false;
+  // A fresh bar so the drain starts again for this note.
+  const bar = requireElement<HTMLElement>("hud-note-bar");
+  const fresh = bar.cloneNode(true) as HTMLElement;
+  fresh.style.setProperty("--note-ms", `${HUD_NOTE_MS}ms`);
+  bar.replaceWith(fresh);
   if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
-  hudNoteTimer = window.setTimeout(() => {
-    hudNote.hidden = true;
-  }, 2_600);
+  hudNoteTimer = window.setTimeout(hideHudNote, HUD_NOTE_MS);
+  reportHitRegion();
+});
+
+hudNoteUndo.addEventListener("click", () => {
+  const terms = hudNoteTerms;
+  hudNoteUndo.disabled = true;
+  void Promise.all(terms.map((term) => host().removeDictionaryTerm(term.id)))
+    .then(() => {
+      hudNoteText.textContent = `Removed ${terms.map((term) => term.text).join(", ")}`;
+      hudNoteUndo.hidden = true;
+      if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
+      hudNoteTimer = window.setTimeout(hideHudNote, 1_800);
+    })
+    .catch(() => {})
+    .finally(() => {
+      hudNoteUndo.disabled = false;
+    });
 });
 
 hud.addEventListener("focusin", (event) => {

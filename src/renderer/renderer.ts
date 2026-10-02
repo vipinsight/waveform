@@ -3030,9 +3030,26 @@ function bindDictionary(): void {
     const value = button.dataset.learning;
     if (value === "on" || value === "off") void patchSettings({ dictionaryLearning: value });
   });
-  // A word fixed where a dictation landed, now a term: say so, briefly.
+  // A word fixed where a dictation landed, now a term: say so, with a way back.
   host().onDictionaryLearned((terms) => {
-    showToast(`Added ${terms.join(", ")} to the dictionary.`);
+    const names = terms.map((term) => term.text).join(", ");
+    showToast(`Added ${names} to the dictionary.`, {
+      action: {
+        label: "Undo",
+        run: () => {
+          void Promise.all(terms.map((term) => host().removeDictionaryTerm(term.id)))
+            .then(() => host().getDictionary())
+            .then((next) => {
+              dictionary = next;
+              renderDictionary();
+              showToast(`Removed ${names}.`);
+            })
+            .catch((error: unknown) => {
+              showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
+            });
+        },
+      },
+    });
   });
   element.dictionaryExport.addEventListener("click", () => {
     void navigator.clipboard.writeText(dictionary.map((term) => term.text).join(", "));
@@ -4779,11 +4796,13 @@ let toastTimer: number | null = null;
  */
 function showToast(
   message: string,
-  options: { tone?: "error"; action?: { label: string; run(): void } } = {},
+  options: { tone?: "error"; action?: { label: string; run(): void }; durationMs?: number } = {},
 ): void {
   const toast = requireElement<HTMLElement>("toast");
   const text = requireElement<HTMLElement>("toast-text");
   const action = requireElement<HTMLButtonElement>("toast-action");
+  const bar = requireElement<HTMLElement>("toast-bar");
+  const duration = options.durationMs ?? (options.tone === "error" ? 8_000 : options.action ? 7_000 : 4_000);
   text.textContent = message;
   toast.classList.toggle("is-error", options.tone === "error");
   action.hidden = !options.action;
@@ -4795,10 +4814,26 @@ function showToast(
     };
   }
   toast.hidden = false;
+  // The bar drains over the toast's life, so the time left is visible; it
+  // is re-inserted so the animation starts again for each message.
+  const fresh = bar.cloneNode(true) as HTMLElement;
+  fresh.style.setProperty("--toast-ms", `${duration}ms`);
+  bar.replaceWith(fresh);
   if (toastTimer !== null) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
+  const dismiss = () => {
     toast.hidden = true;
-  }, options.tone === "error" ? 8_000 : 4_000);
+  };
+  toastTimer = window.setTimeout(dismiss, duration);
+  // Hovering holds it: a toast with Undo should not vanish under the pointer.
+  toast.onmouseenter = () => {
+    if (toastTimer !== null) window.clearTimeout(toastTimer);
+    toastTimer = null;
+    fresh.style.animationPlayState = "paused";
+  };
+  toast.onmouseleave = () => {
+    fresh.style.animationPlayState = "running";
+    toastTimer = window.setTimeout(dismiss, 2_500);
+  };
 }
 
 let recordingStrip: { title: string; since: number } | null = null;

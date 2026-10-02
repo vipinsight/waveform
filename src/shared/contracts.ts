@@ -274,6 +274,13 @@ export interface DictionaryTerm {
   createdAt: number;
 }
 
+/** A term just learned from a correction, with enough to undo it. */
+export interface LearnedTerm {
+  id: number;
+  text: string;
+  heardAs: string;
+}
+
 /** A term a transcript edit suggests learning. */
 export interface DictionarySuggestion {
   /** What the engine wrote. */
@@ -507,7 +514,7 @@ export interface DesktopApi {
   updateDictation(id: string, text: string): Promise<SavedDictation[]>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
   /** Terms just learned from a correction the user made where a dictation landed. */
-  onDictionaryLearned(listener: (terms: string[]) => void): () => void;
+  onDictionaryLearned(listener: (terms: LearnedTerm[]) => void): () => void;
 
   getDictionary(): Promise<DictionaryTerm[]>;
   addDictionaryTerm(text: string, heardAs: string[], learned?: boolean): Promise<DictionaryTerm[]>;

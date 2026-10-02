@@ -607,15 +607,51 @@ body {
   position: absolute;
   bottom: 38px;
   left: 50%;
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: rgb(17 20 26 / 92%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 8px 12px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgb(17 20 26 / 94%);
   color: #fff;
   font-size: 11.5px;
   font-weight: 560;
   white-space: nowrap;
   transform: translateX(-50%);
-  pointer-events: none;
+}
+
+.hud-note-undo {
+  height: 20px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 16%);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hud-note-undo:hover { background: rgb(255 255 255 / 28%); }
+.hud-note-undo:disabled { opacity: 0.5; cursor: wait; }
+.hud-note-undo[hidden] { display: none; }
+
+.hud-note-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgb(255 255 255 / 55%);
+  transform-origin: left;
+  animation: note-drain var(--note-ms, 7000ms) linear forwards;
+}
+
+@keyframes note-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 .hud-note[hidden] {

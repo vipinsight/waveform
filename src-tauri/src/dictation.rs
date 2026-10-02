@@ -113,6 +113,25 @@ struct Session {
     stop_when_speech_ends: bool,
 }
 
+/// A term just learned from a correction, with enough to undo it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedTerm {
+    pub id: i64,
+    pub text: String,
+    pub heard_as: String,
+}
+
+/// The first few words, for a log line.
+fn short(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().take(12).collect();
+    let mut out = words.join(" ");
+    if text.split_whitespace().count() > 12 {
+        out.push('…');
+    }
+    out
+}
+
 pub struct Dictation {
     app: AppHandle,
     logs: Arc<crate::logs::Logs>,
@@ -400,7 +419,13 @@ impl Dictation {
     /// what the engine heard as its mis-hearing. Only word-for-word
     /// substitutions count; a rewording or a deletion teaches nothing.
     async fn learn_from_correction(&self, before: &str, after: &str) {
+        self.logs.info(
+            &self.app,
+            "dictionary",
+            format!("correction seen: {:?} → {:?}", short(before), short(after)),
+        );
         if self.settings.lock().await.value().dictionary_learning == "off" {
+            self.logs.info(&self.app, "dictionary", "learning is off; ignored");
             return;
         }
         let mut store = self.dictionary.lock().await;
@@ -411,18 +436,32 @@ impl Dictation {
                 return;
             }
         };
-        let mut learned = Vec::new();
+        if suggestions.is_empty() {
+            self.logs.info(
+                &self.app,
+                "dictionary",
+                "no word-for-word substitution in that edit (rewording, case, punctuation or a known term); nothing learned",
+            );
+            return;
+        }
+        let mut learned: Vec<LearnedTerm> = Vec::new();
         for suggestion in suggestions {
-            if store
-                .add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned)
-                .is_ok()
-            {
-                self.logs.info(
-                    &self.app,
-                    "dictionary",
-                    format!("learned {:?} (heard as {:?})", suggestion.text, suggestion.heard_as),
-                );
-                learned.push(suggestion.text);
+            match store.add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned) {
+                Ok(terms) => {
+                    self.logs.info(
+                        &self.app,
+                        "dictionary",
+                        format!("learned {:?} (heard as {:?})", suggestion.text, suggestion.heard_as),
+                    );
+                    if let Some(term) = terms.iter().find(|term| term.text.eq_ignore_ascii_case(&suggestion.text)) {
+                        learned.push(LearnedTerm {
+                            id: term.id,
+                            text: term.text.clone(),
+                            heard_as: suggestion.heard_as.clone(),
+                        });
+                    }
+                }
+                Err(error) => self.logs.error(&self.app, "dictionary", error),
             }
         }
         if learned.is_empty() {

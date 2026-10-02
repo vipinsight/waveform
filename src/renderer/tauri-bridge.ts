@@ -34,6 +34,7 @@ import type {
   DiarizerInstallEvent,
   MeetingLevelEvent,
   MeetingStateEvent,
+  LearnedTerm,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -141,7 +142,7 @@ const api: DesktopApi = {
     invoke<SavedDictation[]>("update_dictation", { id, text }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
-  onDictionaryLearned: (listener) => subscribe<string[]>("dictionary-learned", listener),
+  onDictionaryLearned: (listener) => subscribe<LearnedTerm[]>("dictionary-learned", listener),
 
   getDictionary: () => invoke<DictionaryTerm[]>("get_dictionary"),
   addDictionaryTerm: (text, heardAs, learned) =>
