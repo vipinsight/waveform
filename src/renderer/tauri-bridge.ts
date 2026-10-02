@@ -27,7 +27,6 @@ import type {
   UpdateInfo,
   DictionaryTerm,
   DictionarySuggestion,
-  EditOutcome,
   Meeting,
   MeetingDetail,
   MeetingLine,
@@ -142,7 +141,7 @@ const api: DesktopApi = {
     invoke<SavedDictation[]>("update_dictation", { id, text }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
-  editDictation: (id, text) => invoke<EditOutcome>("edit_dictation", { id, text }),
+  onDictionaryLearned: (listener) => subscribe<string[]>("dictionary-learned", listener),
 
   getDictionary: () => invoke<DictionaryTerm[]>("get_dictionary"),
   addDictionaryTerm: (text, heardAs, learned) =>

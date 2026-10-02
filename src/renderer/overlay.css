@@ -599,3 +599,25 @@ body {
 .hud-meeting[hidden] {
   display: none;
 }
+
+
+/* ----------------------------------------------------------------- note */
+
+.hud-note {
+  position: absolute;
+  bottom: 38px;
+  left: 50%;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgb(17 20 26 / 92%);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 560;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hud-note[hidden] {
+  display: none;
+}

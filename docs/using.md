@@ -164,9 +164,9 @@ The **Dictations** view keeps every dictation, newest first, with when it was
 said and how long it was. Each one can be copied or deleted, and the whole list
 cleared. It holds the most recent 10,000 and is readable only by you.
 
-Double-click a dictation's text to correct it. When you replace a word, Waveform
-offers to add the right spelling to the Dictionary (see below), so the next
-dictation gets it right.
+When you fix a word Waveform just typed -- in the app it landed in -- the right
+spelling goes into the Dictionary (see below), so the next dictation gets it
+right.
 
 ## Dictionary
 
@@ -175,8 +175,10 @@ products, the jargon the engine keeps mishearing. Before each phrase the terms
 most likely to come up are read to the speech model, and anything it still gets
 wrong is fixed afterwards. Add a term by typing it, with what the engine tends
 to hear instead if you know it; paste a comma-separated list to add several at
-once. Correcting a dictation offers to add the word, or adds it straight away if
-you switch "When I correct a transcript" to **Add automatically**.
+once. Fixing a word where a dictation landed adds it here automatically, along
+with what the engine heard; switch **Learn from my corrections** off to stop
+that. Waveform only looks at the text it pasted, for a couple of minutes after
+pasting.
 
 ## Meetings
 

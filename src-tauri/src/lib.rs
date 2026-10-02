@@ -793,73 +793,6 @@ async fn decline_dictionary_suggestion(
     state.dictionary.lock().await.decline(&suggestion)
 }
 
-/// What a transcript edit returns: the list, what the edit suggests learning,
-/// and -- when learning is automatic -- what was added without asking.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EditOutcome {
-    entries: Vec<SavedDictation>,
-    suggestions: Vec<Suggestion>,
-    added: Vec<Suggestion>,
-}
-
-/// Saves words the user corrected by hand on a saved dictation.
-///
-/// The difference between what was there and what they typed is where the
-/// dictionary learns from, so it is worked out here while both are known.
-#[tauri::command]
-async fn edit_dictation(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    id: String,
-    text: String,
-) -> Result<EditOutcome, String> {
-    let mut history = state.history.lock().await;
-    let before = history
-        .entries()?
-        .into_iter()
-        .find(|entry| entry.id == id)
-        .map(|entry| entry.text)
-        .ok_or_else(|| "That dictation is gone.".to_string())?;
-    let entries = history.edit_text(&id, &text)?;
-    drop(history);
-    let _ = app.emit("history-changed", &entries);
-    let suggestions = state
-        .dictionary
-        .lock()
-        .await
-        .suggestions_for(&before, &text)
-        .unwrap_or_default();
-    if state.settings.lock().await.value().dictionary_learning != "auto" {
-        return Ok(EditOutcome {
-            entries,
-            suggestions,
-            added: Vec::new(),
-        });
-    }
-    // Automatic: every term-shaped correction goes straight in, as learned.
-    let mut added = Vec::new();
-    {
-        let mut dictionary = state.dictionary.lock().await;
-        for suggestion in suggestions {
-            if dictionary
-                .add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned)
-                .is_ok()
-            {
-                added.push(suggestion);
-            }
-        }
-        if !added.is_empty() {
-            let _ = app.emit("dictionary-changed", dictionary.terms().unwrap_or_default());
-        }
-    }
-    Ok(EditOutcome {
-        entries,
-        suggestions: Vec::new(),
-        added,
-    })
-}
-
 /// Terms out of a pasted list: commas and line breaks separate them.
 fn split_terms(text: &str) -> Vec<String> {
     text.split([',', '\n', ';'])
@@ -1412,6 +1345,7 @@ pub fn run() {
                 settings.clone(),
                 stats.clone(),
                 history.clone(),
+                dictionary.clone(),
                 rewriter.clone(),
                 models.clone(),
             );
@@ -1556,7 +1490,6 @@ pub fn run() {
             remove_dictionary_term,
             import_dictionary,
             decline_dictionary_suggestion,
-            edit_dictation,
             delete_dictation,
             clear_history,
             get_dictation_audio,

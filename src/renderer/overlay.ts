@@ -279,6 +279,19 @@ meetingStopButton.addEventListener("click", () => {
 });
 meetingClock.addEventListener("click", () => void host().showMeetings());
 
+// A word the user fixed where it landed is now a term; a brief note says so
+// beside the bar, which is the only part of Waveform in view at that moment.
+const hudNote = requireElement<HTMLElement>("hud-note");
+let hudNoteTimer: number | null = null;
+host().onDictionaryLearned((terms) => {
+  hudNote.textContent = `Added ${terms.join(", ")} to the dictionary`;
+  hudNote.hidden = false;
+  if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
+  hudNoteTimer = window.setTimeout(() => {
+    hudNote.hidden = true;
+  }, 2_600);
+});
+
 hud.addEventListener("focusin", (event) => {
   if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {
     hud.dataset.expanded = "true";

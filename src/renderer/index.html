@@ -523,16 +523,17 @@
           <div class="card">
             <div class="row">
               <span class="row-label">
-                When I fix a word in a saved dictation
+                Learn from my corrections
                 <small>
-                  Double-click a dictation in <button class="link" type="button" id="dictionary-open-dictations">Dictations</button>
-                  to correct it. Waveform sees what it heard and what you meant, and can add the word here.
+                  When you fix a word Waveform just typed, in whatever app it landed in,
+                  the right spelling is added here along with what was heard. Waveform
+                  only looks at the text it pasted, for a couple of minutes after pasting.
                 </small>
               </span>
               <span class="row-actions">
-                <div class="segmented" id="dictionary-learning" role="radiogroup" aria-label="Learning from corrections">
-                  <button type="button" role="radio" data-learning="ask" aria-checked="true">Ask me</button>
-                  <button type="button" role="radio" data-learning="auto" aria-checked="false">Add automatically</button>
+                <div class="segmented" id="dictionary-learning" role="radiogroup" aria-label="Learn from corrections">
+                  <button type="button" role="radio" data-learning="on" aria-checked="true">On</button>
+                  <button type="button" role="radio" data-learning="off" aria-checked="false">Off</button>
                 </div>
               </span>
             </div>

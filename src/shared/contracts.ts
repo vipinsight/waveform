@@ -380,14 +380,6 @@ export interface DiarizerInstallEvent {
   progress: number;
 }
 
-/** What saving a hand edit to a transcript returns. */
-export interface EditOutcome {
-  entries: SavedDictation[];
-  /** Offered under the row when learning is set to ask. */
-  suggestions: DictionarySuggestion[];
-  /** Added without asking when learning is automatic. */
-  added: DictionarySuggestion[];
-}
 
 export interface AppStats {
   words: number;
@@ -514,8 +506,8 @@ export interface DesktopApi {
   /** Replaces the words on a saved dictation after re-running the engine. */
   updateDictation(id: string, text: string): Promise<SavedDictation[]>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
-  /** Saves words the user corrected by hand, and says what that suggests learning. */
-  editDictation(id: string, text: string): Promise<EditOutcome>;
+  /** Terms just learned from a correction the user made where a dictation landed. */
+  onDictionaryLearned(listener: (terms: string[]) => void): () => void;
 
   getDictionary(): Promise<DictionaryTerm[]>;
   addDictionaryTerm(text: string, heardAs: string[], learned?: boolean): Promise<DictionaryTerm[]>;

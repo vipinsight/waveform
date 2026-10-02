@@ -5,6 +5,7 @@
 //! told about it.
 
 use crate::gestures::{Command, GestureMachine};
+use crate::dictionary::{self, DictionaryStore};
 use crate::history::{HistoryStore, NewDictation};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
 use crate::model_server::ModelServer;
@@ -118,6 +119,7 @@ pub struct Dictation {
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
+    dictionary: Arc<Mutex<DictionaryStore>>,
     rewriter: Arc<Rewriter>,
     models: Arc<ModelServer>,
     helper: Arc<HotkeyHelper>,
@@ -172,12 +174,14 @@ pub struct Dictation {
 }
 
 impl Dictation {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app: AppHandle,
         logs: Arc<crate::logs::Logs>,
         settings: Arc<Mutex<SettingsStore>>,
         stats: Arc<Mutex<StatsStore>>,
         history: Arc<Mutex<HistoryStore>>,
+        dictionary: Arc<Mutex<DictionaryStore>>,
         rewriter: Arc<Rewriter>,
         models: Arc<ModelServer>,
     ) -> Arc<Self> {
@@ -187,6 +191,7 @@ impl Dictation {
             settings,
             stats,
             history,
+            dictionary,
             rewriter,
             models,
             helper: HotkeyHelper::new(),
@@ -386,8 +391,47 @@ impl Dictation {
                     }
                 }
             }
+            HelperEvent::Correction { before, after } => self.learn_from_correction(&before, &after).await,
             HelperEvent::Selection { .. } => {}
         }
+    }
+
+    /// A word the user fixed where the dictation landed becomes a term, with
+    /// what the engine heard as its mis-hearing. Only word-for-word
+    /// substitutions count; a rewording or a deletion teaches nothing.
+    async fn learn_from_correction(&self, before: &str, after: &str) {
+        if self.settings.lock().await.value().dictionary_learning == "off" {
+            return;
+        }
+        let mut store = self.dictionary.lock().await;
+        let suggestions = match store.suggestions_for(before, after) {
+            Ok(suggestions) => suggestions,
+            Err(error) => {
+                self.logs.error(&self.app, "dictionary", error);
+                return;
+            }
+        };
+        let mut learned = Vec::new();
+        for suggestion in suggestions {
+            if store
+                .add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned)
+                .is_ok()
+            {
+                self.logs.info(
+                    &self.app,
+                    "dictionary",
+                    format!("learned {:?} (heard as {:?})", suggestion.text, suggestion.heard_as),
+                );
+                learned.push(suggestion.text);
+            }
+        }
+        if learned.is_empty() {
+            return;
+        }
+        let terms = store.terms().unwrap_or_default();
+        drop(store);
+        let _ = self.app.emit("dictionary-changed", terms);
+        let _ = self.app.emit("dictionary-learned", learned);
     }
 
     async fn run_command(self: &Arc<Self>, command: Command) {

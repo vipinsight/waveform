@@ -7,6 +7,8 @@
 //
 // Commands (stdin)   {"type":"watch","keyCode":63} | {"type":"unwatch"}
 //                    {"type":"paste","text":"…"} | {"type":"read-selection"}
+//                    (a paste is followed by {"type":"correction","before":"…","after":"…"}
+//                    events while the pasted text is edited in place)
 //                    {"type":"permissions"}
 //                    {"type":"request","scope":"accessibility"|"input-monitoring"}
 // Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up","keyCode":63}
@@ -141,7 +143,134 @@ private func pasteIntoFrontmostApp(_ text: String) {
     pasteboard.clearContents()
     if let restored { pasteboard.setString(restored, forType: .string) }
   }
+  // Once the app has taken the paste, start watching the field for the
+  // user's corrections to it.
+  DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+    correctionWatcher.begin(pasted: text)
+  }
 }
+
+// MARK: - Corrections
+
+/// Watches the field a dictation was pasted into, and reports edits to the
+/// pasted text so the app can learn the words it got wrong.
+///
+/// Scope is deliberately narrow: only the element that received the paste,
+/// only the stretch of its value that is the pasted text, only for a couple
+/// of minutes, and only the before/after of a change. Nothing else in the
+/// field is read or reported, and nothing is kept here.
+private final class CorrectionWatcher {
+  private var element: AXUIElement?
+  private var observer: AXObserver?
+  /// The field's whole value when last read, and where the pasted text sits in it.
+  private var baseline = ""
+  private var range: Range<String.Index>?
+  private var deadline: DispatchWorkItem?
+  private var settle: DispatchWorkItem?
+  private let lifetime: TimeInterval = 120
+
+  func begin(pasted: String) {
+    end()
+    guard let target = focusedElement() else { return }
+    guard let value = stringValue(of: target), let found = value.range(of: pasted) else { return }
+    element = target
+    baseline = value
+    range = found
+
+    var pid: pid_t = 0
+    AXUIElementGetPid(target, &pid)
+    var created: AXObserver?
+    let callback: AXObserverCallback = { _, _, _, refcon in
+      guard let refcon else { return }
+      let watcher = Unmanaged<CorrectionWatcher>.fromOpaque(refcon).takeUnretainedValue()
+      watcher.changed()
+    }
+    guard AXObserverCreate(pid, callback, &created) == .success, let observer = created else { return }
+    let refcon = Unmanaged.passUnretained(self).toOpaque()
+    AXObserverAddNotification(observer, target, kAXValueChangedNotification as CFString, refcon)
+    AXObserverAddNotification(observer, target, kAXUIElementDestroyedNotification as CFString, refcon)
+    CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    self.observer = observer
+
+    let stop = DispatchWorkItem { [weak self] in self?.end() }
+    deadline = stop
+    DispatchQueue.main.asyncAfter(deadline: .now() + lifetime, execute: stop)
+  }
+
+  /// Called on every value change; waits for typing to pause before reading.
+  private func changed() {
+    settle?.cancel()
+    let work = DispatchWorkItem { [weak self] in self?.compare() }
+    settle = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+  }
+
+  private func compare() {
+    guard let element, let range else { return }
+    guard let value = stringValue(of: element) else {
+      end()
+      return
+    }
+    if value == baseline { return }
+    // The pasted stretch starts where it did; it ends there plus however much
+    // the field grew or shrank, on the assumption that the edit was inside
+    // it. An edit elsewhere in the field produces a before/after pair with no
+    // word-for-word substitution in it, which the app ignores.
+    let before = String(baseline[range])
+    let startOffset = baseline.distance(from: baseline.startIndex, to: range.lowerBound)
+    let beforeLength = baseline.distance(from: range.lowerBound, to: range.upperBound)
+    let afterLength = max(0, beforeLength + (value.count - baseline.count))
+    guard startOffset <= value.count else {
+      end()
+      return
+    }
+    let start = value.index(value.startIndex, offsetBy: startOffset)
+    let end = value.index(start, offsetBy: min(afterLength, value.count - startOffset))
+    let after = String(value[start..<end])
+    if after.isEmpty {
+      self.end()
+      return
+    }
+    if after != before {
+      emit(["type": "correction", "before": before, "after": after])
+    }
+    baseline = value
+    self.range = start..<end
+  }
+
+  func end() {
+    deadline?.cancel()
+    settle?.cancel()
+    if let observer {
+      CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    }
+    observer = nil
+    element = nil
+    range = nil
+    baseline = ""
+  }
+
+  private func focusedElement() -> AXUIElement? {
+    var focused: CFTypeRef?
+    let system = AXUIElementCreateSystemWide()
+    guard
+      AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
+        == .success,
+      let element = focused,
+      CFGetTypeID(element) == AXUIElementGetTypeID()
+    else { return nil }
+    return (element as! AXUIElement)
+  }
+
+  private func stringValue(of element: AXUIElement) -> String? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
+    else { return nil }
+    return value as? String
+  }
+}
+
+private let correctionWatcher = CorrectionWatcher()
 
 /// Posts a synthetic ⌘C and returns whatever the focused app put on the
 /// pasteboard, restoring the previous contents afterwards.
