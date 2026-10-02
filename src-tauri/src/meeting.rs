@@ -33,7 +33,11 @@ const OVERLAY_LABEL: &str = "overlay";
 const TAP_BLOCK: usize = 2_048;
 /// How long the tap helper gets to say it is ready before the meeting goes
 /// on with the microphone alone.
-const TAP_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const TAP_READY_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The permission check waits as long as the macOS dialog is up: Core Audio
+/// holds the helper inside its first call until the user answers.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Blocks waiting between a capture thread and its writer.
 const QUEUE: usize = 64;
 
@@ -406,7 +410,7 @@ impl Recorder {
             return Ok("unsupported".into());
         }
         let output = tokio::time::timeout(
-            Duration::from_secs(8),
+            PROBE_TIMEOUT,
             tokio::process::Command::new(helper)
                 .arg("--probe")
                 .stdin(std::process::Stdio::null())

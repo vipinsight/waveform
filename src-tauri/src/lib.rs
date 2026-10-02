@@ -988,6 +988,7 @@ async fn open_privacy_settings(app: tauri::AppHandle, pane: String) -> Result<()
         "accessibility" => "Privacy_Accessibility",
         "input-monitoring" => "Privacy_ListenEvent",
         "microphone" => "Privacy_Microphone",
+        "audio-capture" => "Privacy_AudioCapture",
         _ => return Ok(()),
     };
     let url = format!("x-apple.systempreferences:com.apple.preference.security?{anchor}");

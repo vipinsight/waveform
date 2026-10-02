@@ -153,10 +153,16 @@ private final class SystemTap {
     }
     guard err == noErr, procID != nil else { throw TapError("io proc: \(err)") }
 
+    // macOS asks for permission inside this call, the first time, and holds
+    // it until the user answers.
     err = AudioDeviceStart(aggregateID, procID)
     guard err == noErr else { throw TapError("start: \(err)") }
+    return format.mSampleRate
+  }
 
-    // Drained off the realtime thread.
+  /// Streams what the IO proc has mixed down to stdout, off the realtime
+  /// thread, for the rest of the process's life.
+  func startDraining() {
     let stdout = FileHandle.standardOutput
     let verbose = ProcessInfo.processInfo.environment["WAVEFORM_TAP_DEBUG"] != nil
     Thread.detachNewThread { [outbox, debug] in
@@ -167,30 +173,47 @@ private final class SystemTap {
         usleep(20_000)
         ticks += 1
         if verbose && ticks % 50 == 0 {
-          status([
-            "type": "debug", "callbacks": debug.callbacks, "buffers": debug.buffers,
-            "bytes": debug.bytes, "channels": channels, "interleaved": interleaved,
-          ])
+          status(["type": "debug", "callbacks": debug.callbacks, "buffers": debug.buffers, "bytes": debug.bytes])
         }
       }
     }
-    return format.mSampleRate
   }
 
   /// How many times the IO proc has run.
   var callbacks: Int { debug.callbacks }
+
+  /// Tears the tap down and builds it again. A grant given in the dialog
+  /// applies to the next tap, not the one that was waiting on it, so the
+  /// first tap after "Allow" runs silent and has to be replaced.
+  func restart() throws -> Double {
+    teardown()
+    debug.callbacks = 0
+    debug.bytes = 0
+    return try start()
+  }
 
   func stop() {
     status([
       "type": "stats", "callbacks": debug.callbacks, "bytes": debug.bytes,
       "channels": Int(format.mChannelsPerFrame),
     ])
+    teardown()
+  }
+
+  private func teardown() {
     if let procID {
       AudioDeviceStop(aggregateID, procID)
       AudioDeviceDestroyIOProcID(aggregateID, procID)
+      self.procID = nil
     }
-    if aggregateID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggregateID) }
-    if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID) }
+    if aggregateID != kAudioObjectUnknown {
+      AudioHardwareDestroyAggregateDevice(aggregateID)
+      aggregateID = AudioObjectID(kAudioObjectUnknown)
+    }
+    if tapID != kAudioObjectUnknown {
+      AudioHardwareDestroyProcessTap(tapID)
+      tapID = AudioObjectID(kAudioObjectUnknown)
+    }
   }
 
   private func defaultOutputUID() throws -> String {
@@ -227,22 +250,29 @@ private struct TapError: Error {
   init(_ reason: String) { self.reason = reason }
 }
 
-/// `--probe`: creates the tap, which is what makes macOS ask for permission
+/// `--probe`: starts the tap, which is what makes macOS ask for permission
 /// the first time, waits a moment, and reports whether audio IO ran at all.
 /// With permission the IO proc fires whether or not anything is playing;
-/// without it, nothing fires. Exit codes: 0 heard, 2 silent, 1 failed.
+/// without it, nothing fires. A tap that was waiting on the dialog stays
+/// silent even after "Allow", so a silent first try is rebuilt once before
+/// the answer is final. Exit codes: 0 heard, 2 silent, 1 failed.
 @available(macOS 14.2, *)
 private func probe() -> Never {
   let tap = SystemTap()
+  var heard = false
   do {
     _ = try tap.start()
+    for attempt in 1...2 {
+      Thread.sleep(forTimeInterval: 1.5)
+      heard = tap.callbacks > 0
+      if heard || attempt == 2 { break }
+      _ = try tap.restart()
+    }
   } catch let error as TapError {
     fail(error.reason)
   } catch {
     fail("\(error)")
   }
-  Thread.sleep(forTimeInterval: 1.5)
-  let heard = tap.callbacks > 0
   status(["type": "probe", "heard": heard, "callbacks": tap.callbacks])
   tap.stop()
   exit(heard ? 0 : 2)
@@ -261,7 +291,21 @@ private func run() -> Never {
   } catch {
     fail("\(error)")
   }
+  tap.startDraining()
   status(["type": "ready", "sampleRate": rate])
+
+  // The first tap after the user clicks "Allow" in the dialog runs silent;
+  // the grant reaches the next one. Rebuilt once if nothing has arrived.
+  Thread.detachNewThread {
+    Thread.sleep(forTimeInterval: 2.0)
+    guard tap.callbacks == 0 else { return }
+    do {
+      _ = try tap.restart()
+      status(["type": "restarted"])
+    } catch {
+      status(["type": "error", "reason": "restart: \(error)"])
+    }
+  }
 
   // Stop when the parent closes stdin or asks politely.
   signal(SIGTERM) { _ in exit(0) }
