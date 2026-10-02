@@ -229,7 +229,10 @@ pub async fn run(wav: &Path, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
             models.join("segmentation.onnx").display()
         ))
         .arg(format!("--embedding.model={}", models.join("embedding.onnx").display()))
-        .arg(format!("--num-threads={threads}"))
+        // sherpa-onnx takes a thread count per network; a bare --num-threads
+        // is rejected and the run stops before it starts.
+        .arg(format!("--segmentation.num-threads={threads}"))
+        .arg(format!("--embedding.num-threads={threads}"))
         .arg(wav)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
