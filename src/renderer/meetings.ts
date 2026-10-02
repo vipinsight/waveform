@@ -962,9 +962,7 @@ function banner(tone: "info" | "warn" | "error", title: string, body: string, ac
 }
 
 function openAudioCaptureSettings(): void {
-  void host()
-    .openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")
-    .catch(showError);
+  void host().openPrivacySettings("audio-capture").catch(showError);
 }
 
 async function finish(meeting: Meeting): Promise<void> {

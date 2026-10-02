@@ -415,7 +415,7 @@ export interface HotkeyStatus {
   engineInstalled: boolean;
 }
 
-export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone";
+export type PrivacyPane = "accessibility" | "input-monitoring" | "microphone" | "audio-capture";
 
 export interface DesktopApi {
   startModel(): Promise<void>;
