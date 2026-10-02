@@ -101,3 +101,30 @@ release can stop further distribution, but does not repair already updated
 installations. Never overwrite assets of a published version.
 
 [Updates](updates.md) explains the trust model and update implementation.
+
+## Beta releases
+
+A beta is a normal release in every respect but one: it is published as a
+**pre-release**, never marked **latest**. The updater reads
+`releases/latest/download/latest.json`, and GitHub keeps pre-releases out of
+`latest`, so installed copies on the stable line keep seeing the last stable
+release and never offer the beta. Anyone who wants the beta downloads its DMG
+from the release page by hand.
+
+Build the draft with the flag set, so it is already marked before anyone can
+publish it:
+
+```sh
+WAVEFORM_PRERELEASE=1 pnpm release
+```
+
+Then publish the draft **as a pre-release** in GitHub Releases and leave
+"Set as the latest release" unticked. Check the release list afterwards: the
+previous stable release must still carry the **Latest** badge.
+
+A beta's version is a plain three-part version above the current stable one
+(0.9.0 after 0.8.1). Once a beta installs, its own update checks also read
+`latest`, so a beta copy moves on to the next stable release when one is
+published, and never to another beta. Give the next stable release a higher
+version than any beta that went out (0.9.1 or 0.10.0 after a 0.9.0 beta), or
+beta copies will stay where they are.
