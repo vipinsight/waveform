@@ -28,6 +28,10 @@ const CALIBRATION_PERCENTILE: f32 = 0.1;
 const DROPOUT_LEVEL: f32 = 1e-4;
 /// How much audio is kept ahead of the first phrase.
 const LEAD_IN_MS: u32 = 3_000;
+/// Speech with no pause at all for this long means the floor is wrong, not
+/// that nobody breathed. The room is relearned from the stretch so far, so
+/// the next real pause is heard instead of the cap.
+const RELEARN_AFTER_MS: u32 = 6_000;
 
 /// A phrase cut from the stream, with where it sat in the recording.
 pub struct Phrase {
@@ -82,6 +86,7 @@ pub struct Segmenter {
     pre_roll_limit: usize,
     lead_in_limit: usize,
     maximum_segment: usize,
+    relearn_after: usize,
     heard_phrase: bool,
     pre_roll: Vec<Vec<f32>>,
     pre_roll_len: usize,
@@ -116,6 +121,7 @@ impl Segmenter {
             pre_roll_limit,
             lead_in_limit: pre_roll_limit.max(to_samples(LEAD_IN_MS)),
             maximum_segment: to_samples(options.maximum_segment_ms),
+            relearn_after: to_samples(RELEARN_AFTER_MS),
             heard_phrase: false,
             pre_roll: Vec::new(),
             pre_roll_len: 0,
@@ -191,6 +197,15 @@ impl Segmenter {
         if self.silence_samples >= self.trailing_silence {
             return self.finish(self.minimum_speech);
         }
+        // A floor learned too low shows up as speech that never pauses. Taking
+        // the room from the quietest tenth of the stretch so far lets the next
+        // pause be heard; the segment itself carries on.
+        if self.segment_len >= self.relearn_after
+            && self.segment_levels.len() >= 8
+            && !self.segment_levels.iter().any(|level| *level < self.threshold())
+        {
+            self.relearn_floor_from_segment();
+        }
         if self.segment_len >= self.maximum_segment {
             // A stretch this long with no pause in it is not someone talking
             // without breathing; it is a floor that was learned too low. The
@@ -203,16 +218,22 @@ impl Segmenter {
     }
 
     fn relearn_floor_from_segment(&mut self) {
-        if self.silence_samples > 0 || self.segment_levels.len() < 8 {
+        if self.segment_levels.len() < 8 {
             return;
         }
-        let mut levels = std::mem::take(&mut self.segment_levels);
+        let mut levels = self.segment_levels.clone();
         levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let index = ((levels.len() - 1) as f32 * CALIBRATION_PERCENTILE).floor() as usize;
         let quiet = levels[index];
-        if quiet > self.floor {
+        let median = levels[levels.len() / 2];
+        // Only a stretch with gaps in it says anything about the room: speech
+        // has quiet blocks between words, a flat tone has none, and taking a
+        // tone's level as the room would silence it.
+        if quiet < median * 0.5 && quiet > self.floor {
             self.floor = quiet;
         }
+        // Counted again from here, so the next check looks at new blocks.
+        self.segment_levels.clear();
     }
 
     /// Ends the stream and returns whatever was captured.
@@ -546,17 +567,27 @@ mod tests {
         assert!(last.end_ms - last.start_ms < 3_000, "{}", last.end_ms - last.start_ms);
     }
 
-    /// A floor learned too low heals itself at the first capped phrase.
+    /// A floor learned too low heals itself a few seconds into the stretch,
+    /// well before the cap: the first real pause after that is heard.
     #[test]
-    fn a_floor_learned_too_low_is_relearned_from_a_capped_stretch() {
+    fn a_floor_learned_too_low_is_relearned_within_the_stretch() {
         let mut segmenter = Segmenter::new(SegmenterOptions::meeting(RATE));
         feed(&mut segmenter, 300, 0.0003); // a room far quieter than what follows
-        let capped = feed(&mut segmenter, 30_000, 0.01); // the real room reads as speech
-        assert_eq!(capped.len(), 1);
-        assert_eq!(capped[0].end_ms - capped[0].start_ms, 25_000);
+        // The real room reads as speech; after RELEARN_AFTER_MS the floor is
+        // taken from it, and the room alone then counts as silence, so the
+        // stretch ends well short of the 25 s cap.
+        // Speech with gaps, all of it reading as speech on the wrong floor.
+        let mut phrases = Vec::new();
+        for _ in 0..6 {
+            phrases.extend(feed(&mut segmenter, 1_000, 0.06));
+            phrases.extend(feed(&mut segmenter, 1_000, 0.01));
+        }
+        assert!(!phrases.is_empty(), "the stretch should have ended before the cap");
+        let length = phrases[0].end_ms - phrases[0].start_ms;
+        assert!(length < 12_000, "{length}");
         let mut after = feed(&mut segmenter, 1_000, 0.06);
         after.extend(feed(&mut segmenter, 1_000, 0.01));
-        assert_eq!(after.len(), 1, "a pause after speech now cuts a phrase");
+        assert_eq!(after.len(), 1, "a pause after speech cuts a phrase");
         assert!(after[0].end_ms - after[0].start_ms < 3_000);
     }
 

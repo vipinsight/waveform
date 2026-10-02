@@ -240,10 +240,15 @@ describe("short utterances", () => {
       return out;
     };
     feed(300, 0.0003); // calibrated on a room far quieter than what follows
-    // Room at 0.01 now reads as speech; only the cap cuts.
-    const capped = feed(6000, 0.01);
-    expect(capped).toHaveLength(1);
-    expect(capped[0]!.length).toBe(5000);
+    // Speech with gaps, all reading as speech on the wrong floor, until the
+    // floor is relearned a few seconds in; the stretch then ends on its own.
+    const phrases = [];
+    for (let i = 0; i < 4; i += 1) {
+      phrases.push(...feed(1000, 0.06), ...feed(1000, 0.01));
+    }
+    expect(phrases.length).toBeGreaterThanOrEqual(1);
+    expect(phrases[0]!.length).toBeLessThanOrEqual(5000);
+    expect(phrases.length).toBeGreaterThanOrEqual(2);
     // After the cap the floor is the room, so speech then room cuts at the pause.
     const after = [...feed(1000, 0.06), ...feed(1000, 0.01)];
     expect(after).toHaveLength(1);

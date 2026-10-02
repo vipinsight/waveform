@@ -71,6 +71,13 @@ const DROPOUT_LEVEL = 1e-4;
  */
 const LEAD_IN_MS = 3_000;
 
+/**
+ * Speech with no pause at all for this long means the floor is wrong, not that
+ * nobody breathed. The room is relearned from the stretch so far, so the next
+ * real pause is heard instead of the cap.
+ */
+const RELEARN_AFTER_MS = 6_000;
+
 export class SpeechSegmenter {
   /** Set only when a fixed threshold was asked for. See `threshold`. */
   private readonly silenceThreshold: number | null;
@@ -88,6 +95,7 @@ export class SpeechSegmenter {
   /** Whether a phrase has been cut yet. Until then the pre-roll is the lead-in. */
   private heardPhrase = false;
   private readonly maximumSegmentSamples: number;
+  private readonly relearnAfterSamples: number;
   private preRoll: Float32Array[] = [];
   private preRollLength = 0;
   private segment: Float32Array[] = [];
@@ -138,6 +146,7 @@ export class SpeechSegmenter {
       options.maximumSegmentMs ?? 15_000,
       options.sampleRate,
     );
+    this.relearnAfterSamples = millisecondsToSamples(RELEARN_AFTER_MS, options.sampleRate);
   }
 
   /**
@@ -210,6 +219,16 @@ export class SpeechSegmenter {
     if (this.silenceSamples >= this.trailingSilenceSamples) {
       return this.finishSegment();
     }
+    // A floor learned too low shows up as speech that never pauses. Taking the
+    // room from the quietest tenth of the stretch so far lets the next pause be
+    // heard; the segment itself carries on.
+    if (
+      this.segmentLength >= this.relearnAfterSamples &&
+      this.segmentLevels.length >= 8 &&
+      !this.segmentLevels.some((value) => value < this.threshold())
+    ) {
+      this.relearnFloorFromSegment();
+    }
     if (this.segmentLength >= this.maximumSegmentSamples) {
       // A stretch this long with no pause in it is not someone talking
       // without breathing; it is a floor learned too low. The quietest tenth
@@ -223,12 +242,17 @@ export class SpeechSegmenter {
   }
 
   private relearnFloorFromSegment(): void {
-    if (this.silenceSamples > 0 || this.segmentLevels.length < 8) return;
-    const levels = this.segmentLevels.sort((first, second) => first - second);
+    if (this.segmentLevels.length < 8) return;
+    const levels = [...this.segmentLevels].sort((first, second) => first - second);
+    // Counted again from here, so the next check looks at new blocks.
     this.segmentLevels = [];
     const index = Math.floor((levels.length - 1) * CALIBRATION_PERCENTILE);
     const quiet = levels[index] ?? 0;
-    if (quiet > this.floor) this.floor = quiet;
+    const median = levels[Math.floor(levels.length / 2)] ?? 0;
+    // Only a stretch with gaps in it says anything about the room: speech has
+    // quiet blocks between words, a flat tone has none, and taking a tone's
+    // level as the room would silence it.
+    if (quiet < median * 0.5 && quiet > this.floor) this.floor = quiet;
   }
 
   /** Ends the session and returns whatever was captured. */
