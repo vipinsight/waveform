@@ -171,6 +171,16 @@ PY
 
 # latest.json is fetched through releases/latest/download, which always
 # resolves to the newest release -- so it has to be attached to this one.
+# A beta goes out as a pre-release and never as "latest": the updater reads
+# releases/latest/download/latest.json, and GitHub keeps pre-releases out of
+# "latest", so installed copies on the stable line do not see it. Set
+# WAVEFORM_PRERELEASE=1 to mark the draft that way before it is published.
+# Two words, split on purpose where they are used: this is /bin/sh.
+PRERELEASE_FLAGS=""
+if [ "${WAVEFORM_PRERELEASE:-}" = "1" ]; then
+  PRERELEASE_FLAGS="--prerelease --latest=false"
+  echo "release: v$VERSION is a pre-release; it will not become \"latest\""
+fi
 echo "release: uploading draft v$VERSION"
 # --target pins the tag to the commit that was actually built. Without it the
 # tag is cut from the remote's default branch, which is the same thing only
@@ -181,6 +191,7 @@ gh release create "v$VERSION" \
   --title "Waveform $VERSION" \
   --generate-notes \
   --draft \
+  $PRERELEASE_FLAGS \
   "$DMG" \
   "$WORK/$ASSET" \
   "$WORK/$ASSET.sig" \
