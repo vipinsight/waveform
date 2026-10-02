@@ -398,12 +398,12 @@
             <div class="meeting-intro-card">
               <h2 id="meeting-intro-title" class="display">Before your first recording</h2>
               <p>
-                Recording starts the moment you continue. macOS will ask once to let Waveform
-                hear the other side of the call; allow it, and nothing you record leaves this Mac.
+                Waveform will ask macOS to let it hear the other side of the call, then start
+                recording. Allow it once; nothing you record leaves this Mac.
               </p>
               <div class="meeting-intro-actions">
                 <button id="meeting-intro-cancel" class="pill-button" type="button">Not now</button>
-                <button id="meeting-intro-start" class="pill-button is-primary" type="button">Start recording</button>
+                <button id="meeting-intro-start" class="pill-button is-primary" type="button">Allow and start recording</button>
               </div>
             </div>
           </div>
@@ -419,6 +419,7 @@
             <div id="meetings-empty-setup" class="card meetings-empty-setup"></div>
           </div>
 
+          <div id="meetings-permission" class="meeting-banner is-warn meetings-permission" hidden></div>
           <div id="meetings-list" class="meetings-list" hidden></div>
           <p id="meetings-no-match" class="dictionary-empty" hidden>No meeting matches that.</p>
 

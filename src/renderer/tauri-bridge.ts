@@ -173,6 +173,7 @@ const api: DesktopApi = {
   },
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),
+  probeSystemAudio: () => invoke<"heard" | "silent" | "unsupported" | "missing">("probe_system_audio"),
   cancelDiarizerInstall: () => invoke<void>("cancel_diarizer_install"),
   removeDiarizer: () => invoke<void>("remove_diarizer"),
   onMeetingLine: (listener) =>

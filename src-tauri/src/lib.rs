@@ -687,6 +687,12 @@ async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec
     state.recorder.audio(&id).await
 }
 
+/// Asks macOS for permission to hear the other side of a call.
+#[tauri::command]
+async fn probe_system_audio(state: State<'_, AppState>) -> Result<String, String> {
+    state.recorder.probe_system_audio().await
+}
+
 /// Brings the window up on the live meeting; the HUD's clock calls this.
 #[tauri::command]
 async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
@@ -1541,6 +1547,7 @@ pub fn run() {
             get_meeting_audio,
             install_diarizer,
             show_meetings,
+            probe_system_audio,
             cancel_diarizer_install,
             remove_diarizer,
             get_dictionary,

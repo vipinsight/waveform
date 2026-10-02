@@ -542,6 +542,11 @@ export interface DesktopApi {
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;
+  /**
+   * Asks macOS for permission to hear the other side of a call (the first
+   * call shows the system prompt) and reports what happened.
+   */
+  probeSystemAudio(): Promise<"heard" | "silent" | "unsupported" | "missing">;
   cancelDiarizerInstall(): Promise<void>;
   removeDiarizer(): Promise<void>;
   onMeetingLine(listener: (event: { meetingId: string; line: MeetingLine }) => void): () => void;

@@ -177,6 +177,9 @@ private final class SystemTap {
     return format.mSampleRate
   }
 
+  /// How many times the IO proc has run.
+  var callbacks: Int { debug.callbacks }
+
   func stop() {
     status([
       "type": "stats", "callbacks": debug.callbacks, "bytes": debug.bytes,
@@ -224,6 +227,27 @@ private struct TapError: Error {
   init(_ reason: String) { self.reason = reason }
 }
 
+/// `--probe`: creates the tap, which is what makes macOS ask for permission
+/// the first time, waits a moment, and reports whether audio IO ran at all.
+/// With permission the IO proc fires whether or not anything is playing;
+/// without it, nothing fires. Exit codes: 0 heard, 2 silent, 1 failed.
+@available(macOS 14.2, *)
+private func probe() -> Never {
+  let tap = SystemTap()
+  do {
+    _ = try tap.start()
+  } catch let error as TapError {
+    fail(error.reason)
+  } catch {
+    fail("\(error)")
+  }
+  Thread.sleep(forTimeInterval: 1.5)
+  let heard = tap.callbacks > 0
+  status(["type": "probe", "heard": heard, "callbacks": tap.callbacks])
+  tap.stop()
+  exit(heard ? 0 : 2)
+}
+
 /// Runs the tap until the parent lets go. Wrapped so the 14.2 types stay
 /// behind the availability check on older systems.
 @available(macOS 14.2, *)
@@ -252,6 +276,9 @@ private func run() -> Never {
 }
 
 if #available(macOS 14.2, *) {
+  if CommandLine.arguments.contains("--probe") {
+    probe()
+  }
   run()
 } else {
   fail("unsupported")
