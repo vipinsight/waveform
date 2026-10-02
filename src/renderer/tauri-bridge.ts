@@ -27,7 +27,6 @@ import type {
   UpdateInfo,
   DictionaryTerm,
   DictionarySuggestion,
-  EditOutcome,
   Meeting,
   MeetingDetail,
   MeetingLine,
@@ -35,6 +34,8 @@ import type {
   DiarizerInstallEvent,
   MeetingLevelEvent,
   MeetingStateEvent,
+  LearnedTerm,
+  OverlayNotice,
 } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 
@@ -142,7 +143,9 @@ const api: DesktopApi = {
     invoke<SavedDictation[]>("update_dictation", { id, text }),
   onHistoryChanged: (listener) =>
     subscribe<SavedDictation[]>("history-changed", listener),
-  editDictation: (id, text) => invoke<EditOutcome>("edit_dictation", { id, text }),
+  onDictionaryLearned: (listener) => subscribe<LearnedTerm[]>("dictionary-learned", listener),
+  onOverlayNotice: (listener) => subscribe<OverlayNotice>("overlay-notice", listener),
+  overlayNoticeDone: () => invoke<void>("overlay_notice_done"),
 
   getDictionary: () => invoke<DictionaryTerm[]>("get_dictionary"),
   addDictionaryTerm: (text, heardAs, learned) =>

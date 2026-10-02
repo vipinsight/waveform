@@ -13,7 +13,6 @@ import type {
   ResourceUsage,
   UpdateEvent,
   DictionaryTerm,
-  DictionarySuggestion,
 } from "../shared/contracts";
 import {
   HOTKEY_BINDINGS,
@@ -98,7 +97,6 @@ const element = {
   dictionaryLede: requireElement<HTMLElement>("dictionary-lede"),
   dictionarySuggest: requireElement<HTMLElement>("dictionary-suggest"),
   dictionaryTable: requireElement<HTMLElement>("dictionary-table"),
-  dictionaryOpenDictations: requireElement<HTMLButtonElement>("dictionary-open-dictations"),
   dictionaryTools: requireElement<HTMLElement>("dictionary-tools"),
   dictionarySearch: requireElement<HTMLInputElement>("dictionary-search"),
   dictionaryCount: requireElement<HTMLElement>("dictionary-count"),
@@ -2787,8 +2785,6 @@ function renderEntry(entry: SavedDictation): HTMLElement {
   const text = document.createElement("p");
   text.className = "entry-text";
   text.textContent = entry.text;
-  text.title = "Double-click to edit";
-  text.addEventListener("dblclick", () => beginEntryEdit(entry, text));
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
@@ -2848,13 +2844,6 @@ function entryMenuItems(
   text: HTMLElement,
 ): EntryMenuItem[] {
   const items: EntryMenuItem[] = [];
-  if (entry.transcribedText !== "" || !entry.hasAudio) {
-    items.push({
-      label: "Edit text",
-      icon: EDIT_ICON,
-      onSelect: () => beginEntryEdit(entry, text),
-    });
-  }
   if (entry.hasAudio) {
     items.push({
       label: "Retry transcript",
@@ -2995,9 +2984,9 @@ function deleteEntry(entry: SavedDictation): void {
 async function saveEntryAudio(entry: SavedDictation): Promise<void> {
   try {
     const path = await host().saveDictationAudio(entry.id, audioFileName(entry.createdAt));
-    setStatus(`Saved ${path.split("/").pop() ?? "the audio"} to Downloads`);
+    showToast(`Saved ${path.split("/").pop() ?? "the audio"} to Downloads`);
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   }
 }
 
@@ -3014,127 +3003,7 @@ function audioFileName(createdAt: number): string {
 /**
  * Runs the speech engine again on a saved recording and updates that row.
  */
-// --- Transcript editing and the dictionary ---------------------------------
-
-/** Pencil, matching the other row glyphs. */
-const EDIT_ICON =
-  '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" />';
-
-/**
- * Turns an entry's text into a field, saving on Enter or blur.
- *
- * A correction here is the one moment the app can see what the engine wrote
- * and what the user meant side by side, so the save also asks the dictionary
- * what it would learn, and offers that under the row.
- */
-function beginEntryEdit(entry: SavedDictation, text: HTMLElement): void {
-  if (text.parentElement?.querySelector(".entry-editor")) return;
-  const before = entry.text;
-  const editor = document.createElement("textarea");
-  editor.className = "entry-editor";
-  editor.value = before;
-  editor.rows = Math.max(1, Math.min(6, Math.ceil(before.length / 70)));
-  editor.setAttribute("aria-label", "Edit transcript");
-  text.replaceWith(editor);
-  editor.focus();
-  editor.setSelectionRange(editor.value.length, editor.value.length);
-
-  let settled = false;
-  const finish = (save: boolean) => {
-    if (settled) return;
-    settled = true;
-    const after = editor.value.trim();
-    editor.replaceWith(text);
-    if (!save || !after || after === before) return;
-    void saveEntryEdit(entry, after, text);
-  };
-  editor.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      finish(true);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      finish(false);
-    }
-  });
-  editor.addEventListener("blur", () => finish(true));
-}
-
-async function saveEntryEdit(entry: SavedDictation, after: string, text: HTMLElement): Promise<void> {
-  try {
-    const outcome = await host().editDictation(entry.id, after);
-    entries = outcome.entries;
-    entry.text = after;
-    text.textContent = after;
-    setStatus("Transcript updated");
-    const row = text.closest(".entry");
-    if (row && outcome.suggestions.length > 0) {
-      offerSuggestions(row as HTMLElement, outcome.suggestions);
-    }
-    if (outcome.added.length > 0) {
-      const names = outcome.added.map((added) => added.text).join(", ");
-      setStatus(`Added ${names} to the dictionary`);
-    }
-  } catch (error) {
-    text.textContent = entry.text;
-    setStatus(error instanceof Error ? error.message : String(error));
-  }
-}
-
-/**
- * One line under the row per suggestion: add it, or not this time.
- *
- * Asked, never assumed: an edit is as often a rewording as a fix, and a
- * dictionary full of rewordings makes every prompt worse.
- */
-function offerSuggestions(row: HTMLElement, suggestions: DictionarySuggestion[]): void {
-  row.querySelectorAll(".entry-suggest").forEach((node) => node.remove());
-  for (const suggestion of suggestions) {
-    const bar = document.createElement("div");
-    bar.className = "entry-suggest";
-    bar.setAttribute("role", "status");
-
-    const prompt = document.createElement("span");
-    prompt.className = "entry-suggest-text";
-    prompt.append("Add ");
-    const term = document.createElement("strong");
-    term.textContent = suggestion.text;
-    prompt.append(term, " to the dictionary? It was heard as ");
-    const heard = document.createElement("em");
-    heard.textContent = suggestion.heardAs;
-    prompt.append(heard, ".");
-
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "pill-button is-primary is-small";
-    add.textContent = "Add";
-    add.addEventListener("click", () => {
-      add.disabled = true;
-      void host()
-        .addDictionaryTerm(suggestion.text, [suggestion.heardAs], true)
-        .then(() => {
-          bar.remove();
-          setStatus(`Added ${suggestion.text} to the dictionary`);
-        })
-        .catch((error: unknown) => {
-          add.disabled = false;
-          setStatus(error instanceof Error ? error.message : String(error));
-        });
-    });
-
-    const skip = document.createElement("button");
-    skip.type = "button";
-    skip.className = "pill-button is-small";
-    skip.textContent = "Not now";
-    skip.addEventListener("click", () => {
-      bar.remove();
-      void host().declineDictionarySuggestion(suggestion).catch(() => {});
-    });
-
-    bar.append(prompt, add, skip);
-    row.after(bar);
-  }
-}
+// --- The dictionary ------------------------------------------------------------
 
 let dictionary: DictionaryTerm[] = [];
 
@@ -3149,7 +3018,6 @@ function bindDictionary(): void {
     event.preventDefault();
     void addDictionaryTerms(element.dictionaryText.value);
   });
-  element.dictionaryOpenDictations.addEventListener("click", () => openView("dictate"));
   void host()
     .meetingRecorderStatus()
     .then((status) => {
@@ -3160,7 +3028,28 @@ function bindDictionary(): void {
   element.dictionarySearch.addEventListener("input", renderDictionary);
   bindGroup("#dictionary-learning [data-learning]", (button) => {
     const value = button.dataset.learning;
-    if (value === "ask" || value === "auto") void patchSettings({ dictionaryLearning: value });
+    if (value === "on" || value === "off") void patchSettings({ dictionaryLearning: value });
+  });
+  // A word fixed where a dictation landed, now a term: say so, with a way back.
+  host().onDictionaryLearned((terms) => {
+    const names = terms.map((term) => term.text).join(", ");
+    showToast(`Added ${names} to the dictionary.`, {
+      action: {
+        label: "Undo",
+        run: () => {
+          void Promise.all(terms.map((term) => host().removeDictionaryTerm(term.id)))
+            .then(() => host().getDictionary())
+            .then((next) => {
+              dictionary = next;
+              renderDictionary();
+              showToast(`Removed ${names}.`);
+            })
+            .catch((error: unknown) => {
+              showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
+            });
+        },
+      },
+    });
   });
   element.dictionaryExport.addEventListener("click", () => {
     void navigator.clipboard.writeText(dictionary.map((term) => term.text).join(", "));
@@ -3266,7 +3155,11 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
   name.value = term.text;
   name.setAttribute("aria-label", "Term");
   name.spellcheck = false;
-  name.title = "Click to edit the spelling";
+  // A learned term says so in its tooltip rather than in a column.
+  name.title =
+    term.source === "learned"
+      ? "Learned from a correction you made. Click to edit the spelling."
+      : "Click to edit the spelling";
   name.addEventListener("change", () => {
     const text = name.value.trim();
     if (!text || text === term.text) {
@@ -3282,48 +3175,6 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       name.blur();
     }
   });
-
-  // What the engine hears instead: chips, each removable, plus a field to
-  // add one. These are what the after-decoding fix keys on.
-  const heard = document.createElement("span");
-  heard.className = "dictionary-term-heard";
-  for (const variant of term.heardAs) {
-    const chip = document.createElement("span");
-    chip.className = "dictionary-heard-chip";
-    chip.append(variant);
-    const drop = document.createElement("button");
-    drop.type = "button";
-    drop.setAttribute("aria-label", `Remove "${variant}"`);
-    drop.textContent = "×";
-    drop.addEventListener("click", () => {
-      void saveDictionaryTerm(term, term.text, term.heardAs.filter((known) => known !== variant));
-    });
-    chip.append(drop);
-    heard.append(chip);
-  }
-  const addHeard = document.createElement("input");
-  addHeard.className = "dictionary-heard-add";
-  addHeard.placeholder = term.heardAs.length === 0 ? "What it's heard as…" : "+ another";
-  addHeard.setAttribute("aria-label", `What ${term.text} is heard as`);
-  addHeard.spellcheck = false;
-  addHeard.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const value = addHeard.value.trim();
-    if (!value) return;
-    void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
-  });
-  addHeard.addEventListener("blur", () => {
-    const value = addHeard.value.trim();
-    if (value) void saveDictionaryTerm(term, term.text, [...term.heardAs, value]);
-  });
-  heard.append(addHeard);
-
-  const source = document.createElement("span");
-  source.className = "dictionary-term-source";
-  source.textContent = term.source === "learned" ? "Learned" : "You";
-  source.title =
-    term.source === "learned" ? "Added from a correction you made to a dictation" : "Typed here";
 
   const uses = document.createElement("span");
   uses.className = "dictionary-term-uses";
@@ -3343,7 +3194,7 @@ function renderDictionaryTerm(term: DictionaryTerm): HTMLLIElement {
       });
   });
 
-  item.append(name, heard, source, uses, remove);
+  item.append(name, uses, remove);
   return item;
 }
 
@@ -3355,22 +3206,22 @@ async function retryHistoryTranscription(
   if (button.disabled) return;
   button.disabled = true;
   button.classList.add("is-busy");
-  setStatus("Retrying transcription…");
+  showToast("Retrying transcription…");
   try {
     const bytes = await host().getDictationAudio(entry.id);
     const { text } = await host().transcribe(bytes);
     const trimmed = text.trim();
     if (!trimmed) {
-      setStatus("No words found in that recording.");
+      showToast("No words found in that recording.");
       return;
     }
     entries = await host().updateDictation(entry.id, trimmed);
     freshId = entry.id;
     entry.text = trimmed;
     textNode.textContent = trimmed;
-    setStatus("Transcription updated");
+    showToast("Transcription updated");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   } finally {
     button.disabled = false;
     button.classList.remove("is-busy");
@@ -3425,7 +3276,7 @@ async function togglePlayback(id: string, button: HTMLButtonElement): Promise<vo
   } catch (error) {
     stopPlayback();
     setPlaybackButton(button, false);
-    setStatus(error instanceof Error ? error.message : String(error));
+    showToast(error instanceof Error ? error.message : String(error), { tone: "error" });
   }
 }
 
@@ -4892,7 +4743,6 @@ function wireWizard(): void {
 
 function setStatus(message: string): void {
   element.overviewModelState.textContent = message;
-  showToast(message);
 }
 
 // --- Toast and recording strip -------------------------------------------------
@@ -4907,11 +4757,13 @@ let toastTimer: number | null = null;
  */
 function showToast(
   message: string,
-  options: { tone?: "error"; action?: { label: string; run(): void } } = {},
+  options: { tone?: "error"; action?: { label: string; run(): void }; durationMs?: number } = {},
 ): void {
   const toast = requireElement<HTMLElement>("toast");
   const text = requireElement<HTMLElement>("toast-text");
   const action = requireElement<HTMLButtonElement>("toast-action");
+  const bar = requireElement<HTMLElement>("toast-bar");
+  const duration = options.durationMs ?? (options.tone === "error" ? 8_000 : options.action ? 7_000 : 4_000);
   text.textContent = message;
   toast.classList.toggle("is-error", options.tone === "error");
   action.hidden = !options.action;
@@ -4923,10 +4775,26 @@ function showToast(
     };
   }
   toast.hidden = false;
+  // The bar drains over the toast's life, so the time left is visible; it
+  // is re-inserted so the animation starts again for each message.
+  const fresh = bar.cloneNode(true) as HTMLElement;
+  fresh.style.setProperty("--toast-ms", `${duration}ms`);
+  bar.replaceWith(fresh);
   if (toastTimer !== null) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
+  const dismiss = () => {
     toast.hidden = true;
-  }, options.tone === "error" ? 8_000 : 4_000);
+  };
+  toastTimer = window.setTimeout(dismiss, duration);
+  // Hovering holds it: a toast with Undo should not vanish under the pointer.
+  toast.onmouseenter = () => {
+    if (toastTimer !== null) window.clearTimeout(toastTimer);
+    toastTimer = null;
+    fresh.style.animationPlayState = "paused";
+  };
+  toast.onmouseleave = () => {
+    fresh.style.animationPlayState = "running";
+    toastTimer = window.setTimeout(dismiss, 2_500);
+  };
 }
 
 let recordingStrip: { title: string; since: number } | null = null;

@@ -7,6 +7,7 @@ import type {
   DictationMode,
   DictationSink,
   DictationState,
+  OverlayNotice,
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -178,10 +179,21 @@ enableDragging();
 let reportedRegion = "";
 
 function reportHitRegion(): void {
-  const rect = hud.getBoundingClientRect();
+  let rect = hud.getBoundingClientRect();
   // The skirt that makes a six-pixel bar catchable is part of the target.
   const padX = state === "idle" ? 4 : 0;
   const padY = state === "idle" ? 7 : 0;
+  // A note with an Undo in it has to be clickable too, so the region grows
+  // to cover both while it shows.
+  const note = document.getElementById("hud-note");
+  if (note && !note.hidden) {
+    const noteRect = note.getBoundingClientRect();
+    const left = Math.min(rect.left, noteRect.left);
+    const top = Math.min(rect.top, noteRect.top);
+    const right = Math.max(rect.right, noteRect.right);
+    const bottom = Math.max(rect.bottom, noteRect.bottom);
+    rect = new DOMRect(left, top, right - left, bottom - top);
+  }
   const region = {
     x: Math.round(rect.left - padX),
     y: Math.round(rect.top - padY),
@@ -278,6 +290,55 @@ meetingStopButton.addEventListener("click", () => {
     });
 });
 meetingClock.addEventListener("click", () => void host().showMeetings());
+
+// Notices: a line beside the bar for things that happen with the window
+// closed -- a word learned, a meeting saved. The host brings the overlay up
+// for them and is told when they are gone, so it can hide the bar again.
+const hudNote = requireElement<HTMLElement>("hud-note");
+const hudNoteText = requireElement<HTMLElement>("hud-note-text");
+const hudNoteUndo = requireElement<HTMLButtonElement>("hud-note-undo");
+let hudNoteTimer: number | null = null;
+let hudNoteAction: OverlayNotice["action"] = null;
+
+function hideHudNote(): void {
+  hudNote.hidden = true;
+  hudNoteAction = null;
+  reportHitRegion();
+  void host().overlayNoticeDone();
+}
+
+host().onOverlayNotice((notice) => {
+  hudNoteAction = notice.action;
+  hudNoteText.textContent = notice.text;
+  hudNoteUndo.hidden = notice.action === null;
+  hudNoteUndo.disabled = false;
+  hudNoteUndo.textContent = "Undo";
+  hudNote.hidden = false;
+  // A fresh bar so the drain starts again for this notice.
+  const bar = requireElement<HTMLElement>("hud-note-bar");
+  const fresh = bar.cloneNode(true) as HTMLElement;
+  fresh.style.setProperty("--note-ms", `${notice.durationMs}ms`);
+  bar.replaceWith(fresh);
+  if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
+  hudNoteTimer = window.setTimeout(hideHudNote, notice.durationMs);
+  reportHitRegion();
+});
+
+hudNoteUndo.addEventListener("click", () => {
+  const action = hudNoteAction;
+  if (!action) return;
+  hudNoteUndo.disabled = true;
+  void Promise.all(action.ids.map((id) => host().removeDictionaryTerm(id)))
+    .then(() => {
+      hudNoteText.textContent = "Removed";
+      hudNoteUndo.hidden = true;
+      if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
+      hudNoteTimer = window.setTimeout(hideHudNote, 1_600);
+    })
+    .catch(() => {
+      hudNoteUndo.disabled = false;
+    });
+});
 
 hud.addEventListener("focusin", (event) => {
   if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {

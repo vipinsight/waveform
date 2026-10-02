@@ -48,6 +48,15 @@ pub enum HelperEvent {
         #[serde(default)]
         reason: Option<String>,
     },
+    /// The pasted text was edited where it landed: what it was, what it is now.
+    Correction {
+        before: String,
+        after: String,
+    },
+    /// Something the helper wants in the app log.
+    Debug {
+        message: String,
+    },
     Selection {
         ok: bool,
         #[serde(default)]

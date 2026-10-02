@@ -730,8 +730,14 @@ impl ModelServer {
             Runtime::InProcess => self.whisper_cpp.lock().await.is_some(),
         };
         if ready {
-            self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
-                .await;
+            // Already running: nothing changed, so nothing is announced. Every
+            // phrase calls this, and a window that showed each announcement
+            // would say "ready" on every press of the key.
+            let last = self.last_event.lock().await.clone();
+            if last.stage != "ready" || last.model_id != id {
+                self.emit_stage("ready", &format!("{} ready", definition.short_label), &id)
+                    .await;
+            }
             return Ok(());
         }
 

@@ -274,6 +274,20 @@ export interface DictionaryTerm {
   createdAt: number;
 }
 
+/** A notice shown beside the Wave Bar, with the window closed or not. */
+export interface OverlayNotice {
+  text: string;
+  durationMs: number;
+  action: { kind: "undoDictionary"; ids: number[] } | null;
+}
+
+/** A term just learned from a correction, with enough to undo it. */
+export interface LearnedTerm {
+  id: number;
+  text: string;
+  heardAs: string;
+}
+
 /** A term a transcript edit suggests learning. */
 export interface DictionarySuggestion {
   /** What the engine wrote. */
@@ -380,14 +394,6 @@ export interface DiarizerInstallEvent {
   progress: number;
 }
 
-/** What saving a hand edit to a transcript returns. */
-export interface EditOutcome {
-  entries: SavedDictation[];
-  /** Offered under the row when learning is set to ask. */
-  suggestions: DictionarySuggestion[];
-  /** Added without asking when learning is automatic. */
-  added: DictionarySuggestion[];
-}
 
 export interface AppStats {
   words: number;
@@ -514,8 +520,12 @@ export interface DesktopApi {
   /** Replaces the words on a saved dictation after re-running the engine. */
   updateDictation(id: string, text: string): Promise<SavedDictation[]>;
   onHistoryChanged(listener: (entries: SavedDictation[]) => void): () => void;
-  /** Saves words the user corrected by hand, and says what that suggests learning. */
-  editDictation(id: string, text: string): Promise<EditOutcome>;
+  /** Terms just learned from a correction the user made where a dictation landed. */
+  onDictionaryLearned(listener: (terms: LearnedTerm[]) => void): () => void;
+  /** Something to say beside the Wave Bar; the overlay shows it. */
+  onOverlayNotice(listener: (notice: OverlayNotice) => void): () => void;
+  /** The Wave Bar finished showing a notice. */
+  overlayNoticeDone(): Promise<void>;
 
   getDictionary(): Promise<DictionaryTerm[]>;
   addDictionaryTerm(text: string, heardAs: string[], learned?: boolean): Promise<DictionaryTerm[]>;

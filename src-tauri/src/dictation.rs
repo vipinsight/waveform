@@ -5,6 +5,7 @@
 //! told about it.
 
 use crate::gestures::{Command, GestureMachine};
+use crate::dictionary::{self, DictionaryStore};
 use crate::history::{HistoryStore, NewDictation};
 use crate::hotkey::{find_helper, key_code_for, HelperEvent, HotkeyHelper};
 use crate::model_server::ModelServer;
@@ -112,12 +113,49 @@ struct Session {
     stop_when_speech_ends: bool,
 }
 
+/// Something said beside the Wave Bar, where it is seen with the window closed.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notice {
+    pub text: String,
+    /// Milliseconds the notice stays; a bar drains over it.
+    pub duration_ms: u64,
+    pub action: Option<NoticeAction>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum NoticeAction {
+    /// Removes the terms just learned.
+    UndoDictionary { ids: Vec<i64> },
+}
+
+/// A term just learned from a correction, with enough to undo it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedTerm {
+    pub id: i64,
+    pub text: String,
+    pub heard_as: String,
+}
+
+/// The first few words, for a log line.
+fn short(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().take(12).collect();
+    let mut out = words.join(" ");
+    if text.split_whitespace().count() > 12 {
+        out.push('…');
+    }
+    out
+}
+
 pub struct Dictation {
     app: AppHandle,
     logs: Arc<crate::logs::Logs>,
     settings: Arc<Mutex<SettingsStore>>,
     stats: Arc<Mutex<StatsStore>>,
     history: Arc<Mutex<HistoryStore>>,
+    dictionary: Arc<Mutex<DictionaryStore>>,
     rewriter: Arc<Rewriter>,
     models: Arc<ModelServer>,
     helper: Arc<HotkeyHelper>,
@@ -172,12 +210,14 @@ pub struct Dictation {
 }
 
 impl Dictation {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app: AppHandle,
         logs: Arc<crate::logs::Logs>,
         settings: Arc<Mutex<SettingsStore>>,
         stats: Arc<Mutex<StatsStore>>,
         history: Arc<Mutex<HistoryStore>>,
+        dictionary: Arc<Mutex<DictionaryStore>>,
         rewriter: Arc<Rewriter>,
         models: Arc<ModelServer>,
     ) -> Arc<Self> {
@@ -187,6 +227,7 @@ impl Dictation {
             settings,
             stats,
             history,
+            dictionary,
             rewriter,
             models,
             helper: HotkeyHelper::new(),
@@ -386,7 +427,93 @@ impl Dictation {
                     }
                 }
             }
+            HelperEvent::Correction { before, after } => self.learn_from_correction(&before, &after).await,
+            HelperEvent::Debug { message } => self.logs.info(&self.app, "helper", message),
             HelperEvent::Selection { .. } => {}
+        }
+    }
+
+    /// A word the user fixed where the dictation landed becomes a term, with
+    /// what the engine heard as its mis-hearing. Only word-for-word
+    /// substitutions count; a rewording or a deletion teaches nothing.
+    async fn learn_from_correction(&self, before: &str, after: &str) {
+        self.logs.info(
+            &self.app,
+            "dictionary",
+            format!("correction seen: {:?} → {:?}", short(before), short(after)),
+        );
+        if self.settings.lock().await.value().dictionary_learning == "off" {
+            self.logs.info(&self.app, "dictionary", "learning is off; ignored");
+            return;
+        }
+        let mut store = self.dictionary.lock().await;
+        let suggestions = match store.suggestions_for(before, after) {
+            Ok(suggestions) => suggestions,
+            Err(error) => {
+                self.logs.error(&self.app, "dictionary", error);
+                return;
+            }
+        };
+        if suggestions.is_empty() {
+            self.logs.info(
+                &self.app,
+                "dictionary",
+                "no word-for-word substitution in that edit (rewording, case, punctuation or a known term); nothing learned",
+            );
+            return;
+        }
+        let mut learned: Vec<LearnedTerm> = Vec::new();
+        for suggestion in suggestions {
+            match store.add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned) {
+                Ok(terms) => {
+                    self.logs.info(
+                        &self.app,
+                        "dictionary",
+                        format!("learned {:?} (heard as {:?})", suggestion.text, suggestion.heard_as),
+                    );
+                    if let Some(term) = terms.iter().find(|term| term.text.eq_ignore_ascii_case(&suggestion.text)) {
+                        learned.push(LearnedTerm {
+                            id: term.id,
+                            text: term.text.clone(),
+                            heard_as: suggestion.heard_as.clone(),
+                        });
+                    }
+                }
+                Err(error) => self.logs.error(&self.app, "dictionary", error),
+            }
+        }
+        if learned.is_empty() {
+            return;
+        }
+        let terms = store.terms().unwrap_or_default();
+        drop(store);
+        let _ = self.app.emit("dictionary-changed", terms);
+        let names = learned.iter().map(|term| format!("“{}”", term.text)).collect::<Vec<_>>().join(", ");
+        let ids = learned.iter().map(|term| term.id).collect();
+        let _ = self.app.emit("dictionary-learned", learned);
+        self.notice(Notice {
+            text: format!("Added {names}"),
+            duration_ms: 7_000,
+            action: Some(NoticeAction::UndoDictionary { ids }),
+        })
+        .await;
+    }
+
+    /// Shows a notice beside the Wave Bar, bringing the overlay up for it if
+    /// the bar is resting hidden. The overlay says when it is done, and
+    /// `notice_done` puts things back.
+    pub async fn notice(&self, notice: Notice) {
+        self.show_overlay().await;
+        let _ = self.app.emit_to(OVERLAY_LABEL, "overlay-notice", notice);
+    }
+
+    /// The notice has gone; hide the overlay again unless something else
+    /// wants it on screen.
+    pub async fn notice_done(&self) {
+        let busy = self.session.lock().await.is_some();
+        let always = self.settings.lock().await.value().show_flow_bar_always;
+        if !busy && !always {
+            self.hide_overlay();
         }
     }
 

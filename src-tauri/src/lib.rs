@@ -32,7 +32,7 @@ mod transcribe;
 mod updates;
 mod whisper_cpp;
 
-use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus};
+use dictation::{Dictation, DictationPhrase, DictationStatus, HotkeyStatus, Notice};
 use dictionary::{DictionaryStore, Suggestion, Term};
 use meeting::{MeetingDetail, Recorder, RecorderStatus};
 use meetings::{Meeting, MeetingsStore};
@@ -687,6 +687,13 @@ async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec
     state.recorder.audio(&id).await
 }
 
+/// The Wave Bar finished showing a notice.
+#[tauri::command]
+async fn overlay_notice_done(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.notice_done().await;
+    Ok(())
+}
+
 /// Asks macOS for permission to hear the other side of a call.
 #[tauri::command]
 async fn probe_system_audio(state: State<'_, AppState>) -> Result<String, String> {
@@ -791,73 +798,6 @@ async fn decline_dictionary_suggestion(
     suggestion: Suggestion,
 ) -> Result<(), String> {
     state.dictionary.lock().await.decline(&suggestion)
-}
-
-/// What a transcript edit returns: the list, what the edit suggests learning,
-/// and -- when learning is automatic -- what was added without asking.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EditOutcome {
-    entries: Vec<SavedDictation>,
-    suggestions: Vec<Suggestion>,
-    added: Vec<Suggestion>,
-}
-
-/// Saves words the user corrected by hand on a saved dictation.
-///
-/// The difference between what was there and what they typed is where the
-/// dictionary learns from, so it is worked out here while both are known.
-#[tauri::command]
-async fn edit_dictation(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    id: String,
-    text: String,
-) -> Result<EditOutcome, String> {
-    let mut history = state.history.lock().await;
-    let before = history
-        .entries()?
-        .into_iter()
-        .find(|entry| entry.id == id)
-        .map(|entry| entry.text)
-        .ok_or_else(|| "That dictation is gone.".to_string())?;
-    let entries = history.edit_text(&id, &text)?;
-    drop(history);
-    let _ = app.emit("history-changed", &entries);
-    let suggestions = state
-        .dictionary
-        .lock()
-        .await
-        .suggestions_for(&before, &text)
-        .unwrap_or_default();
-    if state.settings.lock().await.value().dictionary_learning != "auto" {
-        return Ok(EditOutcome {
-            entries,
-            suggestions,
-            added: Vec::new(),
-        });
-    }
-    // Automatic: every term-shaped correction goes straight in, as learned.
-    let mut added = Vec::new();
-    {
-        let mut dictionary = state.dictionary.lock().await;
-        for suggestion in suggestions {
-            if dictionary
-                .add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned)
-                .is_ok()
-            {
-                added.push(suggestion);
-            }
-        }
-        if !added.is_empty() {
-            let _ = app.emit("dictionary-changed", dictionary.terms().unwrap_or_default());
-        }
-    }
-    Ok(EditOutcome {
-        entries,
-        suggestions: Vec::new(),
-        added,
-    })
 }
 
 /// Terms out of a pasted list: commas and line breaks separate them.
@@ -1406,15 +1346,38 @@ pub fn run() {
                 rewriter.clone(),
                 tap_helper,
             ));
+            let notices = Arc::new(std::sync::Mutex::new(None::<Arc<Dictation>>));
+            {
+                let notices = notices.clone();
+                recorder.set_notifier(Box::new(move |text: String, duration_ms: u64| {
+                    let Some(dictation) = notices.lock().ok().and_then(|slot| slot.clone()) else {
+                        return;
+                    };
+                    tauri::async_runtime::spawn(async move {
+                        dictation
+                            .notice(Notice {
+                                text,
+                                duration_ms,
+                                action: None,
+                            })
+                            .await;
+                    });
+                }));
+            }
             let dictation = Dictation::new(
                 app.handle().clone(),
                 logs.clone(),
                 settings.clone(),
                 stats.clone(),
                 history.clone(),
+                dictionary.clone(),
                 rewriter.clone(),
                 models.clone(),
             );
+
+            if let Ok(mut slot) = notices.lock() {
+                *slot = Some(dictation.clone());
+            }
 
             app.manage(AppState {
                 settings,
@@ -1548,6 +1511,7 @@ pub fn run() {
             install_diarizer,
             show_meetings,
             probe_system_audio,
+            overlay_notice_done,
             cancel_diarizer_install,
             remove_diarizer,
             get_dictionary,
@@ -1556,7 +1520,6 @@ pub fn run() {
             remove_dictionary_term,
             import_dictionary,
             decline_dictionary_suggestion,
-            edit_dictation,
             delete_dictation,
             clear_history,
             get_dictation_audio,

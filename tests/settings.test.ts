@@ -38,12 +38,14 @@ describe("normalizeSettings", () => {
     expect(rust).toContain("bounded_text(&self.speech_vocabulary, 2_000)");
   });
 
-  it("asks before learning a correction unless told to add it", () => {
-    expect(DEFAULT_SETTINGS.dictionaryLearning).toBe("ask");
-    expect(normalizeSettings({ dictionaryLearning: "auto" }).dictionaryLearning).toBe("auto");
-    expect(normalizeSettings({ dictionaryLearning: "always" }).dictionaryLearning).toBe("ask");
+  it("learns from corrections unless switched off, and reads the old modes as on", () => {
+    expect(DEFAULT_SETTINGS.dictionaryLearning).toBe("on");
+    expect(normalizeSettings({ dictionaryLearning: "off" }).dictionaryLearning).toBe("off");
+    expect(normalizeSettings({ dictionaryLearning: "ask" }).dictionaryLearning).toBe("on");
+    expect(normalizeSettings({ dictionaryLearning: "auto" }).dictionaryLearning).toBe("on");
+    expect(normalizeSettings({ dictionaryLearning: "always" }).dictionaryLearning).toBe("on");
     const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
-    expect(rust).toContain('dictionary_learning: "ask".to_string()');
+    expect(rust).toContain('dictionary_learning: "on".to_string()');
   });
 
   it("falls back to defaults for an unusable file", () => {

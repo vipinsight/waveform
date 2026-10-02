@@ -1981,7 +1981,7 @@ kbd {
 .dictionary-head,
 .dictionary-term {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(200px, 1.6fr) 72px 56px 36px;
+  grid-template-columns: 1fr 64px 36px;
   gap: 12px;
   align-items: center;
   padding: 8px 14px;
@@ -5300,4 +5300,26 @@ select {
 
 .meetings-permission[hidden] {
   display: none;
+}
+
+
+/* The toast's remaining life, as a bar draining along its bottom edge. */
+.toast {
+  overflow: hidden;
+}
+
+.toast-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: rgb(255 255 255 / 55%);
+  transform-origin: left;
+  animation: toast-drain var(--toast-ms, 4000ms) linear forwards;
+}
+
+@keyframes toast-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
