@@ -407,6 +407,35 @@ export interface AppStats {
   sessions: number;
 }
 
+/** One local day with at least one phrase; `day` is YYYY-MM-DD. */
+export interface DayStat {
+  day: string;
+  words: number;
+  phrases: number;
+}
+
+/** One calendar month with at least one phrase; `month` is YYYY-MM. */
+export interface MonthStat {
+  month: string;
+  words: number;
+  phrases: number;
+  activeDays: number;
+}
+
+/** What the Overview's calendar, months and streaks are drawn from. */
+export interface Activity {
+  /** Today in local time, the clock the days were counted on. */
+  today: string;
+  /** Days with words in the last 53 weeks, oldest first. */
+  days: DayStat[];
+  /** Every month with words, oldest first. */
+  months: MonthStat[];
+  /** Days in a row ending today, or yesterday if today is still empty. */
+  currentStreak: number;
+  longestStreak: number;
+  activeDays: number;
+}
+
 export interface HotkeyStatus {
   /** False when the native helper is missing, e.g. a non-macOS build. */
   supported: boolean;
@@ -583,6 +612,7 @@ export interface DesktopApi {
   onMeetingsChanged(listener: () => void): () => void;
   onDiarizerInstall(listener: (event: DiarizerInstallEvent) => void): () => void;
   getStats(): Promise<AppStats>;
+  getActivity(): Promise<Activity>;
   onStatsChanged(listener: (stats: AppStats) => void): () => void;
   /** Every model, and what is on this machine for each. */
   getModelCatalog(): Promise<ModelStatus[]>;

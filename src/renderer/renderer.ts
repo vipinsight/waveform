@@ -39,6 +39,19 @@ import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import {
+  HALF_YEAR_WEEKS,
+  MILESTONES,
+  calendar,
+  dayKey,
+  insights,
+  milestoneProgress,
+  monthBars,
+  monthChange,
+  monthDelta,
+  streakLine,
+} from "../shared/activity";
+import type { Activity } from "../shared/contracts";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
 import { DEFAULT_POLISH_MODEL_ID, POLISH_MODELS, isPolishModelId } from "../shared/polish-models";
 import {
@@ -145,6 +158,23 @@ const element = {
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
+  activityStreak: requireElement<HTMLElement>("activity-streak"),
+  activityStreakPill: requireElement<HTMLElement>("activity-streak-pill"),
+  activityTip: requireElement<HTMLElement>("activity-tip"),
+  milestonePanel: requireElement<HTMLElement>("milestone-panel"),
+  activityActiveDays: requireElement<HTMLElement>("activity-active-days"),
+  activityCalendar: requireElement<HTMLElement>("activity-calendar"),
+  insightHeadline: requireElement<HTMLElement>("insight-headline"),
+  insightLede: requireElement<HTMLElement>("insight-lede"),
+  insightList: requireElement<HTMLElement>("insight-list"),
+  milestoneNextLabel: requireElement<HTMLElement>("milestone-next-label"),
+  milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
+  milestoneProgress: requireElement<HTMLElement>("milestone-progress"),
+  milestoneFill: requireElement<HTMLElement>("milestone-fill"),
+  milestoneChips: requireElement<HTMLElement>("milestone-chips"),
+  monthsChange: requireElement<HTMLElement>("months-change"),
+  monthsThis: requireElement<HTMLElement>("months-this"),
+  monthBars: requireElement<HTMLElement>("month-bars"),
   overviewModel: requireElement<HTMLElement>("overview-model"),
   overviewModelState: requireElement<HTMLElement>("overview-model-state"),
   overviewCpu: requireElement<HTMLElement>("overview-cpu"),
@@ -373,10 +403,13 @@ void bootstrap();
 async function bootstrap(): Promise<void> {
   populateSelects();
   wireEvents();
+  renderActivityPlaceholder();
+  bindActivityTooltip();
 
   applySettings(await host().getSettings());
   void refreshMicrophones();
   renderStats(await host().getStats());
+  void refreshActivity();
   entries = await host().getHistory();
   renderHistory();
   // Falls back to the bare name: a version that failed to load should not be
@@ -437,7 +470,10 @@ function wireEvents(): void {
     showModelsTab("speech");
   });
   host().onOpenShortcutSettings(() => openView("dictation"));
-  host().onStatsChanged(renderStats);
+  host().onStatsChanged((stats) => {
+    renderStats(stats);
+    void refreshActivity();
+  });
   host().onHistoryChanged((next) => {
     // The newest entry is the one that just landed, so it gets the tint.
     freshId = next.length > entries.length ? (next[0]?.id ?? null) : null;
@@ -814,6 +850,9 @@ function showView(view: string): void {
   // The levels say what they need before they can run, and what they need is
   // a key or a download that could have arrived while the section was closed.
   if (view === "ai") void host().getAiStatus().then(renderAiStatus);
+  // The calendar follows the clock as much as the counts: a day may have
+  // turned since the page was last up.
+  if (view === "overview") void refreshActivity();
   // Labels are what name the devices, and WebKit hands them over only once
   // the microphone has been asked for.
   if (view === "dictation") void refreshMicrophones(true);
@@ -4817,4 +4856,282 @@ function requireElement<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`Missing #${id}`);
   return node as T;
+}
+
+// --- Overview: calendar, insights, milestones, months -----------------------
+
+/** Pulls the activity counts and redraws the Overview's lower half. */
+async function refreshActivity(): Promise<void> {
+  try {
+    renderActivity(await host().getActivity());
+  } catch {
+    // The counters still show; the calendar stays empty rather than shimmering on.
+    element.activityCalendar.classList.remove("is-loading");
+  }
+}
+
+function renderActivity(activity: Activity): void {
+  renderActivityCalendar(activity);
+  renderInsights();
+  renderMonths(activity);
+}
+
+/** The lifetime word count the hero already shows, read back as a number. */
+function lifetimeWords(): number {
+  return Number(element.statWords.textContent?.replace(/[^\d]/g, "") ?? 0) || 0;
+}
+
+/**
+ * Half a year of days as a grid, Monday at the top: weekday labels down
+ * the left, month names over the columns they start in, today ringed. The
+ * cells are sized by the panel, not by a scroll bar, so today is always in
+ * view. Days before the first word are drawn but kept quiet.
+ */
+function renderActivityCalendar(activity: Activity): void {
+  element.activityStreak.textContent = streakLine(activity);
+  element.activityStreakPill.classList.toggle("is-live", activity.currentStreak > 0);
+  element.activityActiveDays.textContent =
+    activity.activeDays === 0
+      ? "Nothing yet"
+      : activity.activeDays === 1
+        ? "1 day with words"
+        : `${activity.activeDays.toLocaleString()} days with words`;
+
+  const columns = calendar(activity.today, activity.days, HALF_YEAR_WEEKS);
+  const months = document.createElement("div");
+  months.className = "activity-months";
+  months.setAttribute("aria-hidden", "true");
+  const weekdays = document.createElement("div");
+  weekdays.className = "activity-weekdays";
+  weekdays.setAttribute("aria-hidden", "true");
+  for (const name of ["Mon", "", "Wed", "", "Fri", "", ""]) {
+    const label = document.createElement("span");
+    label.textContent = name;
+    weekdays.append(label);
+  }
+  const grid = document.createElement("div");
+  grid.className = "activity-grid";
+  columns.forEach((column, index) => {
+    if (column.monthLabel) {
+      const label = document.createElement("span");
+      label.textContent = column.monthLabel;
+      label.style.gridColumn = String(index + 1);
+      months.append(label);
+    }
+    for (const cell of column.cells) {
+      const box = document.createElement("i");
+      box.className = "activity-cell";
+      box.dataset.level = String(cell.level);
+      if (cell.future) box.classList.add("is-future");
+      if (cell.before) box.classList.add("is-before");
+      if (cell.day === activity.today) box.classList.add("is-today");
+      if (!cell.future) {
+        box.dataset.day = cell.day;
+        box.dataset.words = String(cell.words);
+        box.dataset.phrases = String(cell.phrases);
+      }
+      grid.append(box);
+    }
+  });
+  const corner = document.createElement("span");
+  corner.className = "activity-corner";
+  element.activityCalendar.replaceChildren(corner, months, weekdays, grid);
+  element.activityCalendar.classList.remove("is-loading");
+}
+
+/** One tooltip for every cell, placed over the one under the pointer. */
+function bindActivityTooltip(): void {
+  const calendarBox = element.activityCalendar;
+  const tip = element.activityTip;
+  const hide = () => {
+    tip.hidden = true;
+  };
+  calendarBox.addEventListener("mouseover", (event) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>(".activity-cell");
+    if (!cell || !cell.dataset.day) {
+      hide();
+      return;
+    }
+    const words = Number(cell.dataset.words ?? 0);
+    const phrases = Number(cell.dataset.phrases ?? 0);
+    const when = new Date(cell.dataset.day + "T12:00:00").toLocaleDateString(undefined, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+    const date = document.createElement("span");
+    date.className = "activity-tip-date";
+    date.textContent = when;
+    const count = document.createElement("strong");
+    count.textContent =
+      words === 0
+        ? "Nothing dictated"
+        : `${words.toLocaleString()} ${words === 1 ? "word" : "words"} · ${phrases.toLocaleString()} ${phrases === 1 ? "phrase" : "phrases"}`;
+    tip.replaceChildren(count, date);
+    tip.hidden = false;
+    // Above the cell, centred, and kept inside the panel.
+    const panel = calendarBox.parentElement ?? calendarBox;
+    const box = cell.getBoundingClientRect();
+    const home = panel.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(8, box.left + box.width / 2 - home.left - width / 2), home.width - width - 8);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${box.top - home.top - tip.offsetHeight - 8}px`;
+    tip.style.setProperty("--tip-arrow", `${box.left + box.width / 2 - home.left - left}px`);
+  });
+  calendarBox.addEventListener("mouseleave", hide);
+}
+
+/** The first thing on the page before any numbers arrive: the shape of a calendar. */
+function renderActivityPlaceholder(): void {
+  const today = dayKey(new Date());
+  renderActivityCalendar({ today, days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0 });
+  element.activityCalendar.classList.add("is-loading");
+  element.activityActiveDays.textContent = "";
+  element.activityStreak.textContent = "—";
+}
+
+/** Uses the lifetime word count the hero already shows. */
+function renderInsights(): void {
+  const words = lifetimeWords();
+  const lines = insights(words);
+  const headline = lines.find((line) => line.headline) ?? lines[0];
+  element.insightHeadline.textContent = headline ? headline.text : "—";
+  element.insightLede.textContent =
+    words === 0 ? "Dictate something and this starts counting." : `${words.toLocaleString()} words so far. That is about`;
+  // "60% of a novel" is the share of the next unit up; said as a distance.
+  const rest = lines
+    .filter((line) => !line.headline)
+    .map((line) => line.text.replace(/^(\d+%) of (.+)$/, "$1 of the way to $2"));
+  element.insightList.textContent =
+    rest.length === 2
+      ? `Put another way: ${rest[0]} — and ${rest[1]}.`
+      : rest.length === 1
+        ? `Put another way: ${rest[0]}.`
+        : "";
+  renderMilestones(words);
+}
+
+/**
+ * Every milestone as a node on one track: the ones passed are filled, the
+ * next is ringed and named, the rest wait. The fill runs to where the
+ * words are between the last one and the next. Passing one, while the page
+ * is open, lights the node up once.
+ */
+function renderMilestones(words: number): void {
+  const progress = milestoneProgress(words);
+  const remaining = progress.next === null ? "" : `${progress.remaining.toLocaleString()} to go`;
+  element.milestoneRemaining.textContent = remaining;
+  if (progress.next === null) {
+    element.milestoneNextLabel.textContent = "Every milestone reached";
+  } else if (progress.reached.length === 0) {
+    element.milestoneNextLabel.replaceChildren(
+      "First up: ",
+      Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
+    );
+  } else {
+    element.milestoneNextLabel.replaceChildren(
+      Object.assign(document.createElement("strong"), { textContent: `${progress.previous.toLocaleString()} words` }),
+      " reached. Next: ",
+      Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
+    );
+  }
+  const steps = MILESTONES.length - 1;
+  const position = (progress.reached.length + progress.fraction * (progress.next === null ? 0 : 1)) / (steps + 1);
+  const fillPercent = Math.min(100, Math.round(((progress.reached.length - 1 + progress.fraction) / steps) * 100));
+  element.milestoneFill.style.width = `${Math.max(0, fillPercent)}%`;
+  element.milestoneProgress.setAttribute("aria-valuenow", String(Math.round(progress.fraction * 100)));
+  element.milestoneProgress.setAttribute(
+    "aria-valuetext",
+    progress.next === null ? "Every milestone reached" : `${Math.round(progress.fraction * 100)}% of the way to ${progress.next.toLocaleString()} words`,
+  );
+  void position;
+
+  const latest = progress.reached[progress.reached.length - 1] ?? null;
+  const celebrate = milestonesSeen !== null && latest !== null && latest > milestonesSeen;
+  milestonesSeen = latest ?? 0;
+
+  element.milestoneChips.replaceChildren(
+    ...MILESTONES.map((milestone) => {
+      const node = document.createElement("span");
+      node.className = "milestone-node";
+      const reached = words >= milestone;
+      if (reached) node.classList.add("is-reached");
+      if (milestone === progress.next) node.classList.add("is-next");
+      if (milestone === latest) node.classList.add("is-latest");
+      if (celebrate && milestone === latest) node.classList.add("is-new");
+      node.title = `${milestone.toLocaleString()} words${reached ? ", reached" : milestone === progress.next ? ", next" : ""}`;
+      const dot = document.createElement("i");
+      node.append(dot);
+      if (milestone === latest || milestone === progress.next) {
+        const label = document.createElement("small");
+        label.textContent = shortCount(milestone);
+        node.append(label);
+      }
+      return node;
+    }),
+  );
+
+  if (celebrate && latest !== null) {
+    element.milestonePanel.classList.add("is-celebrating");
+    element.milestoneRemaining.textContent = `${latest.toLocaleString()} words — a new milestone`;
+    window.clearTimeout(celebrationTimer);
+    celebrationTimer = window.setTimeout(() => {
+      element.milestonePanel.classList.remove("is-celebrating");
+      element.milestoneRemaining.textContent = remaining;
+    }, 4_000);
+  }
+}
+
+/** The largest milestone passed at the last render; null before the first. */
+let milestonesSeen: number | null = null;
+let celebrationTimer: number | undefined;
+
+/** 1,000 → "1k", 2,500,000 → "2.5M". */
+function shortCount(value: number): string {
+  if (value >= 1_000_000) {
+    const m = value / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  if (value >= 1_000) return `${value / 1_000}k`;
+  return String(value);
+}
+
+/**
+ * The months since the first one with words, as bars on a baseline, this
+ * month in the accent with its change on last month as a pill. One or two
+ * months stand comfortably in the middle rather than stretching to fill.
+ */
+function renderMonths(activity: Activity): void {
+  const bars = monthBars(activity.today, activity.months);
+  const current = bars[bars.length - 1];
+  const delta = monthDelta(bars);
+  const change = monthChange(bars);
+  element.monthsChange.hidden = change === "";
+  element.monthsChange.textContent = change;
+  element.monthsChange.className = `change-pill ${delta === null ? "is-flat" : delta > 0 ? "is-up" : delta < 0 ? "is-down" : "is-flat"}`;
+  element.monthsThis.textContent = current
+    ? current.words === 0
+      ? "Nothing this month yet"
+      : `This month: ${current.words.toLocaleString()} words on ${current.activeDays} ${current.activeDays === 1 ? "day" : "days"}`
+    : "";
+  const max = Math.max(1, ...bars.map((bar) => bar.words));
+  element.monthBars.classList.toggle("is-few", bars.length <= 4);
+  element.monthBars.replaceChildren(
+    ...bars.map((bar) => {
+      const column = document.createElement("div");
+      column.className = "month-bar";
+      if (bar.current) column.classList.add("is-current");
+      if (bar.words === 0) column.classList.add("is-quiet");
+      column.title = `${bar.label}: ${bar.words.toLocaleString()} words, ${bar.phrases.toLocaleString()} phrases`;
+      const value = document.createElement("b");
+      value.textContent = bar.words === 0 ? "" : shortCount(bar.words >= 1_000 ? Math.round(bar.words / 100) * 100 : bar.words);
+      const fill = document.createElement("i");
+      fill.style.height = `${bar.words === 0 ? 3 : Math.max(4, Math.round((bar.words / max) * 100))}px`;
+      const label = document.createElement("small");
+      label.textContent = bar.label.split(" ")[0] ?? bar.label;
+      column.append(value, fill, label);
+      return column;
+    }),
+  );
 }

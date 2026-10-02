@@ -566,27 +566,81 @@
           </div>
         </section>
 
-        <section class="view" id="view-overview" hidden>
+        <section class="view view-overview" id="view-overview" hidden>
           <div class="view-head">
             <h1 class="display">Overview</h1>
             <span class="view-note">Counted on this Mac only</span>
           </div>
 
-          <div class="stat-grid">
-            <div class="stat">
-              <div class="stat-value" id="stat-words">0</div>
-              <div class="stat-label">Words dictated</div>
+          <!-- The lifetime number first, with the streak beside it; the other
+               two counts keep it company rather than compete with it. -->
+          <section class="overview-hero" aria-label="Lifetime totals">
+            <div class="overview-hero-main">
+              <p class="overview-hero-label">Words dictated</p>
+              <p class="overview-hero-number display" id="stat-words">0</p>
+              <div class="overview-hero-meta">
+                <span class="streak-pill" id="activity-streak-pill"><i class="streak-dot" aria-hidden="true"></i><span id="activity-streak">—</span></span>
+                <span class="view-note" id="activity-active-days"></span>
+              </div>
             </div>
-            <div class="stat">
-              <div class="stat-value" id="stat-phrases">0</div>
-              <div class="stat-label">Phrases transcribed</div>
+            <div class="overview-hero-side">
+              <div class="hero-stat">
+                <b id="stat-phrases">0</b>
+                <span>Phrases transcribed</span>
+              </div>
+              <div class="hero-stat">
+                <b id="stat-sessions">0</b>
+                <span>Dictation sessions</span>
+              </div>
             </div>
-            <div class="stat">
-              <div class="stat-value" id="stat-sessions">0</div>
-              <div class="stat-label">Dictation sessions</div>
-            </div>
+          </section>
+
+          <div class="overview-grid">
+            <!-- Half a year of days, like a commit graph: how often, not what. -->
+            <section class="panel overview-card activity-panel" aria-labelledby="activity-title">
+              <div class="activity-head">
+                <h2 class="overview-card-title" id="activity-title">Every day you dictated</h2>
+                <span class="view-note">Last 6 months</span>
+              </div>
+              <div class="activity-calendar" id="activity-calendar" role="img" aria-label="Words dictated per day over the last six months"></div>
+              <div class="activity-tip" id="activity-tip" role="tooltip" hidden></div>
+              <div class="activity-legend" aria-hidden="true">
+                <span>Less</span><i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i><span>More</span>
+              </div>
+            </section>
+
+            <section class="panel overview-card months-panel" aria-labelledby="months-title">
+              <div class="activity-head">
+                <h2 class="overview-card-title" id="months-title">By month</h2>
+                <span class="change-pill" id="months-change" hidden></span>
+              </div>
+              <p class="view-note months-this" id="months-this"></p>
+              <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month"></div>
+            </section>
           </div>
 
+          <div class="overview-grid">
+            <section class="panel overview-card insight-panel" aria-labelledby="insight-title">
+              <h2 class="overview-card-title" id="insight-title">What your words add up to</h2>
+              <p class="insight-lede" id="insight-lede"></p>
+              <p class="insight-headline display" id="insight-headline">—</p>
+              <p class="insight-list" id="insight-list"></p>
+            </section>
+
+            <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">
+              <div class="activity-head">
+                <h2 class="overview-card-title" id="milestone-title">Milestones</h2>
+                <span class="view-note" id="milestone-remaining"></span>
+              </div>
+              <p class="milestone-next" id="milestone-next-label">—</p>
+              <div class="milestone-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progress to the next milestone" id="milestone-progress">
+                <i class="milestone-fill" id="milestone-fill"></i>
+                <div class="milestone-nodes" id="milestone-chips"></div>
+              </div>
+            </section>
+          </div>
+
+          <h2 class="section-label">On this Mac</h2>
           <div class="panel">
             <div class="row">
               <span class="row-label">Speech model<small id="overview-model">—</small></span>
