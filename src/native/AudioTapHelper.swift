@@ -162,18 +162,43 @@ private final class SystemTap {
 
   /// Streams what the IO proc has mixed down to stdout, off the realtime
   /// thread, for the rest of the process's life.
-  func startDraining() {
+  ///
+  /// The tap only runs while some process is playing sound; between calls,
+  /// or while the other side is quiet, nothing arrives at all. The stream
+  /// is kept on the wall clock by writing silence for the missing stretch,
+  /// so the recording lines up with the microphone's track, which never
+  /// stops.
+  func startDraining(rate: Double) {
     let stdout = FileHandle.standardOutput
     let verbose = ProcessInfo.processInfo.environment["WAVEFORM_TAP_DEBUG"] != nil
     Thread.detachNewThread { [outbox, debug] in
+      let started = Date()
+      var sent = 0
       var ticks = 0
+      // Pad only once the stream is this far behind, and leave half of it
+      // as room for the device's own jitter, so real audio arriving a
+      // moment later is not pushed ahead of the clock.
+      let slack = Int(rate * 0.1)
       while true {
         let data = outbox.drain()
-        if !data.isEmpty { stdout.write(data) }
+        if !data.isEmpty {
+          stdout.write(data)
+          sent += data.count / MemoryLayout<Float>.size
+        }
+        let expected = Int(Date().timeIntervalSince(started) * rate)
+        if expected - sent > slack {
+          let missing = expected - sent - slack / 2
+          stdout.write(Data(count: missing * MemoryLayout<Float>.size))
+          sent += missing
+          debug.padded += missing
+        }
         usleep(20_000)
         ticks += 1
         if verbose && ticks % 50 == 0 {
-          status(["type": "debug", "callbacks": debug.callbacks, "buffers": debug.buffers, "bytes": debug.bytes])
+          status([
+            "type": "debug", "callbacks": debug.callbacks, "buffers": debug.buffers,
+            "bytes": debug.bytes, "padded": debug.padded,
+          ])
         }
       }
     }
@@ -182,19 +207,9 @@ private final class SystemTap {
   /// How many times the IO proc has run.
   var callbacks: Int { debug.callbacks }
 
-  /// Tears the tap down and builds it again. A grant given in the dialog
-  /// applies to the next tap, not the one that was waiting on it, so the
-  /// first tap after "Allow" runs silent and has to be replaced.
-  func restart() throws -> Double {
-    teardown()
-    debug.callbacks = 0
-    debug.bytes = 0
-    return try start()
-  }
-
   func stop() {
     status([
-      "type": "stats", "callbacks": debug.callbacks, "bytes": debug.bytes,
+      "type": "stats", "callbacks": debug.callbacks, "bytes": debug.bytes, "padded": debug.padded,
       "channels": Int(format.mChannelsPerFrame),
     ])
     teardown()
@@ -243,6 +258,39 @@ private final class Debug {
   var callbacks = 0
   var buffers = 0
   var bytes = 0
+  var padded = 0
+}
+
+/// Plays a tone far too quiet to hear for as long as it lives. The tap only
+/// runs while some process is playing, so the permission check plays
+/// something itself: with permission the tap then hears this process;
+/// without it, nothing arrives whatever is playing.
+private final class QuietTone {
+  private let engine = AVAudioEngine()
+  private let player = AVAudioPlayerNode()
+
+  func start() throws {
+    let rate = 48_000.0
+    guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+      let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate))
+    else { throw TapError("tone format") }
+    buffer.frameLength = AVAudioFrameCount(rate)
+    if let samples = buffer.floatChannelData?[0] {
+      for frame in 0..<Int(rate) {
+        samples[frame] = sin(Float(frame) * 2 * .pi * 440 / Float(rate)) * 0.0005
+      }
+    }
+    engine.attach(player)
+    engine.connect(player, to: engine.mainMixerNode, format: format)
+    try engine.start()
+    player.scheduleBuffer(buffer, at: nil, options: .loops)
+    player.play()
+  }
+
+  func stop() {
+    player.stop()
+    engine.stop()
+  }
 }
 
 private struct TapError: Error {
@@ -251,30 +299,31 @@ private struct TapError: Error {
 }
 
 /// `--probe`: starts the tap, which is what makes macOS ask for permission
-/// the first time, waits a moment, and reports whether audio IO ran at all.
-/// With permission the IO proc fires whether or not anything is playing;
-/// without it, nothing fires. A tap that was waiting on the dialog stays
-/// silent even after "Allow", so a silent first try is rebuilt once before
-/// the answer is final. Exit codes: 0 heard, 2 silent, 1 failed.
+/// the first time, plays a tone too quiet to hear, and reports whether the
+/// tap heard it. The tap only runs while something is playing, and only
+/// with permission; so a tone of our own plus a running tap means allowed,
+/// and a tone with nothing arriving means denied. Exit codes: 0 heard,
+/// 2 silent, 1 failed.
+///
+/// The tap is not torn down: destroying its IO proc while the tone's
+/// engine shares the HAL connection has been seen to hang, and the system
+/// reclaims a private tap and aggregate when the process ends.
 @available(macOS 14.2, *)
 private func probe() -> Never {
   let tap = SystemTap()
-  var heard = false
+  let tone = QuietTone()
   do {
+    try tone.start()
     _ = try tap.start()
-    for attempt in 1...2 {
-      Thread.sleep(forTimeInterval: 1.5)
-      heard = tap.callbacks > 0
-      if heard || attempt == 2 { break }
-      _ = try tap.restart()
-    }
   } catch let error as TapError {
     fail(error.reason)
   } catch {
     fail("\(error)")
   }
+  Thread.sleep(forTimeInterval: 2.5)
+  let heard = tap.callbacks > 0
   status(["type": "probe", "heard": heard, "callbacks": tap.callbacks])
-  tap.stop()
+  tone.stop()
   exit(heard ? 0 : 2)
 }
 
@@ -291,21 +340,8 @@ private func run() -> Never {
   } catch {
     fail("\(error)")
   }
-  tap.startDraining()
+  tap.startDraining(rate: rate)
   status(["type": "ready", "sampleRate": rate])
-
-  // The first tap after the user clicks "Allow" in the dialog runs silent;
-  // the grant reaches the next one. Rebuilt once if nothing has arrived.
-  Thread.detachNewThread {
-    Thread.sleep(forTimeInterval: 2.0)
-    guard tap.callbacks == 0 else { return }
-    do {
-      _ = try tap.restart()
-      status(["type": "restarted"])
-    } catch {
-      status(["type": "error", "reason": "restart: \(error)"])
-    }
-  }
 
   // Stop when the parent closes stdin or asks politely.
   signal(SIGTERM) { _ in exit(0) }
