@@ -1846,7 +1846,34 @@ kbd {
   gap: 10px;
 }
 
-/* Dictionary: an add row, then the terms as a plain list. */
+/* --- Dictionary ------------------------------------------------------------- */
+
+/* The add card: an explanation and one field while the dictionary is empty,
+   just the field once there is a list below it. */
+.dictionary-add-card {
+  padding: 22px 22px 18px;
+  border-radius: 16px;
+  background: var(--surface-sunken);
+}
+
+.dictionary-add-card.is-compact {
+  padding: 14px 16px;
+}
+
+.dictionary-add-copy .empty-headline {
+  margin: 0 0 6px;
+  font-size: 24px;
+}
+
+.dictionary-add-copy .empty-hint {
+  max-width: 560px;
+  margin: 0 0 16px;
+}
+
+.dictionary-add-copy p[hidden] {
+  display: none;
+}
+
 .dictionary-add {
   display: flex;
   gap: 8px;
@@ -1859,14 +1886,20 @@ kbd {
   padding: 0 11px;
   border: 1px solid var(--hairline-strong);
   border-radius: 9px;
-  background: var(--surface-sunken);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
 }
 
-.dictionary-field.is-secondary {
-  flex: 0 1 190px;
+.dictionary-field.is-large {
+  height: 40px;
+  padding: 0 14px;
+  font-size: 15px;
+}
+
+.dictionary-add .pill-button {
+  height: auto;
 }
 
 .dictionary-field:focus {
@@ -1879,35 +1912,99 @@ kbd {
   color: var(--ink-faint);
 }
 
-.dictionary-tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0 4px;
-  border-top: 1px solid var(--hairline);
-}
-
 .dictionary-field.is-search {
   flex: 0 1 220px;
   height: 30px;
 }
 
+.dictionary-field.is-search[hidden] {
+  display: none;
+}
+
+.dictionary-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.dictionary-suggest[hidden] {
+  display: none;
+}
+
+.dictionary-chip {
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 540;
+}
+
+.dictionary-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dictionary-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 2px 8px;
+}
+
 .dictionary-tools .view-note {
-  margin-left: auto;
+  margin-right: auto;
+}
+
+.dictionary-tools[hidden] {
+  display: none;
+}
+
+/* The table: term, what it is heard as, where it came from, use, remove. */
+.dictionary-table {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dictionary-table[hidden] {
+  display: none;
+}
+
+.dictionary-head,
+.dictionary-term {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(200px, 1.6fr) 72px 56px 36px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 14px;
+}
+
+.dictionary-head {
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-sunken);
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .dictionary-list {
-  margin: 6px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .dictionary-term {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-  padding: 6px 0;
+  min-height: 44px;
   border-top: 1px solid var(--hairline);
 }
 
@@ -1915,63 +2012,127 @@ kbd {
   border-top: 0;
 }
 
-.dictionary-term-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-  font-weight: 560;
+.dictionary-term:hover {
+  background: var(--surface-sunken);
 }
 
-.dictionary-tag {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+.dictionary-term-text {
+  min-width: 0;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 580;
+}
+
+.dictionary-term-text:hover {
+  border-color: var(--hairline);
+}
+
+.dictionary-term-text:focus {
+  outline: 0;
+  border-color: var(--accent);
+  background: var(--surface);
 }
 
 .dictionary-term-heard {
-  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.dictionary-term-heard em {
-  font-style: normal;
+.dictionary-heard-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
   color: var(--ink);
+  font-size: 12px;
+}
+
+.dictionary-heard-chip button {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.dictionary-heard-chip button:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.dictionary-heard-add {
+  flex: 1 1 110px;
+  min-width: 90px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px dashed transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.dictionary-heard-add::placeholder {
+  color: var(--ink-faint);
+}
+
+.dictionary-term:hover .dictionary-heard-add,
+.dictionary-heard-add:focus {
+  border-color: var(--hairline-strong);
+}
+
+.dictionary-heard-add:focus {
+  outline: 0;
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.dictionary-term-source {
+  color: var(--ink-soft);
+  font-size: 12px;
 }
 
 .dictionary-term-uses {
-  flex: 0 0 auto;
   color: var(--ink-faint);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-/* The row's actions are hidden until hover elsewhere; a short list reads
-   better with the remove control always present but quiet. */
 .dictionary-term .entry-action {
-  opacity: 0.55;
+  opacity: 0;
 }
 
-.dictionary-term:hover .entry-action {
+.dictionary-term:hover .entry-action,
+.dictionary-term .entry-action:focus-visible {
   opacity: 1;
 }
 
 .dictionary-empty {
-  margin: 8px 0 4px;
+  margin: 10px 2px 4px;
   color: var(--ink-faint);
   font-size: 12.5px;
 }
 
+.dictionary-empty[hidden],
 .dictionary-empty:empty {
   display: none;
 }
