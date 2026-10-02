@@ -5128,3 +5128,15 @@ select {
 .meeting-row[hidden] {
   display: none;
 }
+
+.band-note.is-warn {
+  color: var(--danger);
+}
+
+.meetings-permission {
+  margin-bottom: 12px;
+}
+
+.meetings-permission[hidden] {
+  display: none;
+}

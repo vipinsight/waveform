@@ -25,6 +25,10 @@ const HELPERS = [
     source: "src/native/AudioTapHelper.swift",
     output: "dist/native/waveform-audiotap",
     frameworks: ["CoreAudio", "AVFoundation"],
+    // Its Info.plist rides inside the binary: macOS reads the audio-capture
+    // usage description from the process that creates the tap, and refuses
+    // one that has none without ever asking the user.
+    infoPlist: "src/native/AudioTapHelper-Info.plist",
     without: "meetings will record the microphone only",
   },
 ];
@@ -51,7 +55,7 @@ const identity = process.env.APPLE_SIGNING_IDENTITY;
 
 await mkdir("dist/native", { recursive: true });
 for (const helper of HELPERS) {
-  if ((await newestMtime(helper.output)) > (await newestMtime(helper.source))) {
+  if ((await newestMtime(helper.output)) > (await newestMtime(helper.source, helper.infoPlist ?? helper.source))) {
     continue;
   }
   const result = spawnSync(
@@ -63,6 +67,9 @@ for (const helper of HELPERS) {
       "-target",
       "arm64-apple-macos13.0",
       ...helper.frameworks.flatMap((framework) => ["-framework", framework]),
+      ...(helper.infoPlist
+        ? ["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", helper.infoPlist]
+        : []),
       "-o",
       helper.output,
       helper.source,

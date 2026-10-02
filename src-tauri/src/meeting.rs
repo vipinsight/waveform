@@ -373,6 +373,50 @@ impl Recorder {
         crate::refresh_tray_menu(&self.app);
     }
 
+    /// Asks macOS for permission to hear the other side, by creating a tap
+    /// and seeing whether audio IO runs. The first call is what makes macOS
+    /// show its prompt; later calls report what the user decided.
+    ///
+    /// Returns `heard`, `silent` (refused, or not yet allowed), `unsupported`
+    /// (macOS before 14.2) or `missing` (no helper in this build).
+    pub async fn probe_system_audio(&self) -> Result<String, String> {
+        let Some(helper) = &self.tap_helper else {
+            return Ok("missing".into());
+        };
+        if !system_audio_supported() {
+            return Ok("unsupported".into());
+        }
+        let output = tokio::time::timeout(
+            Duration::from_secs(8),
+            tokio::process::Command::new(helper)
+                .arg("--probe")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .map_err(|_| "The audio check did not finish.".to_string())?
+        .map_err(|error| format!("Could not run the audio check: {error}"))?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        for line in stderr.lines().filter(|line| !line.trim().is_empty()) {
+            self.logs.info(&self.app, "audiotap", line.to_string());
+        }
+        Ok(match output.status.code() {
+            Some(0) => "heard",
+            Some(2) => "silent",
+            _ => {
+                if stderr.contains("unsupported") {
+                    "unsupported"
+                } else {
+                    "silent"
+                }
+            }
+        }
+        .into())
+    }
+
     /// Whether a meeting is being recorded right now.
     pub async fn is_recording(&self) -> bool {
         self.active.lock().await.is_some()

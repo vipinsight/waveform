@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Linked into the helper as its __info_plist section. TCC reads the usage
+    description from the bundle of the process that creates the tap; a bare
+    executable without one is refused without a prompt, which is exactly
+    what happened: ready, then silence.
+  -->
+  <key>CFBundleIdentifier</key>
+  <string>com.webtiara.waveform.audiotap</string>
+  <key>CFBundleName</key>
+  <string>Waveform Audio Tap</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Waveform records what this Mac plays during a meeting, so the other participants are in the transcript. Nothing leaves this Mac.</string>
+</dict>
+</plist>

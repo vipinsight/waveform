@@ -43,6 +43,7 @@ const element = {
   emptyRecord: byId<HTMLButtonElement>("meetings-empty-record"),
   emptySetup: byId<HTMLElement>("meetings-empty-setup"),
   list: byId<HTMLElement>("meetings-list"),
+  permission: byId<HTMLElement>("meetings-permission"),
   noMatch: byId<HTMLElement>("meetings-no-match"),
   detail: byId<HTMLElement>("meeting-detail"),
   back: byId<HTMLButtonElement>("meeting-back"),
@@ -78,17 +79,18 @@ let recordingSince: number | null = null;
 let namesChanged = false;
 /** Set while Stop is in flight so the button cannot be pressed twice. */
 let stopping = false;
+/** What the last permission check said; null until one has run. */
+let otherSide: "heard" | "silent" | "unsupported" | "missing" | null = null;
+let probing = false;
+/** The ask above the list was waved away for this launch. */
+let permissionDismissed = false;
 
 export function bindMeetings(given: Options): void {
   options = given;
 
   element.record.addEventListener("click", () => void onRecordButton());
   element.emptyRecord.addEventListener("click", () => void onRecordButton());
-  element.introStart.addEventListener("click", () => {
-    options.markIntroSeen();
-    hideIntro();
-    void record();
-  });
+  element.introStart.addEventListener("click", () => void startFromIntro());
   element.introCancel.addEventListener("click", hideIntro);
   element.back.addEventListener("click", () => openMeeting(null));
   element.title.addEventListener("change", () => {
@@ -255,6 +257,47 @@ function hideIntro(): void {
   element.intro.hidden = true;
 }
 
+/**
+ * Asks macOS for the other side's permission, then records. The ask is the
+ * point of the sheet: the prompt appears here, on purpose, not mid-call.
+ */
+async function startFromIntro(): Promise<void> {
+  element.introStart.disabled = true;
+  element.introStart.textContent = "Asking macOS…";
+  const outcome = await probeOtherSide();
+  element.introStart.disabled = false;
+  element.introStart.textContent = "Allow and start recording";
+  options.markIntroSeen();
+  hideIntro();
+  if (outcome === "silent") {
+    options.toast("macOS didn't allow Waveform to hear the other side yet. Recording your side only.", {
+      action: { label: "Open System Settings", run: openAudioCaptureSettings },
+    });
+  }
+  await record();
+}
+
+/** Runs the permission check and remembers the answer for the page. */
+async function probeOtherSide(): Promise<typeof otherSide> {
+  if (probing) return otherSide;
+  probing = true;
+  renderEmpty();
+  try {
+    otherSide = await host().probeSystemAudio();
+  } catch (error) {
+    showError(error);
+    otherSide = "silent";
+  } finally {
+    probing = false;
+  }
+  renderEmpty();
+  renderBanners();
+  renderBand();
+  renderPermissionAsk();
+  if (otherSide === "heard") options.toast("Allowed. The other side of your calls will be recorded.");
+  return otherSide;
+}
+
 async function record(): Promise<void> {
   element.record.disabled = true;
   try {
@@ -359,12 +402,21 @@ function renderEmpty(): void {
 
   const rows: HTMLElement[] = [];
   if (status.systemAudio === "available") {
-    rows.push(
-      setupRow(
-        "Hear the other side of the call",
-        "macOS asks once, the first time you record. Allow Waveform under Screen & System Audio Recording.",
-      ),
+    const row = setupRow(
+      "Hear the other side of the call",
+      otherSide === "heard"
+        ? "Allowed. Both sides of a call are recorded."
+        : otherSide === "silent"
+          ? "macOS hasn't allowed it. Turn on Waveform under Screen & System Audio Recording, then check again."
+          : "macOS asks once. Nothing you record leaves this Mac.",
     );
+    if (otherSide !== "heard") {
+      row.append(
+        linkButton(probing ? "Asking macOS…" : otherSide === "silent" ? "Check again" : "Allow", () => void probeOtherSide(), true),
+      );
+      if (otherSide === "silent") row.append(linkButton("Open System Settings", openAudioCaptureSettings));
+    }
+    rows.push(row);
   } else if (status.systemAudio === "unsupported") {
     rows.push(
       setupRow(
@@ -458,7 +510,47 @@ function renderList(): void {
 
   element.list.replaceChildren(...ordered.map(renderListRow));
   element.list.hidden = openId !== null || meetings.length === 0;
+  renderPermissionAsk();
   element.noMatch.hidden = openId !== null || meetings.length === 0 || shown.length > 0;
+}
+
+/**
+ * Above the list, until allowed: the one permission the feature depends on.
+ * Asked with a button, never a trip to System Settings unless macOS refused.
+ */
+function renderPermissionAsk(): void {
+  const show =
+    openId === null &&
+    meetings.length > 0 &&
+    status?.systemAudio === "available" &&
+    otherSide !== "heard" &&
+    !permissionDismissed;
+  element.permission.hidden = !show;
+  if (!show) return;
+  element.permission.replaceChildren();
+  const text = document.createElement("div");
+  text.className = "meeting-banner-text";
+  const strong = document.createElement("strong");
+  strong.textContent = otherSide === "silent" ? "macOS hasn't let Waveform hear the other side of calls." : "Let Waveform hear the other side of your calls.";
+  const small = document.createElement("span");
+  small.textContent =
+    otherSide === "silent"
+      ? "Turn on Waveform under Screen & System Audio Recording, then check again."
+      : "macOS asks once. Without it, meetings record your microphone only.";
+  text.append(strong, small);
+  const actions = document.createElement("div");
+  actions.className = "meeting-banner-actions";
+  actions.append(
+    linkButton(probing ? "Asking macOS…" : otherSide === "silent" ? "Check again" : "Allow", () => void probeOtherSide(), true),
+  );
+  if (otherSide === "silent") actions.append(linkButton("Open System Settings", openAudioCaptureSettings));
+  actions.append(
+    linkButton("Not now", () => {
+      permissionDismissed = true;
+      renderPermissionAsk();
+    }),
+  );
+  element.permission.append(text, actions);
 }
 
 function renderListRow(meeting: Meeting): HTMLElement {
@@ -604,7 +696,16 @@ function renderBand(): void {
     meters.className = "band-meters";
     meters.append(meter("You", level?.mic ?? 0));
     if (status?.systemAudio === "available" && meeting.hasSystemAudio) {
-      meters.append(meter("Other side", level?.system ?? 0, level ? !level.otherHeard && level.elapsedMs > 5_000 : false));
+      const unheard = level ? !level.otherHeard && level.elapsedMs > 5_000 : false;
+      meters.append(meter("Other side", level?.system ?? 0, unheard));
+      if (unheard) {
+        const warn = document.createElement("span");
+        warn.className = "band-note is-warn";
+        warn.append("Waveform can't hear the other side yet. ");
+        warn.append(linkButton(probing ? "Asking macOS…" : "Allow", () => void probeOtherSide(), true));
+        warn.append(linkButton("Open System Settings", openAudioCaptureSettings));
+        meters.append(warn);
+      }
     } else {
       const only = document.createElement("span");
       only.className = "band-note";
@@ -812,8 +913,15 @@ function bannerFor(note: MeetingNote, meeting: Meeting): HTMLElement | null {
       return banner(
         "warn",
         "The other side of the call wasn't recorded.",
-        "macOS hadn't given Waveform permission to hear it. Allow it once under Screen & System Audio Recording and the next recording will have both sides.",
-        [linkButton("Open System Settings", openAudioCaptureSettings)],
+        otherSide === "heard"
+          ? "It is allowed now; the next recording will have both sides."
+          : "macOS hadn't given Waveform permission to hear it. Allow it, and the next recording will have both sides.",
+        otherSide === "heard"
+          ? []
+          : [
+              linkButton(probing ? "Asking macOS…" : "Allow", () => void probeOtherSide(), true),
+              linkButton("Open System Settings", openAudioCaptureSettings),
+            ],
       );
     case "nothing-said":
       return banner("info", "Nothing was picked up in this recording.", "", [
