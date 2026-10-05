@@ -10,7 +10,6 @@ import type {
   ModelEvent,
   ModelStatus,
   PolishModelStatus,
-  ResourceUsage,
   UpdateEvent,
   DictionaryTerm,
 } from "../shared/contracts";
@@ -169,17 +168,10 @@ const element = {
   insightList: requireElement<HTMLElement>("insight-list"),
   milestoneNextLabel: requireElement<HTMLElement>("milestone-next-label"),
   milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
-  milestoneProgress: requireElement<HTMLElement>("milestone-progress"),
-  milestoneFill: requireElement<HTMLElement>("milestone-fill"),
-  milestoneChips: requireElement<HTMLElement>("milestone-chips"),
+  milestonePassed: requireElement<HTMLElement>("milestone-passed"),
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
-  overviewModel: requireElement<HTMLElement>("overview-model"),
-  overviewModelState: requireElement<HTMLElement>("overview-model-state"),
-  overviewCpu: requireElement<HTMLElement>("overview-cpu"),
-  overviewMemory: requireElement<HTMLElement>("overview-memory"),
-  overviewEngineMemory: requireElement<HTMLElement>("overview-engine-memory"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
@@ -462,7 +454,6 @@ function wireEvents(): void {
   });
   host().onDictationUpdate(handleDictationUpdate);
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
-  host().onResourceUsage(renderResourceUsage);
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
   host().onOpenModelSettings(() => {
@@ -1048,9 +1039,6 @@ function applySettings(next: AppSettings): void {
   renderPromptPreviews(next);
   renderPolishShortcut(next.polishShortcut);
   renderThemeToggle(next.theme);
-
-  const model = getSpeechModel(next.modelId);
-  element.overviewModel.textContent = model.label;
 
   renderHotkeyLabels();
   renderHotkeyStatus();
@@ -2546,15 +2534,6 @@ function renderStats(stats: AppStats): void {
   renderEmptyState();
 }
 
-function renderResourceUsage(usage: ResourceUsage): void {
-  const memory = formatMemory(usage.memoryMb);
-  element.overviewCpu.textContent = `${usage.cpuPercent}%`;
-  element.overviewMemory.textContent = memory;
-  element.overviewEngineMemory.textContent =
-    usage.engineMemoryMb === null
-      ? "Speech engine is not running"
-      : `Speech engine accounts for ${formatMemory(usage.engineMemoryMb)}`;
-}
 
 function formatMemory(megabytes: number): string {
   return megabytes >= 1024 ? `${(megabytes / 1024).toFixed(1)} GB` : `${megabytes} MB`;
@@ -2569,9 +2548,8 @@ function handleModelEvent(event: ModelEvent): void {
     return;
   }
   if (event.modelId !== settings.modelId) {
-    // Nothing about the running engine changed, but a download that failed is
-    // still worth saying out loud.
-    if (event.stage === "error") setStatus(event.message);
+    // Nothing about the running engine changed; a failed download for another
+    // model is reported where it was started.
     return;
   }
 
@@ -2590,7 +2568,6 @@ function handleModelEvent(event: ModelEvent): void {
     modelLoading = true;
   }
 
-  setStatus(event.message);
   renderDictationDeck();
 }
 
@@ -2611,12 +2588,6 @@ function handleDictationUpdate(update: DictationUpdate): void {
   pendingRetry = nextRetry;
   if (retryChanged) renderHistory();
 
-  // Errors, and the one outcome that is not an error and still needs saying:
-  // a polish that changed nothing looks exactly like a shortcut that missed.
-  if ((status.state === "error" || status.state === "idle") && status.message) {
-    setStatus(status.message);
-  }
-  else if (modelReady) setStatus(`${getSpeechModel(settings.modelId).label} ready`);
 }
 
 /** The shortcut is the way in, so the sidebar says which one to hold. */
@@ -4747,10 +4718,6 @@ function wireWizard(): void {
   });
 }
 
-function setStatus(message: string): void {
-  element.overviewModelState.textContent = message;
-}
-
 // --- Toast and recording strip -------------------------------------------------
 
 let toastTimer: number | null = null;
@@ -5013,10 +4980,8 @@ function renderInsights(): void {
 }
 
 /**
- * Every milestone as a node on one track: the ones passed are filled, the
- * next is ringed and named, the rest wait. The fill runs to where the
- * words are between the last one and the next. Passing one, while the page
- * is open, lights the node up once.
+ * The next milestone, written out, and the ones already passed. Passing one
+ * while the page is open warms the card once.
  */
 function renderMilestones(words: number): void {
   const progress = milestoneProgress(words);
@@ -5024,54 +4989,23 @@ function renderMilestones(words: number): void {
   element.milestoneRemaining.textContent = remaining;
   if (progress.next === null) {
     element.milestoneNextLabel.textContent = "Every milestone reached";
-  } else if (progress.reached.length === 0) {
-    element.milestoneNextLabel.replaceChildren(
-      "First up: ",
-      Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
-    );
   } else {
     element.milestoneNextLabel.replaceChildren(
-      Object.assign(document.createElement("strong"), { textContent: `${progress.previous.toLocaleString()} words` }),
-      " reached. Next: ",
+      progress.reached.length === 0 ? "First milestone: " : "Next milestone: ",
       Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
     );
   }
-  const steps = MILESTONES.length - 1;
-  const position = (progress.reached.length + progress.fraction * (progress.next === null ? 0 : 1)) / (steps + 1);
-  const fillPercent = Math.min(100, Math.round(((progress.reached.length - 1 + progress.fraction) / steps) * 100));
-  element.milestoneFill.style.width = `${Math.max(0, fillPercent)}%`;
-  element.milestoneProgress.setAttribute("aria-valuenow", String(Math.round(progress.fraction * 100)));
-  element.milestoneProgress.setAttribute(
-    "aria-valuetext",
-    progress.next === null ? "Every milestone reached" : `${Math.round(progress.fraction * 100)}% of the way to ${progress.next.toLocaleString()} words`,
-  );
-  void position;
+  const passed = progress.reached.map((milestone) => milestone.toLocaleString());
+  element.milestonePassed.textContent =
+    passed.length === 0
+      ? ""
+      : passed.length === 1
+        ? `Passed ${passed[0]} words`
+        : `Passed ${passed.slice(0, -1).join(", ")} and ${passed[passed.length - 1]} words`;
 
   const latest = progress.reached[progress.reached.length - 1] ?? null;
   const celebrate = milestonesSeen !== null && latest !== null && latest > milestonesSeen;
   milestonesSeen = latest ?? 0;
-
-  element.milestoneChips.replaceChildren(
-    ...MILESTONES.map((milestone) => {
-      const node = document.createElement("span");
-      node.className = "milestone-node";
-      const reached = words >= milestone;
-      if (reached) node.classList.add("is-reached");
-      if (milestone === progress.next) node.classList.add("is-next");
-      if (milestone === latest) node.classList.add("is-latest");
-      if (celebrate && milestone === latest) node.classList.add("is-new");
-      node.title = `${milestone.toLocaleString()} words${reached ? ", reached" : milestone === progress.next ? ", next" : ""}`;
-      const dot = document.createElement("i");
-      node.append(dot);
-      if (milestone === latest || milestone === progress.next) {
-        const label = document.createElement("small");
-        label.textContent = shortCount(milestone);
-        node.append(label);
-      }
-      return node;
-    }),
-  );
-
   if (celebrate && latest !== null) {
     element.milestonePanel.classList.add("is-celebrating");
     element.milestoneRemaining.textContent = `${latest.toLocaleString()} words — a new milestone`;
