@@ -92,10 +92,10 @@ export function insights(words: number): Insight[] {
 }
 
 function amount(words: number, unit: Equivalent): string {
-  const count = words / unit.words;
-  if (count < 1.05) return unit.one;
-  const shown = count >= 10 ? Math.round(count).toLocaleString() : (Math.round(count * 10) / 10).toFixed(1);
-  return `${shown} ${unit.many}`;
+  // Whole things only: "2 screenplays" reads as a fact, "2.4" as a sum.
+  const count = Math.round(words / unit.words);
+  if (count <= 1) return unit.one;
+  return `${count.toLocaleString()} ${unit.many}`;
 }
 
 function percent(fraction: number): string {

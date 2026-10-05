@@ -52,8 +52,8 @@ describe("insights", () => {
 
   it("names the largest unit filled, the one below, and the share of the next", () => {
     const lines = insights(10_000);
-    expect(lines[0]).toEqual({ text: "1.3 short stories", headline: true });
-    expect(lines[1]?.text).toBe("4.0 TED talks");
+    expect(lines[0]).toEqual({ text: "a short story", headline: true });
+    expect(lines[1]?.text).toBe("4 TED talks");
     expect(lines[2]?.text).toBe("50% of a movie screenplay");
   });
 
@@ -62,9 +62,10 @@ describe("insights", () => {
   });
 
   it("rounds big counts to whole numbers", () => {
-    expect(insights(1_000_000)[1]?.text).toBe("2.1 copies of The Lord of the Rings");
+    expect(insights(1_000_000)[1]?.text).toBe("2 copies of The Lord of the Rings");
     expect(insights(12_000_000)[0]?.text).toBe("11 Harry Potter series");
-    expect(insights(1_000_000)[0]?.text).toBe("1.7 copies of War and Peace");
+    expect(insights(1_000_000)[0]?.text).toBe("2 copies of War and Peace");
+    expect(insights(30_000)[0]?.text).toBe("2 movie screenplays");
   });
 });
 
