@@ -1159,7 +1159,6 @@ kbd {
 }
 
 .privacy p {
-  max-width: 62ch;
   margin: 0;
   color: var(--ink-soft);
   font-size: 12.5px;
