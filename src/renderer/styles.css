@@ -4552,6 +4552,52 @@ select {
   padding: 4px 18px;
 }
 
+/* The step rows are drawn for the wizard's dark backdrop, in near-white. On
+   this page they sit on a themed card, so every colour comes from the theme. */
+.dictation-steps .onboard-step + .onboard-step {
+  border-top-color: var(--hairline);
+}
+
+.dictation-steps .onboard-mark {
+  border-color: var(--hairline-strong);
+  color: var(--ink-soft);
+}
+
+.dictation-steps .onboard-step[data-done="true"] .onboard-mark {
+  border-color: var(--positive);
+  background: var(--positive);
+}
+
+.dictation-steps .onboard-body small {
+  color: var(--ink-soft);
+}
+
+.dictation-steps .onboard-step[data-done="true"] .onboard-body strong {
+  color: var(--ink-soft);
+}
+
+.dictation-steps .onboard-step[data-done="true"] .onboard-body small {
+  color: var(--ink-faint);
+}
+
+.dictation-steps .onboard-action.is-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.dictation-steps .onboard-action.is-primary:hover:not(:disabled) {
+  background: var(--ink-label);
+}
+
+.dictation-steps .onboard-action.is-primary:disabled {
+  background: var(--surface-hover);
+  color: var(--ink-faint);
+}
+
+.dictation-steps .onboard-action:focus-visible {
+  outline-color: var(--accent);
+}
+
 .try-card {
   padding: 12px 14px;
 }
