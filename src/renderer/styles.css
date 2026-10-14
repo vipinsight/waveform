@@ -451,9 +451,12 @@ kbd {
 
 /* ----------------------------------------------------------------- views */
 
+/* min-height: 0, or the grid row grows to fit a long page instead of the
+   page scrolling inside it. */
 .content {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   grid-row: 2;
   grid-column: 2;
@@ -1892,6 +1895,12 @@ kbd {
 }
 
 /* --- Dictionary ------------------------------------------------------------- */
+
+/* The page is a flex column that scrolls; a child allowed to shrink is cut
+   off at the bottom of the window instead of scrolling with the rest. */
+#view-dictionary > * {
+  flex-shrink: 0;
+}
 
 .dictionary-add {
   display: flex;
