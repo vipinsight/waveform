@@ -64,13 +64,6 @@ import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
   history: requireElement<HTMLElement>("history"),
-  dictationDeck: requireElement<HTMLElement>("dictation-deck"),
-  modelDeck: requireElement<HTMLElement>("model-deck"),
-  modelDeckStatus: requireElement<HTMLElement>("model-deck-status"),
-  modelDeckTitle: requireElement<HTMLElement>("model-deck-title"),
-  modelDeckDescription: requireElement<HTMLElement>("model-deck-description"),
-  modelDeckLanguage: requireElement<HTMLElement>("model-deck-language"),
-  modelDeckPolish: requireElement<HTMLElement>("model-deck-polish"),
   emptyState: requireElement<HTMLElement>("empty-state"),
   dictateNote: requireElement<HTMLElement>("dictate-note"),
   shortcutHint: requireElement<HTMLElement>("shortcut-hint"),
@@ -97,13 +90,10 @@ const element = {
   dictationSteps: requireElement<HTMLOListElement>("dictation-steps"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
   dictionaryText: requireElement<HTMLInputElement>("dictionary-text"),
-  dictionaryAddCard: requireElement<HTMLElement>("dictionary-add-card"),
-  dictionaryHeadline: requireElement<HTMLElement>("dictionary-headline"),
-  dictionaryLede: requireElement<HTMLElement>("dictionary-lede"),
+  dictionaryIntro: requireElement<HTMLElement>("dictionary-intro"),
   dictionarySuggest: requireElement<HTMLElement>("dictionary-suggest"),
   dictionaryTable: requireElement<HTMLElement>("dictionary-table"),
-  dictionaryTools: requireElement<HTMLElement>("dictionary-tools"),
-  dictionarySearch: requireElement<HTMLInputElement>("dictionary-search"),
+  dictionaryAddButton: requireElement<HTMLButtonElement>("dictionary-add-button"),
   dictionaryCount: requireElement<HTMLElement>("dictionary-count"),
   dictionaryList: requireElement<HTMLUListElement>("dictionary-list"),
   dictionaryEmpty: requireElement<HTMLElement>("dictionary-empty"),
@@ -137,12 +127,6 @@ const element = {
   emptyHint: requireElement<HTMLElement>("empty-hint"),
   starter: requireElement<HTMLElement>("starter"),
   starterKey: document.querySelector<HTMLElement>(".starter-key")!,
-  deckStatus: requireElement<HTMLElement>("deck-status"),
-  deckTitle: requireElement<HTMLElement>("deck-title"),
-  deckDescription: requireElement<HTMLElement>("deck-description"),
-  deckKey: requireElement<HTMLElement>("deck-key"),
-  deckKeyLabel: requireElement<HTMLElement>("deck-key-label"),
-  deckSettings: requireElement<HTMLButtonElement>("deck-settings"),
   fnNote: requireElement<HTMLElement>("fn-note"),
   setupBadge: requireElement<HTMLElement>("setup-badge"),
   dropOverlay: requireElement<HTMLElement>("drop-overlay"),
@@ -181,7 +165,6 @@ const element = {
   cleanupWhat: requireElement<HTMLElement>("cleanup-what"),
   cleanupTyped: requireElement<HTMLElement>("cleanup-typed"),
   polishLevelHint: requireElement<HTMLElement>("polish-level-hint"),
-  polishModelLine: requireElement<HTMLElement>("polish-model-line"),
   polishBlockerText: requireElement<HTMLElement>("polish-blocker-text"),
   polishBlockerAction: requireElement<HTMLButtonElement>("polish-blocker-action"),
   modelTabs: requireElement<HTMLElement>("model-tabs"),
@@ -194,14 +177,8 @@ const element = {
   transformPromptWhere: requireElement<HTMLElement>("transform-prompt-where"),
   transformPromptPreview: requireElement<HTMLElement>("transform-prompt-preview"),
   polishPromptPreview: requireElement<HTMLElement>("polish-prompt-preview"),
-  polishShortcut: requireElement<HTMLElement>("polish-shortcut"),
+  polishShortcut: requireElement<HTMLSelectElement>("polish-shortcut"),
   polishShortcutCaption: requireElement<HTMLElement>("polish-shortcut-caption"),
-  polishDeckStatus: requireElement<HTMLElement>("polish-deck-status"),
-  polishDeckTitle: requireElement<HTMLElement>("polish-deck-title"),
-  polishDeckDescription: requireElement<HTMLElement>("polish-deck-description"),
-  polishDeckKey: requireElement<HTMLElement>("polish-deck-key"),
-  polishDeckKeyLabel: requireElement<HTMLElement>("polish-deck-key-label"),
-  polishDeckDictation: requireElement<HTMLElement>("polish-deck-dictation"),
   polishEngine: requireElement<HTMLElement>("polish-engine"),
   polishModelList: requireElement<HTMLElement>("polish-model-list"),
   promptEditor: requireElement<HTMLElement>("prompt-editor"),
@@ -309,6 +286,8 @@ let updateNotesVersion: string | null = null;
 /** Everything the log has said this session, oldest first. */
 let logLines: LogLine[] = [];
 let settingsOpen = false;
+/** The Settings page last shown, so closing the prompt editor returns to it. */
+let settingsPage = "general";
 /** Which instruction the popup is editing, if any. */
 let promptEditorKind: "transform" | "polish" | null = null;
 /** Whether closing the popup should put the settings panel back where it was. */
@@ -456,11 +435,8 @@ function wireEvents(): void {
   navigator.mediaDevices?.addEventListener("devicechange", () => void refreshMicrophones());
   host().onOpenSettings(() => toggleSettings(true));
   host().onOpenMicrophoneSettings(() => toggleSettings(true, "audio"));
-  host().onOpenModelSettings(() => {
-    toggleSettings(false);
-    showModelsTab("speech");
-  });
-  host().onOpenShortcutSettings(() => openView("dictation"));
+  host().onOpenModelSettings(() => showModelsTab("speech"));
+  host().onOpenShortcutSettings(() => toggleSettings(true, "dictation"));
   host().onStatsChanged((stats) => {
     renderStats(stats);
     void refreshActivity();
@@ -523,9 +499,6 @@ function wireEvents(): void {
     if (promptEditorKind) togglePromptEditor(false);
     else toggleSettings(false);
   });
-  element.deckSettings.addEventListener("click", () => {
-    element.dictationSetup.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 
   bindDropTranscribe();
 
@@ -537,6 +510,11 @@ function wireEvents(): void {
     const kind = tab?.dataset.modelTab ?? tab?.dataset.openModels;
     if (kind === "speech" || kind === "polish") {
       showModelsTab(kind);
+      return;
+    }
+    const page = target.closest<HTMLElement>("[data-open-settings]")?.dataset.openSettings;
+    if (page) {
+      toggleSettings(true, page);
       return;
     }
     const view = target.closest<HTMLElement>("[data-open-view]")?.dataset.openView;
@@ -688,10 +666,9 @@ function wireEvents(): void {
         : { polishLevel: level, transformPrompt: transformPromptFor(level) },
     );
   });
-  element.polishShortcut.addEventListener("click", (event) => {
-    const shortcut = (event.target as HTMLElement).closest<HTMLElement>("[data-shortcut]")
-      ?.dataset.shortcut;
-    if (shortcut && shortcut !== settings.polishShortcut) {
+  element.polishShortcut.addEventListener("change", () => {
+    const shortcut = element.polishShortcut.value;
+    if (shortcut !== settings.polishShortcut) {
       void patchSettings({ polishShortcut: shortcut });
     }
   });
@@ -736,7 +713,7 @@ function wireEvents(): void {
   });
   bindDictionary();
   bindMeetings({
-    openView,
+    openAiPolish: () => toggleSettings(true, "ai"),
     toast: showToast,
     introSeen: () => settings.meetingsIntroSeen,
     markIntroSeen: () => void patchSettings({ meetingsIntroSeen: true }),
@@ -828,25 +805,12 @@ function showView(view: string): void {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  for (const id of ["dictate", "dictation", "dictionary", "meetings", "overview", "models", "ai"]) {
+  for (const id of ["dictate", "dictionary", "meetings", "overview"]) {
     requireElement<HTMLElement>(`view-${id}`).hidden = id !== view;
   }
-  // Both lists describe files on the disk, which arrive while the section is
-  // closed -- from a download here, or from a terminal -- so each is re-read on
-  // the way in rather than trusted from startup.
-  if (view === "models") {
-    if (modelsTab === "polish") void renderPolishModels();
-    else void renderModels();
-  }
-  // The levels say what they need before they can run, and what they need is
-  // a key or a download that could have arrived while the section was closed.
-  if (view === "ai") void host().getAiStatus().then(renderAiStatus);
   // The calendar follows the clock as much as the counts: a day may have
   // turned since the page was last up.
   if (view === "overview") void refreshActivity();
-  // Labels are what name the devices, and WebKit hands them over only once
-  // the microphone has been asked for.
-  if (view === "dictation") void refreshMicrophones(true);
   if (view === "meetings") showMeetings();
   renderRecordingStrip();
 }
@@ -860,7 +824,7 @@ function openView(view: string): void {
 /** Which half of the Models page is up: voice to text, or rewriting text. */
 let modelsTab: "speech" | "polish" = "speech";
 
-/** Opens the Models page on one kind of model, closing Settings if it is up. */
+/** Opens Settings on the Models page, on one kind of model. */
 function showModelsTab(tab: "speech" | "polish"): void {
   modelsTab = tab;
   for (const button of Array.from(
@@ -871,22 +835,8 @@ function showModelsTab(tab: "speech" | "polish"): void {
   }
   element.modelsSpeech.hidden = tab !== "speech";
   element.modelsPolish.hidden = tab !== "polish";
-  if (settingsOpen) toggleSettings(false);
-  showView("models");
-}
-
-/**
- * Names the polish model on the AI Polish page, since that is where the
- * level it serves is chosen -- and "which model" was otherwise only answered
- * two screens away.
- */
-function renderPolishModelLine(): void {
-  element.polishModelLine.textContent =
-    settings.polishEngine === "local"
-      ? `${polishModelLabel(settings.localModelId)}, on this Mac`
-      : `${settings.openRouterModel}, through OpenRouter`;
-  renderModelKinds();
-  renderPolishDeck();
+  if (settingsOpen) showSettingsPage("models");
+  else toggleSettings(true, "models");
 }
 
 /**
@@ -934,6 +884,7 @@ function polishModelLabel(id: string): string {
 }
 
 function showSettingsPage(page: string): void {
+  settingsPage = page;
   for (const button of Array.from(
     document.querySelectorAll<HTMLElement>(".modal-nav [data-page]"),
   )) {
@@ -948,6 +899,16 @@ function showSettingsPage(page: string): void {
   }
   // Lines pushed while the page was closed are in the buffer, not on screen.
   if (page === "logs") void loadLogs();
+  // Labels are what name the devices, and WebKit hands them over only once
+  // the microphone has been asked for.
+  if (page === "audio") void refreshMicrophones(true);
+  // Both lists describe files on the disk, which arrive while the section is
+  // closed -- from a download here, or from a terminal -- so each is re-read on
+  // the way in rather than trusted from startup.
+  if (page === "models") {
+    if (modelsTab === "polish") void renderPolishModels();
+    else void renderModels();
+  }
 }
 
 /**
@@ -1034,7 +995,7 @@ function applySettings(next: AppSettings): void {
   }
   element.aiModel.value = next.openRouterModel;
   renderPolishEngine(next.polishEngine);
-  renderPolishModelLine();
+  renderModelKinds();
   renderPolishLevel(next.polishLevel);
   renderPromptPreviews(next);
   renderPolishShortcut(next.polishShortcut);
@@ -1042,7 +1003,7 @@ function applySettings(next: AppSettings): void {
 
   renderHotkeyLabels();
   renderHotkeyStatus();
-  renderDictationDeck();
+  renderOnboard();
   // Every control in the wizard writes through the host and reads back from
   // here, so this is what actually ticks the card that was clicked.
   renderWizard();
@@ -1053,16 +1014,10 @@ function applySettings(next: AppSettings): void {
 
 function populateSelects(): void {
   for (const accelerator of POLISH_SHORTCUTS) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "keyboard-key shortcut-key";
-    button.setAttribute("role", "radio");
-    button.setAttribute("aria-checked", "false");
-    button.setAttribute("aria-label", nameAccelerator(accelerator));
-    button.dataset.shortcut = accelerator;
-    // A keycap, so the glyphs alone: "⌥1". The card and caption spell it out.
-    button.textContent = describeAccelerator(accelerator).replace(" + ", "");
-    element.polishShortcut.append(button);
+    // The keycap alone, as it appears on the key: "⌥1".
+    element.polishShortcut.append(
+      new Option(describeAccelerator(accelerator).replace(" + ", ""), accelerator),
+    );
   }
   for (const model of SUGGESTED_MODELS) {
     element.aiModel.append(new Option(model, model));
@@ -1116,12 +1071,6 @@ function describeAccelerator(accelerator: string): string {
   return accelerator.replace("Alt+", "⌥ + ");
 }
 
-/** The same accelerator in words, for under the glyph and for VoiceOver. */
-function nameAccelerator(accelerator: string): string {
-  if (accelerator === "none") return "Off";
-  return accelerator.replace("Alt+", "Option + ");
-}
-
 /**
  * A stand-in for a saved key.
  *
@@ -1164,7 +1113,6 @@ function renderAiStatus(status: AiStatus): void {
   for (const card of polishLevelCards()) {
     card.disabled = !ready && card.dataset.level !== "none";
   }
-  renderPolishDeck();
 }
 
 function polishLevelCards(): HTMLButtonElement[] {
@@ -1178,7 +1126,7 @@ function renderPolishLevel(level: PolishLevel): void {
   element.cleanupWhat.textContent =
     level === "none"
       ? "Off: typed exactly as you said it, mistakes included."
-      : "Filler words and grammar fixed, by the model on the AI Polish page.";
+      : "Filler words and grammar fixed, by the polish model chosen in Models.";
   element.cleanupTyped.textContent =
     level === "none"
       ? "so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done"
@@ -1193,59 +1141,11 @@ function renderPolishLevel(level: PolishLevel): void {
  * hidden rather than dimmed.
  */
 function renderPolishShortcut(shortcut: string): void {
-  for (const button of Array.from(
-    element.polishShortcut.querySelectorAll<HTMLElement>("[data-shortcut]"),
-  )) {
-    button.setAttribute("aria-checked", String(button.dataset.shortcut === shortcut));
-  }
-  const name = document.createElement("strong");
-  // Written like the Dictation caption's "Right Option (⌥→)": the name, then
-  // the keycap it appears as.
-  name.textContent =
+  element.polishShortcut.value = shortcut;
+  element.polishShortcutCaption.textContent =
     shortcut === "none"
-      ? "Off."
-      : `${nameAccelerator(shortcut)} (${describeAccelerator(shortcut).replace(" + ", "")})`;
-  element.polishShortcutCaption.replaceChildren(
-    name,
-    shortcut === "none"
-      ? " Pick a key to polish selected text from any app."
-      : " Select text in any app and press it. Nothing selected? It takes the field you are typing in.",
-  );
-  renderPolishDeck();
-}
-
-/**
- * The card at the top of AI Polish: the shortcut, whether polish can run, and
- * what it does to a dictation. Read from settings and the AI status together,
- * so it is repainted whenever either changes.
- */
-function renderPolishDeck(): void {
-  const shortcut = settings.polishShortcut;
-  const local = settings.polishEngine === "local";
-  const ready = aiStatus === null ? null : local ? aiStatus.localReady : aiStatus.hasApiKey;
-
-  element.polishDeckStatus.textContent =
-    ready === false
-      ? local
-        ? "Model not downloaded"
-        : "Needs an OpenRouter key"
-      : shortcut === "none"
-        ? "Shortcut off"
-        : "Ready anywhere";
-  if (ready === false) element.polishDeckStatus.dataset.tone = "attention";
-  else delete element.polishDeckStatus.dataset.tone;
-
-  element.polishDeckTitle.textContent =
-    shortcut === "none" ? "Polish is off for selections" : `Select text, press ${describeAccelerator(shortcut)}`;
-  element.polishDeckDescription.textContent =
-    shortcut === "none"
-      ? "Choose a shortcut below to fix selected text in place, in any app."
-      : "Spelling, grammar, punctuation and capitals fixed in place, in any app.";
-  // "Press Off" read as an instruction to press a key called Off.
-  element.polishDeckKeyLabel.textContent = shortcut === "none" ? "Shortcut" : "Press";
-  element.polishDeckKey.textContent = describeAccelerator(shortcut).replace(" + ", "");
-  element.polishDeckDictation.textContent =
-    settings.polishLevel === "none" ? "Inserted as spoken" : "Cleaned up before it is typed";
+      ? "Pick a key to polish selected text from any app."
+      : "Select text in any app and press it. Nothing selected? It takes the field you are typing in.";
 }
 
 function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
@@ -1584,7 +1484,7 @@ async function refreshModelInstalled(): Promise<void> {
 
   setupKnown = true;
   renderSetup();
-  renderDictationDeck();
+  renderOnboard();
   renderModelKinds();
 }
 
@@ -1592,7 +1492,7 @@ async function refreshModelInstalled(): Promise<void> {
  * The first thing a new install shows, and the thing it keeps showing until
  * dictation actually works.
  *
- * It sits where the deck sits, on the page someone lands on, rather than
+ * It sits at the top of the page someone lands on, rather than
  * behind a button that opens Settings. Setup used to be three rows inside a
  * modal, reached by pressing "Finish setup" on a card that had already
  * explained nothing -- which is two decisions and a dialog between someone and
@@ -2404,7 +2304,7 @@ function renderHotkeyStatus(): void {
   // than from anything that could describe a different one.
   renderShortcutCard();
   renderSetup();
-  renderDictationDeck();
+  renderOnboard();
 }
 
 function isScopeGranted(scope: "accessibility" | "input-monitoring"): boolean {
@@ -2446,84 +2346,13 @@ function renderEmptyState(): void {
   element.emptyHint.textContent = `Hold ${glyph} anywhere in macOS and speak. Release to transcribe, or tap twice to keep listening.`;
 }
 
-/** The first thing on Dictation is a live instruction, not a static welcome. */
-function renderDictationDeck(): void {
+/** The setup checklist above the list, until dictation works. */
+function renderOnboard(): void {
   const outstanding = setupSteps().filter((step) => !step.done);
-  const binding = getHotkeyBinding(settings.hotkeyId);
-  const key = binding ? hotkeyKeycap(binding) : "—";
-
-  // One card in this slot at a time. Until dictation works, the thing worth
-  // saying is how to make it work -- and until the host has answered, neither
-  // is true yet, so the slot stays empty rather than guessing.
+  // Until the host has answered, nothing is known to be missing yet, so the
+  // card stays hidden rather than guessing.
   const known = setupKnown && hotkeyStatus !== null;
   element.onboard.hidden = !known || outstanding.length === 0;
-  element.modelDeck.hidden = !known || outstanding.length > 0;
-  renderModelDeck();
-
-  // The shortcut card lives on the Dictation page. Unfinished setup is said
-  // there too, pointing back to the checklist rather than repeating it.
-  element.dictationDeck.hidden = !known;
-  if (!known) return;
-  // As on the polish card: no key reads "Shortcut Off", not "Hold —".
-  element.deckKeyLabel.textContent = binding ? "Hold" : "Shortcut";
-  element.deckKey.textContent = binding ? key : "Off";
-  element.deckSettings.hidden = outstanding.length === 0;
-  if (outstanding.length > 0) element.deckStatus.dataset.tone = "attention";
-  else delete element.deckStatus.dataset.tone;
-  if (outstanding.length > 0) {
-    element.deckStatus.textContent = "Setup unfinished";
-    element.deckTitle.textContent =
-      outstanding.length === 1 ? "One step before you can dictate" : `${outstanding.length} steps before you can dictate`;
-    element.deckDescription.textContent = "macOS needs to let Waveform hear you and type for you. The steps are just below.";
-    return;
-  }
-
-  if (!binding) {
-    element.deckStatus.textContent = "Shortcut off";
-    element.deckTitle.textContent = "Choose a key to start dictating";
-    element.deckDescription.textContent = "Pick a modifier key that will not type into the app you are using.";
-    return;
-  }
-
-  if (modelLoading) {
-    element.deckStatus.textContent = "Preparing speech model";
-    element.deckTitle.textContent = "Your words are about to be ready";
-    element.deckDescription.textContent = `${getSpeechModel(settings.modelId).label} is loading on this Mac.`;
-    return;
-  }
-
-  element.deckStatus.textContent = modelReady ? "Ready anywhere" : "Ready on demand";
-  element.deckTitle.textContent = `Hold ${key}, talk, let go`;
-  element.deckDescription.textContent = modelReady
-    ? `Your words land where your cursor is. Tap ${key} twice to keep listening; press it again to finish. Esc throws the phrase away.`
-    : "Your speech model wakes when you use the shortcut. Nothing leaves this Mac.";
-}
-
-/**
- * The Transcripts card: which model turns speech into these words, whether it
- * is ready, the language it listens for, and what AI Polish does after it.
- */
-function renderModelDeck(): void {
-  const missing = setupKnown && !modelInstalled;
-  element.modelDeckStatus.textContent = missing
-    ? "Not downloaded"
-    : modelLoading
-      ? "Loading"
-      : modelReady
-        ? "Ready"
-        : "Loads when you dictate";
-  if (missing) element.modelDeckStatus.dataset.tone = "attention";
-  else delete element.modelDeckStatus.dataset.tone;
-
-  element.modelDeckTitle.textContent = getSpeechModel(settings.modelId).label;
-  element.modelDeckDescription.textContent = "Speech model, running on this Mac.";
-  element.modelDeckLanguage.textContent = settings.speechLanguage
-    ? settings.speechLanguage.toUpperCase()
-    : "Auto";
-
-  // On or off only: which model polishes is the AI Polish card's to say, and
-  // the label links there.
-  element.modelDeckPolish.textContent = settings.polishLevel === "none" ? "Off" : "On";
 }
 
 function renderStats(stats: AppStats): void {
@@ -2568,7 +2397,7 @@ function handleModelEvent(event: ModelEvent): void {
     modelLoading = true;
   }
 
-  renderDictationDeck();
+  renderOnboard();
 }
 
 function handleDictationUpdate(update: DictationUpdate): void {
@@ -2634,8 +2463,8 @@ function renderHistory(): void {
       ? entries
       : entries.filter((entry) => entryMatches(entry, query));
 
-  // Both cards stay in the tree; renderDictationDeck decides which is showing.
-  element.history.replaceChildren(element.onboard, element.modelDeck);
+  // The card stays in the tree; renderOnboard decides whether it is showing.
+  element.history.replaceChildren(element.onboard);
   element.history.classList.toggle("is-empty", matches.length === 0 && !pendingRetry);
 
   if (pendingRetry) element.history.append(renderRetryCard(pendingRetry.message));
@@ -2999,16 +2828,24 @@ function audioFileName(createdAt: number): string {
 
 let dictionary: DictionaryTerm[] = [];
 
-/** Above this many terms the list gets a search field. */
-const DICTIONARY_SEARCH_FROM = 8;
-
 /** The macOS account's name, offered as the first term; fetched once. */
 let suggestedName: string | null = null;
 
 function bindDictionary(): void {
+  // One field finds and adds: typing narrows the list, and Return adds what
+  // is typed unless it is already there.
   element.dictionaryAdd.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (dictionaryHas(element.dictionaryText.value)) return;
     void addDictionaryTerms(element.dictionaryText.value);
+  });
+  element.dictionaryText.addEventListener("input", renderDictionary);
+  element.dictionaryText.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && element.dictionaryText.value !== "") {
+      event.stopPropagation();
+      element.dictionaryText.value = "";
+      renderDictionary();
+    }
   });
   void host()
     .meetingRecorderStatus()
@@ -3017,7 +2854,6 @@ function bindDictionary(): void {
       renderDictionary();
     })
     .catch(() => {});
-  element.dictionarySearch.addEventListener("input", renderDictionary);
   bindGroup("#dictionary-learning [data-learning]", (button) => {
     const value = button.dataset.learning;
     if (value === "on" || value === "off") void patchSettings({ dictionaryLearning: value });
@@ -3045,8 +2881,21 @@ function bindDictionary(): void {
   });
 }
 
+/** Whether a pasted list rather than one term: it is added, not searched for. */
+function isTermList(text: string): boolean {
+  return text.includes(",") || text.includes("\n") || text.includes(";");
+}
+
+/** Whether the dictionary already holds this spelling, ignoring case. */
+function dictionaryHas(raw: string): boolean {
+  const text = raw.trim().toLowerCase();
+  return text !== "" && dictionary.some((term) => term.text.toLowerCase() === text);
+}
+
 function renderDictionary(): void {
-  const query = element.dictionarySearch.value.trim().toLowerCase();
+  const typed = element.dictionaryText.value.trim();
+  const list = isTermList(typed);
+  const query = list ? "" : typed.toLowerCase();
   const shown = query
     ? dictionary.filter(
         (term) =>
@@ -3058,20 +2907,19 @@ function renderDictionary(): void {
   const empty = dictionary.length === 0;
   // The explanation is for someone with nothing yet; once there is a list,
   // the field alone says what it is for.
-  element.dictionaryAddCard.classList.toggle("is-compact", !empty);
-  element.dictionaryHeadline.hidden = !empty;
-  element.dictionaryLede.hidden = !empty;
-  element.dictionaryTools.hidden = empty;
-  element.dictionarySearch.hidden = dictionary.length < DICTIONARY_SEARCH_FROM;
-  element.dictionaryCount.textContent =
-    dictionary.length === 1 ? "1 term" : `${dictionary.length} terms`;
-  element.dictionaryTable.hidden = empty || shown.length === 0;
+  element.dictionaryIntro.hidden = !empty;
+  element.dictionaryCount.textContent = empty ? "" : dictionary.length.toLocaleString();
+  element.dictionaryList.hidden = shown.length === 0;
   element.dictionaryEmpty.hidden = !(dictionary.length > 0 && shown.length === 0);
-  element.dictionaryEmpty.textContent = "No term matches that.";
+  element.dictionaryEmpty.textContent = `No term matches “${typed}”. Press Return to add it.`;
+
+  const exists = dictionaryHas(typed);
+  const count = list ? typed.split(/[,;\n]/).filter((part) => part.trim()).length : 0;
+  element.dictionaryAddButton.disabled = exists;
+  element.dictionaryAddButton.textContent = exists ? "Added" : count > 1 ? `Add ${count}` : "Add";
 
   // One-click starts: the account's name, and the words people most often
   // need spelled right.
-  element.dictionarySuggest.hidden = !empty;
   if (empty) {
     element.dictionarySuggest.replaceChildren("Start with");
     const starts = [suggestedName, "your company", "a product you work on"].filter(
@@ -3103,11 +2951,11 @@ async function addDictionaryTerms(raw: string): Promise<void> {
   if (!text) return;
   try {
     dictionary =
-      text.includes(",") || text.includes("\n") || text.includes(";")
+      isTermList(text)
         ? await host().importDictionary(text)
         : await host().addDictionaryTerm(text, [], false);
-    renderDictionary();
     element.dictionaryText.value = "";
+    renderDictionary();
     element.dictionaryText.focus();
     showToast(text.includes(",") ? "Added to the dictionary." : `Added ${text}.`);
   } catch (error) {
@@ -3570,7 +3418,7 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
     element.promptEditor.hidden = true;
     if (promptEditorFromSettings) {
       promptEditorFromSettings = false;
-      toggleSettings(true);
+      toggleSettings(true, settingsPage);
       return;
     }
     element.scrim.hidden = !settingsOpen;
