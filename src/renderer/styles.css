@@ -1896,10 +1896,33 @@ kbd {
 
 /* --- Dictionary ------------------------------------------------------------- */
 
-/* The page is a flex column that scrolls; a child allowed to shrink is cut
-   off at the bottom of the window instead of scrolling with the rest. */
+/* Only the terms scroll, as on Dictations: the find-or-add row stays at the
+   top of the list rather than scrolling away with the rows it filters. The
+   rest of the page keeps its height; the table takes what is left, and no
+   less than a few rows, below which the page itself scrolls. */
+#view-dictionary {
+  padding-bottom: 26px;
+}
+
 #view-dictionary > * {
   flex-shrink: 0;
+}
+
+#view-dictionary > .dictionary-table {
+  display: flex;
+  min-height: 180px;
+  flex: 0 1 auto;
+  flex-direction: column;
+}
+
+#view-dictionary .dictionary-add {
+  flex: 0 0 auto;
+}
+
+#view-dictionary .dictionary-list {
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
 }
 
 .dictionary-add {
