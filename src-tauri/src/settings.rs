@@ -164,6 +164,10 @@ pub struct AppSettings {
     /// The one-time note before the first meeting recording has been shown.
     #[serde(default)]
     pub meetings_intro_seen: bool,
+    /// The last permission check heard the other side of calls. Kept so the
+    /// ask above the meeting list does not come back on every launch.
+    #[serde(default)]
+    pub meetings_other_side_allowed: bool,
 }
 
 impl Default for AppSettings {
@@ -213,6 +217,7 @@ impl Default for AppSettings {
             sidebar_collapsed: false,
             onboarding_completed: false,
             meetings_intro_seen: false,
+            meetings_other_side_allowed: false,
         }
     }
 }

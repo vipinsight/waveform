@@ -143,6 +143,8 @@ export interface AppSettings {
   onboardingCompleted: boolean;
   /** The one-time note before the first meeting recording has been shown. */
   meetingsIntroSeen: boolean;
+  /** The last permission check heard the other side of calls. */
+  meetingsOtherSideAllowed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -185,6 +187,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarCollapsed: false,
   onboardingCompleted: false,
   meetingsIntroSeen: false,
+  meetingsOtherSideAllowed: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -269,6 +272,10 @@ export function normalizeSettings(
         : base.onboardingCompleted,
     meetingsIntroSeen:
       typeof input.meetingsIntroSeen === "boolean" ? input.meetingsIntroSeen : base.meetingsIntroSeen,
+    meetingsOtherSideAllowed:
+      typeof input.meetingsOtherSideAllowed === "boolean"
+        ? input.meetingsOtherSideAllowed
+        : base.meetingsOtherSideAllowed,
   };
 }
 
