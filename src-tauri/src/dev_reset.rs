@@ -98,6 +98,15 @@ pub fn schedule(config_dir: Option<PathBuf>) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// A published build is compiled without `dev-data`: Settings must not
+    /// offer the reset, and the command must refuse before erasing anything.
+    #[test]
+    #[cfg(not(feature = "dev-data"))]
+    fn release_build_cannot_reset() {
+        assert!(!ENABLED);
+        assert!(schedule(None).is_err());
+    }
+
     #[test]
     fn erases_only_this_builds_folders() {
         for path in data_paths(None) {
