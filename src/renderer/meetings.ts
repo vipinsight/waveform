@@ -28,8 +28,8 @@ import { host } from "./host";
  */
 
 interface Options {
-  /** Opens another page, for "add a key in AI Polish". */
-  openView(view: string): void;
+  /** Opens Settings on AI Polish, for "add a key". */
+  openAiPolish(): void;
   /** Says something briefly, at the bottom of the window. */
   toast(message: string, options?: { tone?: "error"; action?: { label: string; run(): void } }): void;
   /** Whether the first-run note has been shown, and marking it so. */
@@ -87,7 +87,7 @@ type Tab = "summary" | "transcript";
 const SHORT_MS = 20_000;
 
 let options: Options = {
-  openView: () => {},
+  openAiPolish: () => {},
   toast: () => {},
   introSeen: () => true,
   markIntroSeen: () => {},
@@ -624,7 +624,7 @@ function renderEmpty(): void {
         "sparkles",
         "Write a summary",
         "Summaries use OpenRouter and need a key. Transcripts never leave this Mac; the summary sends only the text.",
-        { actions: [linkButton("Add key", () => options.openView("ai"))] },
+        { actions: [linkButton("Add key", () => options.openAiPolish())] },
       ),
     );
   }
@@ -1591,7 +1591,7 @@ function renderSummary(): void {
     } else if (noteOf("no-summary-key") || !status?.hasOpenRouterKey) {
       element.summary.append(
         banner("info", "No summary yet.", "Summaries need an OpenRouter key; the transcript stays on this Mac.", [
-          linkButton("Add key", () => options.openView("ai"), true),
+          linkButton("Add key", () => options.openAiPolish(), true),
         ]),
       );
     } else if (noteOf("summary-failed")) {
