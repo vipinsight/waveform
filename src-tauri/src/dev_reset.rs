@@ -64,10 +64,9 @@ if [ -n "$bundle" ]; then
 fi
 defaults delete "$BUNDLE_ID" >/dev/null 2>&1
 for path in "$@"; do rm -rf "$path"; done
+# Removes the app from every Privacy & Security list, not just unticks it. The
+# bundled helpers are attributed to the app, so this covers them too.
 tccutil reset All "$BUNDLE_ID" >/dev/null 2>&1
-# The bundled helpers are signed as their own clients; clear whatever they got.
-tccutil reset All waveform-hotkey >/dev/null 2>&1
-tccutil reset All waveform-audiotap >/dev/null 2>&1
 if [ -n "$bundle" ]; then open -n "$bundle"; fi
 "#;
 
