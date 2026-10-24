@@ -86,6 +86,18 @@ At launch the stored model is selected eagerly
 ([lib.rs:695](../src-tauri/src/lib.rs)) so the first dictation is not the thing
 that waits for it.
 
+## When Hugging Face is blocked
+
+Every weight comes from Hugging Face. On a network that blocks it, a failed
+download is tried once more through `models.webtiara.com`, a Cloudflare Worker
+in [`model-proxy/`](../model-proxy/src/index.js) that streams the same files
+from Hugging Face and stores nothing. Single files go through
+`download::mirror_url` and are still held to their `bytes` and `sha256`; the
+Qwen and Parakeet installs rerun with `HF_ENDPOINT` pointed at it. The Worker
+only serves the repos in its `REPOS` list, and
+[`model-proxy/test/run.sh`](../model-proxy/test/run.sh) fails if the app names
+one it is missing. Deploy with `npx wrangler deploy` from `model-proxy/`.
+
 ## Three mechanisms
 
 `Engine` says which model it is; `Runtime` says how it is reached. They are
