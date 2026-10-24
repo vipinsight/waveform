@@ -1041,6 +1041,25 @@
               <span class="row-actions"><input id="meetings-toggle" type="checkbox" class="switch" /></span>
             </label>
           </div>
+
+          <div id="dev-reset" hidden>
+            <h2 class="section-label">Development build</h2>
+            <div class="card">
+              <div class="row">
+                <span class="row-label">
+                  <span class="row-title">Reset to a new install</span>
+                  <small id="dev-reset-note">
+                    Erases this build's settings, history, meetings, downloaded models and
+                    macOS permissions, then relaunches it as a first run.
+                  </small>
+                </span>
+                <span class="row-actions">
+                  <button type="button" class="pill-button" id="dev-reset-cancel" hidden>Cancel</button>
+                  <button type="button" class="pill-button" id="dev-reset-button">Reset…</button>
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="settings-page" data-page="general">

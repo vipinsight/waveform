@@ -2340,6 +2340,11 @@ select {
   background: var(--hairline-strong);
 }
 
+.pill-button.is-danger {
+  background: var(--danger);
+  color: var(--accent-ink);
+}
+
 .pill-button.is-primary {
   background: var(--accent);
   color: var(--accent-ink);

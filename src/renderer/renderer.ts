@@ -118,6 +118,10 @@ const element = {
   updateHintText: requireElement<HTMLElement>("update-hint-text"),
   updateNotes: requireElement<HTMLButtonElement>("update-notes"),
   aboutVersion: requireElement<HTMLElement>("about-version"),
+  devReset: requireElement<HTMLElement>("dev-reset"),
+  devResetNote: requireElement<HTMLElement>("dev-reset-note"),
+  devResetButton: requireElement<HTMLButtonElement>("dev-reset-button"),
+  devResetCancel: requireElement<HTMLButtonElement>("dev-reset-cancel"),
   openRepository: requireElement<HTMLButtonElement>("open-repository"),
   openProfile: requireElement<HTMLButtonElement>("open-profile"),
   openDonate: requireElement<HTMLButtonElement>("open-donate"),
@@ -371,6 +375,38 @@ installTauriBridge();
 
 void bootstrap();
 
+/**
+ * "Reset to a new install", shown only in the dev build. The first press arms
+ * it and the second erases, so a stray click cannot wipe a profile.
+ */
+function bindDevReset(): void {
+  const disarm = (): void => {
+    element.devResetButton.textContent = "Reset…";
+    element.devResetButton.classList.remove("is-danger");
+    element.devResetCancel.hidden = true;
+  };
+  element.devResetCancel.addEventListener("click", disarm);
+  element.devResetButton.addEventListener("click", () => {
+    if (element.devResetCancel.hidden) {
+      element.devResetButton.textContent = "Erase and Relaunch";
+      element.devResetButton.classList.add("is-danger");
+      element.devResetCancel.hidden = false;
+      return;
+    }
+    element.devResetButton.disabled = true;
+    element.devResetCancel.disabled = true;
+    element.devResetButton.textContent = "Resetting…";
+    host()
+      .resetDevInstall()
+      .catch((error: unknown) => {
+        element.devResetButton.disabled = false;
+        element.devResetCancel.disabled = false;
+        disarm();
+        element.devResetNote.textContent = String(error);
+      });
+  });
+}
+
 async function bootstrap(): Promise<void> {
   populateSelects();
   wireEvents();
@@ -393,6 +429,7 @@ async function bootstrap(): Promise<void> {
   element.versionLine.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   element.aboutVersion.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   announceUpdateIfNew();
+  element.devReset.hidden = !(await host().isDevBuild().catch(() => false));
   // Pull the engine's current stage: any event it pushed while this window was
   // still loading is already gone.
   handleModelEvent(await host().getModelState());
@@ -711,6 +748,7 @@ function wireEvents(): void {
   element.meetingsToggle.addEventListener("change", () => {
     void patchSettings({ meetingsEnabled: element.meetingsToggle.checked });
   });
+  bindDevReset();
   bindDictionary();
   bindMeetings({
     openAiPolish: () => toggleSettings(true, "ai"),

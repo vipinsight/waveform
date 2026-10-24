@@ -13,6 +13,7 @@ mod install;
 mod logs;
 mod hotkey;
 mod diarize;
+mod dev_reset;
 mod dictation;
 mod dictionary;
 mod local_llm;
@@ -573,6 +574,29 @@ async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     updates::install(&app).await?;
     state.models.stop().await;
     app.restart();
+}
+
+/// Whether Settings should offer "Reset to a new install".
+#[tauri::command]
+fn is_dev_build() -> bool {
+    dev_reset::ENABLED
+}
+
+/// Erases this build's data, models, settings and macOS permissions, then
+/// relaunches it as a first run. Dev build only; see `dev_reset`.
+///
+/// Launch at login is turned off here rather than by the eraser: the agent is
+/// registered through the plugin, which knows its label.
+#[tauri::command]
+async fn reset_dev_install(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    if !dev_reset::ENABLED {
+        return Err("Reset is only available in the development build.".into());
+    }
+    let _ = app.autolaunch().disable();
+    state.models.stop().await;
+    dev_reset::schedule(app.path().app_config_dir().ok())?;
+    app.exit(0);
+    Ok(())
 }
 
 /// The version a check found and nobody has installed yet, for a window
@@ -1526,6 +1550,8 @@ pub fn run() {
             show_main_window,
             app_version,
             app_name,
+            is_dev_build,
+            reset_dev_install,
             open_url,
             get_settings,
             update_settings,
