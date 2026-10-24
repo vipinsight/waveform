@@ -39,6 +39,9 @@ const CORE_PROMPT: &str = include_str!("prompts/core.txt");
 /// small enough to copy the description instead of following it.
 const LOCAL_CORE_PROMPT: &str = include_str!("prompts/core-local.txt");
 
+/// Asks whether a corrected word belongs in the dictionary.
+const DICTIONARY_JUDGE_PROMPT: &str = include_str!("prompts/dictionary-judge.txt");
+
 /// More text than a dictated session realistically holds. Past it we refuse
 /// rather than truncate, because a rewrite of half the text would delete the
 /// other half.
@@ -287,6 +290,39 @@ impl Rewriter {
         accept(text, &reply, &nonce).ok_or_else(|| NOT_A_REWRITE.to_string())
     }
 
+    /// Whether a model thinks `text`, corrected from `heard_as` in `sentence`,
+    /// is a name or term worth learning. `None` when no model is to hand or
+    /// its answer was not a plain yes or no; the caller decides without it.
+    ///
+    /// A local model is only asked when it is already loaded or dictation is
+    /// about to load it anyway: most of a gigabyte held until quit is too much
+    /// to pay for one correction.
+    pub async fn judge_term(&self, heard_as: &str, text: &str, sentence: &str) -> Option<bool> {
+        let settings = self.settings.lock().await.value();
+        let question = format!(
+            "The engine wrote: {heard_as}\nThe user changed it to: {text}\nSentence: {}",
+            sentence.chars().take(400).collect::<String>()
+        );
+        let reply = if settings.polish_engine == "local" {
+            let id = &settings.local_model_id;
+            if !local_llm::is_installed(local_llm::model(id))
+                || !(warms_for_dictation(&settings) || self.local.is_loaded(id).await)
+            {
+                return None;
+            }
+            self.local
+                .rewrite(id, DICTIONARY_JUDGE_PROMPT, &question, 4, false)
+                .await
+                .ok()?
+        } else {
+            let key = self.key.lock().await.clone()?;
+            self.chat_open_router(&key, &settings.open_router_model, DICTIONARY_JUDGE_PROMPT, &question, 0.0, 4)
+                .await
+                .ok()?
+        };
+        yes_or_no(&reply)
+    }
+
     /// One hosted rewrite. Returns the model's reply as it arrived, fence and
     /// all, because checking it is the caller's job either way.
     async fn ask_open_router(
@@ -302,24 +338,42 @@ impl Rewriter {
             .await
             .clone()
             .ok_or("Add an OpenRouter API key in AI Polish first.")?;
+        // Rewrites should be faithful, not creative. A rewrite runs about as
+        // long as its source; capping the reply near that length keeps an
+        // essay from arriving, and keeps us from paying for one.
+        self.chat_open_router(
+            &key,
+            model,
+            &system_prompt(style_prompt),
+            &fence(text, nonce),
+            0.2,
+            reply_budget(text),
+        )
+        .await
+    }
 
+    async fn chat_open_router(
+        &self,
+        key: &str,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: f32,
+        max_tokens: usize,
+    ) -> Result<String, String> {
         let response = reqwest::Client::new()
             .post(ENDPOINT)
-            .bearer_auth(&key)
+            .bearer_auth(key)
             .header("HTTP-Referer", "https://github.com/vipinsight/waveform")
             .header("X-Title", "Waveform")
             .json(&serde_json::json!({
                 "model": model,
                 "messages": [
-                    { "role": "system", "content": system_prompt(style_prompt) },
-                    { "role": "user", "content": fence(text, nonce) },
+                    { "role": "system", "content": system },
+                    { "role": "user", "content": user },
                 ],
-                // Rewrites should be faithful, not creative.
-                "temperature": 0.2,
-                // A rewrite runs about as long as its source. Capping the reply
-                // near that length keeps an essay from arriving, and keeps us
-                // from paying for one.
-                "max_tokens": reply_budget(text),
+                "temperature": temperature,
+                "max_tokens": max_tokens,
             }))
             .timeout(TIMEOUT)
             .send()
@@ -332,6 +386,20 @@ impl Rewriter {
             return Err(describe_failure(status.as_u16(), &body));
         }
         extract_message(&body)
+    }
+}
+
+/// A one-word answer, read loosely: models add punctuation and capitals.
+fn yes_or_no(reply: &str) -> Option<bool> {
+    let word = reply
+        .trim()
+        .split(|c: char| !c.is_alphabetic())
+        .find(|word| !word.is_empty())?
+        .to_lowercase();
+    match word.as_str() {
+        "yes" => Some(true),
+        "no" => Some(false),
+        _ => None,
     }
 }
 
@@ -668,6 +736,14 @@ mod keychain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_one_word_verdict() {
+        assert_eq!(yes_or_no("Yes."), Some(true));
+        assert_eq!(yes_or_no(" no"), Some(false));
+        assert_eq!(yes_or_no("Maybe"), None);
+        assert_eq!(yes_or_no(""), None);
+    }
 
     /// None means no model runs on a dictation, so there is nothing for the
     /// local weights to be resident for.

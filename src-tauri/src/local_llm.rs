@@ -346,6 +346,11 @@ impl LocalPolisher {
         }
     }
 
+    /// Whether `id` is the model in memory now, so using it costs no load.
+    pub async fn is_loaded(&self, id: &str) -> bool {
+        self.loaded.lock().await.as_ref().is_some_and(|loaded| loaded.id == id)
+    }
+
     /// Frees whatever is loaded. Called when the engine is switched away from,
     /// because an idle gigabyte is worth more to the rest of the machine.
     pub async fn unload(&self) {

@@ -297,10 +297,13 @@ meetingClock.addEventListener("click", () => void host().showMeetings());
 const hudNote = requireElement<HTMLElement>("hud-note");
 const hudNoteText = requireElement<HTMLElement>("hud-note-text");
 const hudNoteUndo = requireElement<HTMLButtonElement>("hud-note-undo");
+const hudNoteDismiss = requireElement<HTMLButtonElement>("hud-note-dismiss");
 let hudNoteTimer: number | null = null;
 let hudNoteAction: OverlayNotice["action"] = null;
 
 function hideHudNote(): void {
+  if (hudNoteTimer !== null) window.clearTimeout(hudNoteTimer);
+  hudNoteTimer = null;
   hudNote.hidden = true;
   hudNoteAction = null;
   reportHitRegion();
@@ -339,6 +342,8 @@ hudNoteUndo.addEventListener("click", () => {
       hudNoteUndo.disabled = false;
     });
 });
+
+hudNoteDismiss.addEventListener("click", hideHudNote);
 
 hud.addEventListener("focusin", (event) => {
   if (state === "idle" && (event.target as HTMLElement).matches(":focus-visible")) {

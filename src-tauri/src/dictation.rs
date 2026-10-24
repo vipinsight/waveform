@@ -446,8 +446,7 @@ impl Dictation {
             self.logs.info(&self.app, "dictionary", "learning is off; ignored");
             return;
         }
-        let mut store = self.dictionary.lock().await;
-        let suggestions = match store.suggestions_for(before, after) {
+        let suggestions = match self.dictionary.lock().await.suggestions_for(before, after) {
             Ok(suggestions) => suggestions,
             Err(error) => {
                 self.logs.error(&self.app, "dictionary", error);
@@ -462,8 +461,38 @@ impl Dictation {
             );
             return;
         }
-        let mut learned: Vec<LearnedTerm> = Vec::new();
+        // Cheap checks first, then a model for what they let through. The
+        // store is not held across the model's answer.
+        let mut worth_learning = Vec::new();
         for suggestion in suggestions {
+            if let Some(reason) = dictionary::screen(&suggestion) {
+                self.logs.info(
+                    &self.app,
+                    "dictionary",
+                    format!("skipped {:?} (heard as {:?}): {reason}", suggestion.text, suggestion.heard_as),
+                );
+                continue;
+            }
+            match self.rewriter.judge_term(&suggestion.heard_as, &suggestion.text, after).await {
+                Some(false) => {
+                    self.logs.info(
+                        &self.app,
+                        "dictionary",
+                        format!("skipped {:?} (heard as {:?}): the AI check said it is not a term", suggestion.text, suggestion.heard_as),
+                    );
+                    continue;
+                }
+                Some(true) => self.logs.info(&self.app, "dictionary", format!("the AI check kept {:?}", suggestion.text)),
+                None => {}
+            }
+            worth_learning.push(suggestion);
+        }
+        if worth_learning.is_empty() {
+            return;
+        }
+        let mut store = self.dictionary.lock().await;
+        let mut learned: Vec<LearnedTerm> = Vec::new();
+        for suggestion in worth_learning {
             match store.add(&suggestion.text, std::slice::from_ref(&suggestion.heard_as), dictionary::Source::Learned) {
                 Ok(terms) => {
                     self.logs.info(

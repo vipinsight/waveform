@@ -648,6 +648,23 @@ body {
 .hud-note-undo:disabled { opacity: 0.5; cursor: wait; }
 .hud-note-undo[hidden] { display: none; }
 
+.hud-note-dismiss {
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgb(255 255 255 / 60%);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hud-note-dismiss:hover { background: rgb(255 255 255 / 16%); color: #fff; }
+
 .hud-note-bar {
   position: absolute;
   bottom: 0;
