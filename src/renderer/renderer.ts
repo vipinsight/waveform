@@ -717,6 +717,8 @@ function wireEvents(): void {
     toast: showToast,
     introSeen: () => settings.meetingsIntroSeen,
     markIntroSeen: () => void patchSettings({ meetingsIntroSeen: true }),
+    otherSideAllowed: () => settings.meetingsOtherSideAllowed,
+    rememberOtherSide: (allowed) => void patchSettings({ meetingsOtherSideAllowed: allowed }),
   });
   bindRecordingStrip();
   element.logCopy.addEventListener("click", () => {
