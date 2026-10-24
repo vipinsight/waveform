@@ -971,11 +971,7 @@
       <div class="modal-body">
         <section class="settings-page" data-page="logs" hidden>
           <h1 class="display">Logs</h1>
-          <p class="note">
-            What the app is doing, newest last. Held in memory only and cleared
-            when Waveform quits: the dictation list is the one thing written
-            down, and a log of what was said would be a second one.
-          </p>
+          <p class="note">Held in memory only, cleared when Waveform quits.</p>
           <div class="log-actions">
             <label class="log-follow">
               <input id="log-follow" type="checkbox" class="switch" checked />
@@ -1002,7 +998,7 @@
             <div class="row">
               <label class="row-label" for="microphone-select">
                 Listen with
-                <small>Auto uses the built-in mic when there is one, so AirPods connecting does not take over.</small>
+                <small>Auto prefers the built-in mic over AirPods.</small>
               </label>
               <span class="row-actions">
                 <select id="microphone-select" aria-label="Microphone"></select>
@@ -1017,26 +1013,20 @@
         -->
         <section class="settings-page" data-page="labs" hidden>
           <h1 class="display">Labs</h1>
-          <p class="lede">Features still being built. They may change or go away between releases.</p>
+          <p class="lede">Unfinished features. They may change or go away.</p>
 
           <div class="card">
             <label class="row">
               <span class="row-label">
                 <span class="row-title">Transcribe dropped audio <span class="nav-tag">Beta</span></span>
-                <small>
-                  Drop an audio file anywhere on the window to get its text, saved to
-                  Dictations.
-                </small>
+                <small>Drop an audio file on the window to transcribe it.</small>
               </span>
               <span class="row-actions"><input id="transcribe-drop-toggle" type="checkbox" class="switch" /></span>
             </label>
             <label class="row">
               <span class="row-label">
                 <span class="row-title">Notetaker <span class="nav-tag">Beta</span></span>
-                <small>
-                  Record a call from this Mac, with both sides, and get a transcript
-                  and notes. Adds Notetaker to the sidebar and to the menu bar icon.
-                </small>
+                <small>Record both sides of a call and get a transcript and notes.</small>
               </span>
               <span class="row-actions"><input id="meetings-toggle" type="checkbox" class="switch" /></span>
             </label>
@@ -1048,10 +1038,7 @@
               <div class="row">
                 <span class="row-label">
                   <span class="row-title">Reset to a new install</span>
-                  <small id="dev-reset-note">
-                    Erases this build's settings, history, meetings, downloaded models and
-                    macOS permissions, then relaunches it as a first run.
-                  </small>
+                  <small id="dev-reset-note">Erases all data and permissions, then relaunches as a first run.</small>
                 </span>
                 <span class="row-actions">
                   <button type="button" class="pill-button" id="dev-reset-cancel" hidden>Cancel</button>
@@ -1123,11 +1110,7 @@
         -->
         <section class="settings-page" data-page="dictation" hidden>
           <h1 class="display">Dictation</h1>
-          <p class="lede">
-            Hold a key anywhere in macOS, say something, and let go: your words
-            are typed where your cursor is. Tap the key twice to keep listening
-            without holding it, and press Esc to throw a phrase away.
-          </p>
+          <p class="lede">Hold the key, speak, let go. Double-tap to keep listening; Esc cancels.</p>
 
           <!--
             The same checklist the Dictations page draws, here as well: a
@@ -1144,8 +1127,7 @@
             <p class="keyboard-caption" id="dictation-keyboard-caption"></p>
 
               <p class="note" id="fn-note" hidden>
-                Using Fn? Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to
-                <strong>Do Nothing</strong>, so tapping it does not also switch input source.
+                Set <strong>System Settings → Keyboard → Press 🌐 to</strong> to <strong>Do Nothing</strong>.
               </p>
           </div>
 
@@ -1188,11 +1170,7 @@
 
         <section class="settings-page" data-page="ai" hidden>
           <h1 class="display">AI Polish</h1>
-          <p class="lede">
-            Fixes spelling, grammar and punctuation in text that is already
-            written. Select text in any app and press the shortcut, and it is
-            rewritten in place. The instructions below steer how it rewrites.
-          </p>
+          <p class="lede">Select text in any app and press the shortcut to fix it in place.</p>
 
           <h2 class="section-label">Shortcut</h2>
           <div class="card">
@@ -1221,7 +1199,7 @@
             </button>
             <button type="button" class="prompt-card" data-prompt="polish">
               <strong>Selection</strong>
-              <span class="prompt-card-where">When you polish selected text with the shortcut</span>
+              <span class="prompt-card-where">Used by the shortcut</span>
               <small id="polish-prompt-preview"></small>
             </button>
           </div>
@@ -1250,7 +1228,7 @@
             </button>
             <button type="button" class="model-kind" role="tab" id="model-tab-polish" data-model-tab="polish" aria-controls="models-polish" aria-selected="false">
               <span class="model-kind-name">Polish model</span>
-              <span class="model-kind-what">Rewrites that text before it is inserted</span>
+              <span class="model-kind-what">Tidies that text</span>
               <strong class="model-kind-current" id="polish-kind-current">—</strong>
               <span class="model-kind-state" id="polish-kind-state"></span>
             </button>
@@ -1269,15 +1247,12 @@
 
           <div id="models-polish" role="tabpanel" aria-labelledby="model-tab-polish" hidden>
             <p class="lede">
-              Fixes filler words, grammar and clarity. Used only when
+              Used by Tidy and the
               <button type="button" class="link" data-open-settings="ai">AI Polish</button>
-              is above None, and by the polish shortcut.
+              shortcut.
             </p>
           <h2 class="section-label">Where it runs</h2>
-          <p class="note">
-            This Mac keeps every word here. OpenRouter sends your text to a
-            model that does not.
-          </p>
+          <p class="note">OpenRouter sends your text off this Mac.</p>
           <div class="card">
             <div class="row">
               <span class="row-label">Run on</span>

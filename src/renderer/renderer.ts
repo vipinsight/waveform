@@ -904,7 +904,7 @@ function renderModelKinds(): void {
       ? "Needs an OpenRouter key"
       : null;
   if (level === "none") {
-    setKindState(element.polishKindState, "Off: AI Polish is set to None", false);
+    setKindState(element.polishKindState, "Off", false);
   } else if (missing) {
     setKindState(element.polishKindState, missing, true);
   } else {
@@ -1165,8 +1165,8 @@ function renderPolishLevel(level: PolishLevel): void {
   }
   element.cleanupWhat.textContent =
     level === "none"
-      ? "Off: typed exactly as you said it, mistakes included."
-      : "Filler words and grammar fixed, by the polish model chosen in Models.";
+      ? "Typed exactly as said."
+      : "Filler words and grammar fixed.";
   element.cleanupTyped.textContent =
     level === "none"
       ? "so um i was thinking maybe we could push the demo to thursday the API stuff isn't isn't quite done"
@@ -1184,8 +1184,8 @@ function renderPolishShortcut(shortcut: string): void {
   element.polishShortcut.value = shortcut;
   element.polishShortcutCaption.textContent =
     shortcut === "none"
-      ? "Pick a key to polish selected text from any app."
-      : "Select text in any app and press it. Nothing selected? It takes the field you are typing in.";
+      ? ""
+      : "With nothing selected, it polishes the whole field.";
 }
 
 function renderPolishEngine(engine: AppSettings["polishEngine"]): void {
@@ -3486,8 +3486,8 @@ function togglePromptEditor(open: boolean, kind: "transform" | "polish" = "trans
  * instruction that reads as though it were in force.
  */
 function transformPromptWhere(level: PolishLevel): string {
-  if (level === "none") return "Not in use: AI Polish is set to None.";
-  return "Used on every dictation while AI Polish is Active.";
+  if (level === "none") return "Not used while Tidy is off";
+  return "Used on every dictation";
 }
 
 /** First lines of each prompt on the cards, so the page stays scannable. */
