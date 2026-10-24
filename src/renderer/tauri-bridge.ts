@@ -248,6 +248,8 @@ const api: DesktopApi = {
     subscribe<void>("open-shortcut-settings", listener),
   getAppVersion: () => invoke<string>("app_version"),
   getAppName: () => invoke<string>("app_name"),
+  isDevBuild: () => invoke<boolean>("is_dev_build"),
+  resetDevInstall: () => invoke<void>("reset_dev_install"),
   openUrl: (url) => invoke<void>("open_url", { url }),
 };
 

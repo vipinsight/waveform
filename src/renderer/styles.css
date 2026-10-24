@@ -2340,6 +2340,15 @@ select {
   background: var(--hairline-strong);
 }
 
+/* The soft tint rather than solid red: --danger is a light coral in dark mode,
+   and no ink on it reads well in both themes. */
+.pill-button.is-danger,
+.pill-button.is-danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .pill-button.is-primary {
   background: var(--accent);
   color: var(--accent-ink);

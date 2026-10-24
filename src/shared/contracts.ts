@@ -541,6 +541,10 @@ export interface DesktopApi {
   getAppVersion(): Promise<string>;
   /** Dock and window name: "Waveform" in a release, "Waveform Dev" from `pnpm app`. */
   getAppName(): Promise<string>;
+  /** True only in the `pnpm app` build, which keeps its own data folder. */
+  isDevBuild(): Promise<boolean>;
+  /** Dev build only: erases data, models, settings and permissions, then relaunches. */
+  resetDevInstall(): Promise<void>;
   /** Opens an http(s) address in the system browser. The webview must not navigate. */
   openUrl(url: string): Promise<void>;
   getHistory(): Promise<SavedDictation[]>;
