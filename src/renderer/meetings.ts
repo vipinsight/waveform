@@ -35,6 +35,9 @@ interface Options {
   /** Whether the first-run note has been shown, and marking it so. */
   introSeen(): boolean;
   markIntroSeen(): void;
+  /** Whether an earlier launch heard the other side, and saying so. */
+  otherSideAllowed(): boolean;
+  rememberOtherSide(allowed: boolean): void;
 }
 
 const element = {
@@ -88,6 +91,8 @@ let options: Options = {
   toast: () => {},
   introSeen: () => true,
   markIntroSeen: () => {},
+  otherSideAllowed: () => false,
+  rememberOtherSide: () => {},
 };
 let status: RecorderStatus | null = null;
 let meetings: Meeting[] = [];
@@ -180,6 +185,13 @@ export function bindMeetings(given: Options): void {
     renderSpeakers();
   });
   host().onMeetingChanged((meeting) => {
+    // A recording that heard nothing from the tap: macOS no longer allows
+    // it, whatever an earlier check said.
+    if (otherSide === "heard" && meeting.notes.some((note) => note.kind === "other-side-not-heard")) {
+      otherSide = "silent";
+      options.rememberOtherSide(false);
+      renderPermissionAsk();
+    }
     applyMeeting(meeting);
     // Processing finished or the summary landed: the detail has more now.
     if (detail && detail.meeting.id === meeting.id && meeting.state !== "recording") {
@@ -321,6 +333,9 @@ function isNarrow(): boolean {
 async function refreshStatus(): Promise<void> {
   try {
     status = await host().meetingRecorderStatus();
+    // macOS keeps the grant between launches; the page's memory of it would
+    // not, and the ask would come back every time.
+    if (otherSide === null && options.otherSideAllowed()) otherSide = "heard";
     if (status.recording) {
       const known = meetings.find((meeting) => meeting.id === status?.recording);
       recordingSince = recordingSince ?? known?.createdAt ?? Date.now();
@@ -437,6 +452,7 @@ async function probeOtherSide(): Promise<typeof otherSide> {
   } finally {
     probing = false;
   }
+  if (otherSide === "heard" || otherSide === "silent") options.rememberOtherSide(otherSide === "heard");
   renderEmpty();
   renderBanners();
   live = null;
