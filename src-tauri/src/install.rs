@@ -6,7 +6,7 @@
 //! install cannot run — so the Models page Download button drives the same
 //! steps from here.
 
-use crate::download::CANCELLED;
+use crate::download::{CANCELLED, HUGGING_FACE_MIRROR};
 use crate::paths;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -84,10 +84,12 @@ pub async fn install_qwen(
         "from huggingface_hub import snapshot_download; snapshot_download({:?})",
         remote_id
     );
-    run_checked(
-        Command::new(&venv_python)
-            .args(["-c", &script])
-            .env("HF_HOME", &hf_home),
+    run_from_hub(
+        || {
+            let mut command = Command::new(&venv_python);
+            command.args(["-c", &script]).env("HF_HOME", &hf_home);
+            command
+        },
         cancel,
         "Could not download Qwen's weights",
     )
@@ -123,10 +125,14 @@ pub async fn install_parakeet(
     tokio::fs::create_dir_all(&models)
         .await
         .map_err(|error| format!("Could not make {}: {error}", models.display()))?;
-    run_checked(
-        Command::new(&binary)
-            .args(["pull", remote_id])
-            .env("NEMO_SPEECH_MODEL_DIR", &models),
+    run_from_hub(
+        || {
+            let mut command = Command::new(&binary);
+            command
+                .args(["pull", remote_id])
+                .env("NEMO_SPEECH_MODEL_DIR", &models);
+            command
+        },
         cancel,
         "Could not download Parakeet's weights",
     )
@@ -244,6 +250,33 @@ fn check_cancel(cancel: &AtomicBool) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// Runs a download from Hugging Face, and once more through
+/// [`HUGGING_FACE_MIRROR`] if it fails, for networks that block the hub.
+///
+/// Both downloaders read the hub's address from `HF_ENDPOINT`. Xet storage is
+/// turned off for the second try: its transfers go to hosts the mirror does
+/// not carry, while plain file downloads come back through it.
+async fn run_from_hub(
+    command: impl Fn() -> Command,
+    cancel: &AtomicBool,
+    context: &str,
+) -> Result<(), String> {
+    let error = match run_checked(&mut command(), cancel, context).await {
+        Err(error) if error != CANCELLED => error,
+        outcome => return outcome,
+    };
+    eprintln!("{context} from Hugging Face ({error}); trying {HUGGING_FACE_MIRROR}");
+    run_checked(
+        command()
+            .env("HF_ENDPOINT", HUGGING_FACE_MIRROR)
+            .env("HF_HUB_DISABLE_XET", "1"),
+        cancel,
+        context,
+    )
+    .await
+    .map_err(|second| if second == CANCELLED { second } else { error })
 }
 
 /// Runs a command to completion, aborting if `cancel` is raised.

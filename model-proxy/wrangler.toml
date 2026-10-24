@@ -1,0 +1,13 @@
+name = "waveform-model-proxy"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "f6fdac7245c965275731877cc6856359"
+workers_dev = false
+
+routes = [
+  { pattern = "models.webtiara.com", custom_domain = true },
+  { pattern = "models-cdn.webtiara.com", custom_domain = true },
+]
+
+[vars]
+CDN_ORIGIN = "https://models-cdn.webtiara.com"

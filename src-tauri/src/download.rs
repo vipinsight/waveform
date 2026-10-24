@@ -22,6 +22,21 @@ pub const CANCELLED: &str = "Download cancelled.";
 /// thousands of messages across the IPC bridge for one file.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Where the weights come from by default.
+const HUGGING_FACE: &str = "https://huggingface.co";
+
+/// A pass-through for the Hugging Face repos the app installs from, for
+/// networks that block huggingface.co. It stores nothing and serves the same
+/// bytes, and the checksum is checked either way, so it can only help a
+/// download that would otherwise fail. The Worker lives in `model-proxy/`.
+pub const HUGGING_FACE_MIRROR: &str = "https://models.webtiara.com";
+
+/// The same file through [`HUGGING_FACE_MIRROR`], when `url` is on Hugging Face.
+pub fn mirror_url(url: &str) -> Option<String> {
+    let path = url.strip_prefix(HUGGING_FACE)?;
+    path.starts_with('/').then(|| format!("{HUGGING_FACE_MIRROR}{path}"))
+}
+
 /// A weight file the app can fetch without a terminal.
 ///
 /// The length and the hash are checked before the file is moved into place: it
@@ -39,10 +54,25 @@ pub struct Download {
 /// A file already there is left alone: the hash was checked when it arrived,
 /// and fetching it again would cost a gigabyte to learn the same thing.
 ///
+/// A file on Hugging Face that cannot be had from there is tried once more
+/// through [`HUGGING_FACE_MIRROR`].
+///
 /// `cancel` is polled between chunks. Raising it leaves no partial file behind,
 /// and returns [`CANCELLED`] rather than a network error.
 pub async fn fetch(
     spec: &Download,
+    dir: &Path,
+    on_progress: &(dyn Fn(f32) + Send + Sync),
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    let mirror = mirror_url(spec.url);
+    fetch_from(spec, spec.url, mirror.as_deref(), dir, on_progress, cancel).await
+}
+
+async fn fetch_from(
+    spec: &Download,
+    url: &str,
+    fallback: Option<&str>,
     dir: &Path,
     on_progress: &(dyn Fn(f32) + Send + Sync),
     cancel: &AtomicBool,
@@ -59,7 +89,21 @@ pub async fn fetch(
     // interrupted download cannot leave a truncated file that looks
     // installed. A rename within one directory is atomic.
     let partial = dir.join(format!("{}.partial", spec.file));
-    let outcome = stream(spec, &partial, on_progress, cancel).await;
+    let mut outcome = stream(spec, url, &partial, on_progress, cancel).await;
+    if let (Err(error), Some(fallback)) = (&outcome, fallback) {
+        if error != CANCELLED {
+            eprintln!("{} failed from {url} ({error}); trying {fallback}", spec.file);
+            outcome = stream(spec, fallback, &partial, on_progress, cancel)
+                .await
+                .map_err(|second| {
+                    if second == CANCELLED {
+                        second
+                    } else {
+                        format!("{error} The mirror failed too: {second}")
+                    }
+                });
+        }
+    }
     if outcome.is_err() {
         let _ = tokio::fs::remove_file(&partial).await;
         return outcome;
@@ -72,6 +116,7 @@ pub async fn fetch(
 
 async fn stream(
     spec: &Download,
+    url: &str,
     partial: &Path,
     on_progress: &(dyn Fn(f32) + Send + Sync),
     cancel: &AtomicBool,
@@ -79,7 +124,7 @@ async fn stream(
     on_progress(0.0);
 
     let mut response = reqwest::Client::new()
-        .get(spec.url)
+        .get(url)
         .send()
         .await
         .map_err(|error| format!("Could not reach the download: {error}"))?
@@ -144,6 +189,59 @@ async fn stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mirrors_only_hugging_face_urls() {
+        assert_eq!(
+            mirror_url("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin").as_deref(),
+            Some("https://models.webtiara.com/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin")
+        );
+        assert_eq!(mirror_url("https://huggingface.com/evil/file"), None);
+        assert_eq!(mirror_url("https://huggingface.co.evil.com/file"), None);
+        assert_eq!(mirror_url("https://github.com/k2-fsa/sherpa-onnx/releases/x"), None);
+    }
+
+    /// A source that cannot be reached falls through to the mirror, and what
+    /// arrives from there is held to the same length and checksum. Needs the
+    /// network, like the test below. `WAVEFORM_MIRROR` points it at another
+    /// copy of the Worker, such as `wrangler dev` in `model-proxy/`. Run with:
+    /// `cargo test falls_back -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn falls_back_to_the_mirror_when_the_source_is_unreachable() {
+        const SMALL: Download = Download {
+            file: "README.md",
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/README.md",
+            bytes: 3196,
+            sha256: "21fd967098804f33fc84e803fb0e5ab7666d71801f4027cf28a65e7af09c1758",
+        };
+        const PATH: &str = "/ggerganov/whisper.cpp/resolve/main/README.md";
+        // Nothing listens on the discard port, the way a blocked host refuses.
+        let unreachable = format!("http://127.0.0.1:9{PATH}");
+        let mirror = match std::env::var("WAVEFORM_MIRROR") {
+            Ok(base) => format!("{}{PATH}", base.trim_end_matches('/')),
+            Err(_) => mirror_url(SMALL.url).expect("Hugging Face has a mirror"),
+        };
+
+        let dir = std::env::temp_dir().join(format!("waveform-mirror-{}", std::process::id()));
+        let cancel = AtomicBool::new(false);
+        fetch_from(&SMALL, &unreachable, Some(&mirror), &dir, &|_| {}, &cancel)
+            .await
+            .expect("the mirror should serve the file");
+        assert!(dir.join("README.md").is_file());
+        assert!(!dir.join("README.md.partial").exists());
+
+        // Both failing says so, and leaves nothing behind.
+        std::fs::remove_file(dir.join("README.md")).expect("clear the file");
+        let error = fetch_from(&SMALL, &unreachable, Some(&unreachable), &dir, &|_| {}, &cancel)
+            .await
+            .expect_err("nothing to fall back to");
+        assert!(error.contains("The mirror failed too"), "{error}");
+        assert!(!dir.join("README.md").exists());
+        assert!(!dir.join("README.md.partial").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// Exercises the download for real: stream, hash, and the move into place.
     ///
