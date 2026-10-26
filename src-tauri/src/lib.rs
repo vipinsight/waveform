@@ -577,6 +577,23 @@ async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     app.restart();
 }
 
+/// Frees the models loaded into this process's own memory, before it exits.
+///
+/// Required, not just tidy. whisper.cpp and llama.cpp keep their weights in
+/// Metal buffers, and ggml's Metal device is a C++ static that `exit` destroys.
+/// Destroying it while a buffer is still alive trips an assertion in ggml, so
+/// quitting with a model loaded aborted -- which macOS reports as "quit
+/// unexpectedly" on the next launch.
+///
+/// Synchronous, because the Exit event arrives on the main thread and the
+/// async runtime cannot be relied on from there: a task waiting on the main
+/// thread for a window property never finishes, and has stalled a timed wait
+/// on the runtime past its own deadline.
+fn release_models(state: &AppState) {
+    state.models.drop_in_process_now();
+    state.rewriter.unload_local_now();
+}
+
 /// Whether Settings should offer "Reset to a new install".
 #[tauri::command]
 fn is_dev_build() -> bool {
@@ -1508,6 +1525,7 @@ pub fn run() {
             // app would leave the engine running -- it is a separate process
             // and does not notice its parent going away.
             let engine = models.clone();
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 use tokio::signal::unix::{signal, SignalKind};
                 let Ok(mut terminate) = signal(SignalKind::terminate()) else {
@@ -1527,6 +1545,7 @@ pub fn run() {
                 // which is how a rebuilt bundle ends up watching the old
                 // process keep running.
                 let _ = tokio::time::timeout(std::time::Duration::from_secs(3), engine.stop()).await;
+                release_models(&handle.state::<AppState>());
                 std::process::exit(0);
             });
 
@@ -1689,12 +1708,20 @@ pub fn run() {
                     });
                 }
             }
+            //
+            // The wait is on a channel rather than a timer on the runtime, for
+            // the reason `release_models` gives: a runtime timer is not
+            // guaranteed to fire while this thread is blocked.
             RunEvent::Exit => {
-                let models = app.state::<AppState>().models.clone();
-                let stopping = tauri::async_runtime::spawn(async move { models.stop().await });
-                let _ = tauri::async_runtime::block_on(async {
-                    tokio::time::timeout(std::time::Duration::from_millis(1500), stopping).await
+                let state = app.state::<AppState>();
+                release_models(&state);
+                let models = state.models.clone();
+                let (stopped, wait) = std::sync::mpsc::channel();
+                tauri::async_runtime::spawn(async move {
+                    models.stop().await;
+                    let _ = stopped.send(());
                 });
+                let _ = wait.recv_timeout(std::time::Duration::from_millis(1500));
             }
             _ => {}
         });

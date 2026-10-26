@@ -791,6 +791,17 @@ impl ModelServer {
         }
     }
 
+    /// Frees the whisper.cpp weights without waiting on anything, for quit.
+    ///
+    /// The quit path runs on the main thread and cannot count on the async
+    /// runtime (see `release_models` in lib.rs). A transcription in flight
+    /// holds its own handle, so the weights then live until it finishes.
+    pub fn drop_in_process_now(&self) {
+        if let Ok(mut slot) = self.whisper_cpp.try_lock() {
+            slot.take();
+        }
+    }
+
     /// `language` is an ISO 639-1 code, or empty to let the engine detect one.
     ///
     /// Passed per phrase rather than fixed when the engine starts, so changing

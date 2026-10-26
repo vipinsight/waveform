@@ -140,6 +140,11 @@ impl Rewriter {
         }
     }
 
+    /// Drops the loaded polish model without waiting, for quit.
+    pub fn unload_local_now(&self) {
+        self.local.unload_now();
+    }
+
     /// Drops the loaded polish model if it is still `id`, so its weight file
     /// can be deleted without a mapping holding the bytes.
     pub async fn unload_local_if(&self, id: &str) {
