@@ -357,6 +357,14 @@ impl LocalPolisher {
         *self.loaded.lock().await = None;
     }
 
+    /// `unload` without waiting, for quit. A load in progress holds the slot
+    /// and is left alone; anything else is freed.
+    pub fn unload_now(&self) {
+        if let Ok(mut slot) = self.loaded.try_lock() {
+            *slot = None;
+        }
+    }
+
     /// Loads a model before anything needs it, and says how long it took.
     ///
     /// Loading is most of the wait on a first rewrite -- the weights, and
