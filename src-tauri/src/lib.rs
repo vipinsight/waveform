@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 use settings::{AppSettings, SettingsStore};
 use stats::{AppStats, StatsStore};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
@@ -124,9 +124,10 @@ pub struct AppState {
     /// WebKit enumerates input devices; the tray uses this cached list when
     /// Waveform's main window is closed.
     microphones: StdMutex<Vec<MicrophoneDevice>>,
-    /// Whether the pointer is over the HUD, from `watch_overlay_hover`. Read
-    /// on the main thread while handling reopen, so it cannot be a lock.
-    overlay_hovered: AtomicBool,
+    /// When the pointer was last over the HUD, in Unix milliseconds, from
+    /// `watch_overlay_hover`. Read on the main thread while handling reopen,
+    /// so it cannot be a lock.
+    overlay_hovered_at: AtomicU64,
     /// The part of the HUD's window that is actually the pill, reported by the
     /// HUD itself because the shape is decided in CSS. Everything outside it is
     /// made click-through.
@@ -1456,7 +1457,7 @@ pub fn run() {
                 quitting_after_stop: AtomicBool::new(false),
                 hide_dock_when_closed: AtomicBool::new(initial.hide_dock_when_closed),
                 microphones: StdMutex::new(Vec::new()),
-                overlay_hovered: AtomicBool::new(false),
+                overlay_hovered_at: AtomicU64::new(0),
                 overlay_hit_region: StdMutex::new(None),
                 capture: Arc::new(mic::NativeCapture::new()),
             });
@@ -1648,12 +1649,17 @@ pub fn run() {
             // which is both wrong on its own terms and takes focus from the app
             // being dictated into. A reopen while the pointer is on the HUD came
             // from the HUD, not from the Dock, and is not a request for a window.
+            //
+            // "On the HUD" is the last moment the pointer was seen there, not
+            // whether it is there now: dismissing a notice hides the HUD at
+            // once, and the hidden HUD stops counting as hovered before the
+            // reopen from that same click arrives.
             RunEvent::Reopen { .. } => {
-                if !app
+                let hovered_at = app
                     .state::<AppState>()
-                    .overlay_hovered
-                    .load(Ordering::Relaxed)
-                {
+                    .overlay_hovered_at
+                    .load(Ordering::Relaxed);
+                if unix_millis().saturating_sub(hovered_at) > OVERLAY_REOPEN_GRACE_MS {
                     present_main_window(app);
                 }
             }
@@ -2269,6 +2275,16 @@ fn set_launch_at_login(app: &tauri::AppHandle, enabled: bool) {
 /// that the pill reacts as a hover should, slow enough to be free.
 const OVERLAY_HOVER_POLL_MS: u64 = 60;
 
+/// How long after the pointer was last on the HUD a reopen is still taken to
+/// have come from it. Several poll ticks, and far less than the trip to the Dock.
+const OVERLAY_REOPEN_GRACE_MS: u64 = 500;
+
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64)
+}
+
 /// Where the pointer is over the HUD, in the webview's own coordinates.
 #[derive(Clone, Copy, Serialize)]
 struct OverlayCursor {
@@ -2364,9 +2380,11 @@ fn watch_overlay_hover(app: tauri::AppHandle) {
                 continue;
             }
             last = next;
-            app.state::<AppState>()
-                .overlay_hovered
-                .store(next.is_some(), Ordering::Relaxed);
+            if next.is_some() {
+                app.state::<AppState>()
+                    .overlay_hovered_at
+                    .store(unix_millis(), Ordering::Relaxed);
+            }
             let _ = overlay.emit_to(
                 OVERLAY_LABEL,
                 "overlay-cursor",

@@ -716,6 +716,104 @@ fn strip_edges(phrase: &str) -> String {
         .to_string()
 }
 
+// ---------------------------------------------------------------------------
+// Screening: whether a suggestion is worth learning at all.
+// ---------------------------------------------------------------------------
+
+/// Why a suggestion is not worth learning, or `None` if it might be.
+///
+/// A substitution is a term only when it is a name or jargon the engine would
+/// not know. What comes through `suggest` is often neither: a phrase reworded
+/// in place, an everyday word swapped for another, or a typo made while
+/// fixing something else. These checks catch the plain cases without a model;
+/// what passes may still be asked about (see `Rewriter::judge_term`).
+pub fn screen(suggestion: &Suggestion) -> Option<&'static str> {
+    screen_with(suggestion, &is_common_word)
+}
+
+fn screen_with(suggestion: &Suggestion, is_common: &dyn Fn(&str) -> bool) -> Option<&'static str> {
+    let words: Vec<&str> = suggestion.text.split_whitespace().collect();
+    if has_stutter(&suggestion.text) {
+        return Some("a letter typed three times over looks like a typo");
+    }
+    if words.len() > 1 {
+        // "Claude Code" and "Bank of America" are names; "pick it up" is a
+        // rewording. A name's words carry capitals or digits, with only small
+        // joining words between them.
+        let first = words.first().copied().unwrap_or_default();
+        let last = words.last().copied().unwrap_or_default();
+        let named = words.iter().all(|word| {
+            term_shaped(word) || STOP_WORDS.contains(&bare(word).as_str())
+        });
+        if !named || !term_shaped(first) || !term_shaped(last) {
+            return Some("a phrase rather than a name");
+        }
+        return None;
+    }
+    if term_shaped(&suggestion.text) {
+        return None;
+    }
+    // A lower-case word: jargon like "kubectl" is worth having, an everyday
+    // word is not, and neither is a typo of the word that was heard.
+    let text = bare(&suggestion.text);
+    if is_common(&text) {
+        return Some("an everyday word the engine already knows");
+    }
+    let heard = bare(&suggestion.heard_as);
+    if !heard.contains(' ') && is_common(&heard) && is_slip(&heard, &text) {
+        return Some("looks like a typo of what was heard");
+    }
+    None
+}
+
+/// Whether a word carries a capital or a digit, the way names and jargon do.
+fn term_shaped(word: &str) -> bool {
+    word.chars().any(|c| c.is_uppercase() || c.is_ascii_digit())
+}
+
+/// Three of the same letter in a row, which almost no word has.
+fn has_stutter(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    chars.windows(3).any(|run| run[0].is_alphabetic() && run[0] == run[1] && run[1] == run[2])
+}
+
+/// One letter added, dropped or changed, or two neighbours swapped: the
+/// shape of a slip on the keyboard rather than of a different word.
+fn is_slip(intended: &str, typed: &str) -> bool {
+    if levenshtein(intended, typed) == 1 {
+        return true;
+    }
+    let a: Vec<char> = intended.chars().collect();
+    let b: Vec<char> = typed.chars().collect();
+    if a.len() != b.len() {
+        return false;
+    }
+    let differing: Vec<usize> = (0..a.len()).filter(|&i| a[i] != b[i]).collect();
+    differing.len() == 2
+        && differing[1] == differing[0] + 1
+        && a[differing[0]] == b[differing[1]]
+        && a[differing[1]] == b[differing[0]]
+}
+
+/// Whether a lower-case word is in the system word list. The list's
+/// lower-case entries are ordinary words; its capitalised ones are names,
+/// which are left out. Without the list nothing counts as common.
+fn is_common_word(word: &str) -> bool {
+    static WORDS: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    WORDS
+        .get_or_init(|| {
+            std::fs::read_to_string("/usr/share/dict/words")
+                .map(|list| {
+                    list.lines()
+                        .filter(|line| line.chars().next().is_some_and(|c| c.is_lowercase()))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .contains(word)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1036,5 +1134,34 @@ mod tests {
         assert_eq!(levenshtein("kitten", "sitting"), 3);
         assert_eq!(levenshtein("", "abc"), 3);
         assert_eq!(levenshtein("same", "same"), 0);
+    }
+
+    // -- screening ----------------------------------------------------------
+
+    fn screened(heard_as: &str, text: &str) -> Option<&'static str> {
+        let common = ["receive", "weather", "whether", "tory", "the", "paste"];
+        screen_with(
+            &Suggestion { heard_as: heard_as.into(), text: text.into() },
+            &|word| common.contains(&word),
+        )
+    }
+
+    #[test]
+    fn names_and_jargon_pass_the_screen() {
+        assert_eq!(screened("tory", "Tauri"), None);
+        assert_eq!(screened("cloud code", "Claude Code"), None);
+        assert_eq!(screened("bank of a miracle", "Bank of America"), None);
+        assert_eq!(screened("cube cuddle", "kubectl"), None);
+        assert_eq!(screened("gee pee tee", "GPT-5"), None);
+    }
+
+    #[test]
+    fn phrases_everyday_words_and_typos_are_screened_out() {
+        assert!(screened("pick up", "pick it up").is_some());
+        assert!(screened("cloud code", "Claude code").is_some());
+        assert!(screened("weather", "whether").is_some());
+        assert!(screened("receive", "recieve").is_some());
+        assert!(screened("paste", "pasted").is_some());
+        assert!(screened("hello", "Hellllo").is_some());
     }
 }
