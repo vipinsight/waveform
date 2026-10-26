@@ -446,11 +446,11 @@ pub const MODELS: &[ModelDefinition] = &[
 /// no longer names anything.
 ///
 /// Named rather than positional -- the table is ordered for the interface to
-/// read, Parakeet first, and that is not a model a fresh install can run
-/// without a terminal. Large v3 Turbo · Q5 is: it is the setup wizard's
-/// recommendation and one of the two models it fetches on a first run, so a
-/// skipped wizard still lands on weights that are likely already on the disk.
-pub const DEFAULT_MODEL_ID: &str = "whisper-cpp-large-v3-turbo-q5";
+/// read, not by recommendation. Parakeet is the setup wizard's recommendation
+/// and one of the two models it fetches on a first run, so a skipped wizard
+/// still lands on weights that are likely already on the disk. A stored
+/// `modelId` always wins, so existing settings files keep their model.
+pub const DEFAULT_MODEL_ID: &str = "parakeet-tdt-0.6b-v3";
 
 /// Everything that differs between the two Python engines.
 ///

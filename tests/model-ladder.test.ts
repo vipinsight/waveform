@@ -33,10 +33,11 @@ const everythingFits = (): ModelFit => "comfortable";
 
 describe("the speed/accuracy ladder", () => {
   it("offers only models the app can fetch by itself", () => {
-    // Parakeet and Qwen need Python installed first. A first run that picked
-    // one would download nothing and fail on the first phrase.
+    // Qwen needs Python installed first. A first run that picked it would
+    // download nothing and fail on the first phrase. Parakeet's runtime is
+    // installed by the app.
     for (const rung of MODEL_LADDER) {
-      expect(getSpeechModel(rung.id).engine).toBe("whisper-cpp");
+      expect(["whisper-cpp", "nemo"]).toContain(getSpeechModel(rung.id).engine);
     }
     expect(new Set(MODEL_LADDER.map((rung) => rung.id)).size).toBe(MODEL_LADDER.length);
   });
@@ -51,17 +52,22 @@ describe("the speed/accuracy ladder", () => {
     }
   });
 
-  it("starts on Large v3 Turbo, and offers it as the escape hatch too", () => {
-    expect(DEFAULT_LADDER_MODEL_ID).toBe("whisper-cpp-large-v3-turbo-q5");
+  it("starts on Parakeet, and offers it as the escape hatch too", () => {
+    expect(DEFAULT_LADDER_MODEL_ID).toBe("parakeet-tdt-0.6b-v3");
     expect(ladderRung(DEFAULT_LADDER_INDEX).id).toBe(DEFAULT_LADDER_MODEL_ID);
     expect(ladderIndexOf(DEFAULT_LADDER_MODEL_ID)).toBe(DEFAULT_LADDER_INDEX);
-    // The rung where the curve flattens: within a tenth of a percent of the
-    // most accurate model on the ladder, for a third less memory.
-    const best = MODEL_LADDER[MODEL_LADDER.length - 1]!.id;
-    expect(factOf(DEFAULT_LADDER_MODEL_ID, "wer") - factOf(best, "wer")).toBeLessThan(0.1);
-    expect(factOf(DEFAULT_LADDER_MODEL_ID, "memory_mb")).toBeLessThan(
-      factOf(best, "memory_mb"),
+    // The most accurate model on the ladder.
+    for (const rung of MODEL_LADDER) {
+      expect(factOf(DEFAULT_LADDER_MODEL_ID, "wer")).toBeLessThanOrEqual(factOf(rung.id, "wer"));
+    }
+  });
+
+  it("steps a Mac without room for Parakeet down to Large v3 Q5", () => {
+    const choice = chooseModel(DEFAULT_LADDER_INDEX, (id) =>
+      id === "parakeet-tdt-0.6b-v3" ? "too-large" : "comfortable",
     );
+    expect(choice.id).toBe("whisper-cpp-large-v3-q5");
+    expect(choice.askedFor?.id).toBe("parakeet-tdt-0.6b-v3");
   });
 
   it("does not offer Tiny, which gets a first dictation wrong", () => {

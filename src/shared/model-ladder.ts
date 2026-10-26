@@ -8,10 +8,11 @@
  * question they can actually answer, "faster or more accurate?", and this is
  * what the answers mean.
  *
- * Every rung is whisper.cpp, because whisper.cpp is linked into the app and so
- * is the only engine whose weights the app can fetch by itself. Parakeet and
- * Qwen are better on paper and both need Python first; offering them here
- * would be offering a first dictation that fails.
+ * Every rung but the top one is whisper.cpp, which is linked into the app.
+ * The top one is Parakeet: the app installs its `nemo-speech` runtime and
+ * weights by itself, with no Python and no terminal, and it beats every
+ * Whisper on the list. Qwen is left off because it does need Python first, and
+ * offering it here would be offering a first dictation that fails.
  *
  * The quantized build wins every rung it appears on. `ggml-small-q5_1` scores
  * the same 3.43 WER as `ggml-small` on half the resident memory, so the
@@ -60,18 +61,23 @@ export const MODEL_LADDER: readonly LadderRung[] = [
     name: "Most accurate",
     trade: "The last fraction of a percent, for twice the wait and the disk.",
   },
+  {
+    id: "parakeet-tdt-0.6b-v3",
+    name: "Best",
+    trade: "The fewest mistakes of any model here. English and 24 other European languages.",
+  },
 ];
 
 /**
  * Where the slider starts, and what the escape hatch under it picks.
  *
- * Large v3 Turbo is the rung where the curve flattens: it is within 0.09 WER
- * of the most accurate model on the list for a third less memory and half the
- * wait. Anyone who does not want to think about this should land here, which
- * is why it is both the slider's resting position and what the "use the
- * default" button chooses.
+ * Parakeet: the lowest error rate on the list, and quick with it. Anyone who
+ * does not want to think about this should land here, which is why it is both
+ * the slider's resting position and what the "use the default" button
+ * chooses. A Mac without the memory for it is stepped down to Large v3 Turbo
+ * by `chooseModel`, as with any other rung.
  */
-export const DEFAULT_LADDER_INDEX = 3;
+export const DEFAULT_LADDER_INDEX = 5;
 
 export const DEFAULT_LADDER_MODEL_ID: SpeechModelId =
   MODEL_LADDER[DEFAULT_LADDER_INDEX]!.id;

@@ -3613,13 +3613,13 @@ function startPolishDefault(): void {
  * Nothing about this is on screen. A first run is four pages of answering
  * questions during which the machine is doing nothing, and the reward for
  * finishing is a wait -- so the wait is moved under the questions. Base goes
- * first because it is 148 MB against 574: it lands while the permissions are
+ * first because it is 148 MB against Parakeet's 2.5 GB: it lands while the permissions are
  * still being granted, and from then on there is a working model on the disk
  * whichever way the slider ends up. The recommended one follows.
  *
  * Deliberately not announced. A progress line for a download nobody asked for
  * invites the question of whether it can be stopped, and the honest answer --
- * that it is two files totalling 700 MB fetched on spec -- is a worse first
+ * that it is over 2.5 GB fetched on spec -- is a worse first
  * page than silence. What is never hidden is the result: the last page reads
  * the same setup list as everything else, so it says the model is missing
  * whenever it is.
@@ -3931,7 +3931,7 @@ function setLadderIndex(value: number): void {
 /**
  * A notch per rung, under the track.
  *
- * Five positions on a continuous-looking slider is not something anyone
+ * Six positions on a continuous-looking slider is not something anyone
  * discovers by dragging it. The notches say up front that this has stops
  * rather than a range, and how many.
  */
