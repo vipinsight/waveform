@@ -237,13 +237,24 @@ function controlAt(node: Element | null): string {
 // --- Meeting capsule -----------------------------------------------------------
 //
 // A live microphone is never a surprise: while a meeting records and nobody is
-// dictating, the resting mark becomes a small red capsule with the clock and a
-// stop. Dictation still works; its states take the capsule over and hand back.
+// dictating, the resting mark becomes a small red capsule with the clock, the
+// meeting's title and a stop. Clicking it opens the live transcript beside the
+// screen edge. Dictation still works; its states take the capsule over and
+// hand back.
 
 const meetingClock = requireElement<HTMLButtonElement>("hud-meeting-open");
+const meetingTime = requireElement<HTMLElement>("hud-meeting-time");
+const meetingTitle = requireElement<HTMLElement>("hud-meeting-title");
 const meetingStopButton = requireElement<HTMLButtonElement>("hud-meeting-stop");
+let meetingId: string | null = null;
 let meetingSince: number | null = null;
 let meetingTicker: number | null = null;
+
+function setMeetingTitle(title: string | null): void {
+  meetingTitle.textContent = title ?? "";
+  hud.dataset.titled = title ? "true" : "false";
+  reportHitRegion();
+}
 
 function renderMeeting(): void {
   const recording = meetingSince !== null;
@@ -254,7 +265,7 @@ function renderMeeting(): void {
     const h = Math.floor(seconds / 3_600);
     const m = String(Math.floor((seconds % 3_600) / 60)).padStart(2, "0");
     const s = String(seconds % 60).padStart(2, "0");
-    meetingClock.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    meetingTime.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
     if (meetingTicker === null) meetingTicker = window.setInterval(renderMeeting, 1_000);
   } else if (meetingTicker !== null) {
     window.clearInterval(meetingTicker);
@@ -266,22 +277,32 @@ function renderMeeting(): void {
 }
 
 host().onMeetingState((event) => {
+  meetingId = event.recording ? event.meetingId : null;
   meetingSince = event.recording ? (event.startedAt ?? Date.now()) : null;
+  setMeetingTitle(event.recording ? event.title : null);
   renderMeeting();
+});
+host().onMeetingChanged((meeting) => {
+  if (meeting.id === meetingId && meeting.state === "recording") setMeetingTitle(meeting.title);
 });
 void host()
   .meetingRecorderStatus()
-  .then((status) => {
-    if (status.recording) {
-      meetingSince = Date.now();
-      renderMeeting();
-    }
+  .then(async (status) => {
+    if (!status.recording) return;
+    meetingId = status.recording;
+    meetingSince = Date.now();
+    renderMeeting();
+    const detail = await host().getMeeting(status.recording);
+    meetingSince = detail.meeting.createdAt;
+    setMeetingTitle(detail.meeting.title);
+    renderMeeting();
   })
   .catch(() => {});
 
 meetingStopButton.addEventListener("click", () => {
   meetingStopButton.disabled = true;
-  meetingClock.textContent = "Saving…";
+  meetingTime.textContent = "Saving…";
+  setMeetingTitle(null);
   void host()
     .stopMeeting()
     .catch(() => {})
@@ -289,7 +310,7 @@ meetingStopButton.addEventListener("click", () => {
       meetingStopButton.disabled = false;
     });
 });
-meetingClock.addEventListener("click", () => void host().showMeetings());
+meetingClock.addEventListener("click", () => void host().toggleMeetingPanel());
 
 // Notices: a line beside the bar for things that happen with the window
 // closed -- a word learned, a meeting saved. The host brings the overlay up

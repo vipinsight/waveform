@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Meeting transcript</title>
+    <!--
+      Icons are Lucide (ISC), inlined as in overlay.html. Each carries
+      `data-icon` with its name at https://lucide.dev/icons.
+    -->
+    <link rel="stylesheet" href="./meeting-panel.css" />
+  </head>
+  <body>
+    <section id="panel" class="panel" data-open="false" aria-label="Live meeting transcript">
+      <header class="panel-head">
+        <div class="panel-title-row">
+          <span class="panel-dot" id="panel-dot" aria-hidden="true"></span>
+          <h1 id="panel-title" class="panel-title">Meeting</h1>
+          <span id="panel-clock" class="panel-clock">00:00</span>
+          <button id="panel-close" class="panel-close" type="button" aria-label="Close" title="Close">
+            <svg data-icon="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="panel-meters">
+          <span class="panel-meter" id="meter-mic" data-label="You"><span class="panel-meter-fill"></span></span>
+          <span class="panel-meter" id="meter-system" data-label="Them"><span class="panel-meter-fill"></span></span>
+        </div>
+        <p id="panel-note" class="panel-note" hidden></p>
+      </header>
+
+      <ol id="panel-lines" class="panel-lines" aria-live="polite"></ol>
+      <button id="panel-jump" class="panel-jump" type="button" hidden>Jump to latest</button>
+
+      <footer class="panel-foot">
+        <div id="panel-actions" class="panel-actions">
+          <button id="panel-stop" class="panel-button is-stop" type="button">
+            <svg data-icon="square" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="14" height="14" x="5" y="5" rx="2" />
+            </svg>
+            Stop
+          </button>
+          <button id="panel-discard" class="panel-button" type="button">Discard</button>
+          <button id="panel-open" class="panel-link" type="button">Open in Waveform</button>
+        </div>
+        <div id="panel-confirm" class="panel-confirm" hidden>
+          <p>Discard this recording? It will be deleted.</p>
+          <div class="panel-actions">
+            <button id="panel-confirm-discard" class="panel-button is-stop" type="button">Discard</button>
+            <button id="panel-confirm-keep" class="panel-button" type="button">Keep</button>
+          </div>
+        </div>
+      </footer>
+    </section>
+    <script src="./meeting-panel.js"></script>
+  </body>
+</html>

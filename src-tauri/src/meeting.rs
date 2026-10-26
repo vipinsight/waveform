@@ -28,6 +28,7 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
+const MEETING_PANEL_LABEL: &str = "meeting-panel";
 /// Blocks from the tap helper are read in this many samples at a time;
 /// about 43 ms at 48 kHz, close to the microphone's block.
 const TAP_BLOCK: usize = 2_048;
@@ -364,6 +365,7 @@ impl Recorder {
                     };
                     let _ = app.emit_to(MAIN_LABEL, "meeting-level", &event);
                     let _ = app.emit_to(OVERLAY_LABEL, "meeting-level", &event);
+                    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-level", &event);
                 }
             })
         };
@@ -393,6 +395,9 @@ impl Recorder {
             started_at: recording.map(|m| m.created_at),
         };
         let _ = self.app.emit("meeting-state", &event);
+        if recording.is_none() {
+            crate::close_meeting_panel(&self.app);
+        }
         crate::refresh_tray_menu(&self.app);
     }
 
@@ -901,6 +906,9 @@ impl Recorder {
 
     async fn emit_changed(&self, meeting: &Meeting) {
         let _ = self.app.emit_to(MAIN_LABEL, "meeting-changed", meeting);
+        // The pill and the panel show the title while it records.
+        let _ = self.app.emit_to(OVERLAY_LABEL, "meeting-changed", meeting);
+        let _ = self.app.emit_to(MEETING_PANEL_LABEL, "meeting-changed", meeting);
     }
 
     /// Writes one track to disk and cuts it into phrases, which a second task
@@ -999,14 +1007,12 @@ impl Recorder {
                         continue;
                     }
                 };
-                let _ = this.app.emit_to(
-                    MAIN_LABEL,
-                    "meeting-line",
-                    LineEvent {
-                        meeting_id: id.clone(),
-                        line,
-                    },
-                );
+                let event = LineEvent {
+                    meeting_id: id.clone(),
+                    line,
+                };
+                let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+                let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
             }
         })
     }

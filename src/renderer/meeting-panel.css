@@ -1,0 +1,328 @@
+/*
+ * The live transcript, docked to the right edge of the screen.
+ *
+ * The window is transparent and exactly the panel's size; the panel slides
+ * across it, so the desktop shows through only while it moves. Like the HUD,
+ * the window is never key, so nothing here relies on `:hover` or focus rings
+ * for meaning.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 13px;
+  color: #f6f5f2;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(14 14 13 / 96%);
+  transform: translateX(100%);
+  transition: transform 180ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+.panel[data-open="true"] {
+  transform: translateX(0);
+}
+
+/* Leaving is quicker than arriving, as with the HUD. */
+.panel[data-open="false"] {
+  transition-duration: 140ms;
+  transition-timing-function: ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panel[data-open="false"] {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ head */
+
+.panel-head {
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5f57;
+  animation: panel-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes panel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.panel-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.panel-clock {
+  flex: none;
+  color: rgb(246 245 242 / 70%);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(246 245 242 / 70%);
+  cursor: pointer;
+}
+
+.panel-close:active {
+  background: rgb(255 255 255 / 12%);
+}
+
+.panel-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.panel-meters {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.panel-meter {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgb(246 245 242 / 60%);
+}
+
+.panel-meter::before {
+  content: attr(data-label);
+}
+
+.panel-meter-fill {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 10%);
+  overflow: hidden;
+}
+
+.panel-meter-fill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #f6f5f2;
+  transform: scaleX(var(--level, 0));
+  transform-origin: left;
+  transition: transform 120ms linear;
+}
+
+.panel-meter[hidden] {
+  display: none;
+}
+
+.panel-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: rgb(246 245 242 / 60%);
+}
+
+.panel-note.is-warn {
+  color: #ffb340;
+}
+
+/* ----------------------------------------------------------------- lines */
+
+.panel-lines {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 14px 16px;
+  overflow-y: auto;
+  list-style: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.panel-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  padding-top: 10px;
+}
+
+.panel-line.is-continued {
+  padding-top: 3px;
+}
+
+.panel-line-time {
+  grid-column: 1;
+  color: rgb(246 245 242 / 40%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+.panel-line-speaker {
+  grid-column: 2;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: #8ab4f8;
+}
+
+.panel-line.is-me .panel-line-speaker {
+  color: #a8dab5;
+}
+
+.panel-line-text {
+  grid-column: 2;
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* A continued line keeps its time but drops the repeated name. */
+.panel-line.is-continued .panel-line-speaker {
+  display: none;
+}
+
+.panel-line.is-continued .panel-line-text {
+  grid-row: 1;
+}
+
+.panel-empty {
+  padding-top: 16px;
+  color: rgb(246 245 242 / 50%);
+  line-height: 1.45;
+}
+
+.panel-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  padding: 6px 12px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  background: #2b2a27;
+  color: #f6f5f2;
+  font: inherit;
+  font-size: 12px;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+  cursor: pointer;
+}
+
+.panel-jump[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.panel-foot {
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-confirm p {
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.panel-confirm[hidden],
+.panel-actions[hidden] {
+  display: none;
+}
+
+.panel-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #484741;
+  color: #f6f5f2;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.panel-button.is-stop {
+  background: #e5484d;
+  color: #fff;
+}
+
+.panel-button svg {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-button:active {
+  transform: scale(0.96);
+}
+
+.panel-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.panel-link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8ab4f8;
+  font: inherit;
+  cursor: pointer;
+}

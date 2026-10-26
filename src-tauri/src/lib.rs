@@ -60,6 +60,10 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
+const MEETING_PANEL_LABEL: &str = "meeting-panel";
+/// The panel never gets narrower than this, so a small display still fits a
+/// line of transcript beside its time and speaker.
+const MEETING_PANEL_MIN_WIDTH: u32 = 320;
 const AUTOSTART_ARG: &str = "--autostart";
 /// Large enough for the pill and the tooltips it raises above itself. The
 /// window is transparent but not click-through, so it is kept only as big as
@@ -786,6 +790,115 @@ async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens or closes the live transcript docked to the screen edge; the HUD's
+/// meeting pill calls this.
+#[tauri::command]
+async fn toggle_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    // The panel is reclassed into an `NSPanel` when it is built, which has to
+    // happen on the main thread.
+    app.run_on_main_thread(move || {
+        let open = handle
+            .get_webview_window(MEETING_PANEL_LABEL)
+            .is_some_and(|panel| matches!(panel.is_visible(), Ok(true)));
+        if open {
+            close_meeting_panel(&handle);
+        } else {
+            open_meeting_panel(&handle);
+        }
+    })
+    .map_err(|error| error.to_string())
+}
+
+/// The panel finished sliding out and can leave the screen.
+#[tauri::command]
+async fn hide_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(panel) = app.get_webview_window(MEETING_PANEL_LABEL) {
+        let _ = panel.hide();
+    }
+    Ok(())
+}
+
+/// Asks the panel to slide out; it hides its window once it has.
+pub(crate) fn close_meeting_panel(app: &tauri::AppHandle) {
+    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-panel", "close");
+}
+
+fn open_meeting_panel(app: &tauri::AppHandle) {
+    let panel = match app.get_webview_window(MEETING_PANEL_LABEL) {
+        Some(panel) => panel,
+        None => match build_meeting_panel(app) {
+            Ok(panel) => panel,
+            Err(error) => {
+                eprintln!("Could not build the meeting panel: {error}");
+                return;
+            }
+        },
+    };
+    place_meeting_panel(app, &panel);
+    let _ = panel.show();
+    // A panel built just now slides in by itself once it has loaded; this
+    // reaches one that was only hidden.
+    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-panel", "open");
+}
+
+/// Docks the panel to the right edge of the display the pill is on.
+fn place_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
+    let monitor = app
+        .get_webview_window(OVERLAY_LABEL)
+        .and_then(|overlay| overlay.current_monitor().ok().flatten())
+        .or_else(|| panel.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let area = monitor.work_area();
+    let min_width = (MEETING_PANEL_MIN_WIDTH as f64 * monitor.scale_factor()) as u32;
+    let (x, y, width, height) = meeting_panel_frame(
+        area.position.x,
+        area.position.y,
+        area.size.width,
+        area.size.height,
+        min_width,
+    );
+    let _ = panel.set_size(tauri::PhysicalSize::new(width, height));
+    let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// The right quarter of a work area, full height, in physical pixels.
+fn meeting_panel_frame(x: i32, y: i32, width: u32, height: u32, min_width: u32) -> (i32, i32, u32, u32) {
+    let panel_width = (width / 4).max(min_width).min(width);
+    (x + (width - panel_width) as i32, y, panel_width, height)
+}
+
+/// Built on first open rather than at launch: most sessions never record.
+fn build_meeting_panel(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let panel = WebviewWindowBuilder::new(
+        app,
+        MEETING_PANEL_LABEL,
+        WebviewUrl::App("meeting-panel.html".into()),
+    )
+    .title("Meeting transcript")
+    .decorations(false)
+    // Transparent so the content can slide in from the edge.
+    .transparent(true)
+    .shadow(false)
+    .resizable(false)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    // Like the HUD: pressing Stop must not bring Waveform forward over the
+    // call, and a panel that took keys would take a dictated paste too.
+    .focusable(false)
+    .focused(false)
+    .accept_first_mouse(true)
+    .visible(false)
+    .build()?;
+    if let Err(reason) = panel::make_non_activating(&panel) {
+        eprintln!("Meeting panel stayed an ordinary window, so clicking it will focus Waveform: {reason}");
+    }
+    Ok(panel)
+}
+
 #[tauri::command]
 async fn install_diarizer(state: State<'_, AppState>) -> Result<(), String> {
     state.recorder.install_diarizer().await
@@ -1275,14 +1388,15 @@ pub fn run() {
         // Remembers the main window's size and position, but never restores
         // visibility: setup decides whether to show it based on the launch source.
         // The overlay is excluded: it is placed deliberately and its position
-        // is already persisted in settings.
+        // is already persisted in settings. So is the meeting panel, which is
+        // docked to a screen edge every time it opens.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         - tauri_plugin_window_state::StateFlags::VISIBLE,
                 )
-                .with_denylist(&[OVERLAY_LABEL])
+                .with_denylist(&[OVERLAY_LABEL, MEETING_PANEL_LABEL])
                 .build(),
         )
         .menu(build_app_menu)
@@ -1595,6 +1709,8 @@ pub fn run() {
             export_meeting_audio,
             install_diarizer,
             show_meetings,
+            toggle_meeting_panel,
+            hide_meeting_panel,
             probe_system_audio,
             overlay_notice_done,
             cancel_diarizer_install,
@@ -2529,6 +2645,20 @@ use std::path::Path;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meeting_panel_takes_the_right_quarter() {
+        // A 1440x900 display at 2x, with a 25-point menu bar.
+        assert_eq!(meeting_panel_frame(0, 50, 2880, 1750, 640), (2160, 50, 720, 1750));
+        // A second display to the left of the first.
+        assert_eq!(meeting_panel_frame(-1920, 0, 1920, 1080, 320), (-480, 0, 480, 1080));
+    }
+
+    #[test]
+    fn meeting_panel_keeps_a_readable_width() {
+        assert_eq!(meeting_panel_frame(0, 0, 1024, 768, 320), (704, 0, 320, 768));
+        assert_eq!(meeting_panel_frame(0, 0, 200, 768, 320), (0, 0, 200, 768));
+    }
 
     #[test]
     fn saved_audio_names_cannot_leave_downloads() {

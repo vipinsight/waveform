@@ -60,6 +60,15 @@ describe("stylesheet covers the markup", () => {
     expect(assigned.filter((name) => !css.includes(`.${name}`))).toEqual([]);
   });
 
+  it("styles every class the meeting panel uses", () => {
+    const panelHtml = readFileSync("src/renderer/meeting-panel.html", "utf8");
+    const panelTs = readFileSync("src/renderer/meeting-panel.ts", "utf8");
+    const panelCss = readFileSync("src/renderer/meeting-panel.css", "utf8");
+    const assigned = [...panelTs.matchAll(/className = "([^"]+)"/g)].flatMap((match) => match[1]!.split(/\s+/));
+    const unstyled = [...classesIn(panelHtml), ...assigned].filter((name) => !panelCss.includes(`.${name}`));
+    expect(unstyled).toEqual([]);
+  });
+
   it("styles every class the overlay uses", () => {
     const unstyled = classesIn(overlayHtml).filter(
       (name) => !overlayCss.includes(`.${name}`),

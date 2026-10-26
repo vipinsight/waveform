@@ -593,6 +593,12 @@ export interface DesktopApi {
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;
+  /** Opens or closes the live transcript docked to the screen edge. */
+  toggleMeetingPanel(): Promise<void>;
+  /** Takes the panel off screen once it has slid out. */
+  hideMeetingPanel(): Promise<void>;
+  /** The host asks the panel to slide in or out. */
+  onMeetingPanel(listener: (action: "open" | "close") => void): () => void;
   /**
    * Asks macOS for permission to hear the other side of a call (the first
    * call shows the system prompt) and reports what happened.
