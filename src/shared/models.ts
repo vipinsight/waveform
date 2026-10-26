@@ -107,15 +107,18 @@ export type SpeechEngine = SpeechModelDefinition["engine"];
  * back to. `DEFAULT_MODEL_ID` in model_server.rs is the same choice.
  *
  * Named rather than "the first entry", because the table is ordered for the
- * models page to read, Parakeet first, and that is not a model a fresh install
- * can run without a terminal. Large v3 Turbo · Q5 is the setup wizard's
+ * models page to read, not by recommendation. Parakeet is the setup wizard's
  * recommendation and one of the two models it fetches on a first run, so
  * skipping the wizard lands on weights that are likely already on the disk.
- * Small used to be the answer here, which the wizard neither offers nor fetches.
+ * Large v3 Turbo · Q5 was the answer here before Parakeet could be installed
+ * without a terminal, and Small before that.
+ *
+ * Settings files store the model they were written with, so an existing user
+ * keeps theirs; this only reaches a new install or an unrecognised id.
  * Kept equal to `DEFAULT_LADDER_MODEL_ID` by a test; not imported from it,
  * because the ladder imports this module.
  */
-export const DEFAULT_SPEECH_MODEL_ID: SpeechModelId = "whisper-cpp-large-v3-turbo-q5";
+export const DEFAULT_SPEECH_MODEL_ID: SpeechModelId = "parakeet-tdt-0.6b-v3";
 
 export function isSpeechModelId(value: unknown): value is SpeechModelId {
   return SPEECH_MODELS.some(({ id }) => id === value);
