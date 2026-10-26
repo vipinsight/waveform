@@ -522,7 +522,7 @@ impl Dictation {
         let _ = self.app.emit("dictionary-learned", learned);
         self.notice(Notice {
             text: format!("Added {names}"),
-            duration_ms: 7_000,
+            duration_ms: 3_000,
             action: Some(NoticeAction::UndoDictionary { ids }),
         })
         .await;
