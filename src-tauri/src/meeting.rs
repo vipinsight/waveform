@@ -474,7 +474,6 @@ impl Recorder {
         if let Ok(Some(meeting)) = self.meetings.lock().await.get(&id) {
             self.emit_changed(&meeting).await;
         }
-        self.notify("Saved. Finishing the notes…", 4_000);
 
         if let Some(meter) = active.meter.take() {
             meter.abort();
@@ -562,13 +561,11 @@ impl Recorder {
         drop(store);
         self.processing.lock().await.remove(id);
         if let Some(meeting) = meeting {
-            match meeting.state {
-                State::Ready if meeting.summary.is_some() => {
-                    self.notify(format!("Notes ready: {}", meeting.title), 6_000)
-                }
-                State::Ready => self.notify(format!("Saved: {}", meeting.title), 5_000),
-                State::Failed => self.notify("The meeting could not be finished", 6_000),
-                _ => {}
+            // Only a failure is worth a notice: a meeting being saved and
+            // its notes being written are what is expected, and saying so at
+            // each step was noise.
+            if meeting.state == State::Failed {
+                self.notify("The meeting could not be finished", 6_000);
             }
             self.emit_changed(&meeting).await;
         }

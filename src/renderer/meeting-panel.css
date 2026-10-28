@@ -156,49 +156,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.panel-meters {
-  display: flex;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.panel-meter {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--ink-soft);
-}
-
-.panel-meter::before {
-  content: attr(data-label);
-}
-
-.panel-meter-fill {
-  position: relative;
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface-hover);
-  overflow: hidden;
-}
-
-.panel-meter-fill::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--ink-soft);
-  transform: scaleX(var(--level, 0));
-  transform-origin: left;
-  transition: transform 120ms linear;
-}
-
-.panel-meter[hidden] {
-  display: none;
-}
-
 .panel-note {
   margin: 8px 0 0;
   font-size: 11.5px;

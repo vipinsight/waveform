@@ -17,8 +17,6 @@ installTauriBridge();
 
 const titleText = requireElement<HTMLElement>("panel-title");
 const clockText = requireElement<HTMLElement>("panel-clock");
-const micMeter = requireElement<HTMLElement>("meter-mic");
-const systemMeter = requireElement<HTMLElement>("meter-system");
 const note = requireElement<HTMLElement>("panel-note");
 const list = requireElement<HTMLOListElement>("panel-lines");
 const jump = requireElement<HTMLButtonElement>("panel-jump");
@@ -68,7 +66,7 @@ async function load(): Promise<void> {
   stopButton.disabled = false;
   lines = mergeLines(lines, detail.lines);
   renderClock();
-  renderLevels();
+  renderNote();
   renderLines();
 }
 
@@ -78,11 +76,8 @@ function renderClock(): void {
   clockText.textContent = clock(Date.now() - startedAt);
 }
 
-function renderLevels(): void {
-  systemMeter.hidden = !hasOther;
-  setLevel(micMeter, level?.mic ?? 0);
-  setLevel(systemMeter, level?.system ?? 0);
-
+/** Says so when only one side is being recorded, or the other side is silent. */
+function renderNote(): void {
   const unheard = hasOther && level !== null && !level.otherHeard && level.elapsedMs > UNHEARD_AFTER_MS;
   note.classList.toggle("is-warn", unheard);
   if (!hasOther) {
@@ -93,11 +88,6 @@ function renderLevels(): void {
     note.textContent = "";
   }
   note.hidden = note.textContent === "";
-}
-
-/** Same curve as the meeting page, so a normal voice fills most of the bar. */
-function setLevel(meter: HTMLElement, value: number): void {
-  meter.style.setProperty("--level", String(Math.min(1, Math.sqrt(Math.min(1, value * 4)))));
 }
 
 function renderLines(): void {
@@ -220,7 +210,7 @@ host().onMeetingLine((event) => {
 host().onMeetingLevel((event) => {
   if (event.meetingId !== meetingId) return;
   level = event;
-  renderLevels();
+  renderNote();
 });
 host().onMeetingChanged((meeting) => {
   if (meeting.id !== meetingId) return;
