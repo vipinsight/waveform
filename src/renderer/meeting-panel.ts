@@ -1,4 +1,5 @@
 import type { MeetingLevelEvent, MeetingLine } from "../shared/contracts";
+import type { AppSettings } from "../shared/settings";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from "./meeting-feed";
@@ -129,7 +130,7 @@ function appendLines(added: MeetingLine[]): void {
 function lineItem(line: MeetingLine, previous: MeetingLine | undefined): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "panel-line";
-  if (line.speaker === "me" || (!line.speaker && line.track === "mic")) item.classList.add("is-me");
+  item.classList.add(voiceClass(line));
   if (previous && voiceOf(previous) === voiceOf(line)) item.classList.add("is-continued");
 
   const time = document.createElement("span");
@@ -146,6 +147,19 @@ function lineItem(line: MeetingLine, previous: MeetingLine | undefined): HTMLLIE
 
   item.append(time, who, text);
   return item;
+}
+
+/** The same hue for a voice as on the Meetings page. */
+function voiceClass(line: MeetingLine): string {
+  if (line.speaker === "me" || (!line.speaker && line.track === "mic")) return "is-me";
+  const match = /^speaker_(\d+)$/.exec(line.speaker ?? "");
+  return match ? `is-s${Number(match[1]) % 6}` : "is-them";
+}
+
+/** Light or dark as the app is set; "system" leaves it to macOS. */
+function applyTheme(theme: AppSettings["theme"]): void {
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
 }
 
 function scrollToLatest(): void {
@@ -188,6 +202,11 @@ confirmDiscardButton.addEventListener("click", () => {
 });
 
 host().onMeetingPanel(open);
+host().onSettingsChanged((settings) => applyTheme(settings.theme));
+void host()
+  .getSettings()
+  .then((settings) => applyTheme(settings.theme))
+  .catch(() => {});
 host().onMeetingState((event) => {
   if (event.recording && event.meetingId !== meetingId) void load();
 });
