@@ -395,10 +395,9 @@ impl Recorder {
             started_at: recording.map(|m| m.created_at),
         };
         let _ = self.app.emit("meeting-state", &event);
+        // The transcript window stays open after Stop, so the meeting can
+        // still be read; only a discard takes it away.
         crate::set_meeting_pill(&self.app, recording.is_some());
-        if recording.is_none() {
-            crate::close_meeting_panel(&self.app);
-        }
         crate::refresh_tray_menu(&self.app);
     }
 
@@ -524,6 +523,7 @@ impl Recorder {
             return Ok(());
         };
         self.announce(None);
+        crate::close_meeting_panel(&self.app);
         active.stop.store(true, Ordering::Relaxed);
         if let Some(meter) = active.meter.take() {
             meter.abort();

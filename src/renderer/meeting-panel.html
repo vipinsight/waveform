@@ -7,15 +7,16 @@
     <link rel="stylesheet" href="./meeting-panel.css" />
   </head>
   <body>
-    <section id="panel" class="panel" aria-label="Live meeting transcript">
+    <section id="panel" class="panel" data-state="recording" aria-label="Live meeting transcript">
       <!-- The title bar is drawn over the page, so the header is its drag area
            and leaves room for the traffic lights. -->
       <header class="panel-head" data-tauri-drag-region>
         <div class="panel-title-row" data-tauri-drag-region>
           <span class="panel-dot" id="panel-dot" aria-hidden="true"></span>
-          <h1 id="panel-title" class="panel-title" data-tauri-drag-region>Meeting</h1>
           <span id="panel-clock" class="panel-clock" data-tauri-drag-region>00:00</span>
+          <button id="panel-open" class="panel-button is-small" type="button" title="See the whole meeting in Waveform">Open in Waveform</button>
         </div>
+        <h1 id="panel-title" class="panel-title" data-tauri-drag-region>Meeting</h1>
         <p id="panel-note" class="panel-note" hidden></p>
       </header>
 
@@ -31,8 +32,8 @@
             Stop
           </button>
           <button id="panel-discard" class="panel-button" type="button">Discard</button>
-          <button id="panel-open" class="panel-link" type="button">Open in Waveform</button>
         </div>
+        <p id="panel-status" class="panel-status" hidden></p>
         <div id="panel-confirm" class="panel-confirm" hidden>
           <p>Discard this recording? It will be deleted.</p>
           <div class="panel-actions">

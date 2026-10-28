@@ -140,9 +140,7 @@ body {
 }
 
 .panel-title {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
+  margin: 8px 0 0;
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
@@ -151,7 +149,7 @@ body {
 }
 
 .panel-clock {
-  flex: none;
+  flex: 1;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
@@ -316,12 +314,25 @@ body {
   cursor: wait;
 }
 
-.panel-link {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
+.panel-button.is-small {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.panel-status {
+  margin: 0;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.panel-status[hidden] {
+  display: none;
+}
+
+/* Stopped: the dot goes still and grey, and the clock holds the length. */
+.panel[data-state="stopped"] .panel-dot {
+  background: var(--ink-faint);
+  animation: none;
 }

@@ -1,4 +1,4 @@
-import type { MeetingLevelEvent, MeetingLine } from "../shared/contracts";
+import type { Meeting, MeetingLevelEvent, MeetingLine } from "../shared/contracts";
 import type { AppSettings } from "../shared/settings";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
@@ -6,8 +6,9 @@ import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from 
 
 /**
  * The live transcript window, opened from the meeting pill. It shows the
- * meeting that is recording and nothing else: there is only ever one. Closing
- * the window only hides it; the host hides it too when the recording ends.
+ * meeting that is recording; there is only ever one. Stop leaves the window
+ * open on that meeting so it can still be read while Waveform finishes the
+ * notes. Closing the window only hides it, and a discard takes it away.
  */
 
 /** How long the other side may stay silent before that reads as a missing permission. */
@@ -15,7 +16,9 @@ const UNHEARD_AFTER_MS = 5_000;
 
 installTauriBridge();
 
+const panel = requireElement<HTMLElement>("panel");
 const titleText = requireElement<HTMLElement>("panel-title");
+const statusText = requireElement<HTMLElement>("panel-status");
 const clockText = requireElement<HTMLElement>("panel-clock");
 const note = requireElement<HTMLElement>("panel-note");
 const list = requireElement<HTMLOListElement>("panel-lines");
@@ -28,6 +31,8 @@ const confirmDiscardButton = requireElement<HTMLButtonElement>("panel-confirm-di
 
 let meetingId: string | null = null;
 let startedAt = Date.now();
+/** Set once the recording has stopped: the length the clock holds. */
+let stoppedAfter: number | null = null;
 let speakers: Record<string, string> = {};
 let localName: string | null = null;
 let hasOther = false;
@@ -56,14 +61,13 @@ async function load(): Promise<void> {
     lines = [];
     level = null;
     following = true;
-    showConfirm(false);
   }
+  setRecording();
   localName = status.localName || null;
   hasOther = status.systemAudio === "available" && detail.meeting.hasSystemAudio;
   startedAt = detail.meeting.createdAt;
   speakers = detail.meeting.speakers;
   titleText.textContent = detail.meeting.title;
-  stopButton.disabled = false;
   lines = mergeLines(lines, detail.lines);
   renderClock();
   renderNote();
@@ -73,11 +77,41 @@ async function load(): Promise<void> {
 // --- Rendering ------------------------------------------------------------------
 
 function renderClock(): void {
-  clockText.textContent = clock(Date.now() - startedAt);
+  clockText.textContent = clock(stoppedAfter ?? Date.now() - startedAt);
+}
+
+/** Back to a live recording, as for a meeting just started. */
+function setRecording(): void {
+  stoppedAfter = null;
+  panel.dataset.state = "recording";
+  stopButton.disabled = false;
+  showConfirm(false);
+  statusText.hidden = true;
+}
+
+/** The recording ended: keep the transcript up, and say what happens now. */
+function setStopped(durationMs: number | null): void {
+  if (stoppedAfter === null) stoppedAfter = durationMs ?? Date.now() - startedAt;
+  panel.dataset.state = "stopped";
+  confirm.hidden = true;
+  actions.hidden = true;
+  note.hidden = true;
+  statusText.hidden = false;
+  if (statusText.textContent === "") statusText.textContent = "Stopped. Waveform is writing the notes.";
+  renderClock();
+  if (lines.length === 0) renderLines();
+}
+
+/** What became of a stopped meeting: its notes written, or a failure. */
+function renderOutcome(meeting: Meeting): void {
+  if (meeting.state === "ready") statusText.textContent = "Stopped. The notes are ready in Waveform.";
+  else if (meeting.state === "failed") statusText.textContent = "Stopped, but the notes could not be written. Open Waveform to retry.";
+  else statusText.textContent = "Stopped. Waveform is writing the notes.";
 }
 
 /** Says so when only one side is being recorded, or the other side is silent. */
 function renderNote(): void {
+  if (stoppedAfter !== null) return;
   const unheard = hasOther && level !== null && !level.otherHeard && level.elapsedMs > UNHEARD_AFTER_MS;
   note.classList.toggle("is-warn", unheard);
   if (!hasOther) {
@@ -94,7 +128,8 @@ function renderLines(): void {
   if (lines.length === 0) {
     const empty = document.createElement("li");
     empty.className = "panel-empty";
-    empty.textContent = "Listening. Lines appear a few seconds after each sentence ends.";
+    empty.textContent =
+      stoppedAfter === null ? "Listening. Lines appear a few seconds after each sentence ends." : "Nothing was transcribed.";
     list.replaceChildren(empty);
     return;
   }
@@ -175,9 +210,13 @@ jump.addEventListener("click", scrollToLatest);
 requireElement<HTMLButtonElement>("panel-open").addEventListener("click", () => void host().showMeetings());
 stopButton.addEventListener("click", () => {
   stopButton.disabled = true;
-  // The host hides the window once the recording has stopped.
+  // The window stays open on the stopped meeting, so it can still be read.
   void host()
     .stopMeeting()
+    .then((meeting) => {
+      setStopped(meeting.durationMs || null);
+      renderOutcome(meeting);
+    })
     .catch(() => {
       stopButton.disabled = false;
     });
@@ -199,6 +238,8 @@ void host()
   .catch(() => {});
 host().onMeetingState((event) => {
   if (event.recording && event.meetingId !== meetingId) void load();
+  // Stopped elsewhere too: from the pill, the menu bar or the main window.
+  if (!event.recording && meetingId !== null) setStopped(null);
 });
 host().onMeetingLine((event) => {
   if (event.meetingId !== meetingId) return;
@@ -216,6 +257,7 @@ host().onMeetingChanged((meeting) => {
   if (meeting.id !== meetingId) return;
   titleText.textContent = meeting.title;
   speakers = meeting.speakers;
+  if (stoppedAfter !== null) renderOutcome(meeting);
 });
 
 // The window is built on the first open, after the host has already said so,
