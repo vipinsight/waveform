@@ -224,6 +224,29 @@ impl HistoryStore {
         fs::read(self.audio_path(&file)).map_err(|_| "The recording file is missing.".to_string())
     }
 
+    /// The user's own voice, for speaker tagging to know them by: the newest
+    /// dictations that found words, as 16 kHz samples, until there is at
+    /// least `want_ms` of it. Empty when there are no saved recordings.
+    pub fn voice_clips(&self, want_ms: u64) -> Vec<Vec<f32>> {
+        let mut clips = Vec::new();
+        let mut have = 0;
+        for entry in self.entries().unwrap_or_default() {
+            if have >= want_ms {
+                break;
+            }
+            if !entry.has_audio || entry.transcribed_text.trim().is_empty() {
+                continue;
+            }
+            let Some(samples) = self.audio(&entry.id).ok().and_then(|wav| crate::whisper_cpp::decode_wav(&wav).ok())
+            else {
+                continue;
+            };
+            have += samples.len() as u64 / 16;
+            clips.push(samples);
+        }
+        clips
+    }
+
     /// An id no row has.
     ///
     /// `<ms>-<n>`, as before: the counter keeps ids apart within a

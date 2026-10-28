@@ -9,8 +9,9 @@
 
 use crate::audio::{self, Segmenter, SegmenterOptions, WavWriter};
 use crate::diarize;
+use crate::history::HistoryStore;
 use crate::logs::Logs;
-use crate::meetings::{Line, Meeting, MeetingsStore, Note, State, Track, LOCAL_SPEAKER};
+use crate::meetings::{self, Line, Meeting, MeetingsStore, Note, State, Track, LOCAL_SPEAKER};
 use crate::mic::{CaptureBlock, MeetingInput};
 use crate::rewrite::Rewriter;
 use crate::summary;
@@ -84,6 +85,10 @@ struct InstallEvent {
 }
 
 /// Which processing steps a run performs.
+/// How much of the user's dictated voice to enrol: enough for a steady voice
+/// print, little enough not to slow the diarizer down.
+const ENROLMENT_MS: u64 = 60_000;
+
 #[derive(Clone, Copy)]
 struct Steps {
     diarize: bool,
@@ -176,6 +181,8 @@ pub struct Recorder {
     meetings: Arc<Mutex<MeetingsStore>>,
     engine: Engine,
     rewriter: Arc<Rewriter>,
+    /// Dictations, for the user's voice when telling speakers apart.
+    history: Arc<Mutex<HistoryStore>>,
     tap_helper: Option<PathBuf>,
     active: Mutex<Option<Active>>,
     /// Cancellation flags for meetings being processed after they stopped.
@@ -197,6 +204,7 @@ impl Recorder {
         meetings: Arc<Mutex<MeetingsStore>>,
         engine: Engine,
         rewriter: Arc<Rewriter>,
+        history: Arc<Mutex<HistoryStore>>,
         tap_helper: Option<PathBuf>,
     ) -> Self {
         Self {
@@ -205,6 +213,7 @@ impl Recorder {
             meetings,
             engine,
             rewriter,
+            history,
             tap_helper,
             active: Mutex::new(None),
             processing: Mutex::new(HashMap::new()),
@@ -645,31 +654,10 @@ impl Recorder {
             return Ok(notes);
         }
 
-        if steps.diarize && meeting.has_system_audio && dir.join("system.wav").is_file() {
+        if steps.diarize {
             if diarize::is_installed() {
                 self.set_stage(id, "Tagging speakers…").await;
-                // The speaker models read 16 kHz; the track is kept at the
-                // device's rate, so a resampled copy is made for them and
-                // thrown away after.
-                let input = diarizer_input(&dir)?;
-                let turns = diarize::run(&input, cancel).await;
-                let _ = std::fs::remove_file(&input);
-                let turns = turns?;
-                let spans: Vec<diarize::Span> = lines
-                    .iter()
-                    .filter(|line| line.track == Track::System)
-                    .map(|line| diarize::Span {
-                        idx: line.idx,
-                        start_ms: line.start_ms,
-                        end_ms: line.end_ms,
-                    })
-                    .collect();
-                let tags = diarize::assign(&spans, &turns);
-                self.logs.info(
-                    &self.app,
-                    "meeting",
-                    format!("{id}: {} turn(s), {} line(s) tagged", turns.len(), tags.len()),
-                );
+                let tags = self.voices(id, &dir, cancel).await?;
                 self.meetings.lock().await.tag_lines(id, &tags)?;
             } else if lines.iter().any(|line| line.track == Track::System) {
                 notes.push(Note::new(
@@ -700,6 +688,75 @@ impl Recorder {
         }
 
         Ok(notes)
+    }
+
+    /// Works out who said each line, on both tracks, from their voices.
+    ///
+    /// The enrolment clips, the microphone and the other side are joined
+    /// into one recording and diarized once, so a voice gets one label
+    /// wherever it is heard: the clips' voice is `me`, anyone else on the
+    /// mic is someone in the room, and the other side heard again on the mic
+    /// is echo.
+    async fn voices(&self, id: &str, dir: &Path, cancel: &AtomicBool) -> Result<Vec<(i64, String)>, String> {
+        let lines = self.meetings.lock().await.all_lines(id)?;
+        let spans = |track: Track| -> Vec<diarize::Span> {
+            lines
+                .iter()
+                .filter(|line| line.track == track)
+                .map(|line| diarize::Span { idx: line.idx, start_ms: line.start_ms, end_ms: line.end_ms })
+                .collect()
+        };
+        let (mic_lines, system_lines) = (spans(Track::Mic), spans(Track::System));
+        let track = |file: &str| -> Vec<f32> {
+            std::fs::read(dir.join(file))
+                .ok()
+                .and_then(|wav| crate::whisper_cpp::decode_wav(&wav).ok())
+                .unwrap_or_default()
+        };
+        let (mic, system) = (track("mic.wav"), track("system.wav"));
+        let enrolment: Vec<f32> = self
+            .history
+            .lock()
+            .await
+            .voice_clips(ENROLMENT_MS)
+            .into_iter()
+            .flat_map(|clip| {
+                // A little silence between clips, as between dictations.
+                clip.into_iter().chain(std::iter::repeat(0.0).take(diarize::RATE as usize / 2))
+            })
+            .collect();
+
+        let joined = diarize::join(&[
+            (diarize::Source::Enrolment, &enrolment),
+            (diarize::Source::Mic, &mic),
+            (diarize::Source::System, &system),
+        ]);
+        let input = dir.join("speakers-16k.wav");
+        std::fs::write(&input, audio::encode_wav(&joined.samples, diarize::RATE)).map_err(|e| e.to_string())?;
+        let turns = diarize::run(&input, cancel).await;
+        let _ = std::fs::remove_file(&input);
+        let turns = turns?;
+        let tagged = diarize::tag_call(&mic_lines, &system_lines, &joined.split(&turns));
+        self.logs.info(
+            &self.app,
+            "meeting",
+            format!(
+                "{id}: {} turn(s), {} line(s) tagged, {} echo, {:.0} s of the user's voice",
+                turns.len(),
+                tagged.tags.len(),
+                tagged.echoes.len(),
+                enrolment.len() as f64 / diarize::RATE as f64
+            ),
+        );
+
+        // A mic line the diarizer has no turn for stays the user's, as it was
+        // before tagging; that also undoes an earlier run's echo.
+        let mut tags = tagged.tags;
+        let decided: std::collections::HashSet<i64> =
+            tags.iter().map(|(idx, _)| *idx).chain(tagged.echoes.iter().copied()).collect();
+        tags.extend(mic_lines.iter().filter(|line| !decided.contains(&line.idx)).map(|line| (line.idx, LOCAL_SPEAKER.to_string())));
+        tags.extend(tagged.echoes.into_iter().map(|idx| (idx, meetings::ECHO.to_string())));
+        Ok(tags)
     }
 
     /// Writes (or rewrites) the summary. Needs an OpenRouter key.
@@ -1124,22 +1181,6 @@ fn mixdown(dir: &Path) -> Result<(), String> {
 }
 
 /// Reads one of our own WAVs: a 44-byte header, then mono PCM16.
-/// Writes the other side's track again at the speaker models' 16 kHz and
-/// returns where. Removed by the caller once the models have read it.
-fn diarizer_input(dir: &Path) -> Result<PathBuf, String> {
-    const DIARIZER_RATE: u32 = 16_000;
-    let (samples, rate) =
-        read_pcm16(&dir.join("system.wav")).ok_or("The other side's track could not be read.")?;
-    let samples = if rate == DIARIZER_RATE {
-        samples
-    } else {
-        resample_linear(&samples, rate, DIARIZER_RATE)
-    };
-    let path = dir.join("speakers-16k.wav");
-    std::fs::write(&path, audio::encode_wav(&samples, DIARIZER_RATE)).map_err(|e| e.to_string())?;
-    Ok(path)
-}
-
 fn read_pcm16(path: &Path) -> Option<(Vec<f32>, u32)> {
     let bytes = std::fs::read(path).ok()?;
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" {
