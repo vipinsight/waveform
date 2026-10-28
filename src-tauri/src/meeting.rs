@@ -29,7 +29,6 @@ use tokio::sync::Mutex;
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
 const MEETING_PANEL_LABEL: &str = "meeting-panel";
-const MEETING_PILL_LABEL: &str = "meeting-pill";
 /// Blocks from the tap helper are read in this many samples at a time;
 /// about 43 ms at 48 kHz, close to the microphone's block.
 const TAP_BLOCK: usize = 2_048;
@@ -908,8 +907,7 @@ impl Recorder {
 
     async fn emit_changed(&self, meeting: &Meeting) {
         let _ = self.app.emit_to(MAIN_LABEL, "meeting-changed", meeting);
-        // The pill and the panel show the title while it records.
-        let _ = self.app.emit_to(MEETING_PILL_LABEL, "meeting-changed", meeting);
+        // The panel shows the title while it records.
         let _ = self.app.emit_to(MEETING_PANEL_LABEL, "meeting-changed", meeting);
     }
 

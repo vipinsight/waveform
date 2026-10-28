@@ -63,20 +63,10 @@ body {
 }
 
 .pill-time {
-  flex: none;
+  flex: 1;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-}
-
-.pill-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 500;
-  color: rgb(255 255 255 / 75%);
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .pill-stop {

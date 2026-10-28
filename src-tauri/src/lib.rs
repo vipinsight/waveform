@@ -65,7 +65,7 @@ const MEETING_PILL_LABEL: &str = "meeting-pill";
 /// The meeting pill's window, which is the pill itself plus a two-point rim,
 /// matching `meeting-pill.css`. No margin beyond that: a transparent window
 /// still swallows clicks meant for whatever is underneath.
-const MEETING_PILL_WIDTH: f64 = 224.0;
+const MEETING_PILL_WIDTH: f64 = 112.0;
 const MEETING_PILL_HEIGHT: f64 = 36.0;
 /// How far below the menu bar the pill first appears.
 const MEETING_PILL_TOP_MARGIN: f64 = 10.0;

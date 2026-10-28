@@ -4,7 +4,7 @@ import { clock } from "./meeting-feed";
 
 /**
  * The meeting pill: its own floating window, apart from the dictation Wave
- * Bar, up only while a meeting records. It shows the clock and the title;
+ * Bar, up only while a meeting records. It shows the clock and a stop;
  * clicking it opens the live transcript, dragging it moves it, and the host
  * remembers where it was left.
  */
@@ -16,10 +16,8 @@ installTauriBridge();
 
 const pill = requireElement<HTMLElement>("pill");
 const time = requireElement<HTMLElement>("pill-time");
-const title = requireElement<HTMLElement>("pill-title");
 const stopButton = requireElement<HTMLButtonElement>("pill-stop");
 
-let meetingId: string | null = null;
 let startedAt: number | null = null;
 let ticker: number | null = null;
 
@@ -35,25 +33,19 @@ function render(): void {
   if (ticker === null) ticker = window.setInterval(render, 1_000);
 }
 
-function begin(id: string, since: number, name: string | null): void {
-  meetingId = id;
+function begin(since: number): void {
   startedAt = since;
-  title.textContent = name ?? "";
   stopButton.disabled = false;
   render();
 }
 
 host().onMeetingState((event) => {
-  if (event.recording && event.meetingId) {
-    begin(event.meetingId, event.startedAt ?? Date.now(), event.title);
+  if (event.recording) {
+    begin(event.startedAt ?? Date.now());
   } else {
-    meetingId = null;
     startedAt = null;
     render();
   }
-});
-host().onMeetingChanged((meeting) => {
-  if (meeting.id === meetingId) title.textContent = meeting.title;
 });
 // The window is built when the first recording starts, after that recording
 // was announced, so it catches up here.
@@ -62,7 +54,7 @@ void host()
   .then(async (status) => {
     if (!status.recording) return;
     const detail = await host().getMeeting(status.recording);
-    begin(detail.meeting.id, detail.meeting.createdAt, detail.meeting.title);
+    begin(detail.meeting.createdAt);
   })
   .catch(() => {});
 
