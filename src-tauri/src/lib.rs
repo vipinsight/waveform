@@ -2341,6 +2341,8 @@ fn state_recording(app: &tauri::AppHandle) -> Option<Meeting> {
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let name = app_display_name();
     let open = MenuItem::with_id(app, "open", format!("Open {name}"), true, None::<&str>)?;
+    // The same id as the app menu's Settings…, so the one handler serves both.
+    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let polish = MenuItem::with_id(app, "polish", "Polish selection", true, None::<&str>)?;
     // A live microphone is never a surprise: while a meeting records, the
     // first thing in the menu says so and stops it.
@@ -2522,6 +2524,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     items.push(&separator);
     items.extend([
         &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
+        &settings_item,
         &separator,
         &model_menu,
         &microphone_menu,
