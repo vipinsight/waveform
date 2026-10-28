@@ -2130,8 +2130,30 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move { dictation.paste_last().await });
         }
         "meeting-record" => {
-            present_main_window(app);
-            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+            let state = app.state::<AppState>();
+            let (settings, recorder, dictation) =
+                (state.settings.clone(), state.recorder.clone(), state.dictation.clone());
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                // The first recording goes through the window, whose sheet
+                // asks macOS for the other side of the call before it starts.
+                // After that, recording starts where the user is: the pill
+                // says it is on, and the window stays out of the way.
+                if !settings.lock().await.value().meetings_intro_seen {
+                    present_main_window(&app);
+                    let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+                    return;
+                }
+                if let Err(error) = recorder.start("").await {
+                    dictation
+                        .notice(Notice {
+                            text: format!("Could not start recording: {error}"),
+                            duration_ms: 6_000,
+                            action: None,
+                        })
+                        .await;
+                }
+            });
         }
         "meeting-stop" => {
             let recorder = app.state::<AppState>().recorder.clone();
