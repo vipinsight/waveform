@@ -61,6 +61,18 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
+const MEETING_PANEL_LABEL: &str = "meeting-panel";
+const MEETING_PILL_LABEL: &str = "meeting-pill";
+/// The meeting pill's window, which is the pill itself plus a two-point rim,
+/// matching `meeting-pill.css`. No margin beyond that: a transparent window
+/// still swallows clicks meant for whatever is underneath.
+const MEETING_PILL_WIDTH: f64 = 112.0;
+const MEETING_PILL_HEIGHT: f64 = 36.0;
+/// How far below the menu bar the pill first appears.
+const MEETING_PILL_TOP_MARGIN: f64 = 10.0;
+/// The panel never gets narrower than this, so a small display still fits a
+/// line of transcript beside its time and speaker.
+const MEETING_PANEL_MIN_WIDTH: u32 = 320;
 const AUTOSTART_ARG: &str = "--autostart";
 /// Large enough for the pill and the tooltips it raises above itself. The
 /// window is transparent but not click-through, so it is kept only as big as
@@ -779,11 +791,287 @@ async fn probe_system_audio(state: State<'_, AppState>) -> Result<String, String
     state.recorder.probe_system_audio().await
 }
 
-/// Brings the window up on the live meeting; the HUD's clock calls this.
+/// Brings the window up on the live meeting; the meeting panel calls this.
 #[tauri::command]
 async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
     present_main_window(&app);
     let _ = app.emit_to(MAIN_LABEL, "open-meetings", "show");
+    Ok(())
+}
+
+/// Opens or closes the live transcript window; the meeting pill calls this.
+#[tauri::command]
+async fn toggle_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    let settings = app.state::<AppState>().settings.lock().await.value();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let open = handle.get_webview_window(MEETING_PANEL_LABEL).is_some_and(|panel| {
+            matches!(panel.is_visible(), Ok(true)) && !matches!(panel.is_minimized(), Ok(true))
+        });
+        if open {
+            close_meeting_panel(&handle);
+        } else {
+            open_meeting_panel(&handle, &settings);
+        }
+    })
+    .map_err(|error| error.to_string())
+}
+
+/// Hides the transcript window, remembering where it was. Closing it never
+/// stops the recording; only Stop does.
+pub(crate) fn close_meeting_panel(app: &tauri::AppHandle) {
+    let Some(panel) = app.get_webview_window(MEETING_PANEL_LABEL) else {
+        return;
+    };
+    if matches!(panel.is_visible(), Ok(true)) {
+        remember_meeting_panel(app, &panel);
+    }
+    let _ = panel.hide();
+}
+
+/// Saves the window's frame so the next meeting opens it where it was left.
+fn remember_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
+    if matches!(panel.is_minimized(), Ok(true)) || matches!(panel.is_maximized(), Ok(true)) {
+        return;
+    }
+    let (Ok(position), Ok(size)) = (panel.outer_position(), panel.inner_size()) else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let next = {
+            let mut store = state.settings.lock().await;
+            let mut settings = store.value();
+            settings.meeting_panel_frame = Some([position.x, position.y, size.width as i32, size.height as i32]);
+            store.update(settings)
+        };
+        let _ = app.emit("settings-changed", &next);
+    });
+}
+
+fn open_meeting_panel(app: &tauri::AppHandle, settings: &AppSettings) {
+    let panel = match app.get_webview_window(MEETING_PANEL_LABEL) {
+        Some(panel) => panel,
+        None => match build_meeting_panel(app) {
+            Ok(panel) => {
+                place_meeting_panel(app, &panel, settings);
+                panel
+            }
+            Err(error) => {
+                eprintln!("Could not build the meeting panel: {error}");
+                return;
+            }
+        },
+    };
+    let _ = panel.unminimize();
+    // Shown without activating Waveform, so its main window stays where it
+    // is behind the call.
+    let _ = panel.show();
+    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-panel", "open");
+}
+
+/// Where the user last left the window, or else docked to the right edge of
+/// the display the pill is on.
+fn place_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow, settings: &AppSettings) {
+    if let Some([x, y, width, height]) = settings.meeting_panel_frame {
+        let _ = panel.set_size(tauri::PhysicalSize::new(width.max(1) as u32, height.max(1) as u32));
+        let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
+        return;
+    }
+    let monitor = app
+        .get_webview_window(MEETING_PILL_LABEL)
+        .and_then(|pill| pill.current_monitor().ok().flatten())
+        .or_else(|| panel.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let min_width = (MEETING_PANEL_MIN_WIDTH as f64 * scale) as u32;
+    let (x, y, width, height) = meeting_panel_frame(
+        area.position.x,
+        area.position.y,
+        area.size.width,
+        area.size.height,
+        min_width,
+    );
+    // `set_size` is the content; the title bar is drawn over it, so the
+    // outer frame is the same and fills the work area exactly.
+    let _ = panel.set_size(tauri::PhysicalSize::new(width, height));
+    let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// The right quarter of a work area, full height, in physical pixels.
+fn meeting_panel_frame(x: i32, y: i32, width: u32, height: u32, min_width: u32) -> (i32, i32, u32, u32) {
+    let panel_width = (width / 4).max(min_width).min(width);
+    (x + (width - panel_width) as i32, y, panel_width, height)
+}
+
+/// Built on first open rather than at launch: most sessions never record.
+///
+/// An ordinary window, with traffic lights, that can be moved, resized,
+/// minimised and zoomed. It floats above the call so the transcript stays in
+/// view, and closing it only hides it.
+fn build_meeting_panel(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let panel = WebviewWindowBuilder::new(
+        app,
+        MEETING_PANEL_LABEL,
+        WebviewUrl::App("meeting-panel.html".into()),
+    )
+    .title("Meeting transcript")
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
+    .min_inner_size(MEETING_PANEL_MIN_WIDTH as f64, 360.0)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(false)
+    .build()?;
+    let handle = app.clone();
+    panel.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            close_meeting_panel(&handle);
+        }
+    });
+    Ok(panel)
+}
+
+/// Puts the meeting pill up while a meeting records, and takes it down after.
+/// The recorder calls this whenever recording starts or stops.
+pub(crate) fn set_meeting_pill(app: &tauri::AppHandle, recording: bool) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let settings = match app.try_state::<AppState>() {
+            Some(state) => state.settings.lock().await.value(),
+            None => return,
+        };
+        let handle = app.clone();
+        // Built and reclassed into an `NSPanel` on the main thread.
+        let _ = app.run_on_main_thread(move || {
+            if !recording {
+                if let Some(pill) = handle.get_webview_window(MEETING_PILL_LABEL) {
+                    let _ = pill.hide();
+                }
+                return;
+            }
+            let pill = match handle.get_webview_window(MEETING_PILL_LABEL) {
+                Some(pill) => pill,
+                None => match build_meeting_pill(&handle) {
+                    Ok(pill) => pill,
+                    Err(error) => {
+                        eprintln!("Could not build the meeting pill: {error}");
+                        return;
+                    }
+                },
+            };
+            place_meeting_pill(&pill, &settings);
+            let _ = pill.show();
+        });
+    });
+}
+
+/// From where the user last left it, or the top centre of the main display.
+fn place_meeting_pill(pill: &tauri::WebviewWindow, settings: &AppSettings) {
+    if let (Some(x), Some(y)) = (settings.meeting_pill_x, settings.meeting_pill_y) {
+        let _ = pill.set_position(tauri::PhysicalPosition::new(x, y));
+        return;
+    }
+    let Ok(Some(monitor)) = pill.primary_monitor() else {
+        return;
+    };
+    let area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let width = (MEETING_PILL_WIDTH * scale) as i32;
+    let x = area.position.x + (area.size.width as i32 - width) / 2;
+    let y = area.position.y + (MEETING_PILL_TOP_MARGIN * scale) as i32;
+    let _ = pill.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+fn build_meeting_pill(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let pill = WebviewWindowBuilder::new(
+        app,
+        MEETING_PILL_LABEL,
+        WebviewUrl::App("meeting-pill.html".into()),
+    )
+    .title("Meeting recording")
+    .inner_size(MEETING_PILL_WIDTH, MEETING_PILL_HEIGHT)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .resizable(false)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    // Like the HUD: pressing Stop must not bring Waveform forward over the
+    // call, and a pill that took keys would take a dictated paste too.
+    .focusable(false)
+    .focused(false)
+    .accept_first_mouse(true)
+    .visible(false)
+    .build()?;
+    if let Err(reason) = panel::make_non_activating(&pill) {
+        eprintln!("Meeting pill stayed an ordinary window, so clicking it will focus Waveform: {reason}");
+    }
+    Ok(pill)
+}
+
+/// The pill is dragged from its page in screen points, as the HUD is; see
+/// `begin_overlay_drag`.
+#[tauri::command]
+async fn begin_meeting_pill_drag(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(pill) = app.get_webview_window(MEETING_PILL_LABEL) {
+        if let Ok(position) = pill.outer_position() {
+            let scale = pill.scale_factor().unwrap_or(1.0);
+            let logical = position.to_logical::<f64>(scale);
+            *state.drag_origin.lock().await = Some((logical.x, logical.y));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn drag_meeting_pill(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<(), String> {
+    let origin = *state.drag_origin.lock().await;
+    let Some((x, y)) = origin else { return Ok(()) };
+    if let Some(pill) = app.get_webview_window(MEETING_PILL_LABEL) {
+        let _ = pill.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
+    }
+    Ok(())
+}
+
+/// Puts the pill where it was let go and remembers that for the next meeting.
+#[tauri::command]
+async fn end_meeting_pill_drag(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<(), String> {
+    let origin = state.drag_origin.lock().await.take();
+    let Some(pill) = app.get_webview_window(MEETING_PILL_LABEL) else {
+        return Ok(());
+    };
+    if let Some((x, y)) = origin {
+        let _ = pill.set_position(tauri::LogicalPosition::new(x + delta_x, y + delta_y));
+    }
+    let Ok(position) = pill.outer_position() else {
+        return Ok(());
+    };
+    let next = {
+        let mut store = state.settings.lock().await;
+        let mut settings = store.value();
+        settings.meeting_pill_x = Some(position.x);
+        settings.meeting_pill_y = Some(position.y);
+        store.update(settings)
+    };
+    let _ = app.emit("settings-changed", &next);
     Ok(())
 }
 
@@ -1276,14 +1564,16 @@ pub fn run() {
         // Remembers the main window's size and position, but never restores
         // visibility: setup decides whether to show it based on the launch source.
         // The overlay is excluded: it is placed deliberately and its position
-        // is already persisted in settings.
+        // is already persisted in settings. So is the meeting pill, for the
+        // same reason, and the meeting panel, whose frame is kept in settings
+        // so its first opening can dock it to the screen edge.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         - tauri_plugin_window_state::StateFlags::VISIBLE,
                 )
-                .with_denylist(&[OVERLAY_LABEL])
+                .with_denylist(&[OVERLAY_LABEL, MEETING_PANEL_LABEL, MEETING_PILL_LABEL])
                 .build(),
         )
         .menu(build_app_menu)
@@ -1597,6 +1887,10 @@ pub fn run() {
             export_meeting_audio,
             install_diarizer,
             show_meetings,
+            toggle_meeting_panel,
+            begin_meeting_pill_drag,
+            drag_meeting_pill,
+            end_meeting_pill_drag,
             probe_system_audio,
             overlay_notice_done,
             cancel_diarizer_install,
@@ -1867,8 +2161,30 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move { dictation.paste_last().await });
         }
         "meeting-record" => {
-            present_main_window(app);
-            let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+            let state = app.state::<AppState>();
+            let (settings, recorder, dictation) =
+                (state.settings.clone(), state.recorder.clone(), state.dictation.clone());
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                // The first recording goes through the window, whose sheet
+                // asks macOS for the other side of the call before it starts.
+                // After that, recording starts where the user is: the pill
+                // says it is on, and the window stays out of the way.
+                if !settings.lock().await.value().meetings_intro_seen {
+                    present_main_window(&app);
+                    let _ = app.emit_to(MAIN_LABEL, "open-meetings", "record");
+                    return;
+                }
+                if let Err(error) = recorder.start("").await {
+                    dictation
+                        .notice(Notice {
+                            text: format!("Could not start recording: {error}"),
+                            duration_ms: 6_000,
+                            action: None,
+                        })
+                        .await;
+                }
+            });
         }
         "meeting-stop" => {
             let recorder = app.state::<AppState>().recorder.clone();
@@ -2239,7 +2555,9 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         // instead made the icon behave unlike every other menu bar item, and
         // left no way to reach Quit without knowing to right click.
         .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
+        // No `on_menu_event` here: the app-wide handler in `run` already
+        // receives tray menu events, and a second one ran every item twice --
+        // "Record a meeting" started a recording, then failed to start another.
         .build(app)?;
     Ok(())
 }
@@ -2531,6 +2849,20 @@ use std::path::Path;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meeting_panel_takes_the_right_quarter() {
+        // A 1440x900 display at 2x, with a 25-point menu bar.
+        assert_eq!(meeting_panel_frame(0, 50, 2880, 1750, 640), (2160, 50, 720, 1750));
+        // A second display to the left of the first.
+        assert_eq!(meeting_panel_frame(-1920, 0, 1920, 1080, 320), (-480, 0, 480, 1080));
+    }
+
+    #[test]
+    fn meeting_panel_keeps_a_readable_width() {
+        assert_eq!(meeting_panel_frame(0, 0, 1024, 768, 320), (704, 0, 320, 768));
+        assert_eq!(meeting_panel_frame(0, 0, 200, 768, 320), (0, 0, 200, 768));
+    }
 
     #[test]
     fn saved_audio_names_cannot_leave_downloads() {

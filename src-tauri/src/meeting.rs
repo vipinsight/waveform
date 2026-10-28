@@ -29,6 +29,7 @@ use tokio::sync::Mutex;
 
 const MAIN_LABEL: &str = "main";
 const OVERLAY_LABEL: &str = "overlay";
+const MEETING_PANEL_LABEL: &str = "meeting-panel";
 /// Blocks from the tap helper are read in this many samples at a time;
 /// about 43 ms at 48 kHz, close to the microphone's block.
 const TAP_BLOCK: usize = 2_048;
@@ -373,6 +374,7 @@ impl Recorder {
                     };
                     let _ = app.emit_to(MAIN_LABEL, "meeting-level", &event);
                     let _ = app.emit_to(OVERLAY_LABEL, "meeting-level", &event);
+                    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-level", &event);
                 }
             })
         };
@@ -402,6 +404,9 @@ impl Recorder {
             started_at: recording.map(|m| m.created_at),
         };
         let _ = self.app.emit("meeting-state", &event);
+        // The transcript window stays open after Stop, so the meeting can
+        // still be read; only a discard takes it away.
+        crate::set_meeting_pill(&self.app, recording.is_some());
         crate::refresh_tray_menu(&self.app);
     }
 
@@ -477,7 +482,6 @@ impl Recorder {
         if let Ok(Some(meeting)) = self.meetings.lock().await.get(&id) {
             self.emit_changed(&meeting).await;
         }
-        self.notify("Saved. Finishing the notes…", 4_000);
 
         if let Some(meter) = active.meter.take() {
             meter.abort();
@@ -528,6 +532,7 @@ impl Recorder {
             return Ok(());
         };
         self.announce(None);
+        crate::close_meeting_panel(&self.app);
         active.stop.store(true, Ordering::Relaxed);
         if let Some(meter) = active.meter.take() {
             meter.abort();
@@ -565,13 +570,11 @@ impl Recorder {
         drop(store);
         self.processing.lock().await.remove(id);
         if let Some(meeting) = meeting {
-            match meeting.state {
-                State::Ready if meeting.summary.is_some() => {
-                    self.notify(format!("Notes ready: {}", meeting.title), 6_000)
-                }
-                State::Ready => self.notify(format!("Saved: {}", meeting.title), 5_000),
-                State::Failed => self.notify("The meeting could not be finished", 6_000),
-                _ => {}
+            // Only a failure is worth a notice: a meeting being saved and
+            // its notes being written are what is expected, and saying so at
+            // each step was noise.
+            if meeting.state == State::Failed {
+                self.notify("The meeting could not be finished", 6_000);
             }
             self.emit_changed(&meeting).await;
         }
@@ -958,6 +961,8 @@ impl Recorder {
 
     async fn emit_changed(&self, meeting: &Meeting) {
         let _ = self.app.emit_to(MAIN_LABEL, "meeting-changed", meeting);
+        // The panel shows the title while it records.
+        let _ = self.app.emit_to(MEETING_PANEL_LABEL, "meeting-changed", meeting);
     }
 
     /// Writes one track to disk and cuts it into phrases, which a second task
@@ -1056,14 +1061,12 @@ impl Recorder {
                         continue;
                     }
                 };
-                let _ = this.app.emit_to(
-                    MAIN_LABEL,
-                    "meeting-line",
-                    LineEvent {
-                        meeting_id: id.clone(),
-                        line,
-                    },
-                );
+                let event = LineEvent {
+                    meeting_id: id.clone(),
+                    line,
+                };
+                let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+                let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
             }
         })
     }

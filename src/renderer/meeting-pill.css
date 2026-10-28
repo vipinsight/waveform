@@ -1,0 +1,98 @@
+/*
+ * The meeting pill: a red-tinted capsule in the Wave Bar's style that floats
+ * while a meeting records. Its window is the pill plus a two-point rim
+ * (MEETING_PILL_WIDTH / MEETING_PILL_HEIGHT in src-tauri/src/lib.rs). The
+ * window is never key, so nothing here relies on `:hover`.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pill {
+  position: absolute;
+  inset: 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 0 12px;
+  border: 1px solid rgb(255 120 110 / 45%);
+  border-radius: 999px;
+  background: rgb(60 14 12 / 94%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  color: #fff;
+  font-size: 12px;
+  cursor: grab;
+  outline: none;
+}
+
+.pill[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.pill-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5f57;
+  animation: pill-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pill-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill-dot {
+    animation: none;
+  }
+}
+
+.pill-time {
+  flex: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.pill-stop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+  cursor: pointer;
+}
+
+.pill-stop svg {
+  width: 11px;
+  height: 11px;
+}
+
+.pill-stop:active {
+  background: #ff5f57;
+}
+
+.pill-stop:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

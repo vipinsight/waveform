@@ -1,0 +1,338 @@
+/*
+ * The live transcript window. Its title bar is drawn over the page (the
+ * traffic lights sit in the header's top-left corner), so the header leaves
+ * them room and is the window's drag area.
+ */
+
+/*
+ * Colours are the main window's tokens (styles.css), so the window matches
+ * the app in light and dark. Only the ones used here are repeated; keep them
+ * in step with styles.css. `data-theme` on the root is the app's Light/Dark
+ * choice; without it the window follows macOS.
+ */
+:root {
+  --paper: #ffffff;
+  --surface-sunken: #f5f4f1;
+  --surface-hover: #e9e6dc;
+  --surface-raised: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #6b685f;
+  --ink-faint: #97938a;
+  --hairline: rgb(28 27 24 / 9%);
+  --hairline-strong: rgb(28 27 24 / 16%);
+  --accent: #3284d0;
+  --danger: #a8443f;
+  --warn: #a3690f;
+  --shadow-menu: 0 12px 36px rgb(28 27 24 / 16%);
+  --speaker-me: #2f6fb0;
+  --speaker-0: #c2504a;
+  --speaker-1: #3f8a4a;
+  --speaker-2: #8a5fb0;
+  --speaker-3: #b07a1f;
+  --speaker-4: #2d8f8a;
+  --speaker-5: #8c5a3a;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b1a17;
+    --surface-sunken: #26241f;
+    --surface-hover: #302e28;
+    --surface-raised: #26241f;
+    --ink: #f2efe8;
+    --ink-soft: #a8a49a;
+    --ink-faint: #78746b;
+    --hairline: rgb(255 255 255 / 10%);
+    --hairline-strong: rgb(255 255 255 / 18%);
+    --accent: #6aa9e4;
+    --danger: #e08a83;
+    --warn: #e0b35a;
+    --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
+    --speaker-me: #7fb3ea;
+    --speaker-0: #ee8a83;
+    --speaker-1: #7cc98a;
+    --speaker-2: #c29be6;
+    --speaker-3: #e0b35a;
+    --speaker-4: #6cc9c3;
+    --speaker-5: #d3a07f;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1b1a17;
+  --surface-sunken: #26241f;
+  --surface-hover: #302e28;
+  --surface-raised: #26241f;
+  --ink: #f2efe8;
+  --ink-soft: #a8a49a;
+  --ink-faint: #78746b;
+  --hairline: rgb(255 255 255 / 10%);
+  --hairline-strong: rgb(255 255 255 / 18%);
+  --accent: #6aa9e4;
+  --danger: #e08a83;
+  --warn: #e0b35a;
+  --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
+  --speaker-me: #7fb3ea;
+  --speaker-0: #ee8a83;
+  --speaker-1: #7cc98a;
+  --speaker-2: #c29be6;
+  --speaker-3: #e0b35a;
+  --speaker-4: #6cc9c3;
+  --speaker-5: #d3a07f;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--paper);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------------------------------------------ head */
+
+.panel-head {
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Level with the traffic lights, and clear of them. */
+.panel-title-row {
+  min-height: 22px;
+  padding-left: 68px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: panel-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes panel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.panel-title {
+  margin: 8px 0 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.panel-clock {
+  flex: 1;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.panel-note.is-warn {
+  color: var(--warn);
+}
+
+/* ----------------------------------------------------------------- lines */
+
+.panel-lines {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 14px 16px;
+  overflow-y: auto;
+  list-style: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.panel-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  padding-top: 10px;
+}
+
+.panel-line.is-continued {
+  padding-top: 3px;
+}
+
+.panel-line-time {
+  grid-column: 1;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+.panel-line-speaker {
+  grid-column: 2;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--chip, var(--ink-soft));
+}
+
+/* One hue per voice, as on the Meetings page. */
+.panel-line.is-me { --chip: var(--speaker-me); }
+.panel-line.is-them { --chip: var(--ink-soft); }
+.panel-line.is-s0 { --chip: var(--speaker-0); }
+.panel-line.is-s1 { --chip: var(--speaker-1); }
+.panel-line.is-s2 { --chip: var(--speaker-2); }
+.panel-line.is-s3 { --chip: var(--speaker-3); }
+.panel-line.is-s4 { --chip: var(--speaker-4); }
+.panel-line.is-s5 { --chip: var(--speaker-5); }
+
+.panel-line-text {
+  grid-column: 2;
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* A continued line keeps its time but drops the repeated name. */
+.panel-line.is-continued .panel-line-speaker {
+  display: none;
+}
+
+.panel-line.is-continued .panel-line-text {
+  grid-row: 1;
+}
+
+.panel-empty {
+  padding-top: 16px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+.panel-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  padding: 6px 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  transform: translateX(-50%);
+  box-shadow: var(--shadow-menu);
+  cursor: pointer;
+}
+
+.panel-jump[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.panel-foot {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-confirm p {
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.panel-confirm[hidden],
+.panel-actions[hidden] {
+  display: none;
+}
+
+.panel-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface-hover);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.panel-button.is-stop {
+  background: var(--danger);
+  color: #fff;
+}
+
+.panel-button svg {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-button:active {
+  transform: scale(0.96);
+}
+
+.panel-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.panel-button.is-small {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.panel-status {
+  margin: 0;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.panel-status[hidden] {
+  display: none;
+}
+
+/* Stopped: the dot goes still and grey, and the clock holds the length. */
+.panel[data-state="stopped"] .panel-dot {
+  background: var(--ink-faint);
+  animation: none;
+}
