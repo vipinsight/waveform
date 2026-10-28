@@ -4,19 +4,16 @@ import { installTauriBridge } from "./tauri-bridge";
 import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from "./meeting-feed";
 
 /**
- * The live transcript beside the screen edge, opened from the HUD's meeting
- * pill. It shows the meeting that is recording and nothing else: there is
- * only ever one, and the host closes the panel when it stops.
+ * The live transcript window, opened from the meeting pill. It shows the
+ * meeting that is recording and nothing else: there is only ever one. Closing
+ * the window only hides it; the host hides it too when the recording ends.
  */
 
-/** How long the panel takes to slide out, from `meeting-panel.css`, plus a frame. */
-const CLOSE_MS = 160;
 /** How long the other side may stay silent before that reads as a missing permission. */
 const UNHEARD_AFTER_MS = 5_000;
 
 installTauriBridge();
 
-const panel = requireElement<HTMLElement>("panel");
 const titleText = requireElement<HTMLElement>("panel-title");
 const clockText = requireElement<HTMLElement>("panel-clock");
 const micMeter = requireElement<HTMLElement>("meter-mic");
@@ -39,36 +36,15 @@ let lines: MeetingLine[] = [];
 let level: MeetingLevelEvent | null = null;
 /** Whether new lines scroll into view; off while the reader has scrolled up. */
 let following = true;
-let ticker: number | null = null;
-let hideTimer: number | null = null;
 
-// --- Opening and closing ------------------------------------------------------
+// --- Opening ------------------------------------------------------------------
 
+/** The host shows the window; the page catches up on whatever it missed. */
 function open(): void {
-  if (hideTimer !== null) {
-    window.clearTimeout(hideTimer);
-    hideTimer = null;
-  }
   void load();
-  // Next frame, so a panel that was just shown starts from off screen.
-  requestAnimationFrame(() => {
-    panel.dataset.open = "true";
-  });
-  if (ticker === null) ticker = window.setInterval(renderClock, 1_000);
 }
 
-function close(): void {
-  panel.dataset.open = "false";
-  if (ticker !== null) {
-    window.clearInterval(ticker);
-    ticker = null;
-  }
-  if (hideTimer !== null) window.clearTimeout(hideTimer);
-  hideTimer = window.setTimeout(() => {
-    hideTimer = null;
-    void host().hideMeetingPanel();
-  }, CLOSE_MS);
-}
+window.setInterval(renderClock, 1_000);
 
 /** Catches up on the recording: its title, who is on it, and the lines so far. */
 async function load(): Promise<void> {
@@ -192,14 +168,10 @@ list.addEventListener("scroll", () => {
 });
 jump.addEventListener("click", scrollToLatest);
 
-requireElement<HTMLButtonElement>("panel-close").addEventListener("click", close);
-requireElement<HTMLButtonElement>("panel-open").addEventListener("click", () => {
-  void host().showMeetings();
-  close();
-});
+requireElement<HTMLButtonElement>("panel-open").addEventListener("click", () => void host().showMeetings());
 stopButton.addEventListener("click", () => {
   stopButton.disabled = true;
-  // The host closes the panel once the recording has stopped.
+  // The host hides the window once the recording has stopped.
   void host()
     .stopMeeting()
     .catch(() => {
@@ -215,7 +187,7 @@ confirmDiscardButton.addEventListener("click", () => {
     .catch(() => showConfirm(false));
 });
 
-host().onMeetingPanel((action) => (action === "open" ? open() : close()));
+host().onMeetingPanel(open);
 host().onMeetingState((event) => {
   if (event.recording && event.meetingId !== meetingId) void load();
 });
@@ -237,8 +209,8 @@ host().onMeetingChanged((meeting) => {
   speakers = meeting.speakers;
 });
 
-// The window is built on the first open, after the host has already asked it
-// to slide in, so the first open comes from here.
+// The window is built on the first open, after the host has already said so,
+// so the first catch-up comes from here.
 open();
 
 function requireElement<T extends HTMLElement>(id: string): T {

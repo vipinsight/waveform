@@ -1,10 +1,7 @@
 /*
- * The live transcript, docked to the right edge of the screen.
- *
- * The window is transparent and exactly the panel's size; the panel slides
- * across it, so the desktop shows through only while it moves. Like the HUD,
- * the window is never key, so nothing here relies on `:hover` or focus rings
- * for meaning.
+ * The live transcript window. Its title bar is drawn over the page (the
+ * traffic lights sit in the header's top-left corner), so the header leaves
+ * them room and is the window's drag area.
  */
 
 * {
@@ -16,7 +13,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: transparent;
+  background: #0e0e0d;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 13px;
   color: #f6f5f2;
@@ -30,37 +27,19 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid rgb(255 255 255 / 10%);
-  background: rgb(14 14 13 / 96%);
-  transform: translateX(100%);
-  transition: transform 180ms cubic-bezier(0.22, 0.9, 0.3, 1);
-}
-
-.panel[data-open="true"] {
-  transform: translateX(0);
-}
-
-/* Leaving is quicker than arriving, as with the HUD. */
-.panel[data-open="false"] {
-  transition-duration: 140ms;
-  transition-timing-function: ease-in;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .panel,
-  .panel[data-open="false"] {
-    transition: none;
-  }
 }
 
 /* ------------------------------------------------------------------ head */
 
 .panel-head {
-  padding: 14px 14px 10px;
+  padding: 11px 14px 10px;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
 }
 
+/* Level with the traffic lights, and clear of them. */
 .panel-title-row {
+  min-height: 22px;
+  padding-left: 68px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -95,29 +74,6 @@ body {
   flex: none;
   color: rgb(246 245 242 / 70%);
   font-variant-numeric: tabular-nums;
-}
-
-.panel-close {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgb(246 245 242 / 70%);
-  cursor: pointer;
-}
-
-.panel-close:active {
-  background: rgb(255 255 255 / 12%);
-}
-
-.panel-close svg {
-  width: 14px;
-  height: 14px;
 }
 
 .panel-meters {

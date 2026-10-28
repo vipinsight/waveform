@@ -798,69 +798,96 @@ async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens or closes the live transcript docked to the screen edge; the meeting
-/// pill calls this.
+/// Opens or closes the live transcript window; the meeting pill calls this.
 #[tauri::command]
 async fn toggle_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    let settings = app.state::<AppState>().settings.lock().await.value();
     let handle = app.clone();
-    // The panel is reclassed into an `NSPanel` when it is built, which has to
-    // happen on the main thread.
     app.run_on_main_thread(move || {
-        let open = handle
-            .get_webview_window(MEETING_PANEL_LABEL)
-            .is_some_and(|panel| matches!(panel.is_visible(), Ok(true)));
+        let open = handle.get_webview_window(MEETING_PANEL_LABEL).is_some_and(|panel| {
+            matches!(panel.is_visible(), Ok(true)) && !matches!(panel.is_minimized(), Ok(true))
+        });
         if open {
             close_meeting_panel(&handle);
         } else {
-            open_meeting_panel(&handle);
+            open_meeting_panel(&handle, &settings);
         }
     })
     .map_err(|error| error.to_string())
 }
 
-/// The panel finished sliding out and can leave the screen.
-#[tauri::command]
-async fn hide_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(panel) = app.get_webview_window(MEETING_PANEL_LABEL) {
-        let _ = panel.hide();
-    }
-    Ok(())
-}
-
-/// Asks the panel to slide out; it hides its window once it has.
+/// Hides the transcript window, remembering where it was. Closing it never
+/// stops the recording; only Stop does.
 pub(crate) fn close_meeting_panel(app: &tauri::AppHandle) {
-    let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-panel", "close");
+    let Some(panel) = app.get_webview_window(MEETING_PANEL_LABEL) else {
+        return;
+    };
+    if matches!(panel.is_visible(), Ok(true)) {
+        remember_meeting_panel(app, &panel);
+    }
+    let _ = panel.hide();
 }
 
-fn open_meeting_panel(app: &tauri::AppHandle) {
+/// Saves the window's frame so the next meeting opens it where it was left.
+fn remember_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
+    if matches!(panel.is_minimized(), Ok(true)) || matches!(panel.is_maximized(), Ok(true)) {
+        return;
+    }
+    let (Ok(position), Ok(size)) = (panel.outer_position(), panel.inner_size()) else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let next = {
+            let mut store = state.settings.lock().await;
+            let mut settings = store.value();
+            settings.meeting_panel_frame = Some([position.x, position.y, size.width as i32, size.height as i32]);
+            store.update(settings)
+        };
+        let _ = app.emit("settings-changed", &next);
+    });
+}
+
+fn open_meeting_panel(app: &tauri::AppHandle, settings: &AppSettings) {
     let panel = match app.get_webview_window(MEETING_PANEL_LABEL) {
         Some(panel) => panel,
         None => match build_meeting_panel(app) {
-            Ok(panel) => panel,
+            Ok(panel) => {
+                place_meeting_panel(app, &panel, settings);
+                panel
+            }
             Err(error) => {
                 eprintln!("Could not build the meeting panel: {error}");
                 return;
             }
         },
     };
-    place_meeting_panel(app, &panel);
+    let _ = panel.unminimize();
+    // Shown without activating Waveform, so its main window stays where it
+    // is behind the call.
     let _ = panel.show();
-    // A panel built just now slides in by itself once it has loaded; this
-    // reaches one that was only hidden.
     let _ = app.emit_to(MEETING_PANEL_LABEL, "meeting-panel", "open");
 }
 
-/// Docks the panel to the right edge of the display the pill is on.
-fn place_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
+/// Where the user last left the window, or else docked to the right edge of
+/// the display the pill is on.
+fn place_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow, settings: &AppSettings) {
+    if let Some([x, y, width, height]) = settings.meeting_panel_frame {
+        let _ = panel.set_size(tauri::PhysicalSize::new(width.max(1) as u32, height.max(1) as u32));
+        let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
+        return;
+    }
     let monitor = app
         .get_webview_window(MEETING_PILL_LABEL)
-        .and_then(|overlay| overlay.current_monitor().ok().flatten())
+        .and_then(|pill| pill.current_monitor().ok().flatten())
         .or_else(|| panel.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         return;
     };
     let area = monitor.work_area();
-    let min_width = (MEETING_PANEL_MIN_WIDTH as f64 * monitor.scale_factor()) as u32;
+    let scale = monitor.scale_factor();
+    let min_width = (MEETING_PANEL_MIN_WIDTH as f64 * scale) as u32;
     let (x, y, width, height) = meeting_panel_frame(
         area.position.x,
         area.position.y,
@@ -868,6 +895,8 @@ fn place_meeting_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
         area.size.height,
         min_width,
     );
+    // `set_size` is the content; the title bar is drawn over it, so the
+    // outer frame is the same and fills the work area exactly.
     let _ = panel.set_size(tauri::PhysicalSize::new(width, height));
     let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
 }
@@ -879,6 +908,10 @@ fn meeting_panel_frame(x: i32, y: i32, width: u32, height: u32, min_width: u32) 
 }
 
 /// Built on first open rather than at launch: most sessions never record.
+///
+/// An ordinary window, with traffic lights, that can be moved, resized,
+/// minimised and zoomed. It floats above the call so the transcript stays in
+/// view, and closing it only hides it.
 fn build_meeting_panel(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let panel = WebviewWindowBuilder::new(
         app,
@@ -886,24 +919,21 @@ fn build_meeting_panel(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWi
         WebviewUrl::App("meeting-panel.html".into()),
     )
     .title("Meeting transcript")
-    .decorations(false)
-    // Transparent so the content can slide in from the edge.
-    .transparent(true)
-    .shadow(false)
-    .resizable(false)
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
+    .min_inner_size(MEETING_PANEL_MIN_WIDTH as f64, 360.0)
     .always_on_top(true)
-    .visible_on_all_workspaces(true)
     .skip_taskbar(true)
-    // Like the HUD: pressing Stop must not bring Waveform forward over the
-    // call, and a panel that took keys would take a dictated paste too.
-    .focusable(false)
     .focused(false)
-    .accept_first_mouse(true)
     .visible(false)
     .build()?;
-    if let Err(reason) = panel::make_non_activating(&panel) {
-        eprintln!("Meeting panel stayed an ordinary window, so clicking it will focus Waveform: {reason}");
-    }
+    let handle = app.clone();
+    panel.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            close_meeting_panel(&handle);
+        }
+    });
     Ok(panel)
 }
 
@@ -1534,8 +1564,8 @@ pub fn run() {
         // visibility: setup decides whether to show it based on the launch source.
         // The overlay is excluded: it is placed deliberately and its position
         // is already persisted in settings. So is the meeting pill, for the
-        // same reason, and the meeting panel, which is docked to a screen edge
-        // every time it opens.
+        // same reason, and the meeting panel, whose frame is kept in settings
+        // so its first opening can dock it to the screen edge.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -1856,7 +1886,6 @@ pub fn run() {
             install_diarizer,
             show_meetings,
             toggle_meeting_panel,
-            hide_meeting_panel,
             begin_meeting_pill_drag,
             drag_meeting_pill,
             end_meeting_pill_drag,

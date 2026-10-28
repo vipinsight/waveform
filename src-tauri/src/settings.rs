@@ -102,6 +102,9 @@ pub struct AppSettings {
     /// coordinates. None puts it at the top centre of the main display.
     pub meeting_pill_x: Option<i32>,
     pub meeting_pill_y: Option<i32>,
+    /// Where the transcript window was last left: x, y, width, height in
+    /// physical pixels. None docks it to the right edge.
+    pub meeting_panel_frame: Option<[i32; 4]>,
     pub theme: String,
     /// Where a rewrite runs: "openrouter" for the hosted models, or "local"
     /// for a model downloaded onto this Mac.
@@ -193,6 +196,7 @@ impl Default for AppSettings {
             overlay_cy: None,
             meeting_pill_x: None,
             meeting_pill_y: None,
+            meeting_panel_frame: None,
             // Light rather than following macOS. Only a fresh install takes
             // this; a settings file that names a theme keeps the one it names.
             theme: "light".to_string(),

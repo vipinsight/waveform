@@ -3,25 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <title>Meeting transcript</title>
-    <!--
-      Icons are Lucide (ISC), inlined as in overlay.html. Each carries
-      `data-icon` with its name at https://lucide.dev/icons.
-    -->
+    <!-- The stop icon is Lucide's square (ISC), inlined as in overlay.html. -->
     <link rel="stylesheet" href="./meeting-panel.css" />
   </head>
   <body>
-    <section id="panel" class="panel" data-open="false" aria-label="Live meeting transcript">
-      <header class="panel-head">
-        <div class="panel-title-row">
+    <section id="panel" class="panel" aria-label="Live meeting transcript">
+      <!-- The title bar is drawn over the page, so the header is its drag area
+           and leaves room for the traffic lights. -->
+      <header class="panel-head" data-tauri-drag-region>
+        <div class="panel-title-row" data-tauri-drag-region>
           <span class="panel-dot" id="panel-dot" aria-hidden="true"></span>
-          <h1 id="panel-title" class="panel-title">Meeting</h1>
-          <span id="panel-clock" class="panel-clock">00:00</span>
-          <button id="panel-close" class="panel-close" type="button" aria-label="Close" title="Close">
-            <svg data-icon="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
-          </button>
+          <h1 id="panel-title" class="panel-title" data-tauri-drag-region>Meeting</h1>
+          <span id="panel-clock" class="panel-clock" data-tauri-drag-region>00:00</span>
         </div>
         <div class="panel-meters">
           <span class="panel-meter" id="meter-mic" data-label="You"><span class="panel-meter-fill"></span></span>
