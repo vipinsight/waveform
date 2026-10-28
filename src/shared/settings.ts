@@ -70,6 +70,10 @@ export interface AppSettings {
       recorded, so the window can grow around the pill without moving it. */
   overlayCx: number | null;
   overlayCy: number | null;
+  /** Where the user dragged the meeting pill, in screen coordinates. Null
+      puts it at the top centre of the main display. */
+  meetingPillX: number | null;
+  meetingPillY: number | null;
   theme: ThemePreference;
 
   /** Which engine both rewrite paths use. */
@@ -162,6 +166,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlayY: null,
   overlayCx: null,
   overlayCy: null,
+  meetingPillX: null,
+  meetingPillY: null,
   // Light rather than following macOS. Only a fresh install takes this: a
   // settings file that names a theme keeps the one it names.
   theme: "light",
@@ -229,6 +235,8 @@ export function normalizeSettings(
     overlayY: coordinate(input.overlayY, base.overlayY),
     overlayCx: coordinate(input.overlayCx, base.overlayCx),
     overlayCy: coordinate(input.overlayCy, base.overlayCy),
+    meetingPillX: coordinate(input.meetingPillX, base.meetingPillX),
+    meetingPillY: coordinate(input.meetingPillY, base.meetingPillY),
     theme: isThemePreference(input.theme) ? input.theme : base.theme,
     polishEngine: isPolishEngine(input.polishEngine) ? input.polishEngine : base.polishEngine,
     openRouterModel: text(input.openRouterModel, base.openRouterModel, 200),

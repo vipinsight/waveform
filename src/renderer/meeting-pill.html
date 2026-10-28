@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Meeting recording</title>
+    <link rel="stylesheet" href="./meeting-pill.css" />
+  </head>
+  <body>
+    <!-- The whole pill opens the transcript and drags; only Stop is its own button. -->
+    <div id="pill" class="pill" role="button" tabindex="0" title="Show the live transcript" aria-label="Meeting recording. Show the live transcript">
+      <span class="pill-dot" aria-hidden="true"></span>
+      <span id="pill-time" class="pill-time">00:00</span>
+      <span id="pill-title" class="pill-title"></span>
+      <button id="pill-stop" class="pill-stop" type="button" aria-label="Stop recording" title="Stop recording">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect width="12" height="12" x="6" y="6" rx="2" />
+        </svg>
+      </button>
+    </div>
+    <script src="./meeting-pill.js"></script>
+  </body>
+</html>

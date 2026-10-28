@@ -98,6 +98,10 @@ pub struct AppSettings {
     /// to make room for its tooltips.
     pub overlay_cx: Option<f64>,
     pub overlay_cy: Option<f64>,
+    /// Where the user dragged the meeting pill, in physical screen
+    /// coordinates. None puts it at the top centre of the main display.
+    pub meeting_pill_x: Option<i32>,
+    pub meeting_pill_y: Option<i32>,
     pub theme: String,
     /// Where a rewrite runs: "openrouter" for the hosted models, or "local"
     /// for a model downloaded onto this Mac.
@@ -187,6 +191,8 @@ impl Default for AppSettings {
             overlay_y: None,
             overlay_cx: None,
             overlay_cy: None,
+            meeting_pill_x: None,
+            meeting_pill_y: None,
             // Light rather than following macOS. Only a fresh install takes
             // this; a settings file that names a theme keeps the one it names.
             theme: "light".to_string(),

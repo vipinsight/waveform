@@ -69,6 +69,12 @@ describe("stylesheet covers the markup", () => {
     expect(unstyled).toEqual([]);
   });
 
+  it("styles every class the meeting pill uses", () => {
+    const pillHtml = readFileSync("src/renderer/meeting-pill.html", "utf8");
+    const pillCss = readFileSync("src/renderer/meeting-pill.css", "utf8");
+    expect(classesIn(pillHtml).filter((name) => !pillCss.includes(`.${name}`))).toEqual([]);
+  });
+
   it("styles every class the overlay uses", () => {
     const unstyled = classesIn(overlayHtml).filter(
       (name) => !overlayCss.includes(`.${name}`),

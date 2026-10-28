@@ -14,7 +14,6 @@ use crate::settings::SettingsStore;
 use crate::stats::StatsStore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
@@ -208,9 +207,6 @@ pub struct Dictation {
     /// Set by the indicator's polish button: rewrite this dictation even when
     /// the standing "clean up dictation" setting is off.
     rewrite_pending: Mutex<bool>,
-    /// A meeting is recording, so the HUD stays up as its pill whatever the
-    /// Wave Bar setting says.
-    meeting_recording: AtomicBool,
 }
 
 impl Dictation {
@@ -261,7 +257,6 @@ impl Dictation {
             pending_sink: Mutex::new("insert".into()),
             discard_pending: Mutex::new(false),
             rewrite_pending: Mutex::new(false),
-            meeting_recording: AtomicBool::new(false),
         })
     }
 
@@ -639,20 +634,6 @@ impl Dictation {
         self.send_to_overlay("preview", "transcript", "hold").await;
     }
 
-    /// The HUD is the meeting's pill while one records, so it comes up when a
-    /// recording starts and goes back to what the setting says when it ends.
-    pub async fn set_meeting_recording(&self, recording: bool) {
-        self.meeting_recording.store(recording, Ordering::SeqCst);
-        if recording {
-            self.show_overlay().await;
-        } else {
-            let busy = self.session.lock().await.is_some();
-            if !busy && !self.settings.lock().await.value().show_flow_bar_always {
-                self.hide_overlay();
-            }
-        }
-    }
-
     /// Makes the Wave Bar persist while idle, or removes it immediately.
     pub async fn apply_flow_bar_setting(self: &Arc<Self>) {
         if self.settings.lock().await.value().show_flow_bar_always {
@@ -854,9 +835,7 @@ impl Dictation {
             // it the point at which the whole dictation is known.
             self.flush_pending().await;
 
-            if self.settings.lock().await.value().show_flow_bar_always
-                || self.meeting_recording.load(Ordering::SeqCst)
-            {
+            if self.settings.lock().await.value().show_flow_bar_always {
                 self.send_to_overlay("idle", "insert", "hold").await;
             } else {
                 self.hide_overlay();
@@ -1148,11 +1127,7 @@ impl Dictation {
         let _ = overlay.set_always_on_top(true);
     }
 
-    /// Never while a meeting records: the HUD is then its pill.
     fn hide_overlay(&self) {
-        if self.meeting_recording.load(Ordering::SeqCst) {
-            return;
-        }
         if let Some(overlay) = self.app.get_webview_window(OVERLAY_LABEL) {
             let _ = overlay.hide();
         }

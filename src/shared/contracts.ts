@@ -595,6 +595,10 @@ export interface DesktopApi {
   showMeetings(): Promise<void>;
   /** Opens or closes the live transcript docked to the screen edge. */
   toggleMeetingPanel(): Promise<void>;
+  /** The meeting pill is dragged like the HUD: deltas from where it started, in screen points. */
+  beginMeetingPillDrag(): void;
+  moveMeetingPill(deltaX: number, deltaY: number): void;
+  endMeetingPillDrag(deltaX: number, deltaY: number): void;
   /** Takes the panel off screen once it has slid out. */
   hideMeetingPanel(): Promise<void>;
   /** The host asks the panel to slide in or out. */
