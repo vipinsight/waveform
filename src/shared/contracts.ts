@@ -593,6 +593,14 @@ export interface DesktopApi {
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;
+  /** Opens or closes the live transcript window. */
+  toggleMeetingPanel(): Promise<void>;
+  /** The meeting pill is dragged like the HUD: deltas from where it started, in screen points. */
+  beginMeetingPillDrag(): void;
+  moveMeetingPill(deltaX: number, deltaY: number): void;
+  endMeetingPillDrag(deltaX: number, deltaY: number): void;
+  /** The host has just shown the transcript window. */
+  onMeetingPanel(listener: (action: "open") => void): () => void;
   /**
    * Asks macOS for permission to hear the other side of a call (the first
    * call shows the system prompt) and reports what happened.

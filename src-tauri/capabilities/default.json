@@ -1,10 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core access for the app window and the dictation overlay. Without event permissions neither window can receive pushed state, which the overlay depends on to know when to listen.",
+  "description": "Core access for the app window, the dictation overlay, and the meeting pill and panel. Without event permissions neither window can receive pushed state, which the overlay depends on to know when to listen.",
   "windows": [
     "main",
-    "overlay"
+    "overlay",
+    "meeting-panel",
+    "meeting-pill"
   ],
   "permissions": [
     "core:default",
