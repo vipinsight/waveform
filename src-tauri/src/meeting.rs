@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::Mutex;
 
@@ -395,6 +395,11 @@ impl Recorder {
             started_at: recording.map(|m| m.created_at),
         };
         let _ = self.app.emit("meeting-state", &event);
+        if let Some(state) = self.app.try_state::<crate::AppState>() {
+            let dictation = state.dictation.clone();
+            let recording = recording.is_some();
+            tauri::async_runtime::spawn(async move { dictation.set_meeting_recording(recording).await });
+        }
         if recording.is_none() {
             crate::close_meeting_panel(&self.app);
         }
