@@ -3,6 +3,7 @@ import type {
   AppStats,
   ModelFit,
   SavedDictation,
+  DictationState,
   DictationUpdate,
   HotkeyStatus,
   MicrophoneDevice,
@@ -26,14 +27,7 @@ import {
   isSpeechModelId,
   type SpeechModelId,
 } from "../shared/models";
-import {
-  DEFAULT_LADDER_INDEX,
-  DEFAULT_LADDER_MODEL_ID,
-  MODEL_LADDER,
-  chooseModel,
-  ladderIndexOf,
-  ladderRung,
-} from "../shared/model-ladder";
+import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
@@ -192,47 +186,23 @@ const element = {
   promptEditorReset: requireElement<HTMLButtonElement>("prompt-editor-reset"),
   promptEditorSave: requireElement<HTMLButtonElement>("prompt-editor-save"),
   wizard: requireElement<HTMLElement>("wizard"),
-  wizardBrand: requireElement<HTMLElement>("wizard-brand"),
+  wizardDots: requireElement<HTMLElement>("wizard-dots"),
   wizardNext: requireElement<HTMLButtonElement>("wizard-next"),
-  ladderSlider: requireElement<HTMLInputElement>("ladder-slider"),
-  ladderName: requireElement<HTMLElement>("ladder-name"),
-  ladderModel: requireElement<HTMLElement>("ladder-model"),
-  ladderTrade: requireElement<HTMLElement>("ladder-trade"),
-  ladderTicks: requireElement<HTMLElement>("ladder-ticks"),
-  ladderFacts: requireElement<HTMLElement>("ladder-facts"),
-  ladderNote: requireElement<HTMLElement>("ladder-note"),
-  keyboard: requireElement<HTMLElement>("keyboard"),
-  keyboardCaption: requireElement<HTMLElement>("keyboard-caption"),
+  wizardBack: requireElement<HTMLButtonElement>("wizard-back"),
+  wizardSkip: requireElement<HTMLButtonElement>("wizard-skip"),
+  wizardDownloads: requireElement<HTMLElement>("wizard-downloads"),
+  wizardDownloadsText: requireElement<HTMLElement>("wizard-downloads-text"),
+  wizardDownloadsTrack: requireElement<HTMLElement>("wizard-downloads-track"),
+  wizardDownloadsBar: requireElement<HTMLElement>("wizard-downloads-bar"),
+  keypick: requireElement<HTMLElement>("keypick"),
+  keypickMore: requireElement<HTMLButtonElement>("keypick-more"),
   wizardFnNote: requireElement<HTMLElement>("wizard-fn-note"),
   wizardChecklist: requireElement<HTMLElement>("wizard-checklist"),
   wizardPermissionsNote: requireElement<HTMLElement>("wizard-permissions-note"),
-  wizardPolishLevels: requireElement<HTMLElement>("wizard-polish-levels"),
-  wizardEngineRow: requireElement<HTMLElement>("wizard-engine-row"),
-  wizardEngine: requireElement<HTMLElement>("wizard-engine"),
-  wizardEngineNote: requireElement<HTMLElement>("wizard-engine-note"),
-  wizardEngineDetail: requireElement<HTMLElement>("wizard-engine-detail"),
-  wizardKeyRow: requireElement<HTMLElement>("wizard-key-row"),
-  wizardLocalRow: requireElement<HTMLElement>("wizard-local-row"),
-  wizardLocalName: requireElement<HTMLElement>("wizard-local-name"),
-  wizardLocalState: requireElement<HTMLElement>("wizard-local-state"),
-  wizardLocalTrack: requireElement<HTMLElement>("wizard-local-track"),
-  wizardLocalBar: requireElement<HTMLElement>("wizard-local-bar"),
-  wizardKeyInput: requireElement<HTMLInputElement>("wizard-key-input"),
-  wizardKeySave: requireElement<HTMLButtonElement>("wizard-key-save"),
-  wizardKeyState: requireElement<HTMLElement>("wizard-key-state"),
-  wizardOpenOpenRouter: requireElement<HTMLButtonElement>("wizard-open-openrouter"),
-  readyTitle: requireElement<HTMLElement>("ready-title"),
-  readyProgress: requireElement<HTMLElement>("ready-progress"),
-  readySpeechRow: requireElement<HTMLElement>("ready-speech-row"),
-  readySpeechName: requireElement<HTMLElement>("ready-speech-name"),
-  readySpeechState: requireElement<HTMLElement>("ready-speech-state"),
-  readySpeechBar: requireElement<HTMLElement>("ready-speech-bar"),
-  readyPolishRow: requireElement<HTMLElement>("ready-polish-row"),
-  readyPolishName: requireElement<HTMLElement>("ready-polish-name"),
-  readyPolishState: requireElement<HTMLElement>("ready-polish-state"),
-  readyPolishBar: requireElement<HTMLElement>("ready-polish-bar"),
-  readyKey: requireElement<HTMLElement>("ready-key"),
-  readyKeyTap: requireElement<HTMLElement>("ready-key-tap"),
+  practice: requireElement<HTMLElement>("practice"),
+  practiceResult: requireElement<HTMLElement>("practice-result"),
+  practiceResultText: requireElement<HTMLElement>("practice-result-text"),
+  practiceResultCaption: requireElement<HTMLElement>("practice-result-caption"),
 };
 
 let settings: AppSettings = DEFAULT_SETTINGS;
@@ -321,54 +291,27 @@ let query = "";
 let microphones: MicrophoneDevice[] = [];
 /** Which page of the first-run wizard is up, or null when it is not open. */
 let wizardStep: WizardStep | null = null;
-/**
- * How each model sits in this Mac's memory, and whether its weights are here.
- *
- * The slider asks the catalogue nothing as it moves: a round trip per drag
- * would be forty of them, and the answer -- how much memory this machine has
- * -- cannot change while a window is open. The installed half is re-read each
- * time a prefetch finishes, which is the only thing that changes it.
- */
-let wizardCatalog = new Map<string, ModelStatus>();
-/**
- * Models the wizard is fetching without being asked, in the order it wants
- * them. The host runs one download at a time -- a second call while one is
- * running comes back "A download is already running." -- so this is drained
- * one at a time rather than started at once.
- */
-let prefetchQueue: SpeechModelId[] = [];
-let prefetchRunning = false;
 /** Poll handle for the permissions page; null when that page is not up. */
 let permissionWatch: ReturnType<typeof setInterval> | null = null;
-/** Frame handle for the slider's glide, null when it is not moving on its own. */
-let ladderGlide: number | null = null;
-/**
- * Whether a pointer is down on the slider, and whether it has moved since.
- *
- * The difference between a click on the track and the start of a drag, which
- * a range input reports identically: both arrive as an `input` event with a
- * new value. A click should glide to where you aimed; a drag has to stay
- * under the finger.
- */
-let ladderPointerDown = false;
-let ladderPointerMoved = false;
-/** The rung the card is currently describing, so a glide is not 60 rebuilds. */
-let ladderShownRung = -1;
-/** Whether the slider has been moved, which turns a default into a choice. */
-let ladderTouched = false;
-/** The polish model's last known state, for the pages that report on it. */
+/** The polish model's last known state, for the download line under the wizard. */
 let wizardPolishModel: PolishModelStatus | null = null;
-/** Latest percent for each download, so the last page can draw a bar. */
+/** Latest percent for each download, so the wizard can draw a bar. */
 let speechPercent = 0;
 let polishPercent = 0;
+/** Whether the key picker is showing the three keys it does not lead with. */
+let keypickExpanded = false;
 /**
- * Where the slider sits, which is not yet what has been chosen.
- *
- * Fractional while a drag is in progress. The track is continuous so the
- * thumb follows the pointer instead of jumping between five stops, and the
- * rung is whichever one it is nearest; letting go snaps it onto that rung.
+ * The dictations heard on the practice page, oldest first, one per line of
+ * the script. Only what arrives while that page is up counts.
  */
-let ladderIndex: number = DEFAULT_LADDER_INDEX;
+let practiceHeard: SavedDictation[] = [];
+/** What the pill is doing, mirrored onto the line being practised. */
+let practiceState: DictationState = "idle";
+/**
+ * Whether the permissions page was entered with something still to grant,
+ * which is what lets it move on by itself once the last one is.
+ */
+let permissionsPending = false;
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
@@ -425,7 +368,6 @@ async function bootstrap(): Promise<void> {
   const appName = await host().getAppName().catch(() => "Waveform");
   document.title = appName;
   element.appBrand.textContent = appName;
-  element.wizardBrand.textContent = appName;
   element.versionLine.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   element.aboutVersion.textContent = appVersion ? `${appName} ${appVersion}` : appName;
   announceUpdateIfNew();
@@ -483,6 +425,7 @@ function wireEvents(): void {
     freshId = next.length > entries.length ? (next[0]?.id ?? null) : null;
     entries = next;
     renderHistory();
+    if (wizardStep === "practice" && freshId !== null && next[0]) hearPractice(next[0]);
   });
   host().onDictionaryChanged((next) => {
     dictionary = next;
@@ -1122,8 +1065,6 @@ const KEY_MASK = "•".repeat(20);
 
 function renderAiStatus(status: AiStatus): void {
   aiStatus = status;
-  // The wizard shows the same key, so it is repainted from the same status.
-  if (wizardStep === "polish") renderWizardKey();
   // Never overwrite an edit in progress: reopening settings used to discard a
   // key that had been typed but not yet saved.
   if (element.keyInput.dataset.pristine !== "false") {
@@ -1313,10 +1254,8 @@ async function downloadPolishModel(id: string): Promise<void> {
 
 /** Progress written next to Cancel — the facts line stays as size and RAM. */
 function showPolishDownloadProgress(event: ModelEvent): void {
-  // The wizard shows this model arriving on its polish page, which is where
-  // the choice that started the download was made.
   polishPercent = Math.round((event.progress ?? 0) * 100);
-  if (wizardStep === "ready") renderReadyProgress();
+  if (wizardStep !== null) renderWizardDownloads();
   // The onboarding card carries this model as a step, so it shows the same
   // percentage the speech row does rather than a button that says Download
   // while the file is already arriving.
@@ -1325,15 +1264,6 @@ function showPolishDownloadProgress(event: ModelEvent): void {
   if (action) {
     action.textContent = `${polishPercent}%`;
     action.disabled = true;
-  }
-  if (wizardStep === "polish" && !element.wizardLocalRow.hidden) {
-    const percent = polishPercent;
-    element.wizardLocalTrack.classList.toggle("is-reserved", event.stage !== "downloading");
-    element.wizardLocalBar.style.width = `${percent}%`;
-    element.wizardLocalState.textContent =
-      event.stage === "downloading" ? `Downloading… ${percent}%` : "Ready";
-    element.wizardLocalState.dataset.state =
-      event.stage === "downloading" ? "working" : "ready";
   }
 
   const pick = element.polishModelList.querySelector<HTMLElement>(
@@ -2070,15 +2000,11 @@ function showDownloadProgress(event: ModelEvent): void {
   // The onboarding card offers the same download without the models page ever
   // being opened, so it gets the same progress.
   const percent = Math.round((event.progress ?? 0) * 100);
-  // The setup card and the wizard's last page wait on the selected model;
-  // a queued neighbour's percentage would be a number about something else.
+  // The setup card and the wizard's download line wait on the selected
+  // model; a queued neighbour's percentage would be about something else.
   const forSelected = event.modelId === settings.modelId;
   if (forSelected) speechPercent = percent;
-  if (forSelected && wizardStep === "ready") renderReadyProgress();
-  // Nothing for the wizard beyond the last page. It fetches two models on
-  // spec before anyone asks
-  // for one, and a percentage counting up in its footer would be announcing
-  // a download the person never started.
+  if (forSelected && wizardStep !== null) renderWizardDownloads();
   const step = forSelected
     ? element.onboardSteps.querySelector<HTMLElement>('[data-step="model"]')
     : null;
@@ -2456,6 +2382,7 @@ function handleDictationUpdate(update: DictationUpdate): void {
     Boolean(pendingRetry) !== Boolean(nextRetry);
   pendingRetry = nextRetry;
   if (retryChanged) renderHistory();
+  notePracticeState(status.state);
 
 }
 
@@ -3506,35 +3433,25 @@ function promptPreview(text: string): string {
 /* ==========================================================================
  * The first-run wizard.
  *
- * Five pages, asked once. It exists because the checklist on the Transcripts
- * page -- which is still there, and is where anyone who skips this lands --
- * can only nag about what is missing, and two of the things that decide how
- * the app feels are not missing, they are defaulted: which key you hold, and
- * how much a model may rewrite what you said. Nobody changes a default they
- * were never shown.
+ * Four pages: what the app is, the key you hold, the three macOS permissions,
+ * and a short script to say out loud. Nothing about models is asked. The
+ * speech model is the most accurate one this Mac can hold and the polish
+ * model is the smallest local one; both start downloading on the welcome page
+ * and arrive while the other questions are answered, with one quiet line at
+ * the foot of the window saying how far along they are.
  *
- * The order is load-bearing. The model is first because it is the only step
- * that takes real time, and asking it first means the download runs while the
- * other four are answered rather than after them. The key comes before the
- * permission that watches for the key, so the permission prompt is about
- * something already decided.
+ * The key comes before the permissions so the Input Monitoring prompt is
+ * about a key already chosen. The permissions page has no way past it: the
+ * app cannot hear you, see the key or type the result without them. It moves
+ * on by itself once the last one is granted.
  *
- * There is no skip. The three macOS permissions are not preferences that can
- * be left at a default -- without them the app cannot hear you, cannot see
- * the key you hold, and cannot type the result -- so the page that asks for
- * them will not advance until they are granted. Every one of them is granted
- * in System Settings and reported back live, so there is always a way
- * forward; there is just no way around.
+ * The practice page is the payoff. Each line teaches one gesture, and the
+ * app hears it -- a dictation made with Waveform in front goes to the history
+ * rather than being pasted anywhere, which is exactly the event this page
+ * waits on -- so nobody leaves the wizard without having dictated once.
  * ========================================================================== */
 
-const WIZARD_STEPS = [
-  "welcome",
-  "voice",
-  "shortcut",
-  "permissions",
-  "polish",
-  "ready",
-] as const;
+const WIZARD_STEPS = ["welcome", "shortcut", "permissions", "practice", "done"] as const;
 type WizardStep = (typeof WIZARD_STEPS)[number];
 
 /**
@@ -3542,7 +3459,7 @@ type WizardStep = (typeof WIZARD_STEPS)[number];
  *
  * Two conditions, not one. The flag alone is not enough: it arrived after the
  * app did, so every settings file written before it reads as a fresh install,
- * and an existing user would be handed a five-page wizard on the morning they
+ * and an existing user would be handed the wizard on the morning they
  * updated. A machine that has already dictated has plainly been through this,
  * so it is marked done without ever being shown.
  */
@@ -3556,25 +3473,39 @@ function maybeOpenWizard(): void {
 }
 
 function openWizard(): void {
-  // A model already chosen puts the slider on its rung; anything off the
-  // ladder -- a model picked from the catalogue, or a default from an older
-  // build -- leaves the slider where it rests.
-  ladderIndex = ladderIndexOf(settings.modelId) ?? DEFAULT_LADDER_INDEX;
-  element.ladderSlider.max = String(MODEL_LADDER.length - 1);
-  element.ladderSlider.value = String(ladderIndex);
-  cancelLadderGlide();
-  ladderShownRung = -1;
-  ladderTouched = false;
-
   // Anything else modal would be underneath this, which is two dialogs deep
   // with the lower one unreachable.
   if (settingsOpen) toggleSettings(false);
   if (promptEditorKind) togglePromptEditor(false);
 
-  void readWizardFits().then(startPrefetch);
+  practiceHeard = [];
+  practiceState = "idle";
+  keypickExpanded = false;
+  void startDefaultSpeechModel();
   startPolishDefault();
-  renderKeypick();
   showWizardStep("welcome");
+}
+
+/**
+ * Selects the speech model and starts fetching it, before anything is asked.
+ *
+ * Parakeet, unless this Mac cannot hold it, in which case `chooseModel` steps
+ * down to the most accurate one that fits. Only from the factory default: a
+ * model somebody picked in Settings before reopening this is their answer.
+ *
+ * The download is not awaited and its failure is not reported here. The line
+ * at the foot of the wizard and the setup card behind it both say when the
+ * model is missing, and the card offers to fetch it again.
+ */
+async function startDefaultSpeechModel(): Promise<void> {
+  if (settings.modelId === DEFAULT_SETTINGS.modelId) {
+    const catalog = await host().getModelCatalog().catch(() => []);
+    const fits = new Map(catalog.map((model) => [model.id, model.fit]));
+    const choice = chooseModel(DEFAULT_LADDER_INDEX, (id) => fits.get(id) ?? null);
+    if (choice.id !== settings.modelId) await patchSettings({ modelId: choice.id });
+  }
+  await refreshModelInstalled();
+  if (!modelInstalled) await downloadModel(settings.modelId).catch(() => {});
 }
 
 /**
@@ -3590,12 +3521,9 @@ function openWizard(): void {
  * they have not downloaded. So the new answer is given to new installs only,
  * which is exactly who is looking at this wizard.
  *
- * Doing it here rather than on the polish page is what gets the model moving:
- * it is a 397 MB download, and starting it four pages early is the same trick
- * the speech models get.
- *
- * Only from the factory settings. Somebody who reached the polish page, chose
- * None and quit has answered this, and reopening must not overrule them.
+ * Only from the factory settings. Somebody who changed either in Settings
+ * and then reopened this has answered it, and reopening must not overrule
+ * them.
  */
 function startPolishDefault(): void {
   if (settings.polishLevel !== DEFAULT_SETTINGS.polishLevel) return;
@@ -3608,95 +3536,41 @@ function startPolishDefault(): void {
 }
 
 /**
- * Fetches the two models almost everybody ends on, before being asked to.
+ * Fetches the model that does the rewriting.
  *
- * Nothing about this is on screen. A first run is four pages of answering
- * questions during which the machine is doing nothing, and the reward for
- * finishing is a wait -- so the wait is moved under the questions. Base goes
- * first because it is 148 MB against Parakeet's 2.5 GB: it lands while the permissions are
- * still being granted, and from then on there is a working model on the disk
- * whichever way the slider ends up. The recommended one follows.
- *
- * Deliberately not announced. A progress line for a download nobody asked for
- * invites the question of whether it can be stopped, and the honest answer --
- * that it is over 2.5 GB fetched on spec -- is a worse first
- * page than silence. What is never hidden is the result: the last page reads
- * the same setup list as everything else, so it says the model is missing
- * whenever it is.
+ * Silent, like the speech model, and on a separate lane -- Rust runs one
+ * speech download and one polish download, so this does not queue behind the
+ * voice still arriving. Whichever local model is selected is the one fetched,
+ * which on a fresh install is the smallest.
  */
-function startPrefetch(): void {
-  enqueuePrefetch(DEFAULT_LADDER_MODEL_ID);
-  // Unshifted after, so Base ends up in front of it.
-  enqueuePrefetch(MODEL_LADDER[0]!.id, { first: true });
-  void drainPrefetch();
+async function prefetchPolishModel(): Promise<void> {
+  if (settings.polishLevel === "none") return;
+  if (polishDownloading !== null) return;
+  const catalog = await host().getPolishModelCatalog().catch(() => []);
+  // The fallback covers a stored id the catalogue no longer carries.
+  const wanted =
+    catalog.find((model) => model.id === settings.localModelId) ??
+    catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID);
+  if (!wanted || wanted.installed) return;
+  await downloadPolishModel(wanted.id).catch(() => {});
 }
 
-/** Whether a model's weights are on the disk, as of the last catalogue read. */
-function isHere(id: SpeechModelId): boolean {
-  const model = wizardCatalog.get(id);
-  return model !== undefined && model.runtimeInstalled && model.weightsInstalled;
-}
-
-/**
- * Puts a model in the queue, or moves it to the front.
- *
- * `first` is for the model the slider actually landed on: it is the one being
- * waited for, so it goes ahead of anything fetched on spec. A download
- * already in flight is left to finish rather than cancelled -- the partial
- * file would be thrown away, and the thing in flight is the small one.
- */
-function enqueuePrefetch(id: SpeechModelId, options?: { first: boolean }): void {
-  if (isHere(id)) return;
-  prefetchQueue = prefetchQueue.filter((queued) => queued !== id);
-  if (options?.first) prefetchQueue.unshift(id);
-  else prefetchQueue.push(id);
-}
-
-/**
- * Runs the queue, one at a time, because the host will not run two.
- *
- * Re-reads the catalogue between items: a download that just landed is the
- * only thing that changes whether the next one is still needed, and the
- * selected model's arrival is also what the last page is waiting on.
- */
-async function drainPrefetch(): Promise<void> {
-  if (prefetchRunning) return;
-  prefetchRunning = true;
-  try {
-    while (prefetchQueue.length > 0) {
-      const id = prefetchQueue.shift();
-      if (id === undefined || isHere(id)) continue;
-      // Failures are not reported either. Nobody asked for this download, so
-      // nobody is owed an error about it; the last page still says the voice
-      // is missing, and the checklist behind it still offers to fetch it.
-      await downloadModel(id).catch(() => {});
-      await readWizardFits();
-    }
-  } finally {
-    prefetchRunning = false;
-  }
-}
-
-/**
- * Reads each ladder model's fit, so the slider can refuse to recommend one
- * this Mac cannot hold. A catalogue that will not load leaves every fit
- * unknown, and an unknown fit is not a refusal: the slider then offers
- * whatever was asked for, which is what it did before this existed.
- */
-async function readWizardFits(): Promise<void> {
-  const catalog = await host().getModelCatalog().catch(() => []);
-  wizardCatalog = new Map(catalog.map((model) => [model.id, model]));
-  // The card's cache is keyed on the rung, and the rung has not moved -- but
-  // the sizes, the fit and the model it settles on all just arrived, so the
-  // cache has to be dropped rather than trusted.
-  ladderShownRung = -1;
-  if (wizardStep === "voice") renderLadder();
+/** The polish model as the catalogue last described it. */
+async function readPolishModel(): Promise<void> {
+  const catalog = await host().getPolishModelCatalog().catch(() => []);
+  wizardPolishModel =
+    catalog.find((model) => model.id === settings.localModelId) ??
+    catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID) ??
+    null;
 }
 
 function showWizardStep(step: WizardStep): void {
+  // Entered with something still to grant is what lets the page move on by
+  // itself later. Coming back to it with all three on must not bounce
+  // straight forward again.
+  if (step === "permissions") permissionsPending = !permissionSteps().every((one) => one.done);
   wizardStep = step;
-  // The frame reads this: the welcome page centres and enlarges its button,
-  // which is a property of the page rather than of the button.
+  // The frame reads this: the welcome page centres and enlarges its button.
   element.wizard.dataset.step = step;
   element.wizard.hidden = false;
   // `aria-modal` tells a screen reader the rest is out of play and does
@@ -3709,39 +3583,86 @@ function showWizardStep(step: WizardStep): void {
     section.hidden = section.dataset.step !== step;
   }
   renderWizard();
-  // Whatever the step is about should be reachable from the keyboard without
-  // first tabbing back through the page behind it.
-  element.wizard
-    .querySelector<HTMLElement>(`.wizard-step[data-step="${step}"] input, .wizard-step[data-step="${step}"] button`)
-    ?.focus();
+  const target =
+    step === "shortcut"
+      ? element.keypick.querySelector<HTMLElement>('[aria-checked="true"]')
+      : step === "permissions"
+        ? element.wizardChecklist.querySelector<HTMLElement>("button")
+        : null;
+  (target ?? (element.wizardNext.hidden ? null : element.wizardNext))?.focus();
 }
 
 /** Everything on the frame that depends on which step is up. */
 function renderWizard(): void {
   if (wizardStep === null) return;
-  element.wizardNext.textContent = wizardNextLabel(wizardStep);
-  element.wizardNext.disabled = !wizardCanAdvance(wizardStep);
+  const step = wizardStep;
+  element.wizardNext.textContent = wizardNextLabel(step);
+  element.wizardNext.disabled = !wizardCanAdvance(step);
+  // The practice page is finished by talking, not by clicking.
+  element.wizardNext.hidden = step === "practice";
+  element.wizardBack.hidden = step === "welcome" || step === "done";
+  element.wizardSkip.hidden = step !== "practice";
 
-  if (wizardStep === "voice") renderLadder();
-  if (wizardStep === "shortcut") renderKeypick();
-  if (wizardStep === "permissions") renderWizardChecklist();
-  watchPermissions(wizardStep === "permissions");
-  if (wizardStep === "polish") renderWizardPolish();
-  if (wizardStep === "ready") renderWizardReady();
+  renderWizardDots(step);
+  renderWizardDownloads();
+  if (step === "shortcut") renderKeypick();
+  if (step === "permissions") {
+    renderWizardChecklist();
+    leavePermissionsWhenGranted();
+  }
+  watchPermissions(step === "permissions");
+  if (step === "practice") renderPractice();
+  if (step === "done") renderPracticeResult();
 }
 
 function wizardNextLabel(step: WizardStep): string {
   if (step === "welcome") return "Get started";
-  if (step === "ready") return "Start dictating";
-  if (step === "voice") {
-    // Untouched, the slider is a recommendation rather than a decision, and
-    // saying so is more use than naming a model nobody chose. Once it has
-    // been moved it is a choice, and the button names what was chosen --
-    // which is also the last chance to notice the Mac stepped it down.
-    if (!ladderTouched) return "Continue with default model";
-    return `Continue with ${chooseModel(ladderIndex, (id) => wizardCatalog.get(id)?.fit ?? null).label}`;
+  if (step === "done") return "Start using Waveform";
+  if (step === "shortcut") {
+    const binding = getHotkeyBinding(settings.hotkeyId);
+    return binding ? `Continue with ${binding.label}` : "Continue";
   }
   return "Continue";
+}
+
+/** One dash per page after the welcome, filled up to the one that is up. */
+function renderWizardDots(step: WizardStep): void {
+  const at = WIZARD_STEPS.indexOf(step);
+  element.wizardDots.hidden = step === "welcome";
+  for (const dot of Array.from(element.wizardDots.children) as HTMLElement[]) {
+    const index = WIZARD_STEPS.findIndex((one) => one === dot.dataset.for);
+    dot.dataset.state = index <= at ? "on" : "off";
+  }
+}
+
+/**
+ * The one line at the foot of the wizard about the two downloads.
+ *
+ * Speech first, because nothing can be dictated without it; then the polish
+ * model, which only changes how the words come out. Once both are here the
+ * line says so and stops moving.
+ */
+function renderWizardDownloads(): void {
+  const line = element.wizardDownloads;
+  line.hidden = wizardStep === "done";
+  const polish = wizardPolishModel;
+  const polishPending =
+    settings.polishLevel !== "none" && polish !== null && !polish.installed;
+
+  let percent: number | null = null;
+  if (!modelInstalled) {
+    element.wizardDownloadsText.textContent = "Getting Waveform ready";
+    percent = downloading === settings.modelId ? speechPercent : 0;
+  } else if (polishPending) {
+    element.wizardDownloadsText.textContent = "Speech ready · tidy-up model";
+    percent = polishDownloading !== null ? polishPercent : 0;
+  } else {
+    element.wizardDownloadsText.textContent = "Ready to dictate";
+  }
+  line.dataset.state = percent === null ? "ready" : "working";
+  element.wizardDownloadsTrack.hidden = percent === null;
+  element.wizardDownloadsBar.style.width = `${percent ?? 0}%`;
+  if (percent !== null) element.wizardDownloadsText.textContent += ` · ${percent}%`;
 }
 
 /**
@@ -3751,7 +3672,7 @@ function wizardNextLabel(step: WizardStep): string {
  * "not granted" and "nobody has told us yet" arrive looking identical. That
  * matters because the page they gate has no way past it: a helper that is
  * not running, or one that cannot read the microphone's status, would hold
- * somebody on page four of a wizard with a disabled button and no
+ * somebody on the permissions page with a disabled button and no
  * explanation -- and every switch already flipped in System Settings.
  *
  * Which is not hypothetical. It happened here: a dev build launched outside
@@ -3766,14 +3687,7 @@ function permissionsAreKnown(): boolean {
   return hotkeyStatus.microphone !== "unknown";
 }
 
-/**
- * Whether this step has been answered well enough to leave.
- *
- * Only the permissions can fail it, and only when they are refusing rather
- * than silent. The model has one selected from the moment the page opens,
- * the key has one too, and None is a real answer to the polish question
- * rather than an unanswered one.
- */
+/** Whether this step has been answered well enough to leave. */
 function wizardCanAdvance(step: WizardStep): boolean {
   if (step !== "permissions") return true;
   // Gate on denial, never on ignorance. Refusing to advance because nothing
@@ -3785,11 +3699,8 @@ function wizardCanAdvance(step: WizardStep): boolean {
 /**
  * The three macOS permissions, named rather than filtered by exception.
  *
- * This used to be the setup list minus "model", which quietly took in every
- * step added afterwards: the polish model turned up on the permissions page
- * -- and, because this list is also the page's gate, made Continue wait on a
- * 397 MB download before it would let anyone past. A download is not a
- * permission, and neither is anything else that might be added here later.
+ * A download is not a permission, and neither is anything else that might be
+ * added to the setup list later; this list is also the page's gate.
  */
 const WIZARD_PERMISSIONS = ["microphone", "accessibility", "input-monitoring"] as const;
 
@@ -3800,207 +3711,76 @@ function permissionSteps(): SetupStep[] {
 }
 
 /* -------------------------------------------------------------------------
- * 1. The voice
+ * 1. The key
  * ---------------------------------------------------------------------- */
 
 /**
- * What the slider is currently pointing at, and what that costs.
+ * Three keys up front, three behind "More keys".
  *
- * The name under the slider is the rung's name, but the model beside it is
- * what `chooseModel` settled on -- which is a rung lower when this Mac cannot
- * hold what was asked for. The two disagreeing on screen with no explanation
- * is why the note exists.
+ * Fn is the default and the only one that does nothing else on its own; the
+ * right-hand Option and Command are the two people reach for next. The rest
+ * are offered, not advertised.
  */
-function renderLadder(): void {
-  // The track paints its own filled portion from this, because a range input
-  // gives no way to style "everything to the left of the thumb". Written on
-  // every frame of a glide, which is what makes the fill move with the thumb.
-  const span = Math.max(1, MODEL_LADDER.length - 1);
-  element.ladderSlider.style.setProperty(
-    "--fill",
-    `${(Math.min(span, Math.max(0, ladderIndex)) / span) * 100}%`,
-  );
-
-  // Everything below describes a rung, not a position, so it is rebuilt when
-  // the rung changes rather than sixty times a second on the way there --
-  // replaceChildren on the ticks and the facts every frame is itself enough
-  // to make a glide stutter.
-  const rung = Math.round(Math.min(span, Math.max(0, ladderIndex)));
-  if (rung === ladderShownRung) return;
-  ladderShownRung = rung;
-  renderVoiceButton();
-
-  const choice = chooseModel(rung, (id) => wizardCatalog.get(id)?.fit ?? null);
-
-  // The name follows the handle, because a label that disagreed with where
-  // the slider physically is reads as a broken control. The sentence under it
-  // follows the model, because it is a claim about what you will get -- and
-  // "near the best transcription there is" over the name of a small model is
-  // the one thing on this page that could be flatly untrue.
-  element.ladderName.textContent = ladderRung(rung).name;
-  element.ladderModel.textContent = choice.label;
-  element.ladderTrade.textContent = ladderRung(choice.index).trade;
-
-  renderLadderTicks();
-  renderLadderFacts(choice.id);
-
-  element.ladderNote.hidden = choice.askedFor === null;
-  element.ladderNote.textContent =
-    choice.askedFor === null
-      ? ""
-      : `${getSpeechModel(choice.askedFor.id).label} wants more memory than this Mac has to spare, so ${choice.label} is the most accurate one that fits.`;
-
-}
+const KEYPICK_MAIN: readonly HotkeyBindingId[] = ["fn", "right-option", "right-command"];
+const KEYPICK_MORE: readonly HotkeyBindingId[] = ["left-option", "left-command", "right-shift"];
 
 /**
- * Moves the slider to a rung over a couple of hundred milliseconds.
- *
- * A range input cannot be asked to animate: the thumb is drawn wherever
- * `value` says, and no CSS transition reaches it -- so clicking the track
- * teleported the thumb to the rung you aimed at. The value itself is tweened
- * instead, which the thumb, the filled track and the notches all follow for
- * free because they are all drawn from it.
- *
- * Not used while dragging. A drag has to stay under the finger, and anything
- * easing its way toward the pointer is lag rather than polish.
+ * Pressing a modifier picks it. Fn is listed for keyboards that report it;
+ * most do not reach a web view, which is what the buttons are for.
  */
-function glideLadderTo(target: number): void {
-  const span = MODEL_LADDER.length - 1;
-  const to = Math.min(span, Math.max(0, target));
-  cancelLadderGlide();
+const KEYPICK_CODES: Record<string, HotkeyBindingId> = {
+  Fn: "fn",
+  AltRight: "right-option",
+  AltLeft: "left-option",
+  MetaRight: "right-command",
+  MetaLeft: "left-command",
+  ShiftRight: "right-shift",
+};
 
-  const from = ladderIndex;
-  const distance = Math.abs(to - from);
-  // Somebody who has asked for less movement has asked for this too.
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduced || distance < 0.001) {
-    setLadderIndex(to);
-    return;
-  }
+function renderKeypick(): void {
+  // A key from the second row that is already chosen keeps the row open,
+  // or the choice would be invisible.
+  const expanded = keypickExpanded || KEYPICK_MORE.includes(settings.hotkeyId);
+  const ids = expanded ? [...KEYPICK_MAIN, ...KEYPICK_MORE] : KEYPICK_MAIN;
+  element.keypick.replaceChildren(
+    ...ids.map((id) => {
+      const binding = getHotkeyBinding(id);
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "keypick-option";
+      option.dataset.hotkey = id;
+      option.setAttribute("role", "radio");
+      option.setAttribute("aria-checked", String(id === settings.hotkeyId));
 
-  // Put the thumb back where it was, now, before anything is painted. A
-  // click on the track has already moved the input's own value to where it
-  // was aimed, and the first eased frame is a whole frame away -- long
-  // enough to show the thumb at the destination and then yank it back to
-  // start the journey it was supposed to make.
-  setLadderIndex(from);
-
-  // Scaled by distance, so a nudge to the next rung is not given the same
-  // couple of hundred milliseconds as a jump across the whole ladder, and
-  // capped so the long one still feels like a control rather than a tour.
-  const duration = Math.min(260, 110 + distance * 55);
-  const start = performance.now();
-
-  const frame = (now: number): void => {
-    const progress = Math.min(1, (now - start) / duration);
-    // Out-cubic: leaves immediately, arrives gently, which is what reads as
-    // the thumb being thrown rather than dragged.
-    const eased = 1 - (1 - progress) ** 3;
-    setLadderIndex(from + (to - from) * eased);
-    if (progress < 1) {
-      ladderGlide = requestAnimationFrame(frame);
-      return;
-    }
-    ladderGlide = null;
-    setLadderIndex(to);
-  };
-  ladderGlide = requestAnimationFrame(frame);
-}
-
-/** The Continue button names the model, so it moves when the slider does. */
-function renderVoiceButton(): void {
-  if (wizardStep !== "voice") return;
-  element.wizardNext.textContent = wizardNextLabel("voice");
-}
-
-function cancelLadderGlide(): void {
-  if (ladderGlide === null) return;
-  cancelAnimationFrame(ladderGlide);
-  ladderGlide = null;
-}
-
-/** Writes a position to both the control and the card drawn from it. */
-function setLadderIndex(value: number): void {
-  ladderIndex = value;
-  // Assigning `value` does not fire `input`, so this cannot feed back into
-  // the handler that started the glide.
-  element.ladderSlider.value = String(value);
-  renderLadder();
-}
-
-/**
- * A notch per rung, under the track.
- *
- * Six positions on a continuous-looking slider is not something anyone
- * discovers by dragging it. The notches say up front that this has stops
- * rather than a range, and how many.
- */
-function renderLadderTicks(): void {
-  element.ladderTicks.replaceChildren(
-    ...MODEL_LADDER.map((rung, index) => {
-      const tick = document.createElement("li");
-      tick.className = "ladder-tick";
-      const at = Math.round(ladderIndex);
-      tick.dataset.state = index === at ? "here" : index < at ? "below" : "above";
-      tick.title = rung.name;
-      return tick;
+      const cap = document.createElement("kbd");
+      cap.className = "keypick-cap";
+      cap.textContent = binding?.glyph ?? id;
+      const name = document.createElement("span");
+      name.className = "keypick-name";
+      name.textContent = binding?.label ?? id;
+      if (id === "fn") {
+        const note = document.createElement("small");
+        note.textContent = "Recommended";
+        name.append(note);
+      }
+      option.append(cap, name);
+      return option;
     }),
   );
+  element.keypickMore.hidden = expanded;
+  // Reserved, not removed: collapsing it would move the button under the
+  // pointer that just picked a key.
+  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
 }
 
-/**
- * What the chosen model costs, from the catalogue rather than from adjectives.
- *
- * "More accurate" is a promise with nothing behind it until there is a number
- * beside it. These three are the ones that differ down the ladder and that
- * somebody choosing would actually weigh: what it fetches, what it keeps
- * resident, and how often it is wrong.
- */
-function renderLadderFacts(id: SpeechModelId): void {
-  const model = wizardCatalog.get(id);
-  const facts: Array<[string, string]> = [
-    ["Download", model?.downloadBytes != null ? formatBytes(model.downloadBytes) : "—"],
-    ["Memory", model ? formatMemory(model.memoryMb) : "—"],
-    // Word error rate, said as the thing it measures. "WER 2.1" is a term of
-    // art; "about 2 words in 100" is the same fact to someone who has never
-    // read a speech paper.
-    [
-      "Gets wrong",
-      model?.wer != null ? `~${model.wer.toFixed(1)} words in 100` : "—",
-    ],
-  ];
-
-  element.ladderFacts.replaceChildren(
-    ...facts.map(([term, value]) => {
-      const cell = document.createElement("div");
-      cell.className = "ladder-fact";
-      const label = document.createElement("dt");
-      label.textContent = term;
-      const detail = document.createElement("dd");
-      detail.textContent = value;
-      cell.append(label, detail);
-      return cell;
-    }),
-  );
-}
-
-/**
- * Selects the model the slider landed on and makes sure it is being fetched.
- *
- * Usually there is nothing to start: the two the queue was primed with are
- * the two most people leave the slider on. A third choice is put at the front
- * of the queue rather than downloaded separately, because the host runs one
- * download at a time and starting a second here would simply be refused.
- */
-async function commitLadderChoice(): Promise<void> {
-  const choice = chooseModel(ladderIndex, (id) => wizardCatalog.get(id)?.fit ?? null);
-  if (choice.id !== settings.modelId) await patchSettings({ modelId: choice.id });
-  enqueuePrefetch(choice.id, { first: true });
-  void drainPrefetch();
+function pickKey(id: HotkeyBindingId): void {
+  if (KEYPICK_MORE.includes(id)) keypickExpanded = true;
+  if (id === settings.hotkeyId) return;
+  void patchSettings({ hotkeyId: id });
 }
 
 /* -------------------------------------------------------------------------
- * 2. The key
+ * The keyboard on the Dictation page
  * ---------------------------------------------------------------------- */
 
 /**
@@ -4062,20 +3842,7 @@ const KEY_ADVICE: Partial<Record<HotkeyBindingId, string>> = {
   "right-shift": "Rarely held on its own, and easy to reach without moving your hand.",
 };
 
-/**
- * Draws the keyboard and marks the chosen key.
- *
- * Rebuilt from `KEYBOARD_ROWS` rather than toggled in place: the rows are
- * static, and one function that draws the whole thing is easier to be sure of
- * than one that draws it and another that edits it.
- */
-function renderKeypick(): void {
-  renderKeyboard(element.keyboard, element.keyboardCaption);
-  // Reserved, not removed: see the comment on the note in index.html.
-  element.wizardFnNote.classList.toggle("is-reserved", settings.hotkeyId !== "fn");
-}
-
-/** The keyboard picker, drawn into the wizard or the Dictation page. */
+/** The keyboard picker on the Dictation page. */
 function renderKeyboard(target: HTMLElement, caption: HTMLElement): void {
   for (const row of KEYBOARD_ROWS) {
     const width = row.reduce((total, key) => total + key.u, 0);
@@ -4134,7 +3901,7 @@ function renderKeyboard(target: HTMLElement, caption: HTMLElement): void {
 }
 
 /* -------------------------------------------------------------------------
- * 3. The permissions
+ * 2. The permissions
  * ---------------------------------------------------------------------- */
 
 /**
@@ -4152,7 +3919,7 @@ function renderWizardChecklist(): void {
     outstanding.length === 0
       ? "macOS ties these to the app's signature. If one looks granted but is refused, remove Waveform from the list and add it again."
       : permissionsAreKnown()
-        ? "All three are needed before Waveform can dictate, so this is the one page that waits for you."
+        ? "Switched one on and it still says off? Quit and reopen Waveform."
         : "These cannot be read just now, so this page will not hold you up. The card on Transcripts will keep offering them.";
 
   element.wizardChecklist.replaceChildren(
@@ -4172,10 +3939,7 @@ function renderWizardChecklist(): void {
       title.textContent = step.title;
       body.append(title);
 
-      // A granted permission needs no instructions for granting it. The
-      // detail line explains where to find the switch and what macOS calls
-      // it, which is worth two lines while it is outstanding and is clutter
-      // the moment it is not.
+      // A granted permission needs no instructions for granting it.
       if (!step.done) {
         const detail = document.createElement("small");
         detail.textContent = step.detail;
@@ -4195,6 +3959,22 @@ function renderWizardChecklist(): void {
       return row;
     }),
   );
+}
+
+/**
+ * Moves on a beat after the last switch is flipped.
+ *
+ * The beat is so the third tick is seen landing; without it the page
+ * vanishes the instant System Settings is closed, which reads as a skip.
+ */
+function leavePermissionsWhenGranted(): void {
+  if (!permissionsPending) return;
+  if (!permissionsAreKnown()) return;
+  if (!permissionSteps().every((one) => one.done)) return;
+  permissionsPending = false;
+  window.setTimeout(() => {
+    if (wizardStep === "permissions") void advanceWizard();
+  }, 700);
 }
 
 /**
@@ -4231,230 +4011,156 @@ function watchPermissions(on: boolean): void {
 }
 
 /* -------------------------------------------------------------------------
- * 4. The polish level
+ * 3. The practice script
  * ---------------------------------------------------------------------- */
 
-/**
- * The three levels, and -- above None -- where the rewrite would run.
- *
- * Neither engine is finished being set up here: the local one is a second
- * download and the hosted one is an API key, and both belong on a page that
- * can show a progress bar and a password field. What this page settles is
- * which of those two the answer is, so Settings opens on the right half of
- * the page rather than on a choice nobody knew they had.
- */
-function renderWizardPolish(): void {
-  for (const card of Array.from(
-    element.wizardPolishLevels.querySelectorAll<HTMLElement>("[data-level]"),
-  )) {
-    card.setAttribute("aria-checked", String(card.dataset.level === settings.polishLevel));
-  }
-
-  // Always on screen, whatever the level. It used to appear with the first
-  // choice above None and take the key field with it, which moved the three
-  // cards -- and the pointer that had just clicked one -- halfway up the
-  // window. The page now has one height, and the parts that do not apply yet
-  // say so instead of vanishing.
-  for (const button of Array.from(
-    element.wizardEngine.querySelectorAll<HTMLElement>("[data-engine]"),
-  )) {
-    button.setAttribute("aria-checked", String(button.dataset.engine === settings.polishEngine));
-  }
-  element.wizardEngineNote.textContent =
-    settings.polishLevel === "none"
-      ? "Nothing rewrites at None; this is what would run it."
-      : settings.polishEngine === "local"
-        ? "A second, smaller model, downloaded here. Your words never leave this Mac."
-        : "A hosted model; your dictated text is sent to it. The key is free to create, and can wait until Settings.";
-
-  renderWizardKey();
+interface PracticeLine {
+  title: string;
+  /** How to say it; `{key}` is the chosen key's glyph. */
+  how: string;
+  say: string;
+  /** What the status row asks for before anything is heard. */
+  start: string;
 }
 
 /**
- * The key field, which only exists while the hosted engine is the answer.
- *
- * A saved key is shown as saved rather than as a field to fill in again: the
- * key itself never leaves the host, so there is nothing to put back in the
- * box, and an empty box beside "OpenRouter" reads as work still to do.
+ * Three lines, each teaching one thing: the basic gesture, that the ums are
+ * taken out for you, and that a double tap keeps listening without holding.
  */
-function renderWizardKey(): void {
-  // Three occupants of one slot. Hidden outright rather than reserved with
-  // `visibility`, because the slot itself holds the height -- and a slot that
-  // is always occupied does not need anything reserving.
-  const off = settings.polishLevel === "none";
-  const wanted = !off && settings.polishEngine === "openrouter";
-  const local = !off && settings.polishEngine === "local";
-  // Nothing rewrites at None, so there is nothing to set up and nothing to
-  // describe. The slot closes rather than explaining itself.
-  element.wizardEngineDetail.hidden = off;
-  element.wizardLocalRow.hidden = !local;
-  element.wizardKeyRow.hidden = !wanted;
-  if (local) void renderWizardLocal();
-  if (!wanted) return;
+const PRACTICE_LINES: readonly PracticeLine[] = [
+  {
+    title: "Hold and speak",
+    how: "Hold {key}, say the line, then let go.",
+    say: "Hello Waveform, this is my first dictation.",
+    start: "Hold {key} to start",
+  },
+  {
+    title: "Ramble a little",
+    how: "Keep the ums in. Waveform tidies them away for you.",
+    say: "So, um, I think we should, uh, move the meeting to Friday afternoon.",
+    start: "Hold {key} to start",
+  },
+  {
+    title: "Go hands-free",
+    how: "Tap {key} twice, talk as long as you like, then tap {key} again.",
+    say: "Hands-free is handy for longer thoughts, when holding a key gets tiring.",
+    start: "Tap {key} twice to start",
+  },
+];
 
-  const saved = aiStatus?.hasApiKey === true;
-  element.wizardKeyState.textContent = saved
-    ? aiStatus?.memoryOnly === true
-      ? "Saved for this session only"
-      : "Saved"
-    : "";
-  element.wizardKeyState.classList.toggle("key-saved", saved && aiStatus?.memoryOnly !== true);
-
-  // Never overwrite something half-typed; only fill the box the first time.
-  if (element.wizardKeyInput.dataset.pristine !== "false") {
-    element.wizardKeyInput.value = saved ? KEY_MASK : "";
-    element.wizardKeyInput.dataset.pristine = "true";
-  }
-  syncWizardKeyButton();
-}
-
-/**
- * What choosing "This Mac" costs and how far along it is.
- *
- * The slot used to be blank here: the key field is only for the hosted
- * engine, so picking the local one left a rectangle of nothing where the
- * setup for it should be. There is something to say -- a second model is
- * being fetched on the strength of that choice -- and not saying it made the
- * download invisible on the one page it is relevant to.
- */
-async function renderWizardLocal(): Promise<void> {
-  const catalog = await host().getPolishModelCatalog().catch(() => []);
-  const model =
-    catalog.find((one) => one.id === settings.localModelId) ??
-    catalog.find((one) => one.id === DEFAULT_POLISH_MODEL_ID);
-  if (!model) return;
-
-  element.wizardLocalName.textContent = `${model.label} · ${formatBytes(model.downloadBytes)}`;
-  const downloading = polishDownloading === model.id;
-  element.wizardLocalState.textContent = model.installed
-    ? "Ready"
-    : downloading
-      ? "Downloading…"
-      : "Downloads in the background";
-  element.wizardLocalState.dataset.state = model.installed
-    ? "ready"
-    : downloading
-      ? "working"
-      : "waiting";
-  // The bar is only honest while something is moving; a full or empty one
-  // sitting under a finished download is a progress bar lying.
-  element.wizardLocalTrack.classList.toggle("is-reserved", !downloading);
-}
-
-function syncWizardKeyButton(): void {
-  const edited = element.wizardKeyInput.dataset.pristine === "false";
-  element.wizardKeySave.disabled =
-    !edited || element.wizardKeyInput.value.trim().length === 0;
-}
-
-function saveWizardApiKey(): void {
-  const value = element.wizardKeyInput.value.trim();
-  if (element.wizardKeyInput.dataset.pristine === "true" || !value) return;
-  void host()
-    .setOpenRouterKey(value)
-    .then((status) => {
-      element.wizardKeyInput.dataset.pristine = "true";
-      // Repaints both copies of this row: the one here and the one in
-      // Settings, which is the same key.
-      renderAiStatus(status);
-      renderWizardKey();
-      flash(element.wizardKeySave, "Saved");
-    });
-}
-
-/**
- * Fetches the model that does the rewriting, as soon as rewriting is asked for.
- *
- * Any level above None needs something to run it, and for somebody who has
- * just installed the app that is almost certainly the model on this Mac: the
- * hosted engine cannot rewrite a word until an OpenRouter key has been pasted
- * in, and nobody has one four pages into a first run. So the download starts
- * on the choice rather than on the page in Settings where they would later
- * discover it was needed.
- *
- * Silent, like the speech prefetch, and on a separate lane -- Rust runs one
- * speech download and one polish download, so this does not queue behind the
- * voice still arriving. Whichever local model is selected is the one fetched,
- * which on a fresh install is the smallest.
- */
-async function prefetchPolishModel(): Promise<void> {
-  if (settings.polishLevel === "none") return;
-  if (polishDownloading !== null) return;
-  const catalog = await host().getPolishModelCatalog().catch(() => []);
-  // Whatever is selected, which on a fresh install is Qwen3 0.6B Q4 -- the
-  // lightest, and the only one most Macs need to tidy a paragraph. The
-  // fallback covers a stored id the catalogue no longer carries.
-  const wanted =
-    catalog.find((model) => model.id === settings.localModelId) ??
-    catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID);
-  if (!wanted || wanted.installed) return;
-  void renderWizardLocal();
-  // Not awaited by the caller and not reported: nobody asked for it, so a
-  // failure is not theirs to answer. The AI polish page still offers it.
-  await downloadPolishModel(wanted.id).catch(() => {});
-}
-
-/* -------------------------------------------------------------------------
- * 5. The gesture
- * ---------------------------------------------------------------------- */
-
-function renderWizardReady(): void {
+function withKey(template: string): string {
   const binding = getHotkeyBinding(settings.hotkeyId);
-  const glyph = binding ? hotkeyKeycap(binding) : "—";
-  element.readyKey.textContent = glyph;
-  element.readyKeyTap.textContent = `${glyph} ${glyph}`;
-
-  // Saying "That's everything" over a model that has not arrived is the one
-  // way this page can be actively misleading.
-  const outstanding = setupSteps().filter((step) => !step.done);
-  element.readyTitle.textContent = outstanding.length === 0 ? "That's everything" : "Nearly there";
-
-  void readPolishModel().then(renderReadyProgress);
-  renderReadyProgress();
+  return template.replaceAll("{key}", binding?.glyph ?? "your key");
 }
 
-/** The polish model as the catalogue last described it. */
-async function readPolishModel(): Promise<void> {
-  const catalog = await host().getPolishModelCatalog().catch(() => []);
-  wizardPolishModel =
-    catalog.find((model) => model.id === settings.localModelId) ??
-    catalog.find((model) => model.id === DEFAULT_POLISH_MODEL_ID) ??
-    null;
+/** What a dictation came out as: the tidied version when there is one. */
+function heardText(entry: SavedDictation): string {
+  return entry.polishedText || entry.text;
+}
+
+/** A dictation landed while the practice page was up. */
+function hearPractice(entry: SavedDictation): void {
+  if (practiceHeard.length >= PRACTICE_LINES.length) return;
+  // Silence or a misfire comes back empty; it is not a line said.
+  if (!heardText(entry).trim()) return;
+  practiceHeard = [...practiceHeard, entry];
+  practiceState = "idle";
+  renderPractice();
+  if (practiceHeard.length < PRACTICE_LINES.length) return;
+  window.setTimeout(() => {
+    if (wizardStep === "practice") showWizardStep("done");
+  }, 900);
+}
+
+/** The pill's state, mirrored onto the line being practised. */
+function notePracticeState(state: DictationState): void {
+  if (wizardStep !== "practice") return;
+  practiceState = state;
+  renderPractice();
+}
+
+function renderPractice(): void {
+  const current = practiceHeard.length;
+  element.practice.replaceChildren(
+    ...PRACTICE_LINES.map((line, index) => {
+      const state = index < current ? "done" : index === current ? "current" : "next";
+      const row = document.createElement("li");
+      row.className = "practice-line";
+      row.dataset.state = state;
+
+      const mark = document.createElement("span");
+      mark.className = "practice-mark";
+      mark.setAttribute("aria-hidden", "true");
+      if (state !== "done") mark.textContent = String(index + 1);
+
+      const body = document.createElement("span");
+      body.className = "practice-body";
+      const title = document.createElement("strong");
+      title.textContent = line.title;
+      const detail = document.createElement("small");
+      const heard = practiceHeard[index];
+      detail.textContent = heard ? `“${heardText(heard)}”` : withKey(line.how);
+      body.append(title, detail);
+
+      const head = document.createElement("span");
+      head.className = "practice-head";
+      head.append(mark, body);
+      row.append(head);
+      if (state !== "current") return row;
+
+      const say = document.createElement("p");
+      say.className = "practice-say";
+      say.textContent = `“${line.say}”`;
+      row.append(say, practiceStatus(line));
+      return row;
+    }),
+  );
+}
+
+/** The row under the line being practised: the key, and what is happening. */
+function practiceStatus(line: PracticeLine): HTMLElement {
+  const status = document.createElement("span");
+  status.className = "practice-status";
+  status.dataset.state = practiceState;
+  const cap = document.createElement("kbd");
+  const binding = getHotkeyBinding(settings.hotkeyId);
+  cap.textContent = binding?.glyph ?? "—";
+  const words = document.createElement("span");
+  words.textContent = !modelInstalled
+    ? `Waiting for the speech model · ${downloading === settings.modelId ? speechPercent : 0}%`
+    : practiceState === "listening"
+      ? "Listening…"
+      : practiceState === "transcribing"
+        ? "Writing it down…"
+        : withKey(line.start);
+  const level = document.createElement("span");
+  level.className = "practice-level";
+  level.setAttribute("aria-hidden", "true");
+  for (let bar = 0; bar < 5; bar += 1) level.append(document.createElement("span"));
+  status.append(cap, words, level);
+  return status;
 }
 
 /**
- * The two downloads, on the one page where whether they have finished is the
- * answer to the question being asked.
+ * The ramble, as it came out, on the last page.
  *
- * A row appears only while its model is not here yet, so somebody whose
- * downloads landed during the questions -- which is most people, which is
- * the whole point of starting them early -- sees nothing at all.
+ * The second line is the one worth showing back: it is the one where what
+ * was said and what was typed differ, which is the tidy-up made visible.
  */
-function renderReadyProgress(): void {
-  const speech = getSpeechModel(settings.modelId);
-  const speechPending = !modelInstalled;
-  element.readySpeechRow.hidden = !speechPending;
-  if (speechPending) {
-    element.readySpeechName.textContent = speech.label;
-    const busy = downloading === settings.modelId;
-    element.readySpeechState.textContent = busy ? `${speechPercent}%` : "Waiting to start";
-    element.readySpeechBar.style.width = `${busy ? speechPercent : 0}%`;
-  }
-
-  // Only when something above None is selected: at None no model rewrites,
-  // so one arriving is not something this page is waiting on.
-  const polish = wizardPolishModel;
-  const polishPending =
-    settings.polishLevel !== "none" && polish !== null && !polish.installed;
-  element.readyPolishRow.hidden = !polishPending;
-  if (polishPending && polish) {
-    element.readyPolishName.textContent = `${polish.label} · AI polish`;
-    const busy = polishDownloading !== null;
-    element.readyPolishState.textContent = busy ? `${polishPercent}%` : "Waiting to start";
-    element.readyPolishBar.style.width = `${busy ? polishPercent : 0}%`;
-  }
-
-  element.readyProgress.hidden = !speechPending && !polishPending;
+function renderPracticeResult(): void {
+  const entry = practiceHeard[1] ?? practiceHeard[0];
+  element.practiceResult.hidden = !entry;
+  if (!entry) return;
+  element.practiceResultText.textContent = heardText(entry);
+  const said = entry.transcribedText?.trim() ?? "";
+  const tidied = Boolean(entry.polishedText) && said !== "" && said !== entry.polishedText;
+  element.practiceResultCaption.hidden = !tidied;
+  element.practiceResultCaption.replaceChildren();
+  if (!tidied) return;
+  const badge = document.createElement("span");
+  badge.className = "practice-badge";
+  badge.textContent = "Tidied up";
+  element.practiceResultCaption.append(badge, text(` You said “${said}”`));
 }
 
 /* -------------------------------------------------------------------------
@@ -4464,12 +4170,9 @@ function renderReadyProgress(): void {
 async function advanceWizard(): Promise<void> {
   if (wizardStep === null) return;
   // Checked here as well as on the button: a disabled button is a rendering
-  // of this rule, not the rule itself, and this is also reached from the
-  // Return key on the default-model link.
+  // of this rule, not the rule itself.
   if (!wizardCanAdvance(wizardStep)) return;
-  if (wizardStep === "voice") await commitLadderChoice();
-  const at = WIZARD_STEPS.indexOf(wizardStep);
-  const next = WIZARD_STEPS[at + 1];
+  const next = WIZARD_STEPS[WIZARD_STEPS.indexOf(wizardStep) + 1];
   if (!next) {
     closeWizard();
     return;
@@ -4477,12 +4180,17 @@ async function advanceWizard(): Promise<void> {
   showWizardStep(next);
 }
 
+function retreatWizard(): void {
+  if (wizardStep === null) return;
+  const previous = WIZARD_STEPS[WIZARD_STEPS.indexOf(wizardStep) - 1];
+  if (previous) showWizardStep(previous);
+}
+
 /**
  * Puts the wizard away for good, from the last page.
  *
  * The flag is the only thing written here; everything the wizard asks was
- * saved as it was answered, so quitting halfway through loses nothing and
- * reopens where it stood.
+ * saved as it was answered, so quitting halfway through loses nothing.
  */
 function closeWizard(): void {
   wizardStep = null;
@@ -4494,108 +4202,24 @@ function closeWizard(): void {
 
 function wireWizard(): void {
   element.wizardNext.addEventListener("click", () => void advanceWizard());
+  element.wizardBack.addEventListener("click", retreatWizard);
+  element.wizardSkip.addEventListener("click", () => showWizardStep("done"));
 
-  // A click on the track and the first instant of a drag are the same event
-  // with the same value. These two tell them apart.
-  element.ladderSlider.addEventListener("pointerdown", () => {
-    ladderPointerDown = true;
-    ladderPointerMoved = false;
-  });
-  // On the window, not the slider: the pointer is captured by the input for
-  // the length of a drag, but a drag that leaves the control still has to
-  // count as movement.
-  window.addEventListener("pointermove", () => {
-    if (!ladderPointerDown || ladderPointerMoved) return;
-    ladderPointerMoved = true;
-    // From here the thumb belongs to the finger.
-    cancelLadderGlide();
-  });
-  window.addEventListener("pointerup", () => {
-    ladderPointerDown = false;
-  });
-
-  element.ladderSlider.addEventListener("input", () => {
-    const raw = Number(element.ladderSlider.value);
-    // Touched by hand: from here the button names the model rather than
-    // calling it the default. Written before the branch below, because a
-    // click that lands on the rung it was already on changes no rung and so
-    // would never reach the card's redraw.
-    ladderTouched = true;
-    renderVoiceButton();
-    if (ladderPointerDown && !ladderPointerMoved) {
-      // Pressed somewhere along the track without dragging. The input has
-      // already jumped its value there; put it back and travel.
-      glideLadderTo(Math.round(raw));
-      return;
-    }
-    cancelLadderGlide();
-    ladderIndex = raw;
-    renderLadder();
-  });
-
-  // Released after a drag: settle onto the rung it is nearest, so the thumb
-  // never comes to rest between two notches the card is not describing. A
-  // click is already gliding and must not be restarted.
-  element.ladderSlider.addEventListener("change", () => {
-    if (!ladderPointerMoved) return;
-    glideLadderTo(Math.round(Number(element.ladderSlider.value)));
-  });
-  // `step="any"` is what makes the drag continuous, and it would otherwise
-  // make an arrow key move a hundredth of a rung. The keyboard gets the stops
-  // the pointer no longer has.
-  element.ladderSlider.addEventListener("keydown", (event) => {
-    const last = MODEL_LADDER.length - 1;
-    const step =
-      event.key === "ArrowRight" || event.key === "ArrowUp"
-        ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowDown"
-          ? -1
-          : 0;
-    let next = step === 0 ? null : Math.round(ladderIndex) + step;
-    if (event.key === "Home") next = 0;
-    if (event.key === "End") next = last;
-    if (next === null) return;
-    event.preventDefault();
-    ladderTouched = true;
-    renderVoiceButton();
-    glideLadderTo(next);
-  });
-  element.keyboard.addEventListener("click", (event) => {
+  element.keypick.addEventListener("click", (event) => {
     const option = (event.target as HTMLElement).closest<HTMLElement>("[data-hotkey]");
     const id = option?.dataset.hotkey;
-    if (!isHotkeyBindingId(id)) return;
-    void patchSettings({ hotkeyId: id });
+    if (isHotkeyBindingId(id)) pickKey(id);
   });
-
-  element.wizardPolishLevels.addEventListener("click", (event) => {
-    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-level]");
-    const level = card?.dataset.level;
-    if (!isPolishLevel(level)) return;
-    // The same write the AI Polish page makes: the level owns the instruction
-    // the dictation path runs, so choosing one puts that level's default back.
-    void patchSettings({
-      polishLevel: level,
-      transformPrompt: transformPromptFor(level),
-    }).then(prefetchPolishModel);
+  element.keypickMore.addEventListener("click", () => {
+    keypickExpanded = true;
+    renderKeypick();
   });
-
-  element.wizardKeyInput.addEventListener("input", () => {
-    element.wizardKeyInput.dataset.pristine = "false";
-    syncWizardKeyButton();
-  });
-  element.wizardKeyInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") saveWizardApiKey();
-  });
-  element.wizardKeySave.addEventListener("click", saveWizardApiKey);
-  element.wizardOpenOpenRouter.addEventListener("click", () => {
-    void host().openUrl("https://openrouter.ai/keys");
-  });
-
-  element.wizardEngine.addEventListener("click", (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-engine]");
-    const engine = button?.dataset.engine;
-    if (engine !== "local" && engine !== "openrouter") return;
-    void patchSettings({ polishEngine: engine });
+  // On the window, because a modifier pressed with nothing focused goes to
+  // the body and would never reach the picker.
+  window.addEventListener("keydown", (event) => {
+    if (wizardStep !== "shortcut") return;
+    const id = KEYPICK_CODES[event.code] ?? KEYPICK_CODES[event.key];
+    if (id) pickKey(id);
   });
 
   // The permission rows are rebuilt whenever one is granted, so the button is

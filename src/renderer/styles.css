@@ -3115,83 +3115,450 @@ select {
 .wizard-frame {
   display: grid;
   height: 100%;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 /* The titlebar is underneath this, so the head carries the drag region --
-   otherwise the window could not be moved while the wizard is up. */
-/* The left padding clears the traffic lights, which sit at x:25 y:22 with no
-   title bar of their own to push content aside -- the same 112px the app's
-   own title bar uses. Without it the mark sat underneath the close button. */
+   otherwise the window could not be moved while the wizard is up. The
+   padding is even on both sides so the dots centre on the window rather
+   than on the space beside the traffic lights. */
 .wizard-head {
   display: flex;
   height: var(--titlebar);
   align-items: center;
-  padding: 0 20px 0 112px;
-  gap: 10px;
+  justify-content: center;
+  padding: 0 112px;
 }
 
-.wizard-mark {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  color: var(--ink);
+.wizard-dots {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  gap: 6px;
+  list-style: none;
 }
 
-.wizard-brand {
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.wizard-dots[hidden] {
+  display: none;
 }
 
+.wizard-dots li {
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+  transition: background 240ms ease;
+}
+
+.wizard-dots li[data-state="on"] {
+  background: var(--accent);
+}
 
 .wizard-body {
   display: flex;
   overflow-y: auto;
   justify-content: center;
-  padding: 8px 20px 28px;
+  padding: 8px 20px 20px;
 }
 
 /* Centred with an auto margin rather than `align-items: center`, which on a
    short window clips the top of an overflowing block and leaves no way to
-   scroll back up to it. The polish page is three tall cards, a row and a key
-   field, and a laptop with the Dock showing is not a tall window. */
+   scroll back up to it. */
 .wizard-stack {
-  width: min(660px, 100%);
+  width: min(620px, 100%);
   margin: auto 0;
 }
 
 .wizard-step {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  animation: wizard-step-in 260ms ease both;
+}
+
+@keyframes wizard-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.wizard-step[hidden] {
+  display: none;
+}
+
+.wizard-step .display {
+  font-size: 34px;
+  line-height: 1.18;
+  text-align: center;
+}
+
+.wizard-step .lede {
+  max-width: 50ch;
+  margin: 10px auto 28px;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.wizard-step > .note {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.wizard-step > .checklist,
+.wizard-step > .note,
+.wizard-step > .practice,
+.wizard-step > .practice-result {
   width: 100%;
 }
 
-/* The heading and its one sentence are centred over whatever the step is
-   asking with; the controls below stay left-aligned, because a checklist or
-   a row of cards read down an edge. */
-.wizard-step .display {
-  font-size: 30px;
-  line-height: 1.15;
-  text-align: center;
+/* ----- the welcome page ----- */
+
+.wizard-hero-mark {
+  width: 68px;
+  height: 68px;
+  margin-bottom: 22px;
+  color: var(--ink);
 }
 
-/* One rule, because the `margin` shorthand in a second one was resetting the
-   `margin-inline: auto` that centres the box -- so the text was centred
-   inside a paragraph still sitting against the left edge of the step. */
-.wizard-step .lede {
-  max-width: 52ch;
-  margin: 12px auto 28px;
-  text-align: center;
+.wizard-step .wizard-hero {
+  font-size: 48px;
+  line-height: 1.1;
 }
 
-/* One button, directly under the step rather than at the foot of the window.
-   There is no Back beside it to balance against. */
+.wizard-step[data-step="welcome"] .lede {
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+/* ----- the key ----- */
+
+.keypick {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.keypick-option {
+  display: flex;
+  min-height: 112px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  gap: 10px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.keypick-option:hover:not([aria-checked="true"]) {
+  background: var(--surface-sunken);
+}
+
+.keypick-option[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.keypick-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.keypick-cap {
+  min-width: 52px;
+  height: 40px;
+  padding: 0 10px;
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 36px;
+}
+
+.keypick-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 560;
+  gap: 2px;
+}
+
+.keypick-name small {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.keypick-more {
+  margin-top: 14px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.keypick-more[hidden] {
+  display: none;
+}
+
+.wizard-tip {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1px solid var(--hint-hairline);
+  border-radius: 12px;
+  margin: 18px 0 0;
+  background: var(--hint-surface);
+  color: var(--hint-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wizard-tip.is-reserved {
+  visibility: hidden;
+}
+
+/* ----- the practice script ----- */
+
+.practice {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  gap: 10px;
+  list-style: none;
+}
+
+.practice-line {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  gap: 16px;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+
+.practice-line[data-state="done"] {
+  border-color: transparent;
+  background: var(--surface-sunken);
+}
+
+.practice-line[data-state="current"] {
+  padding: 20px 22px;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.practice-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.practice-mark {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 620;
+}
+
+.practice-line[data-state="current"] .practice-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.practice-line[data-state="done"] .practice-mark {
+  background: var(--positive);
+}
+
+/* The same drawn tick as the setup checklist. */
+.practice-line[data-state="done"] .practice-mark::after {
+  content: "";
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.practice-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.practice-body strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.practice-body small {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.practice-say {
+  margin: 0;
+  color: var(--ink);
+  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  font-size: 23px;
+  line-height: 1.42;
+}
+
+.practice-status {
+  display: flex;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+  gap: 12px;
+}
+
+.practice-status kbd {
+  min-width: 48px;
+  height: 38px;
+  padding: 0 10px;
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 34px;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.practice-status[data-state="listening"] kbd {
+  border-color: var(--accent);
+  transform: translateY(1px);
+}
+
+.practice-status[data-state="listening"] {
+  color: var(--accent);
+}
+
+.practice-level {
+  display: flex;
+  height: 20px;
+  align-items: flex-end;
+  margin-left: auto;
+  gap: 3px;
+}
+
+.practice-level span {
+  width: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+}
+
+.practice-level span:nth-child(even) {
+  height: 10px;
+}
+
+.practice-status[data-state="listening"] .practice-level span {
+  background: var(--accent);
+  animation: practice-level 900ms ease-in-out infinite alternate;
+}
+
+.practice-status[data-state="listening"] .practice-level span:nth-child(2) { animation-delay: -150ms; }
+.practice-status[data-state="listening"] .practice-level span:nth-child(3) { animation-delay: -300ms; }
+.practice-status[data-state="listening"] .practice-level span:nth-child(4) { animation-delay: -450ms; }
+.practice-status[data-state="listening"] .practice-level span:nth-child(5) { animation-delay: -600ms; }
+
+@keyframes practice-level {
+  to {
+    height: 18px;
+  }
+}
+
+/* ----- the last page ----- */
+
+.wizard-done-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 50%;
+  margin-bottom: 18px;
+  background: var(--positive);
+}
+
+.wizard-done-mark::after {
+  content: "";
+  width: 9px;
+  height: 18px;
+  border: solid #fff;
+  border-width: 0 3px 3px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.practice-result {
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  padding: 22px 24px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 16px;
+  margin: 0;
+  gap: 14px;
+}
+
+.practice-result[hidden],
+.practice-result figcaption[hidden] {
+  display: none;
+}
+
+.practice-result-text {
+  margin: 0;
+  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  font-size: 23px;
+  line-height: 1.42;
+}
+
+.practice-result figcaption {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.practice-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-right: 4px;
+  background: var(--accent-soft);
+  color: var(--hint-ink);
+  font-weight: 560;
+}
+
+/* ----- the button, and the line under everything ----- */
+
 .wizard-foot {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  margin-top: 28px;
+  margin-top: 30px;
 }
 
 .wizard-buttons {
@@ -3201,284 +3568,100 @@ select {
 }
 
 .wizard-buttons .pill-button {
-  height: 42px;
+  height: 46px;
   min-width: 190px;
-  padding: 0 28px;
-  border-radius: 12px;
-  font-size: 14px;
+  padding: 0 30px;
+  border-radius: 23px;
+  font-size: 15px;
   white-space: nowrap;
 }
 
-/* ----- the welcome page ----- */
-
-/* Centred, unlike every other step. Nothing is being chosen here, so there is
-   no control for the text to be left-aligned against. */
-.intro {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
+.wizard-buttons .pill-button[hidden] {
+  display: none;
 }
 
-.intro .lede {
-  max-width: 44ch;
-  margin: 12px 0 0;
-}
-
-/* The three beats of one gesture, in order. A numbered row reads as a
-   sequence, which is what using this is; three sentences in a list read as
-   three unrelated claims about it. */
-.intro-cards {
+.wizard-status {
   display: grid;
-  width: 100%;
-  padding: 0;
-  margin: 26px 0 0;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  list-style: none;
-  text-align: left;
+  height: 72px;
+  align-items: center;
+  padding: 0 28px;
+  grid-template-columns: 1fr auto 1fr;
 }
 
-.intro-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: 18px 16px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--surface-sunken);
-  gap: 7px;
-}
-
-/* In the corner rather than in the flow: it numbers the card without taking
-   a line away from what the card says. */
-.intro-card-step {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 620;
-  font-variant-numeric: tabular-nums;
-}
-
-.intro-card-icon {
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
-}
-
-.intro-card strong {
-  color: var(--ink);
-  font-size: 13.5px;
-  font-weight: 620;
-}
-
-.intro-card span:not(.intro-card-step) {
+.wizard-status .link {
   color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 460;
-  line-height: 1.5;
+  font-size: 13px;
 }
 
-/* The one thing that is not a step, so it sits apart from the row. */
-.intro-privacy {
+.wizard-status .link[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+#wizard-back {
+  justify-self: start;
+}
+
+#wizard-skip {
+  justify-self: end;
+}
+
+.wizard-downloads {
   display: flex;
-  max-width: 52ch;
-  align-items: flex-start;
-  margin: 22px 0 0;
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-weight: 460;
-  gap: 8px;
-  line-height: 1.55;
-  text-align: left;
-}
-
-.intro-privacy svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  margin-top: 1px;
-  color: var(--positive);
-}
-
-@media (max-width: 700px) {
-  .intro-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ----- the speed/accuracy slider ----- */
-
-.ladder {
-  padding: 22px 24px 20px;
-  border: 1px solid var(--hairline);
+  align-items: center;
+  padding: 7px 14px;
   border-radius: 16px;
   background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  gap: 10px;
+  grid-column: 2;
 }
 
-.ladder-ends {
-  display: flex;
-  justify-content: space-between;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  font-weight: 560;
-  letter-spacing: 0.01em;
+.wizard-downloads[hidden] {
+  visibility: hidden;
 }
 
-.ladder-control {
-  padding: 4px 0 0;
-  margin: 0 0 20px;
-}
-
-/* The stock control, stripped and rebuilt. A default macOS range slider in
-   the middle of a page of serif headings and drawn keycaps looks like a
-   browser form that wandered in -- and it gives no way to shade the part
-   behind the thumb, which is the half that says "you are here". `--fill` is
-   written by the renderer on every move. */
-.ladder-slider {
-  width: 100%;
-  height: 22px;
-  padding: 0;
-  margin: 0;
-  appearance: none;
-  background: none;
-  cursor: pointer;
-}
-
-.ladder-slider::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 3px;
-  background:
-    linear-gradient(var(--accent), var(--accent)) 0 / var(--fill, 50%) 100% no-repeat,
-    var(--hairline-strong);
-}
-
-.ladder-slider::-webkit-slider-thumb {
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--hairline-strong);
+.wizard-downloads-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  appearance: none;
-  background: var(--paper);
-  box-shadow: 0 1px 3px rgb(28 27 24 / 26%);
-  /* (track height - thumb height) / 2, which a webkit thumb does not do. */
-  margin-top: -8px;
+  background: var(--accent);
 }
 
-.ladder-slider:active::-webkit-slider-thumb {
-  border-color: var(--accent);
+.wizard-downloads[data-state="ready"] .wizard-downloads-dot {
+  background: var(--positive);
 }
 
-/* The shared focus rule draws a 2px accent rectangle around the whole
-   control, which on a 22px-tall slider is a box floating around a line. The
-   ring goes on the thumb instead: same "this has the keyboard" signal, on the
-   part that actually moves. */
-.ladder-slider:focus-visible {
-  outline: none;
-}
-
-.ladder-slider:focus-visible::-webkit-slider-thumb {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft), 0 1px 3px rgb(28 27 24 / 26%);
-}
-
-/* Aligned to the thumb's travel, not the track's width: the first and last
-   notches sit under the centre of the thumb at either end, which is half a
-   thumb in from each edge. */
-.ladder-ticks {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 10px;
-  margin: 2px 0 0;
-  list-style: none;
-}
-
-.ladder-tick {
-  width: 2px;
-  height: 5px;
-  border-radius: 1px;
+.wizard-downloads-track {
+  display: block;
+  width: 110px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
   background: var(--hairline-strong);
 }
 
-.ladder-tick[data-state="below"] {
+.wizard-downloads-track[hidden] {
+  display: none;
+}
+
+.wizard-downloads-track span {
+  display: block;
+  width: 0;
+  height: 100%;
   background: var(--accent);
+  transition: width 300ms ease;
 }
 
-.ladder-tick[data-state="here"] {
-  height: 8px;
-  background: var(--accent);
+@media (prefers-reduced-motion: reduce) {
+  .wizard-step,
+  .practice-status[data-state="listening"] .practice-level span {
+    animation: none;
+  }
 }
 
-/* The name and the model are two different facts and only one of them is the
-   answer: the name is where the slider is, the model is what that gets you.
-   The name leads because it is the thing being chosen. */
-.ladder-pick {
-  display: grid;
-  gap: 5px;
-}
-
-/* Name and model on one line: they are one answer, and stacking them read as
-   two separate facts about two separate things. */
-.ladder-headline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-}
-
-.ladder-headline strong {
-  color: var(--ink);
-  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-size: 21px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-}
-
-.ladder-headline span {
-  color: var(--accent);
-  font-size: 12.5px;
-  font-weight: 620;
-}
-
-.ladder-facts {
-  display: grid;
-  padding: 14px 0 0;
-  border-top: 1px solid var(--hairline);
-  margin: 12px 0 0;
-  gap: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.ladder-fact dt {
-  color: var(--ink-faint);
-  font-size: 10.5px;
-  font-weight: 620;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.ladder-fact dd {
-  margin: 3px 0 0;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 520;
-}
-
-.ladder-pick small {
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 440;
-  line-height: 1.5;
-}
-
-/* Only ever about one thing: the rung asked for does not fit this Mac. */
-.ladder-note {
-  margin: 14px 0 0;
-}
-
-/* ----- the key ----- */
 
 /* ----- the keyboard ----- */
 
@@ -3567,270 +3750,6 @@ select {
 .keyboard-caption strong {
   color: var(--ink);
   font-weight: 620;
-}
-
-/* ----- where polish runs ----- */
-
-/* Not a .row: it hangs under the three cards rather than sitting in a card of
-   its own, and it is only on screen at all above None. */
-.wizard-engine {
-  padding: 14px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  margin-top: 16px;
-  background: var(--surface-sunken);
-}
-
-.wizard-engine-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-/* Two lines' worth, held whichever sentence is in it. */
-.wizard-engine-note {
-  min-height: 36px;
-  margin: 8px 0 0;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  font-weight: 460;
-  line-height: 1.55;
-}
-
-/* Divided off rather than stacked: the choice above is answered, and this is
-   the consequence of whichever answer it was. The min-height is the tallest
-   of the three occupants -- measured, not guessed, and kept close to them so
-   the other two are not left sitting in a hole -- which is what stops
-   swapping between them changing the height of the page. */
-.wizard-engine-detail[hidden] {
-  display: none;
-}
-
-.wizard-engine-detail {
-  min-height: 76px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline);
-  margin-top: 14px;
-}
-
-.wizard-key[hidden],
-.wizard-local[hidden] {
-  display: none;
-}
-
-/* ----- "This Mac": the model that will do the rewriting ----- */
-
-.wizard-local-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.wizard-local-name {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.wizard-local-state {
-  flex: none;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  font-weight: 560;
-}
-
-.wizard-local-state[data-state="ready"] {
-  color: var(--positive);
-}
-
-.wizard-local-state[data-state="working"] {
-  color: var(--accent);
-}
-
-.wizard-local-track {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  margin-top: 10px;
-  background: var(--hairline-strong);
-}
-
-.wizard-local-track.is-reserved {
-  visibility: hidden;
-}
-
-.wizard-local-track span {
-  display: block;
-  width: 0;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: width 200ms ease;
-}
-
-.wizard-local-note {
-  margin-top: 10px;
-}
-
-/* ----- the key field ----- */
-
-.wizard-key-label {
-  display: flex;
-  align-items: baseline;
-  color: var(--ink-label);
-  font-size: 12.5px;
-  font-weight: 560;
-  gap: 8px;
-}
-
-.wizard-key-label small {
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.wizard-key-label .key-saved {
-  color: var(--positive);
-}
-
-.wizard-key-entry {
-  display: flex;
-  margin-top: 8px;
-  gap: 8px;
-}
-
-.wizard-key-entry .text-input {
-  min-width: 0;
-  flex: 1;
-}
-
-.wizard-key-entry .pill-button {
-  height: 32px;
-  min-width: 0;
-  padding: 0 16px;
-  border-radius: 9px;
-  font-size: 12.5px;
-}
-
-/* Sits under the keyboard it is about, so it is measured against the keyboard
-   rather than against the width of the step. Reserved when it does not apply:
-   `display: none` here is two lines of height appearing and vanishing under
-   the pointer as you try keys. */
-.wizard-fn-note {
-  max-width: 520px;
-  margin-inline: auto;
-  text-align: center;
-}
-
-.wizard-fn-note.is-reserved {
-  visibility: hidden;
-}
-
-/* ----- the last page ----- */
-
-/* Three beats of one gesture across a row, the same shape as the welcome
-   page's three cards -- the last page of the wizard answers the first. */
-.ready-gestures {
-  display: grid;
-  width: 100%;
-  padding: 0;
-  margin: 0;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  list-style: none;
-}
-
-.ready-gestures li {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 16px 16px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--surface-sunken);
-  gap: 8px;
-}
-
-.ready-gestures kbd {
-  min-width: 52px;
-  padding: 6px 10px;
-  font-size: 14px;
-}
-
-.ready-gestures strong {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 620;
-}
-
-.ready-gestures span {
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 460;
-  line-height: 1.5;
-}
-
-/* ----- what is still arriving ----- */
-
-.ready-progress {
-  display: grid;
-  width: 100%;
-  padding: 16px 18px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  margin: 0 0 20px;
-  background: var(--surface-sunken);
-  gap: 14px;
-}
-
-.ready-progress[hidden] {
-  display: none;
-}
-
-/* Name and percentage on one line, the bar spanning both under them. */
-.ready-progress-row {
-  display: grid;
-  gap: 8px 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.ready-progress-row[hidden] {
-  display: none;
-}
-
-.ready-progress-name {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 12.5px;
-  font-weight: 560;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ready-progress-state {
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 620;
-  font-variant-numeric: tabular-nums;
-}
-
-.ready-progress-track {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--hairline-strong);
-  grid-column: 1 / -1;
-}
-
-.ready-progress-track span {
-  display: block;
-  width: 0;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: width 200ms ease;
 }
 
 /* The wizard's keyboard, on the Dictation page: inside a card, with the

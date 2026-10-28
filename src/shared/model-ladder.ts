@@ -4,9 +4,9 @@
  * The catalogue is a table to read down: sixteen entries, four numbers each,
  * two of them engines a fresh install cannot run without a terminal. That is
  * the right shape for someone comparing models and the wrong one for someone
- * who has owned the app for nine seconds -- so the wizard asks the only
- * question they can actually answer, "faster or more accurate?", and this is
- * what the answers mean.
+ * who has owned the app for nine seconds -- so the wizard asks nothing at
+ * all. It starts on the top rung, and `chooseModel` steps down this ladder
+ * when the Mac cannot hold it.
  *
  * Every rung but the top one is whisper.cpp, which is linked into the app.
  * The top one is Parakeet: the app installs its `nemo-speech` runtime and
