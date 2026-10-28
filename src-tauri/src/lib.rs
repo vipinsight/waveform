@@ -2553,7 +2553,9 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         // instead made the icon behave unlike every other menu bar item, and
         // left no way to reach Quit without knowing to right click.
         .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| handle_menu_action(app, event.id().as_ref()))
+        // No `on_menu_event` here: the app-wide handler in `run` already
+        // receives tray menu events, and a second one ran every item twice --
+        // "Record a meeting" started a recording, then failed to start another.
         .build(app)?;
     Ok(())
 }
