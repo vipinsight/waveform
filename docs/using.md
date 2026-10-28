@@ -208,9 +208,12 @@ a few seconds after each sentence ends. Two level bars, **You** and **Other
 side**, show that audio is being heard; if the other side stays silent for five
 seconds, the page says so and offers to open System Settings.
 
-Press **Stop** and Waveform finishes the last phrases, tells the remote speakers
-apart (a one-time 65 MB download, kept on this Mac), prepares playback, and
-writes the summary. The summary has a fixed shape: a title of a few words, one
+Press **Stop** and Waveform finishes the last phrases, tells the speakers apart
+by voice on both the microphone and the other side (a one-time 65 MB download,
+kept on this Mac), prepares playback, and writes the summary. Your own lines
+are recognised from the voice in your saved dictations, so other people in the
+room get their own label instead of yours; the other side of the call leaking
+back in through the Mac's speakers is dropped rather than shown twice. The summary has a fixed shape: a title of a few words, one
 sentence on what the meeting was about, two to four topics with points, **Next
 steps** with who took each one, and **Decisions**. The title becomes the
 meeting's name unless you have given it one yourself; clearing a name you gave

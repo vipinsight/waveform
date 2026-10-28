@@ -74,6 +74,11 @@ impl Track {
     }
 }
 
+/// The label on a microphone line that is the other side of the call coming
+/// back in through the Mac's speakers. Kept, so tagging can change its mind,
+/// but never shown or summarised.
+pub const ECHO: &str = "echo";
+
 /// The raw speaker label given to every line from the microphone.
 pub const LOCAL_SPEAKER: &str = "me";
 
@@ -204,7 +209,15 @@ impl MeetingsStore {
         meeting
     }
 
+    /// The transcript, without the lines speaker tagging found to be echo.
     pub fn lines(&self, id: &str) -> Result<Vec<Line>, String> {
+        let mut lines = self.all_lines(id)?;
+        lines.retain(|line| line.speaker.as_deref() != Some(ECHO));
+        Ok(lines)
+    }
+
+    /// Every line, echo included, for speaker tagging to look at again.
+    pub fn all_lines(&self, id: &str) -> Result<Vec<Line>, String> {
         self.db
             .with(|connection| {
                 let mut select = connection.prepare_cached(
@@ -335,7 +348,7 @@ impl MeetingsStore {
         self.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())
     }
 
-    /// Tags remote lines with the speakers diarization found. `tags` pairs a
+    /// Tags lines with the speakers diarization found. `tags` pairs a
     /// line's `idx` with its raw label; lines not named keep what they had.
     pub fn tag_lines(&mut self, id: &str, tags: &[(i64, String)]) -> Result<(), String> {
         self.db

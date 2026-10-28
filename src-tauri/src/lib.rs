@@ -12,7 +12,8 @@ mod history;
 mod install;
 mod logs;
 mod hotkey;
-mod diarize;
+pub mod diarize;
+pub mod diarize_eval;
 mod dev_reset;
 mod dictation;
 mod dictionary;
@@ -1713,6 +1714,7 @@ pub fn run() {
                 meetings.clone(),
                 engine.clone(),
                 rewriter.clone(),
+                history.clone(),
                 tap_helper,
             ));
             let notices = Arc::new(std::sync::Mutex::new(None::<Arc<Dictation>>));

@@ -11,6 +11,7 @@
 
 use crate::download::{fetch, Download};
 use crate::paths;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use tokio::process::Command;
@@ -33,15 +34,21 @@ const SEGMENTATION: Download = Download {
 };
 
 /// Turns a stretch of speech into a voice print, so turns can be clustered
-/// by who is talking. Trained on Chinese, but a voice print is a voice
-/// print; sherpa-onnx's own diarization recipe uses this file for every
-/// language.
+/// by who is talking. NVIDIA's TitaNet-small, trained on English speakers.
+/// On the AMI meetings it tags as many lines right as the larger ERes2Net
+/// models (87% against 88%) in less than half the time, and unlike them it
+/// does not merge two people into one. See `examples/diarize_eval.rs`.
 const EMBEDDING: Download = Download {
-    file: "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
-    bytes: 39_593_761,
-    sha256: "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b",
+    file: "nemo_en_titanet_small.onnx",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx",
+    bytes: 40_257_283,
+    sha256: "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e",
 };
+
+/// Where the voice-print model is kept. Named for the model, so an install
+/// from before the switch (a Mandarin model, `embedding.onnx`) reads as not
+/// installed and is offered again.
+const EMBEDDING_FILE: &str = "voice-titanet-small.onnx";
 
 const BINARY: &str = "sherpa-onnx-offline-speaker-diarization";
 const LIBRARIES: [&str; 3] = [
@@ -52,9 +59,9 @@ const LIBRARIES: [&str; 3] = [
 
 /// How far apart two voice prints have to be to count as two people.
 ///
-/// 0.5 is the tool's default and split one person in two on the sample call;
-/// 0.9 merged two people into one. 0.7 separated the pair cleanly.
-const CLUSTER_THRESHOLD: f32 = 0.7;
+/// Swept on AMI meetings with TitaNet-small: 1.0 found up to four times too
+/// many people, 1.15 merged them; 1.1 found the right number or near it.
+const CLUSTER_THRESHOLD: f32 = 1.1;
 
 /// Where the tool and its models live.
 pub fn runtime_dir() -> Option<PathBuf> {
@@ -79,7 +86,7 @@ pub fn is_installed() -> bool {
     };
     paths::is_executable(&binary)
         && models.join("segmentation.onnx").is_file()
-        && models.join("embedding.onnx").is_file()
+        && models.join(EMBEDDING_FILE).is_file()
 }
 
 /// Bytes the install downloads, for the page that offers it.
@@ -108,9 +115,11 @@ pub async fn install(
     tokio::fs::create_dir_all(&models)
         .await
         .map_err(|error| format!("Could not make {}: {error}", models.display()))?;
-    tokio::fs::copy(staging.join(EMBEDDING.file), models.join("embedding.onnx"))
+    tokio::fs::copy(staging.join(EMBEDDING.file), models.join(EMBEDDING_FILE))
         .await
         .map_err(|error| format!("Could not put the voice model in place: {error}"))?;
+    // The voice model this one replaced.
+    let _ = tokio::fs::remove_file(models.join("embedding.onnx")).await;
 
     // The tarballs did their job; the embedding is copied, so the staging
     // copy of it is the only leftover worth the space.
@@ -212,27 +221,57 @@ pub struct Turn {
     pub label: String,
 }
 
-/// Runs the tool on a WAV and returns its turns.
+/// What a run can be tuned with. The app always uses the default; the
+/// evaluation harness sweeps these to pick that default.
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub cluster_threshold: f32,
+    /// A voice-print model other than the installed one.
+    pub embedding: Option<PathBuf>,
+    /// Where the networks run: `cpu` or `coreml`.
+    pub provider: &'static str,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config { cluster_threshold: CLUSTER_THRESHOLD, embedding: None, provider: "cpu" }
+    }
+}
+
+/// Runs the tool on a 16 kHz WAV and returns its turns.
 pub async fn run(wav: &Path, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
+    run_with(wav, &Config::default(), cancel).await
+}
+
+pub async fn run_with(wav: &Path, config: &Config, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
     let binary = binary_path().filter(|path| paths::is_executable(path)).ok_or(
         "Speaker tagging is not installed. Download it from Models, then try again.",
     )?;
     let models = models_dir().ok_or("Could not work out where the diarizer's models live.")?;
+    let embedding = config.embedding.clone().unwrap_or_else(|| models.join(EMBEDDING_FILE));
     let threads = std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(1).max(1))
         .unwrap_or(2);
 
-    let child = Command::new(&binary)
-        .arg(format!("--clustering.cluster-threshold={CLUSTER_THRESHOLD}"))
+    // At low priority: it runs flat out on every core but one for a minute
+    // or two after a meeting, and whatever the user is doing comes first.
+    // nice execs the tool, so killing this child kills the tool.
+    let child = Command::new("/usr/bin/nice")
+        .arg("-n")
+        .arg("10")
+        .arg(&binary)
+        .arg(format!("--clustering.cluster-threshold={}", config.cluster_threshold))
         .arg(format!(
             "--segmentation.pyannote-model={}",
             models.join("segmentation.onnx").display()
         ))
-        .arg(format!("--embedding.model={}", models.join("embedding.onnx").display()))
+        .arg(format!("--embedding.model={}", embedding.display()))
         // sherpa-onnx takes a thread count per network; a bare --num-threads
         // is rejected and the run stops before it starts.
         .arg(format!("--segmentation.num-threads={threads}"))
         .arg(format!("--embedding.num-threads={threads}"))
+        .arg(format!("--segmentation.provider={}", config.provider))
+        .arg(format!("--embedding.provider={}", config.provider))
         .arg(wav)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -301,67 +340,191 @@ pub struct Span {
 /// is `speaker_00` whatever the tool called it, and a re-run that finds the
 /// same people in the same order gives them the same labels.
 pub fn assign(lines: &[Span], turns: &[Turn]) -> Vec<(i64, String)> {
-    if turns.is_empty() {
-        return Vec::new();
+    let raw: Vec<(i64, u64, &str)> = lines
+        .iter()
+        .filter_map(|line| speaker_of(line, turns).map(|label| (line.idx, line.start_ms, label)))
+        .collect();
+    let names = by_first_appearance(&raw);
+    let mut out: Vec<(i64, String)> = raw.iter().map(|(idx, _, label)| (*idx, names[label].clone())).collect();
+    out.sort_by_key(|(idx, _)| *idx);
+    out
+}
+
+/// The tool's label for the speaker whose turns cover most of `line`, else
+/// the nearest turn within two seconds, else none.
+fn speaker_of<'a>(line: &Span, turns: &'a [Turn]) -> Option<&'a str> {
+    let mut overlap_by_label: HashMap<&str, u64> = HashMap::new();
+    for turn in turns {
+        let overlap = turn.end_ms.min(line.end_ms).saturating_sub(turn.start_ms.max(line.start_ms));
+        if overlap > 0 {
+            *overlap_by_label.entry(turn.label.as_str()).or_insert(0) += overlap;
+        }
     }
-    let mut raw: Vec<(i64, u64, &str)> = Vec::new();
-    for line in lines {
-        let mut best: Option<(&str, u64)> = None;
-        let mut overlap_by_label: std::collections::HashMap<&str, u64> = Default::default();
+    // Ties go to the lower label, so the answer does not depend on hashing.
+    if let Some((label, _)) = overlap_by_label.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(a.0))) {
+        return Some(label);
+    }
+    let middle = (line.start_ms + line.end_ms) / 2;
+    turns
+        .iter()
+        .map(|turn| {
+            // Zero inside the turn, else the gap to its nearer edge.
+            let distance = turn.start_ms.saturating_sub(middle).max(middle.saturating_sub(turn.end_ms));
+            (distance, turn)
+        })
+        .filter(|(distance, _)| *distance <= 2_000)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, turn)| turn.label.as_str())
+}
+
+/// `speaker_00`, `speaker_01`, … in the order each label is first heard.
+/// `raw` is (line, start, tool label).
+fn by_first_appearance<'a>(raw: &[(i64, u64, &'a str)]) -> HashMap<&'a str, String> {
+    let mut ordered: Vec<&(i64, u64, &str)> = raw.iter().collect();
+    ordered.sort_by_key(|(_, start, _)| *start);
+    let mut names: HashMap<&str, String> = HashMap::new();
+    for (_, _, label) in ordered {
+        let next = names.len();
+        names.entry(label).or_insert_with(|| format!("speaker_{next:02}"));
+    }
+    names
+}
+
+/// Which recording a stretch of joined audio came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// Clips of the user alone, from dictation: the voice to call `me`.
+    Enrolment,
+    Mic,
+    System,
+}
+
+/// The diarizer's sample rate.
+pub const RATE: u32 = 16_000;
+
+/// Silence between joined recordings, so no turn runs across a seam.
+const SEAM_MS: u64 = 2_000;
+
+/// Several recordings laid end to end, so one diarizer run clusters every
+/// voice in all of them together: someone heard on both tracks gets one
+/// label, and the enrolment clips land in the same cluster as the user.
+pub struct Joined {
+    pub samples: Vec<f32>,
+    /// Each recording's source, where it starts in `samples`, and its length.
+    pieces: Vec<(Source, u64, u64)>,
+}
+
+pub fn join(parts: &[(Source, &[f32])]) -> Joined {
+    let per_ms = RATE as u64 / 1_000;
+    let mut samples = Vec::new();
+    let mut pieces = Vec::new();
+    for (source, audio) in parts {
+        if audio.is_empty() {
+            continue;
+        }
+        if !samples.is_empty() {
+            samples.resize(samples.len() + (SEAM_MS * per_ms) as usize, 0.0);
+        }
+        let start = samples.len() as u64 / per_ms;
+        samples.extend_from_slice(audio);
+        pieces.push((*source, start, audio.len() as u64 / per_ms));
+    }
+    Joined { samples, pieces }
+}
+
+impl Joined {
+    /// The tool's turns on the joined audio, back on each recording's own
+    /// clock. A turn that strays into a seam is cut at the recording's edge.
+    pub fn split(&self, turns: &[Turn]) -> Vec<(Source, Turn)> {
+        let mut out = Vec::new();
         for turn in turns {
-            let overlap = turn.end_ms.min(line.end_ms).saturating_sub(turn.start_ms.max(line.start_ms));
-            if overlap > 0 {
-                *overlap_by_label.entry(turn.label.as_str()).or_insert(0) += overlap;
+            for &(source, start, length) in &self.pieces {
+                let from = turn.start_ms.max(start);
+                let to = turn.end_ms.min(start + length);
+                if to > from {
+                    out.push((
+                        source,
+                        Turn { start_ms: from - start, end_ms: to - start, label: turn.label.clone() },
+                    ));
+                }
             }
         }
-        for (label, overlap) in overlap_by_label {
-            if best.map_or(true, |(_, most)| overlap > most) {
-                best = Some((label, overlap));
-            }
-        }
-        let label = match best {
-            Some((label, _)) => Some(label),
-            None => {
-                let middle = (line.start_ms + line.end_ms) / 2;
-                turns
-                    .iter()
-                    .map(|turn| {
-                        // Zero inside the turn, else the gap to its nearer edge.
-                        let distance = turn
-                            .start_ms
-                            .saturating_sub(middle)
-                            .max(middle.saturating_sub(turn.end_ms));
-                        (distance, turn)
-                    })
-                    .filter(|(distance, _)| *distance <= 2_000)
-                    .min_by_key(|(distance, _)| *distance)
-                    .map(|(_, turn)| turn.label.as_str())
-            }
-        };
-        if let Some(label) = label {
+        out
+    }
+}
+
+/// The label every line the user said carries, on either track.
+pub const ME: &str = crate::meetings::LOCAL_SPEAKER;
+
+/// What `tag_call` decided for one meeting.
+#[derive(Debug, Default, PartialEq)]
+pub struct CallTags {
+    /// Each line's speaker: `me`, or `speaker_NN` for everyone else on
+    /// either track, numbered in the order they are first heard.
+    pub tags: Vec<(i64, String)>,
+    /// Microphone lines that are the other side of the call coming out of
+    /// the Mac's speakers and back in through the mic: said once already on
+    /// the system track.
+    pub echoes: Vec<i64>,
+}
+
+/// Tags both tracks' lines from one diarizer run over the joined audio.
+///
+/// The user is the cluster the enrolment clips fell into. Without clips, it
+/// is whoever talks most on the microphone among the voices that are mostly
+/// heard there. A microphone line whose voice belongs to the other side, said
+/// while the other side was talking, is an echo, not a person in the room.
+pub fn tag_call(mic: &[Span], system: &[Span], turns: &[(Source, Turn)]) -> CallTags {
+    let mut heard: HashMap<&str, [u64; 3]> = HashMap::new();
+    for (source, turn) in turns {
+        heard.entry(turn.label.as_str()).or_default()[*source as usize] += turn.end_ms - turn.start_ms;
+    }
+    let me_label = heard
+        .iter()
+        .filter(|(_, ms)| ms[Source::Enrolment as usize] > 0)
+        .max_by(|a, b| a.1[0].cmp(&b.1[0]).then(b.0.cmp(a.0)))
+        .or_else(|| {
+            heard
+                .iter()
+                .filter(|(_, ms)| ms[Source::Mic as usize] > ms[Source::System as usize])
+                .max_by(|a, b| a.1[1].cmp(&b.1[1]).then(b.0.cmp(a.0)))
+        })
+        .map(|(label, _)| *label);
+    let is_remote = |label: &str| heard.get(label).is_some_and(|ms| ms[2] > ms[1]);
+
+    let on = |wanted: Source| -> Vec<Turn> {
+        turns.iter().filter(|(source, _)| *source == wanted).map(|(_, turn)| turn.clone()).collect()
+    };
+    let (mic_turns, system_turns) = (on(Source::Mic), on(Source::System));
+    let remote_talking = |line: &Span| -> u64 {
+        system_turns
+            .iter()
+            .map(|turn| turn.end_ms.min(line.end_ms).saturating_sub(turn.start_ms.max(line.start_ms)))
+            .sum()
+    };
+
+    let mut out = CallTags::default();
+    let mut raw: Vec<(i64, u64, &str)> = Vec::new();
+    for line in mic {
+        let Some(label) = speaker_of(line, &mic_turns) else { continue };
+        if Some(label) == me_label {
+            out.tags.push((line.idx, ME.into()));
+        } else if is_remote(label) && remote_talking(line) * 2 >= line.end_ms - line.start_ms {
+            out.echoes.push(line.idx);
+        } else {
             raw.push((line.idx, line.start_ms, label));
         }
     }
-
-    // Renumber by first appearance in time.
-    raw.sort_by_key(|(_, start, _)| *start);
-    let mut renamed: std::collections::HashMap<&str, String> = Default::default();
-    let mut next = 0;
-    let mut out: Vec<(i64, String)> = raw
-        .iter()
-        .map(|(idx, _, label)| {
-            let name = renamed
-                .entry(label)
-                .or_insert_with(|| {
-                    let name = format!("speaker_{next:02}");
-                    next += 1;
-                    name
-                })
-                .clone();
-            (*idx, name)
-        })
-        .collect();
-    out.sort_by_key(|(idx, _)| *idx);
+    for line in system {
+        match speaker_of(line, &system_turns) {
+            Some(label) if Some(label) == me_label => out.tags.push((line.idx, ME.into())),
+            Some(label) => raw.push((line.idx, line.start_ms, label)),
+            None => {}
+        }
+    }
+    let names = by_first_appearance(&raw);
+    out.tags.extend(raw.iter().map(|(idx, _, label)| (*idx, names[label].clone())));
+    out.tags.sort_by_key(|(idx, _)| *idx);
     out
 }
 
@@ -414,6 +577,64 @@ mod tests {
 
     #[test]
     fn the_install_size_is_the_sum_of_its_parts() {
-        assert_eq!(INSTALL_BYTES, 18_252_168 + 6_958_444 + 39_593_761);
+        assert_eq!(INSTALL_BYTES, 18_252_168 + 6_958_444 + 40_257_283);
+    }
+
+    fn turn(start: u64, end: u64, label: &str) -> Turn {
+        Turn { start_ms: start, end_ms: end, label: label.into() }
+    }
+
+    fn span(idx: i64, start: u64, end: u64) -> Span {
+        Span { idx, start_ms: start, end_ms: end }
+    }
+
+    #[test]
+    fn joined_turns_come_back_on_each_tracks_clock() {
+        let one_second = vec![0.0; RATE as usize];
+        let joined = join(&[(Source::Enrolment, &one_second), (Source::Mic, &one_second)]);
+        // 1 s, a 2 s seam, 1 s.
+        assert_eq!(joined.samples.len(), 4 * RATE as usize);
+        let split = joined.split(&[turn(500, 3_500, "a")]);
+        assert_eq!(split, vec![(Source::Enrolment, turn(500, 1_000, "a")), (Source::Mic, turn(0, 500, "a"))]);
+    }
+
+    #[test]
+    fn the_enrolled_voice_is_me_and_everyone_else_is_numbered_across_tracks() {
+        let turns = vec![
+            (Source::Enrolment, turn(0, 30_000, "s3")),
+            (Source::Mic, turn(0, 5_000, "s3")),
+            (Source::Mic, turn(5_000, 10_000, "s1")), // someone in the room
+            (Source::System, turn(2_000, 8_000, "s0")), // someone on the call
+        ];
+        let tags = tag_call(&[span(0, 0, 4_000), span(1, 6_000, 9_000)], &[span(2, 2_000, 8_000)], &turns);
+        assert_eq!(
+            tags.tags,
+            vec![(0, ME.into()), (1, "speaker_01".into()), (2, "speaker_00".into())]
+        );
+        assert!(tags.echoes.is_empty());
+    }
+
+    #[test]
+    fn without_enrolment_me_is_who_talks_most_on_the_mic() {
+        let turns = vec![
+            (Source::Mic, turn(0, 9_000, "s1")),
+            (Source::Mic, turn(9_000, 10_000, "s2")),
+            (Source::System, turn(0, 20_000, "s0")),
+        ];
+        let tags = tag_call(&[span(0, 0, 9_000)], &[], &turns);
+        assert_eq!(tags.tags, vec![(0, ME.into())]);
+    }
+
+    #[test]
+    fn a_remote_voice_on_the_mic_while_they_talk_is_an_echo() {
+        let turns = vec![
+            (Source::Enrolment, turn(0, 30_000, "me")),
+            (Source::System, turn(0, 10_000, "far")),
+            (Source::Mic, turn(0, 4_000, "far")),
+            (Source::Mic, turn(20_000, 22_000, "far")), // same voice, nobody on the call talking
+        ];
+        let tags = tag_call(&[span(0, 0, 4_000), span(1, 20_000, 22_000)], &[span(2, 0, 10_000)], &turns);
+        assert_eq!(tags.echoes, vec![0]);
+        assert_eq!(tags.tags, vec![(1, "speaker_00".into()), (2, "speaker_00".into())]);
     }
 }
