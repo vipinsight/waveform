@@ -42,6 +42,14 @@ const LOCAL_CORE_PROMPT: &str = include_str!("prompts/core-local.txt");
 /// Asks whether a corrected word belongs in the dictionary.
 const DICTIONARY_JUDGE_PROMPT: &str = include_str!("prompts/dictionary-judge.txt");
 
+/// The words that come back from a rewrite as digits.
+const SPOKEN_NUMBERS: [&str; 31] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    "hundred", "thousand", "million",
+];
+
 /// More text than a dictated session realistically holds. Past it we refuse
 /// rather than truncate, because a rewrite of half the text would delete the
 /// other half.
@@ -521,7 +529,9 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
     // that was never in the source.
     let borrowed = reply_words
         .iter()
-        .filter(|word| source_set.contains(*word))
+        .filter(|word| {
+            source_set.contains(*word) || source_set.iter().any(|said| same_number(said, word))
+        })
         .count() as f64
         / reply_words.len() as f64;
 
@@ -531,7 +541,9 @@ fn is_rewrite_of(source: &str, reply: &str) -> bool {
     // Cleanup drops filler and so never keeps everything either.
     let kept = source_set
         .iter()
-        .filter(|word| reply_set.contains(*word))
+        .filter(|word| {
+            reply_set.contains(*word) || reply_set.iter().any(|reply| same_number(word, reply))
+        })
         .count() as f64
         / source_set.len() as f64;
 
@@ -555,9 +567,11 @@ fn reaches_the_end(source_words: &[String], reply_words: &[String]) -> bool {
     // Only the words worth tracking. "the", "for" and "me" appear all through
     // both texts, so the source's last "the" is always matched by the reply's
     // first one, and a reply that stopped halfway looks like it got to the end.
+    // Numbers are worth tracking at any length: "at three sorry four" ends on
+    // the word that decides what the sentence says.
     let carried: Vec<bool> = source_words
         .iter()
-        .filter(|word| word.chars().count() >= 4)
+        .filter(|word| word.chars().count() >= 4 || is_number(word))
         .map(|word| reply_words.iter().any(|reply| same_word(word, reply)))
         .collect();
     if carried.is_empty() {
@@ -578,13 +592,28 @@ fn reaches_the_end(source_words: &[String], reply_words: &[String]) -> bool {
 /// enough that one edit is a correction rather than a different word: "them"
 /// and "the" are not the same word.
 fn same_word(source: &str, reply: &str) -> bool {
-    if source == reply {
+    if source == reply || same_number(source, reply) {
         return true;
     }
     if source.chars().count() < 4 || reply.chars().count() < 4 {
         return false;
     }
     within_one_edit(source, reply)
+}
+
+/// Whether `reply` could be the number `source` said.
+///
+/// Writing numbers down is the job, so "four" coming back as "4" is the word
+/// surviving, not a word abandoned. The value is not compared: "twenty five" is
+/// one number in two words, and "four thirty" comes back as "4:30". That leaves
+/// a reply that answers a sum in the text able to pass, which is a small price
+/// for a check that otherwise refuses every correction of a time.
+fn same_number(source: &str, reply: &str) -> bool {
+    is_number(source) && reply.chars().any(|character| character.is_ascii_digit())
+}
+
+fn is_number(word: &str) -> bool {
+    SPOKEN_NUMBERS.contains(&word) || word.chars().any(|character| character.is_ascii_digit())
 }
 
 /// Levenshtein distance of at most one, without computing the distance.
@@ -611,6 +640,8 @@ fn words(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|word| {
             word.trim_matches(|character: char| !character.is_alphanumeric())
+                // "p.m." and "PM" are one word.
+                .replace('.', "")
                 .to_lowercase()
         })
         .filter(|word| !word.is_empty())
@@ -929,6 +960,32 @@ mod tests {
         assert!(is_rewrite_of(said, cleaned));
     }
 
+    /// Found by a dictation that came back raw: the right answer drops the wrong
+    /// time and its "sorry" and writes the right one as a digit, which left no
+    /// word of the tail for the check to find.
+    #[test]
+    fn accepts_a_correction_at_the_end() {
+        let said = "Let's see me tomorrow at three p.m. sorry, four p.m.";
+        assert!(is_rewrite_of(said, "Let's meet tomorrow at 4pm."));
+        assert!(is_rewrite_of(said, "Let's meet tomorrow at 4 PM."));
+        assert!(is_rewrite_of(said, "Let's see me tomorrow at 4 PM."));
+    }
+
+    /// Parakeet writes some times as digits already.
+    #[test]
+    fn accepts_a_correction_of_a_time_said_in_digits() {
+        let said = "Let's meet tomorrow at 3 pm sorry 4 pm";
+        assert!(is_rewrite_of(said, "Let's meet tomorrow at 4pm."));
+    }
+
+    #[test]
+    fn a_number_is_only_the_same_as_a_written_number() {
+        assert!(same_word("four", "4"));
+        assert!(same_word("twenty", "25"));
+        assert!(!same_word("four", "fine"));
+        assert!(!same_word("tomorrow", "4"));
+    }
+
     #[test]
     fn rejects_a_refusal() {
         let said = "Please rewrite this paragraph about the quarterly numbers we \
@@ -985,6 +1042,41 @@ mod tests {
             Err(message) => println!("refused: {message}"),
         }
         assert!(outcome.is_ok(), "{outcome:?}");
+    }
+
+    /// The dictation path over sentences that need more than filler removed,
+    /// with this Mac's own settings, engine and key.
+    ///
+    /// Ignored, because it calls whichever model is configured. It is how to
+    /// see what the dictation prompt does before shipping a change to it.
+    /// `cargo test --release shows_dictation_replies -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn shows_dictation_replies() {
+        let dir = crate::paths::waveform_home().expect("a home directory");
+        let store = SettingsStore::load(dir);
+        let rewriter = Rewriter::new(Arc::new(Mutex::new(store)));
+
+        for text in [
+            "Let's see me tomorrow at three p.m. sorry, four p.m.",
+            "Let's meet tomorrow at 3 pm sorry 4 pm",
+            "Hi, I am going to London tomorrow night at 3 PM. Sorry, 4 PM and then I will go back to home.",
+            "Can you check if all the sorry the readme is up to date",
+            "send it to john no actually send it to mary",
+            "the budget is fifty dollars I mean sixty dollars for the whole team",
+            "I'll see you tomorrow at three p.m.",
+            "can you see me after the call",
+            "I am sorry I missed the three p.m. meeting",
+            "um so like I think we should uh ship it on friday",
+        ] {
+            let verdict = match rewriter.clean_up_dictation(text).await {
+                Ok(Some(reply)) if reply == text => "unchanged".to_string(),
+                Ok(Some(reply)) => format!("-> {reply:?}"),
+                Ok(None) => "polish is off".to_string(),
+                Err(message) => format!("refused: {message}"),
+            };
+            println!("{text:?}\n    {verdict}");
+        }
     }
 
     /// Runs the real path over a handful of typed sentences and prints what

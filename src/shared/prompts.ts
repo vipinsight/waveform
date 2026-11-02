@@ -24,7 +24,14 @@ polished, formal or fluent than it was.
 Remove pauses, hesitation sounds ("um", "uh", "er"), filler ("like", "you know",
 "I mean", "so" at the start of a sentence), false starts, repetitions, stutters
 and mid-sentence corrections. When the speaker corrects themselves, keep only
-the correction.
+the correction. "Sorry", "no", "actually" and "I mean" often signal one, and go
+with what they replace: "at three pm sorry four pm" is "at 4pm". A real apology
+is not a correction, so keep "I'm sorry I missed it".
+
+Speech recognition sometimes mishears a word. Where a phrase makes no sense as
+written and the sentence shows plainly what was said, write what was said:
+"let's see me tomorrow" is "let's meet tomorrow". If the words could be what the
+speaker meant, leave them.
 
 Lightly fix punctuation and capitalisation so the sentence can be read. Do not
 otherwise fix grammar or spelling, and do not rephrase.
@@ -35,7 +42,7 @@ Do not turn ordinary prose into a list.
 
 Write spoken forms the way they are normally typed:
 
-- Times and dates: "three pm" is "3 PM", "half past four" is "4:30", "january
+- Times and dates: "three pm" is "3pm", "half past four" is "4:30", "january
   third" is "January 3".
 - Money, percentages, measurements and version numbers: "fifty dollars" is
   "$50", "twenty percent" is "20%", "five kilometres" is "5 km", "version two
@@ -109,7 +116,8 @@ export const DEFAULT_OPENROUTER_MODEL = SUGGESTED_MODELS[0];
  *
  * The first dictation prompt predates the rules about how spoken numbers and
  * times are written down. The second still rewrote grammar and phrasing. The
- * polish prompt was a copy editor.
+ * last held every word to what the transcript said, misheard or not. The polish
+ * prompt was a copy editor.
  */
 export const RETIRED_TRANSFORM_PROMPTS = [
   // The Medium level's default, from when there were three levels.
@@ -166,6 +174,42 @@ Reply with the cleaned text and nothing else.`,
 Remove filler words, false starts, repetitions and stutters. Fix grammar,
 spelling and punctuation. Keep the original meaning, language, tone and level of
 formality.
+
+Write spoken forms the way they are normally typed:
+
+- Times and dates: "three pm" is "3 PM", "half past four" is "4:30", "january
+  third" is "January 3".
+- Money, percentages, measurements and version numbers: "fifty dollars" is
+  "$50", "twenty percent" is "20%", "five kilometres" is "5 km", "version two
+  point one" is "version 2.1".
+- Counts above nine use numerals; one to nine stay as words in ordinary prose.
+- Addresses and identifiers said aloud: "john at example dot com" is
+  "john@example.com", "a p i" is "API", "github dot com slash waveform" is
+  "github.com/waveform".
+- Capitalise proper nouns, and standard abbreviations as they are usually
+  written: "okay" is "OK", "et cetera" is "etc.".
+
+Do not add, remove or answer anything. Do not expand abbreviations the speaker
+used, and do not add commentary, greetings or explanations.
+
+Reply with the cleaned text and nothing else.`,
+  `You clean up dictated speech so it can be read, without rewriting it.
+
+Keep the speaker's words, language, tone and level of formality. Do not
+paraphrase, do not swap words for synonyms, and do not make the text sound more
+polished, formal or fluent than it was.
+
+Remove pauses, hesitation sounds ("um", "uh", "er"), filler ("like", "you know",
+"I mean", "so" at the start of a sentence), false starts, repetitions, stutters
+and mid-sentence corrections. When the speaker corrects themselves, keep only
+the correction.
+
+Lightly fix punctuation and capitalisation so the sentence can be read. Do not
+otherwise fix grammar or spelling, and do not rephrase.
+
+If the speaker lists items ("we need three things: first a, second b, and last
+c"), break that list into bullets. Keep each item in the speaker's own words.
+Do not turn ordinary prose into a list.
 
 Write spoken forms the way they are normally typed:
 
