@@ -135,4 +135,36 @@ describe("AudioCapture", () => {
     expect(errors).toEqual(["engine hiccup"]);
     expect(phrases).toEqual(["second"]);
   });
+
+  it("holds nothing to retry when the engine finds no words", async () => {
+    const { capture, errors } = harness(async () => ({ text: "" }));
+
+    await capture.start();
+    feedMs(capture, 300, ROOM);
+    speak(capture);
+    capture.stop();
+    await settled(capture);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^No words in the phrase/);
+    expect(capture.canRetry).toBe(false);
+  });
+
+  it("keeps Retry when a phrase with no words follows a real failure", async () => {
+    let calls = 0;
+    const { capture } = harness(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("engine hiccup");
+      return { text: "" };
+    });
+
+    await capture.start();
+    feedMs(capture, 300, ROOM);
+    speak(capture);
+    speak(capture);
+    capture.stop();
+    await settled(capture);
+
+    expect(capture.canRetry).toBe(true);
+  });
 });

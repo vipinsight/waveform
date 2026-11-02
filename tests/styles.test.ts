@@ -137,6 +137,16 @@ describe("stylesheet covers the markup", () => {
   });
 
   /*
+   * A held session is the narrow capsule, but Retry and Dismiss still need the
+   * room a latched session gets, or they hang off its ends.
+   */
+  it("widens a held session that offers Retry", () => {
+    expect(overlayCss).toMatch(
+      /\.hud\[data-state="error"\]\[data-mode="hold"\]\[data-retry="true"\] \{\n  width: 98px;/,
+    );
+  });
+
+  /*
    * A 1px inset along the top edge of a capsule reads as a stray rim that only
    * exists at the top. The border is already a full outline.
    */

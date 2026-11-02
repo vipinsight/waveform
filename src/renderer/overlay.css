@@ -147,6 +147,11 @@ body {
   border-color: rgb(255 255 255 / 34%);
 }
 
+/* Retry and Dismiss need the room a latched session has, whatever opened it. */
+.hud[data-state="error"][data-mode="hold"][data-retry="true"] {
+  width: 98px;
+}
+
 /*
  * After the speaker stops, the capsule gathers into a circle. The meter has
  * nothing left to show, and a spinner reads as work rather than as listening.
