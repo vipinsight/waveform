@@ -79,7 +79,9 @@ downloads and update checks also use the network; see [Privacy](#privacy).
   button (Qwen needs Python 3 on the Mac). [Models](docs/models.md) has the
   details.
 - **Polish without an account.** AI Polish can run
-  [Qwen3](https://huggingface.co/Qwen/Qwen3-0.6B), from 0.6B up to 14B, on your Mac
+  [Qwen3](https://huggingface.co/Qwen/Qwen3-0.6B) (0.6B up to 14B),
+  [Gemma 4 12B](https://huggingface.co/google/gemma-4-12b-it) or
+  [gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b) on your Mac
   through llama.cpp, downloaded from the AI Polish section the same way a speech
   model is. An OpenRouter key remains an option for the times a bigger model
   reads a passage better.
