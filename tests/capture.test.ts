@@ -22,10 +22,17 @@ function speak(capture: AudioCapture): void {
 
 function harness(
   transcribe: CaptureHandlers["transcribe"],
-): { capture: AudioCapture; phrases: string[]; priors: string[]; errors: string[] } {
+): {
+  capture: AudioCapture;
+  phrases: string[];
+  priors: string[];
+  errors: string[];
+  nothing: string[];
+} {
   const phrases: string[] = [];
   const priors: string[] = [];
   const errors: string[] = [];
+  const nothing: string[] = [];
   const capture = new AudioCapture({
     onClip: () => {},
     onPhrase: (text) => {
@@ -35,6 +42,9 @@ function harness(
     onError: (message) => {
       errors.push(message);
     },
+    onNothingSaid: (message) => {
+      nothing.push(message);
+    },
     log: () => {},
     transcribe: (wav, prior) => {
       priors.push(prior);
@@ -43,7 +53,7 @@ function harness(
     startNativeCapture: async () => "test input",
     stopNativeCapture: async () => {},
   });
-  return { capture, phrases, priors, errors };
+  return { capture, phrases, priors, errors, nothing };
 }
 
 async function settled(capture: AudioCapture): Promise<void> {
@@ -136,8 +146,8 @@ describe("AudioCapture", () => {
     expect(phrases).toEqual(["second"]);
   });
 
-  it("holds nothing to retry when the engine finds no words", async () => {
-    const { capture, errors } = harness(async () => ({ text: "" }));
+  it("says nothing was said, not that it failed, when the engine finds no words", async () => {
+    const { capture, errors, nothing } = harness(async () => ({ text: "" }));
 
     await capture.start();
     feedMs(capture, 300, ROOM);
@@ -145,14 +155,49 @@ describe("AudioCapture", () => {
     capture.stop();
     await settled(capture);
 
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/^No words in the phrase/);
+    expect(errors).toEqual([]);
+    expect(nothing).toHaveLength(1);
+    expect(nothing[0]).toMatch(/^No words in the phrase/);
     expect(capture.canRetry).toBe(false);
+  });
+
+  it("says nothing was said when the key is held in a quiet room", async () => {
+    const { capture, errors, nothing } = harness(async () => ({ text: "words" }));
+
+    await capture.start();
+    feedMs(capture, 1_000, ROOM);
+    capture.stop();
+
+    expect(errors).toEqual([]);
+    expect(nothing).toHaveLength(1);
+    expect(nothing[0]).toMatch(/^Heard nothing above the speech threshold/);
+  });
+
+  it("still fails when no audio arrived at all", async () => {
+    const { capture, errors, nothing } = harness(async () => ({ text: "words" }));
+
+    await capture.start();
+    capture.stop();
+
+    expect(nothing).toEqual([]);
+    expect(errors).toEqual(["Heard nothing: no audio arrived from the microphone."]);
+  });
+
+  it("knows whether speech has started, so a tap nobody speaks into can close", async () => {
+    const { capture } = harness(async () => ({ text: "words" }));
+
+    await capture.start();
+    feedMs(capture, 600, ROOM);
+    expect(capture.heardSpeech).toBe(false);
+    feedMs(capture, 200, 0.2);
+    expect(capture.heardSpeech).toBe(true);
+    capture.stop();
+    await settled(capture);
   });
 
   it("keeps Retry when a phrase with no words follows a real failure", async () => {
     let calls = 0;
-    const { capture } = harness(async () => {
+    const { capture, nothing } = harness(async () => {
       calls += 1;
       if (calls === 1) throw new Error("engine hiccup");
       return { text: "" };
@@ -166,5 +211,6 @@ describe("AudioCapture", () => {
     await settled(capture);
 
     expect(capture.canRetry).toBe(true);
+    expect(nothing).toEqual([]);
   });
 });

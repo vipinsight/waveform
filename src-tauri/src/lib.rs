@@ -1332,6 +1332,12 @@ async fn report_dictation_phrase(
 }
 
 #[tauri::command]
+async fn report_dictation_pause(state: State<'_, AppState>) -> Result<(), String> {
+    state.dictation.on_overlay_pause().await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_hotkey_status(state: State<'_, AppState>) -> Result<HotkeyStatus, String> {
     state.dictation.refresh_permissions().await;
     Ok(state.dictation.status().await)
@@ -1935,6 +1941,7 @@ pub fn run() {
             report_dictation_state,
             report_dictation_clip,
             report_dictation_phrase,
+            report_dictation_pause,
             get_hotkey_status,
             request_hotkey_permission,
             open_privacy_settings,

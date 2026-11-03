@@ -30,6 +30,8 @@ const TICK: Duration = Duration::from_millis(50);
 /// A tap ends when the speaker pauses, but a tap with nobody speaking has no
 /// pause to wait for. The trigger key is one people also press for ordinary
 /// shortcuts, so a stray tap must not leave the microphone open indefinitely.
+/// The pill ends a tap nobody speaks into well before this; this is the
+/// backstop for one it cannot end, such as a stream that never arrived.
 const TAP_SESSION_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Clone, Debug, Serialize)]
@@ -283,10 +285,27 @@ impl Dictation {
             return;
         };
 
+        // Key events go through one queue, in order, timed as they arrive.
+        // Spawned one task each, a down and its up could be handled in either
+        // order, and timed when they ran rather than when they happened: a
+        // held key read as a tap, or an up landed before its down and left a
+        // session running with nothing to end it.
+        let (keys, mut queued) = tokio::sync::mpsc::unbounded_channel::<(String, i64, Instant)>();
+        let key_handler = self.clone();
+        tauri::async_runtime::spawn(async move {
+            while let Some((phase, key_code, at)) = queued.recv().await {
+                key_handler.handle_key(&phase, key_code, at).await;
+            }
+        });
+
         let listener = self.clone();
         if self
             .helper
             .start(binary, move |event| {
+                if let HelperEvent::Key { phase, key_code } = event {
+                    let _ = keys.send((phase, key_code, Instant::now()));
+                    return;
+                }
                 let handler = listener.clone();
                 tauri::async_runtime::spawn(async move {
                     handler.handle_helper_event(event).await;
@@ -321,8 +340,8 @@ impl Dictation {
             .await;
     }
 
-    /// A lone tap only becomes a discard once its window closes, so the machine
-    /// has to be polled rather than purely event-driven.
+    /// A lone tap only resolves once its window closes, so the machine has to
+    /// be polled rather than purely event-driven.
     fn spawn_tick_loop(self: &Arc<Self>) {
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -337,6 +356,25 @@ impl Dictation {
         });
     }
 
+    async fn handle_key(self: &Arc<Self>, phase: &str, key_code: i64, at: Instant) {
+        // The helper already filters, but a stale watch could still deliver
+        // the wrong key after a binding change.
+        if *self.watched_key.lock().await != Some(key_code) {
+            return;
+        }
+        let command = {
+            let mut gestures = self.gestures.lock().await;
+            if phase == "down" {
+                gestures.key_down(at)
+            } else {
+                gestures.key_up(at)
+            }
+        };
+        if let Some(command) = command {
+            self.run_command(command).await;
+        }
+    }
+
     async fn handle_helper_event(self: &Arc<Self>, event: HelperEvent) {
         match event {
             HelperEvent::Ready => {
@@ -344,25 +382,8 @@ impl Dictation {
                 self.patch_status(|status| status.running = running).await;
                 self.apply_settings().await;
             }
-            HelperEvent::Key { phase, key_code } => {
-                // The helper already filters, but a stale watch could still
-                // deliver the wrong key after a binding change.
-                if *self.watched_key.lock().await != Some(key_code) {
-                    return;
-                }
-                let now = Instant::now();
-                let command = {
-                    let mut gestures = self.gestures.lock().await;
-                    if phase == "down" {
-                        gestures.key_down(now)
-                    } else {
-                        gestures.key_up(now)
-                    }
-                };
-                if let Some(command) = command {
-                    self.run_command(command).await;
-                }
-            }
+            // Handled in order by the key queue set up in `start`.
+            HelperEvent::Key { .. } => {}
             HelperEvent::Tap {
                 active,
                 listening,
@@ -692,15 +713,17 @@ impl Dictation {
     }
 
     /// Keeps a tapped session open until the speaker pauses.
+    ///
+    /// It stays a hold session to look at. Showing it as latched, with Accept
+    /// and Cancel, made a short press look like a double tap that had locked.
     async fn hold_until_silence(self: &Arc<Self>) {
-        let sink = {
+        let (sink, mode) = {
             let mut session = self.session.lock().await;
             let Some(current) = session.as_mut() else { return };
             current.stop_when_speech_ends = true;
-            current.mode = "latched".into();
-            current.sink.clone()
+            (current.sink.clone(), current.mode.clone())
         };
-        self.send_to_overlay("start", &sink, "latched").await;
+        self.send_to_overlay("tap", &sink, &mode).await;
 
         let generation = *self.generation.lock().await;
         let this = self.clone();
@@ -869,14 +892,24 @@ impl Dictation {
 
         // A completed phrase means the speaker paused, which is what a tapped
         // session was waiting for.
-        let ends_here = self
+        self.end_if_tapped().await;
+    }
+
+    /// The speaker paused with nothing said, or never started.
+    pub async fn on_overlay_pause(self: &Arc<Self>) {
+        self.end_if_tapped().await;
+    }
+
+    /// Ends a tapped session, which was only waiting for the speaker to pause.
+    async fn end_if_tapped(self: &Arc<Self>) {
+        let tapped = self
             .session
             .lock()
             .await
             .as_ref()
             .map(|session| session.stop_when_speech_ends)
             .unwrap_or(false);
-        if ends_here {
+        if tapped {
             self.gestures.lock().await.stop();
             self.end_session("stop").await;
         }

@@ -238,6 +238,7 @@ const api: DesktopApi = {
   reportDictationState: (status) => invoke<void>("report_dictation_state", { status }),
   reportDictationClip: (clip) => invoke<void>("report_dictation_clip", { clip }),
   reportDictationPhrase: (phrase) => invoke<void>("report_dictation_phrase", { phrase }),
+  reportDictationPause: () => invoke<void>("report_dictation_pause"),
 
   beginOverlayDrag: () => void invoke("begin_overlay_drag"),
   moveOverlay: (deltaX, deltaY) => void invoke("drag_overlay", { deltaX, deltaY }),

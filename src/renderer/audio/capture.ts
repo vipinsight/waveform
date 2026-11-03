@@ -47,6 +47,12 @@ export interface CaptureHandlers {
   /** Fired when transcription work starts and finishes, to drive the HUD state. */
   onPendingChange(pending: number): void;
   onError(message: string): void;
+  /**
+   * Nothing was said: the room stayed under the speech threshold, or the
+   * engine heard the phrase and found no words in it. Not a failure, so it is
+   * not shown as one; sending the same audio again would get the same answer.
+   */
+  onNothingSaid(message: string): void;
   /** Writes into the app's log. Nowhere else knows these numbers. */
   log(message: string): void;
   /** `priorText` is what this session has transcribed so far, oldest first. */
@@ -138,6 +144,11 @@ export class AudioCapture {
     return this.pending;
   }
 
+  /** Whether this session has heard speech yet, finished or still going. */
+  get heardSpeech(): boolean {
+    return this.phrases > 0 || Boolean(this.segmenter?.isSpeaking);
+  }
+
   /** Whether the last session left audio that can be transcribed again. */
   get canRetry(): boolean {
     return this.lastClips.length > 0;
@@ -225,11 +236,15 @@ export class AudioCapture {
         `${phrases} phrase(s)`,
     );
     if (phrases === 0 && !tail) {
-      this.handlers.onError(
-        blocks === 0
-          ? "Heard nothing: no audio arrived from the microphone."
-          : `Heard nothing above the speech threshold: ${blocks} blocks, peak ${peak.toFixed(4)} against ${threshold.toFixed(4)}.`,
-      );
+      // No audio at all is a broken input, which is worth a red pill. A quiet
+      // room is a key pressed with nothing to say.
+      if (blocks === 0) {
+        this.handlers.onError("Heard nothing: no audio arrived from the microphone.");
+      } else {
+        this.handlers.onNothingSaid(
+          `Heard nothing above the speech threshold: ${blocks} blocks, peak ${peak.toFixed(4)} against ${threshold.toFixed(4)}.`,
+        );
+      }
     }
   }
 
@@ -382,19 +397,23 @@ export class AudioCapture {
         this.failed += 1;
         this.handlers.onError(error instanceof Error ? error.message : String(error));
       } finally {
-        // Report "no words" while pending is still > 0 so the HUD enters
-        // error before idle flush. The engine answered, so the same audio
-        // would only get the same answer: a key pressed in silence ends here,
-        // and holding its clips left a Retry up that nothing would take down.
-        // A clip that failed outright can still be retried.
+        // Report "no words" while pending is still > 0, so the HUD hears it
+        // before idle flush. The engine answered, so the same audio would
+        // only get the same answer: a key pressed in silence ends here, and
+        // holding its clips left a Retry up that nothing would take down. A
+        // clip that failed outright can still be retried, which is an error.
         if (this.pending === 1 && this.inserted === 0 && this.empty > 0) {
           const empty = this.empty;
           this.empty = 0;
-          if (this.failed === 0) this.lastClips = [];
-          this.handlers.onError(
+          const message =
             `No words in ${empty === 1 ? "the phrase" : `${empty} phrases`}: ` +
-              `${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}.`,
-          );
+            `${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}.`;
+          if (this.failed === 0) {
+            this.lastClips = [];
+            this.handlers.onNothingSaid(message);
+          } else {
+            this.handlers.onError(message);
+          }
         } else if (this.pending === 1 && this.inserted > 0) {
           this.lastClips = [];
         }
