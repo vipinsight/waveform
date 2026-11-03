@@ -280,7 +280,6 @@ describe("AudioCapture.retryLast", () => {
     capture.stop();
     await waitFor(() => order.includes("pending-zero"));
     expect(order).toEqual(["clip", "error:true", "pending-zero"]);
-    expect(capture.canRetry).toBe(true);
   });
 });
 

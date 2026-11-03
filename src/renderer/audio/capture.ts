@@ -102,6 +102,7 @@ export class AudioCapture {
   private phrases = 0;
   private inserted = 0;
   private empty = 0;
+  private failed = 0;
   /** The last phrase sent, for a session that comes back with no words. */
   private lastSeconds = 0;
   private lastPeak = 0;
@@ -178,6 +179,7 @@ export class AudioCapture {
     this.phrases = 0;
     this.inserted = 0;
     this.empty = 0;
+    this.failed = 0;
     this.lastClips = [];
     this.context = { text: "" };
     this.gain = new InputGain();
@@ -256,6 +258,7 @@ export class AudioCapture {
     this.discarding = false;
     this.inserted = 0;
     this.empty = 0;
+    this.failed = 0;
     this.handlers.log(`retrying ${this.lastClips.length} phrase(s)`);
     // Fresh context, built again clip by clip: the failed run's text, if it
     // produced any, is not what the retry should be primed with.
@@ -376,15 +379,18 @@ export class AudioCapture {
         await this.handlers.onPhrase(text);
       } catch (error: unknown) {
         if (this.discarding) return;
+        this.failed += 1;
         this.handlers.onError(error instanceof Error ? error.message : String(error));
       } finally {
         // Report "no words" while pending is still > 0 so the HUD enters
-        // error before idle flush. Otherwise releaseSession drains an empty
-        // phrase list and the stashed audio is the only thing left to save
-        // — which is correct on dismiss, but wrong while Retry is still up.
+        // error before idle flush. The engine answered, so the same audio
+        // would only get the same answer: a key pressed in silence ends here,
+        // and holding its clips left a Retry up that nothing would take down.
+        // A clip that failed outright can still be retried.
         if (this.pending === 1 && this.inserted === 0 && this.empty > 0) {
           const empty = this.empty;
           this.empty = 0;
+          if (this.failed === 0) this.lastClips = [];
           this.handlers.onError(
             `No words in ${empty === 1 ? "the phrase" : `${empty} phrases`}: ` +
               `${this.lastSeconds.toFixed(1)}s at level ${this.lastPeak.toFixed(4)}.`,

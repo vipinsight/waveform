@@ -137,21 +137,23 @@ describe("stylesheet covers the markup", () => {
   });
 
   /*
-   * The wait circle inherited the pill's top-edge inset highlight, which on a
-   * 28px disc reads as a rim that only exists at the top — especially on the
-   * blue polish fill.
+   * A held session is the narrow capsule, but Retry and Dismiss still need the
+   * room a latched session gets, or they hang off its ends.
    */
-  it("does not put a top-only highlight on the wait circle", () => {
-    const rewriting = overlayCss.match(
-      /\.hud\[data-busy="true"\]\[data-state="rewriting"\]\s*\{[^}]+\}/,
-    )?.[0];
-    const transcribing = overlayCss.match(
-      /\.hud\[data-busy="true"\]\[data-state="transcribing"\]\s*\{[^}]+\}/,
-    )?.[0];
-    expect(rewriting).toBeDefined();
-    expect(transcribing).toBeDefined();
-    expect(rewriting).not.toMatch(/inset\s+0\s+1px\s+0/);
-    expect(transcribing).not.toMatch(/inset\s+0\s+1px\s+0/);
+  it("widens a held session that offers Retry", () => {
+    expect(overlayCss).toMatch(
+      /\.hud\[data-state="error"\]\[data-mode="hold"\]\[data-retry="true"\] \{\n  width: 98px;/,
+    );
+  });
+
+  /*
+   * A 1px inset along the top edge of a capsule reads as a stray rim that only
+   * exists at the top. The border is already a full outline.
+   */
+  it("does not put a top-only highlight on either pill", () => {
+    const meetingPillCss = readFileSync("src/renderer/meeting-pill.css", "utf8");
+    expect(overlayCss).not.toMatch(/\.hud[^{]*\{[^}]*inset\s+0\s+1px\s+0/);
+    expect(meetingPillCss).not.toMatch(/inset\s+0\s+1px\s+0/);
   });
 });
 
