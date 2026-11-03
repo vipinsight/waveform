@@ -119,6 +119,7 @@ describe("InputGain", () => {
 
 function silentCaptureHandlers(overrides: {
   onError?: (message: string) => void;
+  onNothingSaid?: (message: string) => void;
   stopNativeCapture?: () => Promise<void>;
 } = {}) {
   return {
@@ -126,6 +127,7 @@ function silentCaptureHandlers(overrides: {
     onPhrase: () => undefined,
     onPendingChange: () => undefined,
     onError: overrides.onError ?? (() => undefined),
+    onNothingSaid: overrides.onNothingSaid ?? (() => undefined),
     log: () => undefined,
     transcribe: async () => ({ text: "" }),
     startNativeCapture: async () => "mic",
@@ -217,16 +219,16 @@ describe("AudioCapture.retryLast", () => {
   });
 
   it("has nothing to retry when the session heard no phrases", async () => {
-    const errors: string[] = [];
+    const nothing: string[] = [];
     const capture = new AudioCapture(
       silentCaptureHandlers({
-        onError: (message) => errors.push(message),
+        onNothingSaid: (message) => nothing.push(message),
       }),
     );
     await capture.start();
     capture.feed(samples(500, 0.0001), 1_000);
     capture.stop();
-    await waitFor(() => errors.length > 0);
+    await waitFor(() => nothing.length > 0);
     expect(capture.canRetry).toBe(false);
     expect(capture.retryLast()).toBe(false);
   });
@@ -259,15 +261,15 @@ describe("AudioCapture.retryLast", () => {
     expect(order).toEqual(["phrase-start", "phrase-done", "pending-zero"]);
   });
 
-  it("stashes audio before transcription and reports empty before pending hits zero", async () => {
+  it("stashes audio before transcription and reports no words before pending hits zero", async () => {
     const order: string[] = [];
     const capture = new AudioCapture({
       ...silentCaptureHandlers(),
       onClip: () => {
         order.push("clip");
       },
-      onError: (message) => {
-        order.push(`error:${message.startsWith("No words")}`);
+      onNothingSaid: (message) => {
+        order.push(`nothing:${message.startsWith("No words")}`);
       },
       onPendingChange: (pending) => {
         if (pending === 0) order.push("pending-zero");
@@ -279,7 +281,7 @@ describe("AudioCapture.retryLast", () => {
     capture.feed(samples(400, 0.05), 1_000);
     capture.stop();
     await waitFor(() => order.includes("pending-zero"));
-    expect(order).toEqual(["clip", "error:true", "pending-zero"]);
+    expect(order).toEqual(["clip", "nothing:true", "pending-zero"]);
   });
 });
 

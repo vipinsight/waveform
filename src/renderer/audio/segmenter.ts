@@ -149,6 +149,11 @@ export class SpeechSegmenter {
     this.relearnAfterSamples = millisecondsToSamples(RELEARN_AFTER_MS, options.sampleRate);
   }
 
+  /** Whether a phrase is open: speech started and its pause has not come yet. */
+  get isSpeaking(): boolean {
+    return this.speaking;
+  }
+
   /**
    * What a block has to reach to count as speech.
    *

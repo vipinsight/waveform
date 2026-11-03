@@ -51,6 +51,14 @@ const SPRING_ATTACK = 0.55;
 const SPRING_RELEASE = 0.14;
 const SPRING_DAMPING = 0.62;
 const PREVIEW_MS = 2_600;
+/**
+ * How long a tapped key waits for the speaker to start before closing.
+ *
+ * A tap listens until the speaker pauses, so a short "yes" is not lost to a
+ * key that came up too soon. A tap with nobody speaking has no pause to wait
+ * for, and holding the pill open for it read as the key having locked.
+ */
+const TAP_GRACE_MS = 1_500;
 
 const STATE_LABEL: Record<DictationState, string> = {
   idle: "Idle",
@@ -81,6 +89,7 @@ let previewing = false;
 let animationFrame: number | null = null;
 let lingerTimer: ReturnType<typeof setTimeout> | null = null;
 let releaseTailTimer: ReturnType<typeof setTimeout> | null = null;
+let tapGraceTimer: ReturnType<typeof setTimeout> | null = null;
 let phase = 0;
 let microphoneDeviceId = "";
 let showFlowBarAlways = false;
@@ -106,6 +115,19 @@ const capture = new AudioCapture({
     setState("error", message, retryable);
     // Held clips stay until Retry or Dismiss; an empty room has nothing to keep.
     if (!retryable) scheduleIdle();
+  },
+  onNothingSaid: (message) => {
+    void host().log("info", "capture", message);
+    // Still listening: a tapped session ends at this pause, any other carries on.
+    if (capture.isRunning) {
+      void host().reportDictationPause();
+      return;
+    }
+    // Over, with nothing to show for it. Closing is the whole answer; a red
+    // pill, or the wait circle opening back into one, read as a failure.
+    if (state === "error") return;
+    cancelLinger();
+    finish();
   },
   transcribe: (bytes, priorText) => host().transcribe(bytes, priorText),
   startNativeCapture: () => host().startNativeCapture(),
@@ -339,6 +361,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
 
   if (command.action === "idle") {
     cancelReleaseTail();
+    cancelTapGrace();
     if (capture.isRunning) capture.stop();
     // A held failure was never reported idle; release it so the host saves
     // the recording and the window drops its Retry card.
@@ -364,6 +387,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   // vanishing, which reads as the shortcut doing nothing at all.
   if (command.action === "fail") {
     cancelReleaseTail();
+    cancelTapGrace();
     if (capture.isRunning) capture.stop();
     // This pill cannot retry, so it must not keep held clips waiting on one.
     capture.clearRetry();
@@ -380,6 +404,7 @@ async function handleCommand(command: DictationCommand): Promise<void> {
 
   if (command.action === "busy") {
     cancelReleaseTail();
+    cancelTapGrace();
     if (capture.isRunning) capture.stop();
     cancelLinger();
     previewing = false;
@@ -392,6 +417,17 @@ async function handleCommand(command: DictationCommand): Promise<void> {
   sink = command.sink;
   mode = command.mode;
   hud.dataset.mode = mode;
+  cancelTapGrace();
+
+  if (command.action === "tap") {
+    // The pill keeps the shape it had while held: nothing was locked, so it
+    // offers nothing to accept. If no one starts speaking, it closes.
+    tapGraceTimer = setTimeout(() => {
+      tapGraceTimer = null;
+      if (capture.isRunning && !capture.heardSpeech) void host().reportDictationPause();
+    }, TAP_GRACE_MS);
+    return;
+  }
 
   if (command.action === "start") {
     cancelReleaseTail();
@@ -475,6 +511,12 @@ function scheduleReleaseTail(): void {
   }, RELEASE_TAIL_MS);
 }
 
+function cancelTapGrace(): void {
+  if (tapGraceTimer === null) return;
+  clearTimeout(tapGraceTimer);
+  tapGraceTimer = null;
+}
+
 function cancelReleaseTail(): void {
   if (releaseTailTimer === null) return;
   clearTimeout(releaseTailTimer);
@@ -517,6 +559,9 @@ function syncDerivedState(): void {
     scheduleIdle();
     return;
   }
+  // Already closed, e.g. by a session that said nothing; a late pending change
+  // must not open the pill again.
+  if (state === "idle") return;
   if (state === "error" || state === "rewriting") return;
   if (capture.isRunning) {
     setState(capture.pendingCount > 0 ? "transcribing" : "listening");
@@ -541,6 +586,7 @@ function syncDerivedState(): void {
 
 function scheduleIdle(): void {
   cancelLinger();
+  if (state === "idle") return;
   // A retryable error waits for Retry or Dismiss, not a timer.
   if (state === "error" && capture.canRetry) return;
   lingerTimer = setTimeout(

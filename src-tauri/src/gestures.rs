@@ -3,7 +3,7 @@
 //! Three gestures share one key:
 //!   hold        press, speak, release          -> transcribe what was said
 //!   double tap  tap, tap                       -> stay listening until pressed again
-//!   lone tap    a single tap that goes nowhere -> discard; nothing useful was said
+//!   lone tap    a single tap, no second        -> listen until the speaker pauses
 //!
 //! A lone tap still opens the microphone, because at the moment of the first
 //! tap there is no way to know whether a second is coming, and the alternative

@@ -101,6 +101,8 @@ export interface DictationCommand {
       without a microphone, a loaded model, or granted permissions. */
   action:
     | "start"
+    /** The key was tapped, not held: listen until the speaker pauses. */
+    | "tap"
     | "stop"
     | "cancel"
     | "preview"
@@ -642,4 +644,7 @@ export interface DesktopApi {
   /** Stashes phrase audio before transcription so idle flush cannot drop it. */
   reportDictationClip(clip: DictationClip): void | Promise<void>;
   reportDictationPhrase(phrase: DictationPhrase): void | Promise<void>;
+  /** The speaker paused with nothing said, or never started. A tapped session
+      ends here; any other keeps listening. */
+  reportDictationPause(): void | Promise<void>;
 }
