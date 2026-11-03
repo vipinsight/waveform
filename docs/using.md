@@ -267,13 +267,19 @@ Hover a downloaded one for **Remove** to free the space.
 | **Qwen3 0.6B · Q4** | 397 MB | ~0.9 GB |
 | **Qwen3 0.6B · Q8** | 639 MB | ~1.2 GB |
 | **Qwen3 1.7B · Q4** | 1.1 GB | ~1.9 GB |
+| **Qwen3 4B · Q4** | 2.5 GB | ~3.3 GB |
+| **Qwen3 8B · Q4** | 5.0 GB | ~5.9 GB |
+| **Qwen3 14B · Q4** | 9.0 GB | ~9.9 GB |
 
 The weights land in `~/Library/Application Support/Waveform/llm`, and each file
 is checked against its length and SHA-256 before it is put there. The model
 loads on the first rewrite and stays loaded until you switch engines or models,
 so the first polish after launch is a second or two slower than the ones after it.
 
-These are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
+The larger three trade speed for care: 8B wants a Mac with 16 GB of memory to
+run beside other apps, and 14B one with 24 GB or more.
+
+The small ones are small models, and it shows. Qwen3 0.6B fixes ordinary typos — "we
 discused the timeline" becomes "we discussed the timeline", "how r u doing"
 becomes "how are you doing" — and on selected text it is shown three worked
 corrections first, because a model this size follows an example better than it

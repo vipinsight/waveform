@@ -60,11 +60,13 @@ pub struct LocalModel {
 
 /// Every model offered for local polish, lightest first.
 ///
-/// All three are Qwen3, and deliberately: one family means one prompt format,
+/// All of them are Qwen3, and deliberately: one family means one prompt format,
 /// and Qwen3 is the smallest instruction-tuned family that holds a rewrite
-/// instruction at half a gigabyte. The ladder is the same choice the speech
-/// catalogue offers -- the same model at more bits, then a larger one -- rather
-/// than a different vendor per row.
+/// instruction at half a gigabyte, while the same family runs up to 14B for a
+/// Mac with the memory to spare. The ladder is the same choice the speech
+/// catalogue offers -- the same model at more bits, then larger ones -- rather
+/// than a different vendor per row. Above 1.7B every row is Q4_K_M: at that
+/// size more parameters buy more than more bits a weight.
 ///
 /// Each URL names the commit it was checked against, not `main`, so a
 /// re-upload cannot change what a given version of Waveform downloads. The
@@ -107,7 +109,46 @@ pub const LOCAL_MODELS: &[LocalModel] = &[
         },
         card_url: "https://huggingface.co/Qwen/Qwen3-1.7B",
         memory_mb: 1_900,
-        detail: "Closest to a hosted model, and the slowest to answer.",
+        detail: "Still small enough for any Mac, and quick to answer.",
+    },
+    LocalModel {
+        id: "qwen3-4b-q4",
+        label: "Qwen3 4B · Q4",
+        download: Download {
+            file: "Qwen3-4B-Q4_K_M.gguf",
+            url: "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/22c9fc8a8c7700b76a1789366280a6a5a1ad1120/Qwen3-4B-Q4_K_M.gguf",
+            bytes: 2_497_281_312,
+            sha256: "f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a",
+        },
+        card_url: "https://huggingface.co/Qwen/Qwen3-4B",
+        memory_mb: 3_300,
+        detail: "Holds a long, rambling sentence together where the small ones lose the thread.",
+    },
+    LocalModel {
+        id: "qwen3-8b-q4",
+        label: "Qwen3 8B · Q4",
+        download: Download {
+            file: "Qwen3-8B-Q4_K_M.gguf",
+            url: "https://huggingface.co/unsloth/Qwen3-8B-GGUF/resolve/a6adef130ffb23ddaf1a62fec9dced968c9bc482/Qwen3-8B-Q4_K_M.gguf",
+            bytes: 5_027_784_512,
+            sha256: "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
+        },
+        card_url: "https://huggingface.co/Qwen/Qwen3-8B",
+        memory_mb: 5_900,
+        detail: "Close to a hosted model on everyday text; wants 16 GB of memory to sit beside other apps.",
+    },
+    LocalModel {
+        id: "qwen3-14b-q4",
+        label: "Qwen3 14B · Q4",
+        download: Download {
+            file: "Qwen3-14B-Q4_K_M.gguf",
+            url: "https://huggingface.co/unsloth/Qwen3-14B-GGUF/resolve/a04a82c4739b3ef5fa6da7d10261db2c67dd1985/Qwen3-14B-Q4_K_M.gguf",
+            bytes: 9_001_753_984,
+            sha256: "5eaa0870bd81ed3b58a630a271234cfa604e43ffb3a19cd68e54a80dd9d52a66",
+        },
+        card_url: "https://huggingface.co/Qwen/Qwen3-14B",
+        memory_mb: 9_900,
+        detail: "The most careful of these and the slowest to answer; meant for a Mac with 24 GB or more.",
     },
 ];
 
@@ -619,9 +660,9 @@ mod tests {
                 definition.id
             );
             // The weights have to fit beside the speech model and everything
-            // else on the machine; a row claiming otherwise is a row nobody
+            // else on a 24 GB Mac; a row claiming otherwise is a row nobody
             // should be offered.
-            assert!(definition.memory_mb > 0 && definition.memory_mb < 4_000);
+            assert!(definition.memory_mb > 0 && definition.memory_mb < 12_000);
         }
     }
 
