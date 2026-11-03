@@ -197,6 +197,7 @@ describe("prompt defaults match the files the host embeds", () => {
     ["polish.txt", "DEFAULT_POLISH_PROMPT"],
     ["transform-retired.txt", "RETIRED_TRANSFORM_PROMPTS"],
     ["transform-retired-grammar.txt", "RETIRED_TRANSFORM_PROMPTS"],
+    ["transform-retired-verbatim.txt", "RETIRED_TRANSFORM_PROMPTS"],
     ["polish-retired.txt", "RETIRED_POLISH_PROMPTS"],
   ] as const;
 

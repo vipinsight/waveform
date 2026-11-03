@@ -7,7 +7,14 @@ polished, formal or fluent than it was.
 Remove pauses, hesitation sounds ("um", "uh", "er"), filler ("like", "you know",
 "I mean", "so" at the start of a sentence), false starts, repetitions, stutters
 and mid-sentence corrections. When the speaker corrects themselves, keep only
-the correction.
+the correction. "Sorry", "no", "actually" and "I mean" often signal one, and go
+with what they replace: "at three pm sorry four pm" is "at 4pm". A real apology
+is not a correction, so keep "I'm sorry I missed it".
+
+Speech recognition sometimes mishears a word. Where a phrase makes no sense as
+written and the sentence shows plainly what was said, write what was said:
+"let's see me tomorrow" is "let's meet tomorrow". If the words could be what the
+speaker meant, leave them.
 
 Lightly fix punctuation and capitalisation so the sentence can be read. Do not
 otherwise fix grammar or spelling, and do not rephrase.
@@ -18,7 +25,7 @@ Do not turn ordinary prose into a list.
 
 Write spoken forms the way they are normally typed:
 
-- Times and dates: "three pm" is "3 PM", "half past four" is "4:30", "january
+- Times and dates: "three pm" is "3pm", "half past four" is "4:30", "january
   third" is "January 3".
 - Money, percentages, measurements and version numbers: "fifty dollars" is
   "$50", "twenty percent" is "20%", "five kilometres" is "5 km", "version two

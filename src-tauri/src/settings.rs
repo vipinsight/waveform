@@ -52,12 +52,14 @@ pub const RETIRED_OPENROUTER_MODELS: [&str; 1] = ["anthropic/claude-3.5-haiku"];
 /// unedited. A default is not a preference worth preserving.
 ///
 /// The first dictation prompt predates the rules about how spoken numbers and
-/// times are written down. The second still rewrote grammar and phrasing.
-pub const RETIRED_TRANSFORM_PROMPTS: [&str; 3] = [
+/// times are written down. The second still rewrote grammar and phrasing. The
+/// last held every word to what the transcript said, misheard or not.
+pub const RETIRED_TRANSFORM_PROMPTS: [&str; 4] = [
     include_str!("prompts/transform-retired.txt"),
     include_str!("prompts/transform-retired-grammar.txt"),
     // The Medium level's default, from when there were three levels.
     include_str!("prompts/transform-retired-medium.txt"),
+    include_str!("prompts/transform-retired-verbatim.txt"),
 ];
 /// Polish prompts nobody chose. The first was a copy editor; the second tidied
 /// dictation rather than fixing anything, which is the wrong job for text
