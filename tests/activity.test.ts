@@ -202,33 +202,20 @@ describe("streakCard", () => {
 
 describe("paceGauge", () => {
   const minutes = (n: number) => n * 60_000;
-  const pace = (words: number, speechMs: number) => ({ words, speechMs });
 
-  it("waits for a few minutes of speech", () => {
-    const gauge = paceGauge({ allTime: pace(200, minutes(2)), last7: pace(200, minutes(2)), last30: pace(200, minutes(2)) });
-    expect(gauge.ready).toBe(false);
-    expect(gauge.wpm).toBe(0);
-    expect(gauge.comparison).toBe("");
+  it("waits for a couple of minutes of speech this week", () => {
+    const gauge = paceGauge({ words: 150, speechMs: minutes(1) });
+    expect(gauge).toEqual({ ready: false, wpm: 0, fraction: 0, comparison: "" });
   });
 
-  it("reads the last 30 days once they hold enough, with the others beside it", () => {
-    const gauge = paceGauge({
-      allTime: pace(12_000, minutes(100)),
-      last7: pace(1_400, minutes(10)),
-      last30: pace(4_800, minutes(40)),
-    });
-    expect(gauge).toMatchObject({ ready: true, wpm: 120, window: "last 30 days", comparison: "3× faster than typing" });
+  it("reads the week's pace against typing", () => {
+    const gauge = paceGauge({ words: 1_200, speechMs: minutes(10) });
+    expect(gauge).toMatchObject({ ready: true, wpm: 120, comparison: "3× faster than typing" });
     expect(gauge.fraction).toBeCloseTo(0.6);
-    expect(gauge.detail).toBe("7 days: 140 · All time: 120");
-  });
-
-  it("falls back to all time when the month is quiet", () => {
-    const gauge = paceGauge({ allTime: pace(1_500, minutes(10)), last7: pace(0, 0), last30: pace(100, minutes(1)) });
-    expect(gauge).toMatchObject({ ready: true, wpm: 150, window: "all time", detail: "" });
   });
 
   it("keeps the needle on the dial", () => {
-    expect(paceGauge({ allTime: pace(1_500, minutes(4)), last7: pace(0, 0), last30: pace(1_500, minutes(4)) }).fraction).toBe(1);
+    expect(paceGauge({ words: 1_500, speechMs: minutes(4) }).fraction).toBe(1);
   });
 });
 

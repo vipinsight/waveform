@@ -160,7 +160,6 @@ const element = {
   paceGauge: requireElement<HTMLElement>("pace-gauge"),
   paceNumber: requireElement<HTMLElement>("pace-number"),
   paceComparison: requireElement<HTMLElement>("pace-comparison"),
-  paceDetail: requireElement<HTMLElement>("pace-detail"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
@@ -4364,21 +4363,19 @@ function renderActivity(activity: Activity): void {
 }
 
 /**
- * Words per minute as a half dial in the accent, filled to the share of
- * 200 the pace reaches. Greyed, with a nudge, until there is enough speech.
+ * This week's words per minute as a half dial in the accent, filled to the
+ * share of 200 the pace reaches. Greyed, with a nudge, until the week holds
+ * enough speech.
  */
 function renderPace(activity: Activity): void {
   const gauge = paceGauge(activity.pace);
   element.paceGauge.classList.toggle("is-waiting", !gauge.ready);
   element.paceGauge.style.setProperty("--pace", (gauge.fraction * 100).toFixed(2));
   element.paceNumber.textContent = gauge.ready ? String(gauge.wpm) : "—";
-  element.paceComparison.textContent = gauge.ready ? gauge.comparison : "Dictate a little more to see your pace";
-  element.paceDetail.textContent = gauge.ready
-    ? [gauge.window === "all time" ? "All time" : "30 days", gauge.detail].filter(Boolean).join(" · ")
-    : "";
+  element.paceComparison.textContent = gauge.ready ? gauge.comparison : "Dictate a little more this week to see your pace";
   element.paceGauge.setAttribute(
     "aria-label",
-    gauge.ready ? `${gauge.wpm} words per minute, ${gauge.window}` : "Speaking pace: not enough speech yet",
+    gauge.ready ? `${gauge.wpm} words per minute this week` : "Speaking pace: not enough speech this week yet",
   );
 }
 

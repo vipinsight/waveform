@@ -6929,15 +6929,6 @@ select {
   font-weight: 400;
 }
 
-.pace-detail {
-  margin: 2px 0 0;
-  min-height: 16px;
-  text-align: center;
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .pace-fill {
     transition: none;

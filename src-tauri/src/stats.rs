@@ -50,17 +50,6 @@ pub struct Pace {
     pub speech_ms: u64,
 }
 
-/// Speaking pace over all time and over the recent past.
-#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Paces {
-    pub all_time: Pace,
-    /// Today and the six days before it.
-    pub last7: Pace,
-    /// Today and the twenty-nine days before it.
-    pub last30: Pace,
-}
-
 /// What the Overview's calendar and insights are drawn from.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,8 +66,12 @@ pub struct Activity {
     pub longest_streak: u64,
     /// Days with at least one phrase, ever.
     pub active_days: u64,
-    pub pace: Paces,
+    /// Speaking pace over today and the six days before it.
+    pub pace: Pace,
 }
+
+/// The pace is this week's: today and the six days before it.
+const PACE_DAYS: i64 = 7;
 
 /// How far back the calendar reaches: a year of weeks, like a commit graph.
 const CALENDAR_DAYS: i64 = 53 * 7;
@@ -167,12 +160,12 @@ fn bump_day(connection: &Connection, words: i64, speech_ms: i64) -> rusqlite::Re
     Ok(())
 }
 
-/// Timed words and time, over all days or those within `days` of today.
-fn read_pace(connection: &Connection, days: Option<i64>) -> rusqlite::Result<Pace> {
+/// Timed words and time over the last `days` days, today included.
+fn read_pace(connection: &Connection, days: i64) -> rusqlite::Result<Pace> {
     let (words, speech_ms): (i64, i64) = connection.query_row(
         "SELECT COALESCE(SUM(timed_words), 0), COALESCE(SUM(speech_ms), 0)
            FROM daily_stats
-          WHERE ?1 IS NULL OR day > date('now', 'localtime', '-' || ?1 || ' days')",
+          WHERE day > date('now', 'localtime', '-' || ?1 || ' days')",
         params![days],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
@@ -236,11 +229,7 @@ fn read_activity(connection: &mut Connection) -> rusqlite::Result<Activity> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let pace = Paces {
-        all_time: read_pace(connection, None)?,
-        last7: read_pace(connection, Some(7))?,
-        last30: read_pace(connection, Some(30))?,
-    };
+    let pace = read_pace(connection, PACE_DAYS)?;
 
     Ok(Activity {
         today,
@@ -378,7 +367,7 @@ mod tests {
     }
 
     /// Only timed phrases count toward the pace, on both sides of it, and
-    /// the recent windows leave older days out.
+    /// days before this week stay out.
     #[test]
     fn pace_counts_only_timed_phrases() {
         let mut stats = store();
@@ -391,9 +380,6 @@ mod tests {
                 [],
             )
         });
-        let pace = stats.activity().pace;
-        assert_eq!(pace.last7, Pace { words: 4, speech_ms: 2_000 });
-        assert_eq!(pace.last30, Pace { words: 34, speech_ms: 8_000 });
-        assert_eq!(pace.all_time, pace.last30);
+        assert_eq!(stats.activity().pace, Pace { words: 4, speech_ms: 2_000 });
     }
 }

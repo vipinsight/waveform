@@ -438,21 +438,14 @@ export interface Activity {
   currentStreak: number;
   longestStreak: number;
   activeDays: number;
-  pace: Paces;
+  /** Speaking pace over today and the six days before it. */
+  pace: Pace;
 }
 
 /** Timed words over the time saying them took. Untimed phrases count in neither. */
 export interface Pace {
   words: number;
   speechMs: number;
-}
-
-export interface Paces {
-  allTime: Pace;
-  /** Today and the six days before it. */
-  last7: Pace;
-  /** Today and the twenty-nine days before it. */
-  last30: Pace;
 }
 
 export interface HotkeyStatus {
