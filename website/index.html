@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f8f9f7">
+    <meta name="description" content="Private, local-first voice dictation for Mac. Speak, release, and keep writing in the app you already use.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Waveform — Say it once. Keep going.">
+    <meta property="og:description" content="Free, open-source voice dictation for Apple Silicon Mac. Your voice is transcribed on your Mac.">
+    <meta property="og:image" content="assets/waveform-icon.png">
+    <title>Waveform — Say it once. Keep going.</title>
+    <link rel="icon" type="image/png" href="assets/waveform-icon.png">
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f8f9f7;
+        --white: #fff;
+        --ink: #1a1a1a;
+        --muted: #686a66;
+        --line: #dfe2de;
+        --blue: #3284d0;
+        --blue-dark: #245f99;
+        --blue-pale: #eaf3fb;
+        --teal: #124944;
+        --serif: Iowan Old Style, "Baskerville", "Palatino Linotype", Georgia, serif;
+        --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+        font-family: var(--sans);
+        color: var(--ink);
+        background: var(--paper);
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        scroll-behavior: smooth;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      a { color: inherit; }
+      button, a { -webkit-tap-highlight-color: transparent; }
+      a:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+      .wrap { width: min(1160px, calc(100% - 56px)); margin-inline: auto; }
+
+      .site-header {
+        height: 80px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+      }
+      .nav { display: flex; align-items: center; justify-content: space-between; }
+      .brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; font-size: 18px; font-weight: 650; letter-spacing: -.04em; }
+      .brand-mark { display: block; width: 27px; height: 28px; color: var(--ink); }
+      .nav-links { display: flex; align-items: center; gap: 31px; color: var(--muted); font-size: 14px; }
+      .nav-links a { text-decoration: none; }
+      .nav-links a:hover, .text-link:hover { color: var(--blue-dark); }
+      .nav-download { color: var(--ink) !important; font-weight: 620; }
+
+      .hero { padding: 93px 0 78px; overflow: hidden; }
+      .hero-grid { display: grid; grid-template-columns: .9fr 1.1fr; align-items: center; gap: 72px; }
+      .hero-copy { max-width: 510px; }
+      .eyebrow { margin: 0 0 23px; color: var(--blue-dark); font-size: 13px; font-weight: 650; letter-spacing: .015em; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: 22px; max-width: 590px; font-family: var(--serif); font-size: clamp(48px, 6.15vw, 78px); font-weight: 500; letter-spacing: -.065em; line-height: .98; }
+      .hero-lede { max-width: 465px; margin-bottom: 30px; color: #50534f; font-size: 18px; line-height: 1.65; }
+      .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+      .button { min-height: 49px; display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border-radius: 7px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 640; text-decoration: none; transition: background .18s ease, transform .18s ease; }
+      .button:hover { background: var(--blue-dark); transform: translateY(-1px); }
+      .text-link { text-decoration-thickness: 1px; text-underline-offset: 4px; font-size: 14px; font-weight: 560; }
+      .compat { margin: 19px 0 0; color: #737570; font-size: 12px; }
+
+      .demo-scene { position: relative; min-height: 424px; display: grid; place-items: center; }
+      .scene-halo { position: absolute; width: 450px; height: 450px; border-radius: 50%; background: #edf4f7; }
+      .note-window { position: relative; width: min(100%, 492px); padding: 20px 24px 25px; border: 1px solid #e0e3df; border-radius: 11px; background: var(--white); box-shadow: 0 24px 65px rgb(34 46 40 / 11%); transform: rotate(1.4deg); }
+      .window-top { display: flex; align-items: center; gap: 7px; padding-bottom: 18px; border-bottom: 1px solid #eff0ed; }
+      .window-dot { width: 9px; height: 9px; border-radius: 50%; background: #e8e9e5; }
+      .window-title { margin-left: auto; margin-right: auto; color: #9a9b96; font-size: 11px; }
+      .note-label { margin: 28px 0 11px; color: #91938e; font-size: 11px; }
+      .note-heading { margin-bottom: 10px; font-family: var(--serif); font-size: 25px; letter-spacing: -.035em; font-weight: 500; }
+      .note-text { max-width: 360px; margin-bottom: 33px; color: #555853; font-family: var(--serif); font-size: 16px; line-height: 1.6; }
+      .caret { display: inline-block; width: 1px; height: 17px; margin-left: 2px; vertical-align: -3px; background: var(--blue); }
+      .wavebar { position: absolute; left: 50%; bottom: -34px; width: 224px; height: 63px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 16px; background: #172322; box-shadow: 0 13px 30px rgb(10 29 28 / 26%); transform: translateX(-50%) rotate(-1.4deg); }
+      .wavebar::before, .wavebar::after { content: ""; position: absolute; top: 50%; width: 12px; height: 12px; border: 1px solid rgb(255 255 255 / 24%); border-radius: 50%; transform: translateY(-50%); }
+      .wavebar::before { left: 17px; background: #ec7b69; border: 0; }
+      .wavebar::after { right: 17px; border-color: #69bf91; background: #69bf91; box-shadow: inset 0 0 0 3px #172322; }
+      .wavebar span { width: 3px; height: var(--bar); border-radius: 4px; background: #81b9ed; animation: voice 880ms ease-in-out infinite alternate; animation-delay: var(--delay); }
+      .wavebar-label { position: absolute; top: -25px; left: 50%; color: #747772; font-size: 10px; white-space: nowrap; transform: translateX(-50%); }
+      @keyframes voice { from { transform: scaleY(.45); } to { transform: scaleY(1); } }
+
+      .proofline { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .proof-items { min-height: 85px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #555853; font-size: 13px; }
+      .proof-item { display: flex; align-items: center; gap: 10px; }
+      .proof-icon { width: 18px; height: 18px; color: var(--blue-dark); }
+      .proof-sep { width: 1px; height: 23px; background: var(--line); }
+
+      .section { padding: 112px 0; }
+      .section-heading { max-width: 660px; margin-bottom: 50px; }
+      .section-heading h2 { margin-bottom: 14px; font-family: var(--serif); font-size: clamp(37px, 4vw, 54px); font-weight: 500; letter-spacing: -.055em; line-height: 1.03; }
+      .section-heading p { max-width: 530px; margin-bottom: 0; color: var(--muted); font-size: 16px; line-height: 1.65; }
+      .story { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 80px; }
+      .story-copy h2 { max-width: 480px; margin-bottom: 18px; font-family: var(--serif); font-size: clamp(36px, 4vw, 52px); font-weight: 500; letter-spacing: -.055em; line-height: 1.04; }
+      .story-copy p { max-width: 455px; color: var(--muted); font-size: 16px; line-height: 1.7; }
+      .story-copy .text-link { display: inline-block; margin-top: 7px; }
+      .app-shot { display: block; width: 100%; height: auto; border: 1px solid #e0e1de; border-radius: 9px; box-shadow: 0 18px 48px rgb(34 46 40 / 9%); }
+
+      .features { padding: 31px 0 37px; background: #eef3f5; }
+      .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+      .feature { padding: 24px 32px 15px 0; }
+      .feature + .feature { padding-left: 31px; border-left: 1px solid #d4dcde; }
+      .feature h3 { margin-bottom: 10px; font-size: 16px; font-weight: 640; letter-spacing: -.02em; }
+      .feature p { max-width: 300px; margin-bottom: 0; color: #646c6b; font-size: 14px; line-height: 1.65; }
+
+      .privacy { padding: 100px 0; background: var(--teal); color: #fff; }
+      .privacy-grid { display: grid; grid-template-columns: .75fr 1.25fr; gap: 90px; align-items: start; }
+      .privacy h2 { max-width: 420px; margin: 0; font-family: var(--serif); font-size: clamp(39px, 4vw, 55px); font-weight: 500; letter-spacing: -.055em; line-height: 1.03; }
+      .privacy-copy { max-width: 570px; }
+      .privacy-copy p { margin-bottom: 17px; color: #d4e3df; font-size: 16px; line-height: 1.75; }
+      .privacy-copy p:last-child { margin-bottom: 0; }
+      .privacy-copy strong { color: #fff; font-weight: 620; }
+
+      .models { padding: 108px 0 114px; }
+      .model-row { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; align-items: end; }
+      .model-row h2 { max-width: 480px; margin: 0; font-family: var(--serif); font-size: clamp(38px, 4.2vw, 56px); font-weight: 500; letter-spacing: -.06em; line-height: 1.02; }
+      .model-row p { max-width: 470px; margin: 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+      .model-list { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 32px; }
+      .model-list span { padding: 9px 13px; border: 1px solid #d8ddda; border-radius: 5px; background: #fff; color: #434743; font-size: 13px; }
+
+      .closing { padding: 73px 0 77px; border-top: 1px solid var(--line); text-align: center; }
+      .closing h2 { margin-bottom: 12px; font-family: var(--serif); font-size: clamp(39px, 5vw, 58px); font-weight: 500; letter-spacing: -.06em; }
+      .closing p { margin-bottom: 24px; color: var(--muted); font-size: 16px; }
+      .closing .button { margin: 0 auto; }
+      .site-footer { padding: 22px 0 27px; border-top: 1px solid var(--line); }
+      .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #787a75; font-size: 12px; }
+      .footer-links { display: flex; flex-wrap: wrap; gap: 19px; }
+      .footer-links a { text-decoration: none; }
+
+      @media (max-width: 850px) {
+        .hero { padding: 69px 0 58px; }
+        .hero-grid { grid-template-columns: 1fr; gap: 31px; }
+        .hero-copy { max-width: 660px; }
+        h1 { max-width: 650px; }
+        .demo-scene { min-height: 370px; }
+        .scene-halo { width: 380px; height: 380px; }
+        .story { grid-template-columns: 1fr; gap: 36px; }
+        .story-copy { max-width: 620px; }
+        .app-shot { max-width: 680px; }
+        .privacy-grid { grid-template-columns: 1fr; gap: 30px; }
+        .model-row { grid-template-columns: 1fr; gap: 25px; }
+      }
+      @media (max-width: 600px) {
+        .wrap { width: min(100% - 36px, 520px); }
+        .site-header { height: 68px; }
+        .nav-links { gap: 17px; font-size: 13px; }
+        .nav-links a:first-child { display: none; }
+        .brand { font-size: 17px; }
+        .hero { padding: 59px 0 44px; }
+        .eyebrow { margin-bottom: 18px; }
+        h1 { max-width: 420px; font-size: clamp(46px, 13vw, 64px); }
+        .hero-lede { font-size: 16px; }
+        .demo-scene { min-height: 310px; margin-inline: -5px; }
+        .scene-halo { width: 300px; height: 300px; }
+        .note-window { padding: 15px 17px 22px; }
+        .note-text { font-size: 14px; }
+        .wavebar { bottom: -28px; height: 58px; }
+        .proof-items { min-height: 0; display: grid; grid-template-columns: 1fr 1fr; padding: 18px 0; gap: 17px 10px; font-size: 12px; }
+        .proof-sep { display: none; }
+        .proof-item { gap: 7px; }
+        .proof-icon { flex: 0 0 17px; }
+        .section { padding: 77px 0; }
+        .section-heading { margin-bottom: 35px; }
+        .feature-grid { grid-template-columns: 1fr; }
+        .feature { padding: 19px 0; }
+        .feature + .feature { padding-left: 0; border-top: 1px solid #d4dcde; border-left: 0; }
+        .feature p { max-width: 430px; }
+        .privacy { padding: 72px 0; }
+        .models { padding: 76px 0 80px; }
+        .closing { padding: 60px 0; }
+        .footer-inner { align-items: flex-start; flex-direction: column; gap: 12px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="Main navigation">
+        <a class="brand" href="#top" aria-label="Waveform home">
+          <svg class="brand-mark" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M3 10v8M8 6v16M13 9v10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+            <path d="M18 5v18" stroke="#3284d0" stroke-width="3" stroke-linecap="round"/>
+            <path d="M23 9v10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span>Waveform</span>
+        </a>
+        <div class="nav-links">
+          <a href="#how-it-works">How it works</a>
+          <a href="https://github.com/vipinsight/waveform">GitHub</a>
+          <a class="nav-download" href="https://github.com/vipinsight/waveform/releases/latest">Download</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-grid wrap">
+          <div class="hero-copy">
+            <p class="eyebrow">Voice dictation for Mac</p>
+            <h1>Say it once.<br>Keep going.</h1>
+            <p class="hero-lede">Hold a shortcut, speak, release. Waveform puts your words into the app you’re already using, with speech transcription running on your Mac.</p>
+            <div class="actions">
+              <a class="button" href="https://github.com/vipinsight/waveform/releases/latest">Get Waveform for Mac</a>
+              <a class="text-link" href="https://github.com/vipinsight/waveform">Explore the source</a>
+            </div>
+            <p class="compat">Free and open source · Apple Silicon · macOS 13+</p>
+          </div>
+
+          <div class="demo-scene" aria-label="Illustration of speech being dictated into a note">
+            <div class="scene-halo" aria-hidden="true"></div>
+            <div class="note-window">
+              <div class="window-top" aria-hidden="true">
+                <span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span>
+                <span class="window-title">Notes</span>
+              </div>
+              <p class="note-label">Today</p>
+              <h2 class="note-heading">A thought worth keeping</h2>
+              <p class="note-text">Good ideas don’t always arrive when your hands are free. Say what you mean, then get straight back to the work in front of you.<span class="caret" aria-hidden="true"></span></p>
+              <div class="wavebar" aria-label="Wave Bar listening indicator">
+                <span class="wavebar-label">Listening on your Mac</span>
+                <span style="--bar: 12px; --delay: -420ms"></span><span style="--bar: 20px; --delay: -160ms"></span><span style="--bar: 29px; --delay: -610ms"></span><span style="--bar: 16px; --delay: -310ms"></span><span style="--bar: 24px; --delay: -720ms"></span><span style="--bar: 13px; --delay: -100ms"></span><span style="--bar: 31px; --delay: -530ms"></span><span style="--bar: 19px; --delay: -220ms"></span><span style="--bar: 26px; --delay: -370ms"></span><span style="--bar: 12px; --delay: -660ms"></span><span style="--bar: 22px; --delay: -270ms"></span><span style="--bar: 16px; --delay: -80ms"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="proofline" aria-label="Waveform highlights">
+        <div class="proof-items wrap">
+          <div class="proof-item"><svg class="proof-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="1.7"/><path d="M9 9h6M9 12h6M9 15h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Types where your cursor is</span></div>
+          <span class="proof-sep" aria-hidden="true"></span>
+          <div class="proof-item"><svg class="proof-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 19 6v5.5c0 4.4-2.8 7.5-7 9-4.2-1.5-7-4.6-7-9V6l7-2.5Z" stroke="currentColor" stroke-width="1.7"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Speech stays on your Mac</span></div>
+          <span class="proof-sep" aria-hidden="true"></span>
+          <div class="proof-item"><svg class="proof-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>Choose your speech model</span></div>
+          <span class="proof-sep" aria-hidden="true"></span>
+          <div class="proof-item"><svg class="proof-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 5h12v14H6zM9 8h6M9 11h6M9 14h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Free and open source</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="how-it-works">
+        <div class="story wrap">
+          <div class="story-copy">
+            <p class="eyebrow">One shortcut. Wherever you’re writing.</p>
+            <h2>Stay in the flow of your work.</h2>
+            <p>Put your cursor where the words should go. Hold your shortcut, talk naturally, then release. Waveform transcribes your speech and types it into the focused app.</p>
+            <p>Double-tap the key to keep listening. Press Escape to cancel. The Wave Bar shows when your microphone is open.</p>
+            <a class="text-link" href="https://github.com/vipinsight/waveform/blob/main/docs/using.md">See how Waveform works</a>
+          </div>
+          <img class="app-shot" src="assets/dictation.png" width="2378" height="1610" loading="lazy" alt="Waveform dictation settings showing a configurable shortcut and microphone selection">
+        </div>
+      </section>
+
+      <section class="features" aria-label="Waveform features">
+        <div class="feature-grid wrap">
+          <article class="feature">
+            <h3>Your voice stays here</h3>
+            <p>Speech is transcribed on your Mac. No account, subscription, or audio upload.</p>
+          </article>
+          <article class="feature">
+            <h3>A shortcut that fits</h3>
+            <p>Choose a trigger key, keep listening with a double-tap, or cancel with Escape.</p>
+          </article>
+          <article class="feature">
+            <h3>Text, how you like it</h3>
+            <p>Optional AI Polish can tidy text locally or use a hosted model through OpenRouter.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="privacy">
+        <div class="privacy-grid wrap">
+          <h2>Your words stay yours.</h2>
+          <div class="privacy-copy">
+            <p><strong>Audio is transcribed on your Mac.</strong> Waveform does not upload your voice. Your speech model runs locally after setup.</p>
+            <p>Optional AI Polish can also run on your Mac. If you choose OpenRouter, Waveform sends the text you ask it to polish to your selected hosted model; it never sends audio.</p>
+            <p>Model downloads and update checks use the network. You can turn off update checks in settings.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="models">
+        <div class="wrap">
+          <div class="model-row">
+            <h2>Pick a voice that fits your Mac.</h2>
+            <p>Choose from Whisper, Parakeet, and Qwen3-ASR speech models. Compare model sizes, then download the one that suits your hardware and the way you speak.</p>
+          </div>
+          <div class="model-list" aria-label="Available speech model families"><span>Whisper</span><span>Parakeet</span><span>Qwen3-ASR</span></div>
+        </div>
+      </section>
+
+      <section class="closing">
+        <div class="wrap">
+          <h2>Keep your hands moving.</h2>
+          <p>Free, open-source dictation for Apple Silicon Mac.</p>
+          <a class="button" href="https://github.com/vipinsight/waveform/releases/latest">Get Waveform for Mac</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner wrap">
+        <span>© 2026 Waveform · MIT License</span>
+        <div class="footer-links">
+          <a href="https://github.com/vipinsight/waveform">GitHub</a>
+          <a href="https://github.com/vipinsight/waveform/blob/main/docs/using.md">Help</a>
+          <a href="https://github.com/vipinsight/waveform/blob/main/NOTICE">Third-party notices</a>
+          <a href="https://buymeacoffee.com/vip_iny">Support</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
