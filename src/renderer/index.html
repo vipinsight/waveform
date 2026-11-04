@@ -426,8 +426,7 @@
             <span class="view-note">Counted on this Mac only</span>
           </div>
 
-          <!-- Pace first, then the lifetime number with the streak beside it;
-               the other two counts keep them company rather than compete. -->
+          <!-- Pace first, then the lifetime number, then the streak. -->
           <section class="overview-hero" aria-label="Lifetime totals">
             <!-- Speaking pace leads: timed words over the time they took. -->
             <div class="pace-panel" id="pace-panel" aria-labelledby="pace-title">
@@ -449,20 +448,10 @@
                 <span class="view-note" id="activity-active-days"></span>
               </div>
             </div>
-            <div class="overview-hero-side">
-              <div class="hero-stat streak-card" id="streak-card">
-                <span class="streak-label"><i class="streak-dot" aria-hidden="true"></i>Current streak</span>
-                <b id="streak-current">—</b>
-                <span id="streak-longest"></span>
-              </div>
-              <div class="hero-stat">
-                <b id="stat-phrases">0</b>
-                <span>Phrases transcribed</span>
-              </div>
-              <div class="hero-stat">
-                <b id="stat-sessions">0</b>
-                <span>Dictation sessions</span>
-              </div>
+            <div class="hero-streak streak-card" id="streak-card">
+              <p class="overview-hero-label streak-label"><i class="streak-dot" aria-hidden="true"></i>Current streak</p>
+              <p class="hero-streak-number display" id="streak-current">—</p>
+              <p class="view-note" id="streak-longest"></p>
             </div>
           </section>
 

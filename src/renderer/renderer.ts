@@ -139,8 +139,6 @@ const element = {
   meetingsToggle: requireElement<HTMLInputElement>("meetings-toggle"),
   navMeetings: requireElement<HTMLElement>("nav-meetings"),
   statWords: requireElement<HTMLElement>("stat-words"),
-  statPhrases: requireElement<HTMLElement>("stat-phrases"),
-  statSessions: requireElement<HTMLElement>("stat-sessions"),
   streakCardBox: requireElement<HTMLElement>("streak-card"),
   streakCurrent: requireElement<HTMLElement>("streak-current"),
   streakLongest: requireElement<HTMLElement>("streak-longest"),
@@ -2330,8 +2328,6 @@ function renderOnboard(): void {
 function renderStats(stats: AppStats): void {
   lifetimeSessions = stats.sessions;
   element.statWords.textContent = stats.words.toLocaleString();
-  element.statPhrases.textContent = stats.phrases.toLocaleString();
-  element.statSessions.textContent = stats.sessions.toLocaleString();
   renderEmptyState();
 }
 

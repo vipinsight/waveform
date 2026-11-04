@@ -6335,9 +6335,9 @@ select {
 
 .overview-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 20px 32px;
-  align-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 0;
+  align-items: center;
   padding: 26px 28px 24px;
   margin-bottom: 14px;
   border: 1px solid var(--hairline);
@@ -6375,10 +6375,9 @@ select {
 
 /* The streak card: a dot that glows while one is running. */
 .streak-label {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
-  margin-bottom: 2px;
 }
 
 .streak-dot {
@@ -6387,10 +6386,6 @@ select {
   border-radius: 50%;
   background: var(--ink-faint);
   transition: background 200ms ease, box-shadow 200ms ease;
-}
-
-.streak-card.is-live {
-  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
 }
 
 .streak-card.is-live .streak-dot {
@@ -6404,34 +6399,23 @@ select {
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
 }
 
-.overview-hero-side {
-  display: grid;
-  grid-auto-flow: column;
-  gap: 10px;
+/* The streak closes the row, ruled off like the pace that opens it. */
+.hero-streak {
+  padding: 0 24px;
+  border-left: 1px solid var(--hairline);
+  text-align: center;
 }
 
-.hero-stat {
-  display: grid;
-  gap: 2px;
-  min-width: 132px;
-  padding: 12px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+.hero-streak .streak-label {
+  justify-content: center;
 }
 
-.hero-stat b {
-  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-size: 24px;
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
+.hero-streak-number {
+  margin: 0 0 6px;
+  font-size: 34px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-}
-
-.hero-stat span {
-  color: var(--ink-soft);
-  font-size: 12px;
 }
 
 .overview-grid {
@@ -6471,8 +6455,16 @@ select {
   min-height: 236px;
 }
 
+/* The middle third: ruled off both sides, centred like its neighbours. */
 .overview-hero-main {
   min-width: 0;
+  padding: 0 24px;
+  border-left: 1px solid var(--hairline);
+  text-align: center;
+}
+
+.overview-hero-main .overview-hero-meta {
+  justify-content: center;
 }
 
 .activity-head {
@@ -6842,19 +6834,17 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 236px;
-  padding-right: 28px;
-  border-right: 1px solid var(--hairline);
+  padding: 0 24px;
 }
 
 .pace-panel .overview-hero-label {
-  align-self: flex-start;
   margin-bottom: 10px;
 }
 
 .pace-gauge {
   position: relative;
   width: 100%;
+  max-width: 220px;
   margin: 0 auto;
 }
 
@@ -6966,8 +6956,7 @@ select {
 
 @container overview (max-width: 760px) {
   .overview-hero {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 22px 22px 20px;
   }
 
@@ -6975,9 +6964,8 @@ select {
     font-size: 44px;
   }
 
-  .overview-hero-side {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .hero-streak {
+    padding: 0 0 0 16px;
   }
 
   .overview-grid {
@@ -6985,22 +6973,14 @@ select {
   }
 
   .pace-panel {
-    width: auto;
-    max-width: 260px;
+    grid-column: 1 / -1;
     padding: 0 0 18px;
-    border-right: 0;
     border-bottom: 1px solid var(--hairline);
   }
-}
 
-/* Three across gets tight before the page goes to one column. */
-@container overview (max-width: 1040px) and (min-width: 761px) {
-  .overview-hero {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .overview-hero-side {
-    grid-column: 2;
+  .overview-hero-main {
+    padding: 0 16px 0 0;
+    border-left: 0;
   }
 }
 
