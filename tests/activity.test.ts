@@ -12,7 +12,7 @@ import {
   monthDelta,
   NO_PACE,
   paceGauge,
-  streakLine,
+  streakCard,
   typingComparison,
 } from "../src/shared/activity";
 import type { Activity } from "../src/shared/contracts";
@@ -190,13 +190,13 @@ describe("monthBars", () => {
   });
 });
 
-describe("streakLine", () => {
+describe("streakCard", () => {
   const base: Activity = { today: "2026-10-02", days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0, pace: NO_PACE };
-  it("says what there is", () => {
-    expect(streakLine(base)).toBe("No streak yet");
-    expect(streakLine({ ...base, longestStreak: 4 })).toBe("Longest streak 4 days");
-    expect(streakLine({ ...base, currentStreak: 3, longestStreak: 3 })).toBe("3-day streak, your longest");
-    expect(streakLine({ ...base, currentStreak: 2, longestStreak: 9 })).toBe("2-day streak · longest 9");
+  it("shows the run now with the record beneath it", () => {
+    expect(streakCard(base)).toEqual({ current: "0 days", longest: "Dictate today to start one" });
+    expect(streakCard({ ...base, longestStreak: 4 })).toEqual({ current: "0 days", longest: "Longest: 4 days" });
+    expect(streakCard({ ...base, currentStreak: 3, longestStreak: 3 })).toEqual({ current: "3 days", longest: "Your longest yet" });
+    expect(streakCard({ ...base, currentStreak: 1, longestStreak: 9 })).toEqual({ current: "1 day", longest: "Longest: 9 days" });
   });
 });
 

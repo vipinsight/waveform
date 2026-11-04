@@ -6321,7 +6321,7 @@ select {
 /* --- Overview: hero, activity calendar, months, insights, milestones -------- */
 
 /*
- * The home screen. One big number with the streak beside it, then two rows
+ * The home screen. The pace and the big number, with the streak beside them, then two rows
  * of two cards: the half-year calendar beside the months, what the words
  * add up to beside the milestones. The machine's own rows and the privacy
  * note come last. Under ~760px the pairs stack. The accent is the only
@@ -6373,36 +6373,27 @@ select {
   margin-top: 12px;
 }
 
-/* The streak as a pill: a dot that glows while one is running. */
-.streak-pill {
+/* The streak card: a dot that glows while one is running. */
+.streak-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 26px;
-  padding: 0 11px 0 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 580;
-  font-variant-numeric: tabular-nums;
+  gap: 7px;
+  margin-bottom: 2px;
 }
 
 .streak-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--ink-faint);
   transition: background 200ms ease, box-shadow 200ms ease;
 }
 
-.streak-pill.is-live {
+.streak-card.is-live {
   border-color: color-mix(in srgb, var(--accent) 36%, transparent);
-  color: var(--ink);
 }
 
-.streak-pill.is-live .streak-dot {
+.streak-card.is-live .streak-dot {
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
   animation: streak-glow 2.4s ease-in-out infinite;
@@ -6995,7 +6986,7 @@ select {
 
   .overview-hero-side {
     grid-auto-flow: row;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .overview-grid {

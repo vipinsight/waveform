@@ -287,12 +287,22 @@ export function monthChange(bars: MonthBar[]): string {
   return delta > 0 ? `Up ${delta}% on last month` : `Down ${Math.abs(delta)}% on last month`;
 }
 
-/** A line for the streak header. */
-export function streakLine(activity: Activity): string {
+export interface StreakCard {
+  /** "4 days", or "0 days" with nothing running. */
+  current: string;
+  /** The line under it: the record, or that this run is the record. */
+  longest: string;
+}
+
+/** The streak card: the run going now, with the longest beneath it. */
+export function streakCard(activity: Activity): StreakCard {
   const { currentStreak, longestStreak } = activity;
-  if (currentStreak === 0) return longestStreak > 0 ? `Longest streak ${longestStreak} days` : "No streak yet";
-  const current = `${currentStreak}-day streak`;
-  return currentStreak >= longestStreak ? `${current}, your longest` : `${current} · longest ${longestStreak}`;
+  const days = (n: number) => `${n.toLocaleString()} ${n === 1 ? "day" : "days"}`;
+  let longest: string;
+  if (longestStreak === 0) longest = "Dictate today to start one";
+  else if (currentStreak > 0 && currentStreak >= longestStreak) longest = "Your longest yet";
+  else longest = `Longest: ${days(longestStreak)}`;
+  return { current: days(currentStreak), longest };
 }
 
 /** Where the pace gauge tops out. Fast conversational speech is about 160. */

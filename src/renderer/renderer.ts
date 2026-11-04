@@ -44,7 +44,7 @@ import {
   monthDelta,
   NO_PACE,
   paceGauge,
-  streakLine,
+  streakCard,
 } from "../shared/activity";
 import type { Activity } from "../shared/contracts";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
@@ -141,8 +141,9 @@ const element = {
   statWords: requireElement<HTMLElement>("stat-words"),
   statPhrases: requireElement<HTMLElement>("stat-phrases"),
   statSessions: requireElement<HTMLElement>("stat-sessions"),
-  activityStreak: requireElement<HTMLElement>("activity-streak"),
-  activityStreakPill: requireElement<HTMLElement>("activity-streak-pill"),
+  streakCardBox: requireElement<HTMLElement>("streak-card"),
+  streakCurrent: requireElement<HTMLElement>("streak-current"),
+  streakLongest: requireElement<HTMLElement>("streak-longest"),
   activityTip: requireElement<HTMLElement>("activity-tip"),
   milestonePanel: requireElement<HTMLElement>("milestone-panel"),
   activityActiveDays: requireElement<HTMLElement>("activity-active-days"),
@@ -4393,8 +4394,10 @@ function lifetimeWords(): number {
  * view. Days before the first word are drawn but kept quiet.
  */
 function renderActivityCalendar(activity: Activity): void {
-  element.activityStreak.textContent = streakLine(activity);
-  element.activityStreakPill.classList.toggle("is-live", activity.currentStreak > 0);
+  const streak = streakCard(activity);
+  element.streakCurrent.textContent = streak.current;
+  element.streakLongest.textContent = streak.longest;
+  element.streakCardBox.classList.toggle("is-live", activity.currentStreak > 0);
   element.activityActiveDays.textContent =
     activity.activeDays === 0
       ? "Nothing yet"
@@ -4501,7 +4504,8 @@ function renderActivityPlaceholder(): void {
   });
   element.activityCalendar.classList.add("is-loading");
   element.activityActiveDays.textContent = "";
-  element.activityStreak.textContent = "—";
+  element.streakCurrent.textContent = "—";
+  element.streakLongest.textContent = "";
 }
 
 /** Uses the lifetime word count the hero already shows. */
