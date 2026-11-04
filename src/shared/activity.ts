@@ -338,7 +338,7 @@ export function paceGauge(paces: Paces): PaceGauge {
   const wpm = ready ? Math.round(wordsPerMinute(recent ? paces.last30 : paces.allTime)) : 0;
   const details: string[] = [];
   if (recent && paces.last7.speechMs >= PACE_MINIMUM_MS) {
-    details.push(`Last 7 days: ${Math.round(wordsPerMinute(paces.last7))}`);
+    details.push(`7 days: ${Math.round(wordsPerMinute(paces.last7))}`);
   }
   if (recent && paces.allTime.speechMs > paces.last30.speechMs) {
     details.push(`All time: ${Math.round(wordsPerMinute(paces.allTime))}`);

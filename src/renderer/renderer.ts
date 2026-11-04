@@ -156,7 +156,6 @@ const element = {
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
-  paceWindow: requireElement<HTMLElement>("pace-window"),
   paceGauge: requireElement<HTMLElement>("pace-gauge"),
   paceNumber: requireElement<HTMLElement>("pace-number"),
   paceComparison: requireElement<HTMLElement>("pace-comparison"),
@@ -4372,9 +4371,10 @@ function renderPace(activity: Activity): void {
   element.paceGauge.classList.toggle("is-waiting", !gauge.ready);
   element.paceGauge.style.setProperty("--pace", (gauge.fraction * 100).toFixed(2));
   element.paceNumber.textContent = gauge.ready ? String(gauge.wpm) : "—";
-  element.paceWindow.textContent = gauge.ready ? (gauge.window === "all time" ? "All time" : "Last 30 days") : "";
   element.paceComparison.textContent = gauge.ready ? gauge.comparison : "Dictate a little more to see your pace";
-  element.paceDetail.textContent = gauge.detail;
+  element.paceDetail.textContent = gauge.ready
+    ? [gauge.window === "all time" ? "All time" : "30 days", gauge.detail].filter(Boolean).join(" · ")
+    : "";
   element.paceGauge.setAttribute(
     "aria-label",
     gauge.ready ? `${gauge.wpm} words per minute, ${gauge.window}` : "Speaking pace: not enough speech yet",

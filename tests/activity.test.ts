@@ -219,7 +219,7 @@ describe("paceGauge", () => {
     });
     expect(gauge).toMatchObject({ ready: true, wpm: 120, window: "last 30 days", comparison: "3× faster than typing" });
     expect(gauge.fraction).toBeCloseTo(0.6);
-    expect(gauge.detail).toBe("Last 7 days: 140 · All time: 120");
+    expect(gauge.detail).toBe("7 days: 140 · All time: 120");
   });
 
   it("falls back to all time when the month is quiet", () => {
