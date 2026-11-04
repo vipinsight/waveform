@@ -99,6 +99,68 @@ pub async fn install_qwen(
     Ok(())
 }
 
+/// pyannote's diarization pipeline: segmentation, a WeSpeaker voice print and
+/// VBx clustering, in one Hugging Face repo with its own config.
+pub const PYANNOTE_REPO: &str = "pyannote/speaker-diarization-community-1";
+const PYANNOTE_PACKAGES: [&str; 2] = ["pyannote.audio==4.0.7", "soundfile==0.14.0"];
+
+/// Creates the pyannote venv and downloads its pipeline into Application
+/// Support. `on_progress` gets 0..1 for this part alone.
+pub async fn install_pyannote(cancel: &AtomicBool, on_progress: Progress<'_>) -> Result<(), String> {
+    check_cancel(cancel)?;
+    let python_system = system_python().ok_or("Python 3 is needed for the better speaker tagger.")?;
+    let venv = paths::pyannote_venv().ok_or("Could not work out where pyannote's runtime lives.")?;
+    let weights = paths::pyannote_model_dir().ok_or("Could not work out where pyannote's weights live.")?;
+    let venv_python = venv.join("bin/python3");
+
+    if !paths::is_executable(&venv_python) {
+        on_progress("Creating the speaker environment…", 0.02);
+        tokio::fs::create_dir_all(venv.parent().unwrap_or(Path::new(".")))
+            .await
+            .map_err(|error| format!("Could not make {}: {error}", venv.display()))?;
+        run_checked(
+            Command::new(&python_system).args(["-m", "venv"]).arg(&venv),
+            cancel,
+            "Could not create the speaker environment",
+        )
+        .await?;
+    }
+
+    check_cancel(cancel)?;
+    on_progress("Installing PyTorch and pyannote…", 0.1);
+    run_checked(
+        Command::new(&venv_python).args(["-m", "pip", "install", "--upgrade", "pip"]),
+        cancel,
+        "Could not update pip",
+    )
+    .await?;
+    run_checked(
+        Command::new(&venv_python).args(["-m", "pip", "install"]).args(PYANNOTE_PACKAGES),
+        cancel,
+        "Could not install pyannote",
+    )
+    .await?;
+
+    check_cancel(cancel)?;
+    on_progress("Downloading the speaker model…", 0.85);
+    let script = format!(
+        "from huggingface_hub import snapshot_download; snapshot_download({PYANNOTE_REPO:?}, local_dir={:?})",
+        weights.display().to_string()
+    );
+    run_from_hub(
+        || {
+            let mut command = Command::new(&venv_python);
+            command.args(["-c", &script]);
+            command
+        },
+        cancel,
+        "Could not download the speaker model",
+    )
+    .await?;
+    on_progress("pyannote ready", 1.0);
+    Ok(())
+}
+
 /// Installs nemo-speech (if needed) and pulls Parakeet into Application Support.
 pub async fn install_parakeet(
     remote_id: &str,
@@ -221,7 +283,8 @@ async fn install_nemo_speech(bin_dir: &Path, cancel: &AtomicBool) -> Result<Path
     paths::find_nemo_speech().ok_or_else(|| "nemo-speech installed but could not be found.".into())
 }
 
-fn find_system_python() -> Result<PathBuf, String> {
+/// The Mac's own Python 3, which the Qwen and pyannote venvs are made from.
+pub fn system_python() -> Option<PathBuf> {
     for name in ["python3", "python"] {
         if let Ok(output) = std::process::Command::new("/usr/bin/which")
             .arg(name)
@@ -232,16 +295,19 @@ fn find_system_python() -> Result<PathBuf, String> {
                 if !path.is_empty() {
                     let candidate = PathBuf::from(&path);
                     if paths::is_executable(&candidate) {
-                        return Ok(candidate);
+                        return Some(candidate);
                     }
                 }
             }
         }
     }
-    Err(
-        "Python 3 is required to install Qwen. Install it from python.org, then try again."
-            .into(),
-    )
+    None
+}
+
+fn find_system_python() -> Result<PathBuf, String> {
+    system_python().ok_or_else(|| {
+        "Python 3 is required to install Qwen. Install it from python.org, then try again.".into()
+    })
 }
 
 fn check_cancel(cancel: &AtomicBool) -> Result<(), String> {

@@ -142,6 +142,16 @@ pub fn qwen_python() -> Option<PathBuf> {
     None
 }
 
+/// The venv pyannote's speaker tagger runs in.
+pub fn pyannote_venv() -> Option<PathBuf> {
+    runtimes_root().map(|root| root.join("pyannote"))
+}
+
+/// pyannote's pipeline, as a plain folder (config.yaml and its models).
+pub fn pyannote_model_dir() -> Option<PathBuf> {
+    models_root().map(|root| root.join("pyannote"))
+}
+
 /// Preferred install location for the nemo-speech binary.
 pub fn nemo_bin_preferred() -> Option<PathBuf> {
     runtimes_root().map(|root| root.join("bin/nemo-speech"))
