@@ -310,7 +310,7 @@ export const PACE_SCALE_WPM = 200;
 /** A typical typist, the figure speaking is compared against. */
 export const TYPING_WPM = 40;
 /** Less speech than this in the week and one phrase swings the average. */
-export const PACE_MINIMUM_MS = 30_000;
+export const PACE_MINIMUM_MS = 5_000;
 
 /** No timed speech at all: the shape of `Activity.pace` before any numbers. */
 export const NO_PACE: Pace = { words: 0, speechMs: 0 };
