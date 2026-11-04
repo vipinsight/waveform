@@ -4558,6 +4558,9 @@ function renderMilestones(words: number): void {
 let milestonesSeen: number | null = null;
 let celebrationTimer: number | undefined;
 
+/** The tallest month's bar, in pixels. */
+const MONTH_BAR_PX = 48;
+
 /** 1,000 → "1k", 2,500,000 → "2.5M". */
 function shortCount(value: number): string {
   if (value >= 1_000_000) {
@@ -4598,7 +4601,8 @@ function renderMonths(activity: Activity): void {
       const value = document.createElement("b");
       value.textContent = bar.words === 0 ? "" : shortCount(bar.words >= 1_000 ? Math.round(bar.words / 100) * 100 : bar.words);
       const fill = document.createElement("i");
-      fill.style.height = `${bar.words === 0 ? 3 : Math.max(4, Math.round((bar.words / max) * 100))}px`;
+      // The tallest bar leaves room above it for its count and below for the label.
+      fill.style.height = `${bar.words === 0 ? 3 : Math.max(4, Math.round((bar.words / max) * MONTH_BAR_PX))}px`;
       const label = document.createElement("small");
       label.textContent = bar.label.split(" ")[0] ?? bar.label;
       column.append(value, fill, label);

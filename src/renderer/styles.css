@@ -6714,7 +6714,7 @@ select {
   align-items: flex-end;
   justify-content: stretch;
   gap: 8px;
-  height: 148px;
+  height: 92px;
   margin-top: auto;
 }
 
@@ -6814,17 +6814,16 @@ select {
 
 .insight-headline {
   margin: 0 0 auto;
-  padding-bottom: 18px;
   min-height: 34px;
   font-size: 30px;
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
 
-/* The second row: the equivalent and the months, the same height. */
+/* The second row is kept short: the equivalent and a low run of months. */
 .insight-panel,
 .months-panel {
-  min-height: 200px;
+  min-height: 0;
 }
 
 /* --- Overview: speaking pace ---------------------------------------------- */
