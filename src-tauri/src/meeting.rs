@@ -559,6 +559,11 @@ impl Recorder {
             Ok(notes) => {
                 let _ = store.set_notes(id, &notes);
                 let _ = store.set_state(id, State::Ready, None);
+                // The tracks were needed until now, to tag speakers. Kept
+                // through a failure, so "Finish this meeting" still can.
+                if !self.engine.settings.lock().await.value().save_audio {
+                    store.drop_audio(id);
+                }
             }
             Err(reason) if reason == crate::download::CANCELLED => {}
             Err(reason) => {

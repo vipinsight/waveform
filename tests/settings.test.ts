@@ -226,3 +226,19 @@ describe("normalizeSettings", () => {
     );
   });
 });
+
+describe("audio retention", () => {
+  it("keeps audio forever and saves it by default, on both sides", () => {
+    expect(DEFAULT_SETTINGS.keepAudioDays).toBe(0);
+    expect(DEFAULT_SETTINGS.saveAudio).toBe(true);
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain("keep_audio_days: 0,");
+    expect(rust).toContain("save_audio: true,");
+  });
+
+  it("only takes an offered window", () => {
+    expect(normalizeSettings({ keepAudioDays: 14 }).keepAudioDays).toBe(14);
+    expect(normalizeSettings({ keepAudioDays: 7 }).keepAudioDays).toBe(0);
+    expect(normalizeSettings({ saveAudio: false }).saveAudio).toBe(false);
+  });
+});

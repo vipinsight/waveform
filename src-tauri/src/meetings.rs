@@ -425,6 +425,44 @@ impl MeetingsStore {
         Ok(())
     }
 
+    /// Deletes a meeting's recordings, keeping its transcript and summary.
+    pub fn drop_audio(&self, id: &str) {
+        let Ok(files) = std::fs::read_dir(self.dir(id)) else {
+            return;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().is_some_and(|ext| ext == "wav") {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    /// Deletes the recordings of finished meetings started before
+    /// `cutoff_ms`. One still recording or being processed is left alone.
+    /// Returns how many meetings lost their audio.
+    pub fn drop_audio_before(&mut self, cutoff_ms: u64) -> Result<usize, String> {
+        let ids = self
+            .db
+            .with(|connection| {
+                let mut select = connection.prepare(
+                    "SELECT id FROM meetings
+                      WHERE created_at < ?1 AND state IN ('ready', 'failed')",
+                )?;
+                let rows = select.query_map([cutoff_ms as i64], |row| row.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<String>>>()
+            })
+            .map_err(describe)?;
+        let mut dropped = 0;
+        for id in ids {
+            if recording_in(&self.dir(&id)).is_some() {
+                dropped += 1;
+            }
+            self.drop_audio(&id);
+        }
+        Ok(dropped)
+    }
+
     /// Meetings left `recording` or `processing` by a crash are closed as they
     /// stand, with a note the window turns into "Finish this meeting".
     pub fn close_abandoned(&mut self) -> Result<usize, String> {
@@ -619,6 +657,41 @@ mod tests {
         assert_eq!(lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), vec!["first", "second"]);
         assert_eq!(lines[1].speaker, None);
         assert_eq!(meetings.get(&id).unwrap().unwrap().duration_ms, 8_000);
+    }
+
+    /// Old finished meetings lose their audio and keep their words; one
+    /// still recording, or a newer one, is left alone.
+    #[test]
+    fn dropping_old_audio_keeps_the_transcript() {
+        let mut meetings = store();
+        let wav = vec![0u8; 1_000];
+        let mut ids = Vec::new();
+        for state in [State::Ready, State::Recording, State::Ready] {
+            let id = meetings.create("x", "en", "w").unwrap().id;
+            meetings.add_line(&id, Track::Mic, 0, 1_000, "words").unwrap();
+            meetings.set_state(&id, state, None).unwrap();
+            std::fs::create_dir_all(meetings.dir(&id)).unwrap();
+            std::fs::write(meetings.dir(&id).join("mic.wav"), &wav).unwrap();
+            std::fs::write(meetings.dir(&id).join("mixed.wav"), &wav).unwrap();
+            ids.push(id);
+        }
+        meetings
+            .db
+            .with(|connection| {
+                connection.execute(
+                    "UPDATE meetings SET created_at = 1_000 WHERE id IN (?1, ?2)",
+                    [&ids[0], &ids[1]],
+                )
+            })
+            .unwrap();
+
+        assert_eq!(meetings.drop_audio_before(2_000).unwrap(), 1);
+
+        let old = meetings.get(&ids[0]).unwrap().unwrap();
+        assert!(!old.has_audio);
+        assert_eq!(meetings.lines(&ids[0]).unwrap().len(), 1);
+        assert!(meetings.get(&ids[1]).unwrap().unwrap().has_audio);
+        assert!(meetings.get(&ids[2]).unwrap().unwrap().has_audio);
     }
 
     #[test]

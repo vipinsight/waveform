@@ -31,7 +31,14 @@ import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
-import { DEFAULT_SETTINGS, POLISH_SHORTCUTS, type AppSettings } from "../shared/settings";
+import {
+  DEFAULT_SETTINGS,
+  KEEP_AUDIO_DAYS,
+  KEEP_AUDIO_GRACE_MS,
+  POLISH_SHORTCUTS,
+  type AppSettings,
+  type KeepAudioDays,
+} from "../shared/settings";
 import {
   HALF_YEAR_WEEKS,
   MILESTONES,
@@ -107,6 +114,9 @@ const element = {
   logCopy: requireElement<HTMLButtonElement>("log-copy"),
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
+  saveAudioToggle: requireElement<HTMLInputElement>("save-audio-toggle"),
+  keepAudioSelect: requireElement<HTMLSelectElement>("keep-audio-select"),
+  keepAudioNote: requireElement<HTMLElement>("keep-audio-note"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
   updatePill: requireElement<HTMLButtonElement>("update-pill"),
   updatePillTitle: requireElement<HTMLElement>("update-pill-title"),
@@ -723,6 +733,15 @@ function wireEvents(): void {
   element.updateToggle.addEventListener("change", () => {
     void patchSettings({ automaticUpdateCheck: element.updateToggle.checked });
   });
+  element.saveAudioToggle.addEventListener("change", () => {
+    void patchSettings({ saveAudio: element.saveAudioToggle.checked });
+  });
+  element.keepAudioSelect.addEventListener("change", () => {
+    const days = Number(element.keepAudioSelect.value);
+    if (KEEP_AUDIO_DAYS.includes(days as KeepAudioDays)) {
+      void patchSettings({ keepAudioDays: days as KeepAudioDays });
+    }
+  });
   element.updateCheck.addEventListener("click", () => {
     if (updateAction === "install") {
       // Painted here, before the host answers: its first event follows a
@@ -945,6 +964,16 @@ function handleLogLine(line: LogLine): void {
   if (page && !page.hidden) renderLogs();
 }
 
+/** Says when a newly shortened window starts deleting, so it can be undone. */
+function keepAudioNote(next: AppSettings): string {
+  const startsAt = (next.keepAudioChangedAt ?? 0) + KEEP_AUDIO_GRACE_MS;
+  if (next.keepAudioDays !== 0 && startsAt > Date.now()) {
+    const time = new Date(startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `Nothing is deleted before ${time}, in case you change your mind.`;
+  }
+  return "Older audio is deleted; the words stay.";
+}
+
 async function patchSettings(patch: Partial<AppSettings>): Promise<void> {
   applySettings(await host().updateSettings(patch));
 }
@@ -974,6 +1003,9 @@ function applySettings(next: AppSettings): void {
     button.setAttribute("aria-checked", String(button.dataset.learning === next.dictionaryLearning));
   }
   element.updateToggle.checked = next.automaticUpdateCheck;
+  element.saveAudioToggle.checked = next.saveAudio;
+  element.keepAudioSelect.value = String(next.keepAudioDays);
+  element.keepAudioNote.textContent = keepAudioNote(next);
   element.dockToggle.checked = !next.hideDockWhenClosed;
   renderSidebarCollapsed();
   // Without a menu bar icon there would be no way back to the window.

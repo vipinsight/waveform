@@ -177,6 +177,16 @@ pub struct AppSettings {
     /// ask above the meeting list does not come back on every launch.
     #[serde(default)]
     pub meetings_other_side_allowed: bool,
+    /// How many days a recording is kept before its audio is deleted. Zero
+    /// keeps it forever. Only the audio goes; the words stay.
+    pub keep_audio_days: u32,
+    /// When `keep_audio_days` last changed, in Unix milliseconds. Set by the
+    /// host, never taken from a patch: nothing is deleted until
+    /// `retention::GRACE_MS` after a change, so a mis-click can be put back.
+    pub keep_audio_changed_at: Option<u64>,
+    /// Write dictation and meeting audio to disk at all. Off keeps the words
+    /// only, which also leaves Retry and voice-matching nothing to work with.
+    pub save_audio: bool,
 }
 
 impl Default for AppSettings {
@@ -230,6 +240,9 @@ impl Default for AppSettings {
             onboarding_completed: false,
             meetings_intro_seen: false,
             meetings_other_side_allowed: false,
+            keep_audio_days: 0,
+            keep_audio_changed_at: None,
+            save_audio: true,
         }
     }
 }
@@ -321,6 +334,9 @@ impl AppSettings {
         }
         self.transform_prompt = non_empty(&self.transform_prompt, &base.transform_prompt, 8_000);
         self.polish_prompt = non_empty(&self.polish_prompt, &base.polish_prompt, 8_000);
+        if !crate::retention::KEEP_DAYS.contains(&self.keep_audio_days) {
+            self.keep_audio_days = base.keep_audio_days;
+        }
         // Leaving the Dock with no menu bar icon would strand the app with no
         // way to reach it, so the two settings are not independent.
         if !self.menu_bar_icon {
@@ -365,7 +381,13 @@ impl SettingsStore {
     }
 
     pub fn update(&mut self, patch: AppSettings) -> AppSettings {
-        self.current = patch.normalize(&self.current);
+        let mut next = patch.normalize(&self.current);
+        next.keep_audio_changed_at = if next.keep_audio_days != self.current.keep_audio_days {
+            Some(crate::retention::now_ms())
+        } else {
+            self.current.keep_audio_changed_at
+        };
+        self.current = next;
         self.write();
         self.current.clone()
     }
@@ -721,6 +743,42 @@ mod tests {
         input.hide_dock_when_closed = true;
 
         assert!(input.normalize(&base).hide_dock_when_closed);
+    }
+
+    /// Only the offered windows can be kept; anything else is not a choice
+    /// the window could have made.
+    #[test]
+    fn only_an_offered_audio_window_is_kept() {
+        let base = AppSettings::default();
+        assert_eq!(base.keep_audio_days, 0);
+        assert!(base.save_audio);
+        for days in crate::retention::KEEP_DAYS {
+            let mut input = base.clone();
+            input.keep_audio_days = days;
+            assert_eq!(input.normalize(&base).keep_audio_days, days);
+        }
+        let mut input = base.clone();
+        input.keep_audio_days = 7;
+        assert_eq!(input.normalize(&base).keep_audio_days, 0);
+    }
+
+    /// The grace period runs from the host's clock, not from whatever a
+    /// patch claims, and an unrelated change does not restart it.
+    #[test]
+    fn changing_the_audio_window_stamps_when_it_changed() {
+        let mut store = SettingsStore {
+            path: crate::store::temp_dir("settings").join("settings.json"),
+            current: AppSettings::default(),
+        };
+        let mut patch = store.value();
+        patch.keep_audio_days = 14;
+        patch.keep_audio_changed_at = Some(1);
+        let stamped = store.update(patch).keep_audio_changed_at.unwrap();
+        assert!(stamped > 1);
+
+        let mut patch = store.value();
+        patch.theme = "dark".into();
+        assert_eq!(store.update(patch).keep_audio_changed_at, Some(stamped));
     }
 
     #[test]

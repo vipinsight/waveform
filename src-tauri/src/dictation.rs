@@ -1229,7 +1229,11 @@ impl Dictation {
     ///
     /// The words were already pasted by the time this runs, so a failure here
     /// is a lost record, not a lost dictation -- worth a message, not a retry.
-    async fn save_dictation(&self, dictation: NewDictation<'_>) {
+    /// Saves to history, without the recording when "Save audio" is off.
+    async fn save_dictation(&self, mut dictation: NewDictation<'_>) {
+        if !self.settings.lock().await.value().save_audio {
+            dictation.wav = None;
+        }
         match self.history.lock().await.add(dictation) {
             Ok(entries) => {
                 let _ = self.app.emit("history-changed", entries);
