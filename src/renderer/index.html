@@ -426,26 +426,32 @@
             <span class="view-note">Counted on this Mac only</span>
           </div>
 
-          <!-- The lifetime number first, with the streak beside it; the other
-               two counts keep it company rather than compete with it. -->
+          <!-- Pace first, then the lifetime number, then the streak. -->
           <section class="overview-hero" aria-label="Lifetime totals">
+            <!-- Speaking pace leads: timed words over the time they took. -->
+            <div class="pace-panel" id="pace-panel" aria-labelledby="pace-title">
+              <p class="overview-hero-label" id="pace-title">Your pace this week</p>
+              <div class="pace-gauge" role="img" id="pace-gauge" aria-label="Speaking pace">
+                <svg viewBox="0 0 120 66" aria-hidden="true">
+                  <path class="pace-track" d="M 10 60 A 50 50 0 0 1 110 60" pathLength="100" />
+                  <path class="pace-fill" d="M 10 60 A 50 50 0 0 1 110 60" pathLength="100" />
+                </svg>
+                <p class="pace-number display" id="pace-number">—</p>
+                <p class="pace-unit">words per minute</p>
+              </div>
+              <p class="pace-comparison" id="pace-comparison"></p>
+            </div>
             <div class="overview-hero-main">
               <p class="overview-hero-label">Words dictated</p>
               <p class="overview-hero-number display" id="stat-words">0</p>
               <div class="overview-hero-meta">
-                <span class="streak-pill" id="activity-streak-pill"><i class="streak-dot" aria-hidden="true"></i><span id="activity-streak">—</span></span>
                 <span class="view-note" id="activity-active-days"></span>
               </div>
             </div>
-            <div class="overview-hero-side">
-              <div class="hero-stat">
-                <b id="stat-phrases">0</b>
-                <span>Phrases transcribed</span>
-              </div>
-              <div class="hero-stat">
-                <b id="stat-sessions">0</b>
-                <span>Dictation sessions</span>
-              </div>
+            <div class="hero-streak streak-card" id="streak-card">
+              <p class="overview-hero-label streak-label"><i class="streak-dot" aria-hidden="true"></i>Current streak</p>
+              <p class="hero-streak-number display" id="streak-current">—</p>
+              <p class="view-note" id="streak-longest"></p>
             </div>
           </section>
 
@@ -463,13 +469,17 @@
               </div>
             </section>
 
-            <section class="panel overview-card months-panel" aria-labelledby="months-title">
+            <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">
               <div class="activity-head">
-                <h2 class="overview-card-title" id="months-title">By month</h2>
-                <span class="change-pill" id="months-change" hidden></span>
+                <h2 class="overview-card-title" id="milestone-title">Milestones</h2>
+                <span class="change-pill is-flat" id="milestone-remaining"></span>
               </div>
-              <p class="view-note months-this" id="months-this"></p>
-              <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month"></div>
+              <p class="milestone-headline display" id="milestone-next-label">—</p>
+              <p class="milestone-next" id="milestone-passed"></p>
+              <div class="milestone-progress" aria-hidden="true">
+                <div class="milestone-line"><i id="milestone-fill"></i></div>
+                <div class="milestone-ends"><span id="milestone-from"></span><span id="milestone-to"></span></div>
+              </div>
             </section>
           </div>
 
@@ -478,16 +488,15 @@
               <h2 class="overview-card-title" id="insight-title">What your words add up to</h2>
               <p class="insight-lede" id="insight-lede"></p>
               <p class="insight-headline display" id="insight-headline">—</p>
-              <p class="insight-list" id="insight-list"></p>
             </section>
 
-            <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">
+            <section class="panel overview-card months-panel" aria-labelledby="months-title">
               <div class="activity-head">
-                <h2 class="overview-card-title" id="milestone-title">Milestones</h2>
-                <span class="view-note" id="milestone-remaining"></span>
+                <h2 class="overview-card-title" id="months-title">By month</h2>
+                <span class="change-pill" id="months-change" hidden></span>
               </div>
-              <p class="milestone-next" id="milestone-next-label">—</p>
-              <p class="milestone-passed" id="milestone-passed"></p>
+              <p class="view-note months-this" id="months-this"></p>
+              <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month"></div>
             </section>
           </div>
 

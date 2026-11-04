@@ -6321,9 +6321,9 @@ select {
 /* --- Overview: hero, activity calendar, months, insights, milestones -------- */
 
 /*
- * The home screen. One big number with the streak beside it, then two rows
- * of two cards: the half-year calendar beside the months, what the words
- * add up to beside the milestones. The machine's own rows and the privacy
+ * The home screen. The pace and the big number, with the streak beside them, then two rows
+ * of two cards: the half-year calendar beside the milestones, what the words
+ * add up to beside the months. The machine's own rows and the privacy
  * note come last. Under ~760px the pairs stack. The accent is the only
  * colour that means anything: the days, the bars and the milestones all
  * speak in it.
@@ -6335,9 +6335,9 @@ select {
 
 .overview-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px 32px;
-  align-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 0;
+  align-items: center;
   padding: 26px 28px 24px;
   margin-bottom: 14px;
   border: 1px solid var(--hairline);
@@ -6373,36 +6373,22 @@ select {
   margin-top: 12px;
 }
 
-/* The streak as a pill: a dot that glows while one is running. */
-.streak-pill {
-  display: inline-flex;
+/* The streak card: a dot that glows while one is running. */
+.streak-label {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  height: 26px;
-  padding: 0 11px 0 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 580;
-  font-variant-numeric: tabular-nums;
+  gap: 7px;
 }
 
 .streak-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--ink-faint);
   transition: background 200ms ease, box-shadow 200ms ease;
 }
 
-.streak-pill.is-live {
-  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
-  color: var(--ink);
-}
-
-.streak-pill.is-live .streak-dot {
+.streak-card.is-live .streak-dot {
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
   animation: streak-glow 2.4s ease-in-out infinite;
@@ -6413,34 +6399,23 @@ select {
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
 }
 
-.overview-hero-side {
-  display: grid;
-  grid-auto-flow: column;
-  gap: 10px;
+/* The streak closes the row, ruled off like the pace that opens it. */
+.hero-streak {
+  padding: 0 24px;
+  border-left: 1px solid var(--hairline);
+  text-align: center;
 }
 
-.hero-stat {
-  display: grid;
-  gap: 2px;
-  min-width: 132px;
-  padding: 12px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+.hero-streak .streak-label {
+  justify-content: center;
 }
 
-.hero-stat b {
-  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-size: 24px;
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
+.hero-streak-number {
+  margin: 0 0 6px;
+  font-size: 34px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-}
-
-.hero-stat span {
-  color: var(--ink-soft);
-  font-size: 12px;
 }
 
 .overview-grid {
@@ -6476,12 +6451,20 @@ select {
 
 /* The two in a row stand the same height, whatever each holds. */
 .activity-panel,
-.months-panel {
+.milestone-panel {
   min-height: 236px;
 }
 
+/* The middle third: ruled off both sides, centred like its neighbours. */
 .overview-hero-main {
   min-width: 0;
+  padding: 0 24px;
+  border-left: 1px solid var(--hairline);
+  text-align: center;
+}
+
+.overview-hero-main .overview-hero-meta {
+  justify-content: center;
 }
 
 .activity-head {
@@ -6731,7 +6714,7 @@ select {
   align-items: flex-end;
   justify-content: stretch;
   gap: 8px;
-  height: 148px;
+  height: 92px;
   margin-top: auto;
 }
 
@@ -6821,33 +6804,140 @@ select {
   margin-bottom: 14px;
 }
 
+/* With nothing beneath it, the equivalent sits in the middle of the card. */
 .insight-lede {
-  margin: 0 0 4px;
+  margin: auto 0 4px;
   min-height: 18px;
   color: var(--ink-soft);
   font-size: 13px;
 }
 
 .insight-headline {
-  margin: 0 0 10px;
+  margin: 0 0 auto;
   min-height: 34px;
   font-size: 30px;
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
 
-.insight-list {
-  margin: auto 0 0;
-  min-height: 18px;
+/* The second row is kept short: the equivalent and a low run of months. */
+.insight-panel,
+.months-panel {
+  min-height: 0;
+}
+
+/* --- Overview: speaking pace ---------------------------------------------- */
+
+/* The first thing in the hero, set off from the word count by a rule. */
+.pace-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 24px;
+}
+
+.pace-panel .overview-hero-label {
+  margin-bottom: 10px;
+}
+
+.pace-gauge {
+  position: relative;
+  width: 100%;
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.pace-gauge svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.pace-track,
+.pace-fill {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.pace-track {
+  stroke: var(--hairline);
+}
+
+/* Drawn as a share of the arc's length: `pathLength` makes the whole of it 100. */
+.pace-fill {
+  stroke: var(--accent);
+  stroke-dasharray: var(--pace, 0) 100;
+  transition: stroke-dasharray 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pace-gauge.is-waiting .pace-fill {
+  stroke: transparent;
+}
+
+.pace-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  margin: 0;
+  text-align: center;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pace-gauge.is-waiting .pace-number {
+  color: var(--ink-faint);
+}
+
+.pace-unit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  margin: 0;
+  text-align: center;
   color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.pace-comparison {
+  margin: 10px 0 0;
+  min-height: 18px;
+  text-align: center;
+  color: var(--ink);
   font-size: 13px;
-  line-height: 1.5;
+  font-weight: 560;
+}
+
+.pace-gauge.is-waiting + .pace-comparison {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pace-fill {
+    transition: none;
+  }
 }
 
 /* --- Overview: milestones ------------------------------------------------- */
 
+/* How far to the next one, large, over a bar of the way there. */
+.milestone-headline {
+  margin: 0 0 4px;
+  min-height: 34px;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
 .milestone-next {
-  margin: 0 0 18px;
+  margin: 0;
   min-height: 18px;
   color: var(--ink-soft);
   font-size: 13px;
@@ -6857,6 +6947,51 @@ select {
   color: var(--ink);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* Only the stretch to the next milestone: the last one passed on the left,
+   the next on the right, filled to where the count stands between them. */
+.milestone-progress {
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+.milestone-line {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.milestone-line i {
+  display: block;
+  width: var(--fill, 0%);
+  min-width: 10px;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.milestone-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone-ends span:last-child {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milestone-line i {
+    transition: none;
+  }
 }
 
 /* A passed milestone warms the card for a moment. */
@@ -6875,8 +7010,7 @@ select {
 
 @container overview (max-width: 760px) {
   .overview-hero {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 22px 22px 20px;
   }
 
@@ -6884,22 +7018,26 @@ select {
     font-size: 44px;
   }
 
-  .overview-hero-side {
-    grid-auto-flow: row;
-    grid-template-columns: 1fr 1fr;
+  .hero-streak {
+    padding: 0 0 0 16px;
   }
 
   .overview-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .pace-panel {
+    grid-column: 1 / -1;
+    padding: 0 0 18px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .overview-hero-main {
+    padding: 0 16px 0 0;
+    border-left: 0;
+  }
 }
 
 #view-overview [hidden] {
   display: none;
-}
-
-.milestone-passed {
-  margin: 6px 0 0;
-  color: var(--ink-faint);
-  font-size: 12px;
 }

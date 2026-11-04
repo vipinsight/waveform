@@ -41,6 +41,15 @@ pub struct MonthStat {
     pub active_days: u64,
 }
 
+/// Timed words over the time they took, for words per minute. Only phrases
+/// the overlay timed count, on both sides of the division.
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Pace {
+    pub words: u64,
+    pub speech_ms: u64,
+}
+
 /// What the Overview's calendar and insights are drawn from.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,7 +66,12 @@ pub struct Activity {
     pub longest_streak: u64,
     /// Days with at least one phrase, ever.
     pub active_days: u64,
+    /// Speaking pace over today and the six days before it.
+    pub pace: Pace,
 }
+
+/// The pace is this week's: today and the six days before it.
+const PACE_DAYS: i64 = 7;
 
 /// How far back the calendar reaches: a year of weeks, like a commit graph.
 const CALENDAR_DAYS: i64 = 53 * 7;
@@ -82,13 +96,16 @@ impl StatsStore {
         self.value()
     }
 
-    pub fn record_phrase(&mut self, text: &str) -> AppStats {
+    /// Counts a phrase. `speech_ms` is how long saying it took; zero means
+    /// it was not timed and stays out of the pace.
+    pub fn record_phrase(&mut self, text: &str, speech_ms: u64) -> AppStats {
         let words = text.split_whitespace().count() as i64;
+        let speech_ms = speech_ms.min(i64::MAX as u64) as i64;
         let _ = self.db.with(|connection| {
             let transaction = connection.transaction()?;
             bump(&transaction, "words", words)?;
             bump(&transaction, "phrases", 1)?;
-            bump_day(&transaction, words)?;
+            bump_day(&transaction, words, speech_ms)?;
             transaction.commit()
         });
         self.value()
@@ -126,14 +143,36 @@ fn bump(connection: &Connection, key: &str, by: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Adds a phrase to today's row, creating the day on first use.
-fn bump_day(connection: &Connection, words: i64) -> rusqlite::Result<()> {
+/// Adds a phrase to today's row, creating the day on first use. A timed
+/// phrase also adds its words and time to the pace columns.
+fn bump_day(connection: &Connection, words: i64, speech_ms: i64) -> rusqlite::Result<()> {
+    let timed_words = if speech_ms > 0 { words } else { 0 };
     connection.execute(
-        "INSERT INTO daily_stats (day, words, phrases) VALUES (date('now', 'localtime'), ?1, 1)
-         ON CONFLICT(day) DO UPDATE SET words = words + excluded.words, phrases = phrases + 1",
-        params![words],
+        "INSERT INTO daily_stats (day, words, phrases, speech_ms, timed_words)
+         VALUES (date('now', 'localtime'), ?1, 1, ?2, ?3)
+         ON CONFLICT(day) DO UPDATE SET
+            words = words + excluded.words,
+            phrases = phrases + 1,
+            speech_ms = speech_ms + excluded.speech_ms,
+            timed_words = timed_words + excluded.timed_words",
+        params![words, speech_ms, timed_words],
     )?;
     Ok(())
+}
+
+/// Timed words and time over the last `days` days, today included.
+fn read_pace(connection: &Connection, days: i64) -> rusqlite::Result<Pace> {
+    let (words, speech_ms): (i64, i64) = connection.query_row(
+        "SELECT COALESCE(SUM(timed_words), 0), COALESCE(SUM(speech_ms), 0)
+           FROM daily_stats
+          WHERE day > date('now', 'localtime', '-' || ?1 || ' days')",
+        params![days],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok(Pace {
+        words: words.max(0) as u64,
+        speech_ms: speech_ms.max(0) as u64,
+    })
 }
 
 fn read_activity(connection: &mut Connection) -> rusqlite::Result<Activity> {
@@ -190,6 +229,8 @@ fn read_activity(connection: &mut Connection) -> rusqlite::Result<Activity> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    let pace = read_pace(connection, PACE_DAYS)?;
+
     Ok(Activity {
         today,
         days,
@@ -197,6 +238,7 @@ fn read_activity(connection: &mut Connection) -> rusqlite::Result<Activity> {
         current_streak,
         longest_streak,
         active_days: numbers.len() as u64,
+        pace,
     })
 }
 
@@ -242,8 +284,8 @@ mod tests {
     fn counts_words_phrases_and_sessions() {
         let mut stats = store();
         stats.record_session();
-        stats.record_phrase("one two three");
-        let value = stats.record_phrase("four");
+        stats.record_phrase("one two three", 0);
+        let value = stats.record_phrase("four", 0);
         assert_eq!(value.sessions, 1);
         assert_eq!(value.phrases, 2);
         assert_eq!(value.words, 4);
@@ -253,9 +295,9 @@ mod tests {
     #[test]
     fn a_second_counter_adds_to_the_same_total() {
         let mut first = store();
-        first.record_phrase("a b");
+        first.record_phrase("a b", 0);
         let mut second = StatsStore::new(Database::open(first.db.dir()).database);
-        let value = second.record_phrase("c");
+        let value = second.record_phrase("c", 0);
         assert_eq!(value.words, 3);
         assert_eq!(value.phrases, 2);
         assert_eq!(first.value().words, 3);
@@ -264,8 +306,8 @@ mod tests {
     #[test]
     fn a_phrase_lands_on_today() {
         let mut stats = store();
-        stats.record_phrase("one two three");
-        stats.record_phrase("four");
+        stats.record_phrase("one two three", 0);
+        stats.record_phrase("four", 0);
         let activity = stats.activity();
         assert_eq!(activity.days.len(), 1);
         assert_eq!(activity.days[0].day, activity.today);
@@ -322,5 +364,22 @@ mod tests {
         assert_eq!(activity.months.len(), 2);
         assert_eq!(activity.current_streak, 0);
         assert_eq!(activity.longest_streak, 1);
+    }
+
+    /// Only timed phrases count toward the pace, on both sides of it, and
+    /// days before this week stay out.
+    #[test]
+    fn pace_counts_only_timed_phrases() {
+        let mut stats = store();
+        stats.record_phrase("one two three four", 2_000);
+        stats.record_phrase("five six", 0);
+        let _ = stats.db.with(|connection| {
+            connection.execute(
+                "INSERT INTO daily_stats (day, words, phrases, speech_ms, timed_words)
+                 VALUES (date('now', 'localtime', '-10 days'), 30, 3, 6000, 30)",
+                [],
+            )
+        });
+        assert_eq!(stats.activity().pace, Pace { words: 4, speech_ms: 2_000 });
     }
 }

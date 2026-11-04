@@ -39,10 +39,13 @@ import {
   dayKey,
   insights,
   milestoneProgress,
+  shortWords,
   monthBars,
   monthChange,
   monthDelta,
-  streakLine,
+  NO_PACE,
+  paceGauge,
+  streakCard,
 } from "../shared/activity";
 import type { Activity } from "../shared/contracts";
 import { isPolishLevel, type PolishLevel } from "../shared/polish-levels";
@@ -137,23 +140,27 @@ const element = {
   meetingsToggle: requireElement<HTMLInputElement>("meetings-toggle"),
   navMeetings: requireElement<HTMLElement>("nav-meetings"),
   statWords: requireElement<HTMLElement>("stat-words"),
-  statPhrases: requireElement<HTMLElement>("stat-phrases"),
-  statSessions: requireElement<HTMLElement>("stat-sessions"),
-  activityStreak: requireElement<HTMLElement>("activity-streak"),
-  activityStreakPill: requireElement<HTMLElement>("activity-streak-pill"),
+  streakCardBox: requireElement<HTMLElement>("streak-card"),
+  streakCurrent: requireElement<HTMLElement>("streak-current"),
+  streakLongest: requireElement<HTMLElement>("streak-longest"),
   activityTip: requireElement<HTMLElement>("activity-tip"),
   milestonePanel: requireElement<HTMLElement>("milestone-panel"),
   activityActiveDays: requireElement<HTMLElement>("activity-active-days"),
   activityCalendar: requireElement<HTMLElement>("activity-calendar"),
   insightHeadline: requireElement<HTMLElement>("insight-headline"),
   insightLede: requireElement<HTMLElement>("insight-lede"),
-  insightList: requireElement<HTMLElement>("insight-list"),
   milestoneNextLabel: requireElement<HTMLElement>("milestone-next-label"),
   milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
   milestonePassed: requireElement<HTMLElement>("milestone-passed"),
+  milestoneFill: requireElement<HTMLElement>("milestone-fill"),
+  milestoneFrom: requireElement<HTMLElement>("milestone-from"),
+  milestoneTo: requireElement<HTMLElement>("milestone-to"),
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
+  paceGauge: requireElement<HTMLElement>("pace-gauge"),
+  paceNumber: requireElement<HTMLElement>("pace-number"),
+  paceComparison: requireElement<HTMLElement>("pace-comparison"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
@@ -2324,8 +2331,6 @@ function renderOnboard(): void {
 function renderStats(stats: AppStats): void {
   lifetimeSessions = stats.sessions;
   element.statWords.textContent = stats.words.toLocaleString();
-  element.statPhrases.textContent = stats.phrases.toLocaleString();
-  element.statSessions.textContent = stats.sessions.toLocaleString();
   renderEmptyState();
 }
 
@@ -4353,6 +4358,24 @@ function renderActivity(activity: Activity): void {
   renderActivityCalendar(activity);
   renderInsights();
   renderMonths(activity);
+  renderPace(activity);
+}
+
+/**
+ * This week's words per minute as a half dial in the accent, filled to the
+ * share of 200 the pace reaches. Greyed, with a nudge, until the week holds
+ * enough speech.
+ */
+function renderPace(activity: Activity): void {
+  const gauge = paceGauge(activity.pace);
+  element.paceGauge.classList.toggle("is-waiting", !gauge.ready);
+  element.paceGauge.style.setProperty("--pace", (gauge.fraction * 100).toFixed(2));
+  element.paceNumber.textContent = gauge.ready ? String(gauge.wpm) : "—";
+  element.paceComparison.textContent = gauge.ready ? gauge.comparison : "Dictate a little more this week to see your pace";
+  element.paceGauge.setAttribute(
+    "aria-label",
+    gauge.ready ? `${gauge.wpm} words per minute this week` : "Speaking pace: not enough speech this week yet",
+  );
 }
 
 /** The lifetime word count the hero already shows, read back as a number. */
@@ -4367,8 +4390,10 @@ function lifetimeWords(): number {
  * view. Days before the first word are drawn but kept quiet.
  */
 function renderActivityCalendar(activity: Activity): void {
-  element.activityStreak.textContent = streakLine(activity);
-  element.activityStreakPill.classList.toggle("is-live", activity.currentStreak > 0);
+  const streak = streakCard(activity);
+  element.streakCurrent.textContent = streak.current;
+  element.streakLongest.textContent = streak.longest;
+  element.streakCardBox.classList.toggle("is-live", activity.currentStreak > 0);
   element.activityActiveDays.textContent =
     activity.activeDays === 0
       ? "Nothing yet"
@@ -4464,10 +4489,19 @@ function bindActivityTooltip(): void {
 /** The first thing on the page before any numbers arrive: the shape of a calendar. */
 function renderActivityPlaceholder(): void {
   const today = dayKey(new Date());
-  renderActivityCalendar({ today, days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0 });
+  renderActivityCalendar({
+    today,
+    days: [],
+    months: [],
+    currentStreak: 0,
+    longestStreak: 0,
+    activeDays: 0,
+    pace: NO_PACE,
+  });
   element.activityCalendar.classList.add("is-loading");
   element.activityActiveDays.textContent = "";
-  element.activityStreak.textContent = "—";
+  element.streakCurrent.textContent = "—";
+  element.streakLongest.textContent = "";
 }
 
 /** Uses the lifetime word count the hero already shows. */
@@ -4478,16 +4512,6 @@ function renderInsights(): void {
   element.insightHeadline.textContent = headline ? headline.text : "—";
   element.insightLede.textContent =
     words === 0 ? "Dictate something and this starts counting." : `${words.toLocaleString()} words so far. That is about`;
-  // "60% of a novel" is the share of the next unit up; said as a distance.
-  const rest = lines
-    .filter((line) => !line.headline)
-    .map((line) => line.text.replace(/^(\d+%) of (.+)$/, "$1 of the way to $2"));
-  element.insightList.textContent =
-    rest.length === 2
-      ? `Put another way: ${rest[0]} — and ${rest[1]}.`
-      : rest.length === 1
-        ? `Put another way: ${rest[0]}.`
-        : "";
   renderMilestones(words);
 }
 
@@ -4497,23 +4521,24 @@ function renderInsights(): void {
  */
 function renderMilestones(words: number): void {
   const progress = milestoneProgress(words);
-  const remaining = progress.next === null ? "" : `${progress.remaining.toLocaleString()} to go`;
+  // Only how many are behind, never the whole ladder ahead.
+  const passed = progress.reached.length;
+  const remaining = passed === 0 ? "" : `${passed} passed`;
   element.milestoneRemaining.textContent = remaining;
   if (progress.next === null) {
     element.milestoneNextLabel.textContent = "Every milestone reached";
+    element.milestonePassed.textContent = `${words.toLocaleString()} words and counting.`;
   } else {
-    element.milestoneNextLabel.replaceChildren(
-      progress.reached.length === 0 ? "First milestone: " : "Next milestone: ",
+    element.milestoneNextLabel.textContent = `${progress.remaining.toLocaleString()} words to go`;
+    element.milestonePassed.replaceChildren(
+      progress.reached.length === 0 ? "To your first milestone, " : "To ",
       Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
+      ` · ${Math.floor(progress.fraction * 100)}% of the way there`,
     );
   }
-  const passed = progress.reached.map((milestone) => milestone.toLocaleString());
-  element.milestonePassed.textContent =
-    passed.length === 0
-      ? ""
-      : passed.length === 1
-        ? `Passed ${passed[0]} words`
-        : `Passed ${passed.slice(0, -1).join(", ")} and ${passed[passed.length - 1]} words`;
+  element.milestoneFill.style.setProperty("--fill", `${(progress.fraction * 100).toFixed(2)}%`);
+  element.milestoneFrom.textContent = progress.next === null ? "" : `${shortWords(progress.previous)} words`;
+  element.milestoneTo.textContent = progress.next === null ? "" : `${shortWords(progress.next)} words`;
 
   const latest = progress.reached[progress.reached.length - 1] ?? null;
   const celebrate = milestonesSeen !== null && latest !== null && latest > milestonesSeen;
@@ -4532,6 +4557,9 @@ function renderMilestones(words: number): void {
 /** The largest milestone passed at the last render; null before the first. */
 let milestonesSeen: number | null = null;
 let celebrationTimer: number | undefined;
+
+/** The tallest month's bar, in pixels. */
+const MONTH_BAR_PX = 48;
 
 /** 1,000 → "1k", 2,500,000 → "2.5M". */
 function shortCount(value: number): string {
@@ -4573,7 +4601,8 @@ function renderMonths(activity: Activity): void {
       const value = document.createElement("b");
       value.textContent = bar.words === 0 ? "" : shortCount(bar.words >= 1_000 ? Math.round(bar.words / 100) * 100 : bar.words);
       const fill = document.createElement("i");
-      fill.style.height = `${bar.words === 0 ? 3 : Math.max(4, Math.round((bar.words / max) * 100))}px`;
+      // The tallest bar leaves room above it for its count and below for the label.
+      fill.style.height = `${bar.words === 0 ? 3 : Math.max(4, Math.round((bar.words / max) * MONTH_BAR_PX))}px`;
       const label = document.createElement("small");
       label.textContent = bar.label.split(" ")[0] ?? bar.label;
       column.append(value, fill, label);

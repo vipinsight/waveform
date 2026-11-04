@@ -4,7 +4,7 @@
  * plain data, so they can be tested without a window.
  */
 
-import type { Activity, DayStat, MonthStat } from "./contracts";
+import type { Activity, DayStat, MonthStat, Pace } from "./contracts";
 
 /** Word counts worth marking. Each one is roughly double the last. */
 export const MILESTONES = [
@@ -31,6 +31,14 @@ export function milestoneProgress(words: number): MilestoneProgress {
   const previous = reached[reached.length - 1] ?? 0;
   const fraction = next === null ? 1 : Math.min(1, Math.max(0, (words - previous) / (next - previous)));
   return { reached, next, previous, fraction, remaining: next === null ? 0 : next - words };
+}
+
+/** 1,000 → "1k", 2,500,000 → "2.5M". */
+export function shortWords(value: number): string {
+  const trim = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  if (value >= 1_000_000) return `${trim(value / 1_000_000)}M`;
+  if (value >= 1_000) return `${trim(value / 1_000)}k`;
+  return String(value);
 }
 
 /** Things a word count can be measured against, smallest first. */
@@ -287,10 +295,69 @@ export function monthChange(bars: MonthBar[]): string {
   return delta > 0 ? `Up ${delta}% on last month` : `Down ${Math.abs(delta)}% on last month`;
 }
 
-/** A line for the streak header. */
-export function streakLine(activity: Activity): string {
+export interface StreakCard {
+  /** "4 days", or "0 days" with nothing running. */
+  current: string;
+  /** The line under it: the record, or that this run is the record. */
+  longest: string;
+}
+
+/** The streak card: the run going now, with the longest beneath it. */
+export function streakCard(activity: Activity): StreakCard {
   const { currentStreak, longestStreak } = activity;
-  if (currentStreak === 0) return longestStreak > 0 ? `Longest streak ${longestStreak} days` : "No streak yet";
-  const current = `${currentStreak}-day streak`;
-  return currentStreak >= longestStreak ? `${current}, your longest` : `${current} · longest ${longestStreak}`;
+  const days = (n: number) => `${n.toLocaleString()} ${n === 1 ? "day" : "days"}`;
+  let longest: string;
+  if (longestStreak === 0) longest = "Dictate today to start one";
+  else if (currentStreak > 0 && currentStreak >= longestStreak) longest = "Your longest yet";
+  else longest = `Longest: ${days(longestStreak)}`;
+  return { current: days(currentStreak), longest };
+}
+
+/** Where the pace gauge tops out. Fast conversational speech is about 160. */
+export const PACE_SCALE_WPM = 200;
+/** A typical typist, the figure speaking is compared against. */
+export const TYPING_WPM = 40;
+/** Less speech than this in the week and one phrase swings the average. */
+export const PACE_MINIMUM_MS = 5_000;
+
+/** No timed speech at all: the shape of `Activity.pace` before any numbers. */
+export const NO_PACE: Pace = { words: 0, speechMs: 0 };
+
+export interface PaceGauge {
+  /** False until the week holds enough timed speech to say anything. */
+  ready: boolean;
+  /** Words per minute, rounded; 0 when not ready. */
+  wpm: number;
+  /** How far round the gauge, 0..1. */
+  fraction: number;
+  /** "3× faster than typing", or as close as the numbers allow. */
+  comparison: string;
+}
+
+export function wordsPerMinute(pace: Pace): number {
+  return pace.speechMs > 0 ? (pace.words * 60_000) / pace.speechMs : 0;
+}
+
+/** This week's pace on the dial, so it moves as the person's habits do. */
+export function paceGauge(pace: Pace): PaceGauge {
+  const ready = pace.speechMs >= PACE_MINIMUM_MS;
+  const wpm = ready ? Math.round(wordsPerMinute(pace)) : 0;
+  return {
+    ready,
+    wpm,
+    fraction: Math.min(1, wpm / PACE_SCALE_WPM),
+    comparison: ready ? typingComparison(wpm) : "",
+  };
+}
+
+/** Speaking against typing, said the way a person would say it. */
+export function typingComparison(wpm: number): string {
+  const ratio = wpm / TYPING_WPM;
+  if (ratio >= 1.95) {
+    const rounded = Math.round(ratio * 2) / 2;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}× faster than typing`;
+  }
+  if (ratio >= 1.1) return `${Math.round((ratio - 1) * 100)}% faster than typing`;
+  if (ratio > 0.9) return "About as fast as typing";
+  return "Slower than typing, for now";
 }

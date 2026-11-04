@@ -7,10 +7,14 @@ import {
   insights,
   localDate,
   milestoneProgress,
+  shortWords,
   monthBars,
   monthChange,
   monthDelta,
-  streakLine,
+  NO_PACE,
+  paceGauge,
+  streakCard,
+  typingComparison,
 } from "../src/shared/activity";
 import type { Activity } from "../src/shared/contracts";
 
@@ -187,12 +191,47 @@ describe("monthBars", () => {
   });
 });
 
-describe("streakLine", () => {
-  const base: Activity = { today: "2026-10-02", days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0 };
-  it("says what there is", () => {
-    expect(streakLine(base)).toBe("No streak yet");
-    expect(streakLine({ ...base, longestStreak: 4 })).toBe("Longest streak 4 days");
-    expect(streakLine({ ...base, currentStreak: 3, longestStreak: 3 })).toBe("3-day streak, your longest");
-    expect(streakLine({ ...base, currentStreak: 2, longestStreak: 9 })).toBe("2-day streak · longest 9");
+describe("streakCard", () => {
+  const base: Activity = { today: "2026-10-02", days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0, pace: NO_PACE };
+  it("shows the run now with the record beneath it", () => {
+    expect(streakCard(base)).toEqual({ current: "0 days", longest: "Dictate today to start one" });
+    expect(streakCard({ ...base, longestStreak: 4 })).toEqual({ current: "0 days", longest: "Longest: 4 days" });
+    expect(streakCard({ ...base, currentStreak: 3, longestStreak: 3 })).toEqual({ current: "3 days", longest: "Your longest yet" });
+    expect(streakCard({ ...base, currentStreak: 1, longestStreak: 9 })).toEqual({ current: "1 day", longest: "Longest: 9 days" });
+  });
+});
+
+describe("paceGauge", () => {
+  const minutes = (n: number) => n * 60_000;
+
+  it("waits for five seconds of speech this week", () => {
+    const gauge = paceGauge({ words: 8, speechMs: 4_000 });
+    expect(gauge).toEqual({ ready: false, wpm: 0, fraction: 0, comparison: "" });
+  });
+
+  it("reads the week's pace against typing", () => {
+    const gauge = paceGauge({ words: 1_200, speechMs: minutes(10) });
+    expect(gauge).toMatchObject({ ready: true, wpm: 120, comparison: "3× faster than typing" });
+    expect(gauge.fraction).toBeCloseTo(0.6);
+  });
+
+  it("keeps the needle on the dial", () => {
+    expect(paceGauge({ words: 1_500, speechMs: minutes(4) }).fraction).toBe(1);
+  });
+});
+
+describe("typingComparison", () => {
+  it("speaks in multiples, then percentages, then plainly", () => {
+    expect(typingComparison(130)).toBe("3.5× faster than typing");
+    expect(typingComparison(80)).toBe("2× faster than typing");
+    expect(typingComparison(60)).toBe("50% faster than typing");
+    expect(typingComparison(40)).toBe("About as fast as typing");
+    expect(typingComparison(20)).toBe("Slower than typing, for now");
+  });
+});
+
+describe("shortWords", () => {
+  it("labels counts short", () => {
+    expect([1_000, 2_500_000, 10_000_000, 25_000].map(shortWords)).toEqual(["1k", "2.5M", "10M", "25k"]);
   });
 });

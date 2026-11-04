@@ -188,6 +188,8 @@ export interface DictationStatus {
 export interface DictationPhrase {
   text: string;
   sink: DictationSink;
+  /** How long the speaking took, first voiced frame to last. Overlay to host only. */
+  speechMs?: number;
 }
 
 /** A phrase cut from the mic, stashed before the engine returns words. */
@@ -436,6 +438,14 @@ export interface Activity {
   currentStreak: number;
   longestStreak: number;
   activeDays: number;
+  /** Speaking pace over today and the six days before it. */
+  pace: Pace;
+}
+
+/** Timed words over the time saying them took. Untimed phrases count in neither. */
+export interface Pace {
+  words: number;
+  speechMs: number;
 }
 
 export interface HotkeyStatus {

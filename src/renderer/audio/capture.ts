@@ -1,6 +1,7 @@
 import { InputGain, normalizePhrase } from "./gain";
 import { SpeechSegmenter, rootMeanSquare } from "./segmenter";
 import { SPECTRUM_WINDOW, spectrumFromBlock } from "./spectrum";
+import { speechSpanMs } from "./speech-span";
 import { encodeMonoPcm16Wav } from "./wav";
 
 /**
@@ -42,8 +43,11 @@ export interface CaptureHandlers {
    * otherwise run against an empty buffer and the recording is gone.
    */
   onClip(wav: Uint8Array): void | Promise<void>;
-  /** A finished phrase, already transcribed. Audio was stashed via onClip. */
-  onPhrase(text: string): void | Promise<void>;
+  /**
+   * A finished phrase, already transcribed. Audio was stashed via onClip.
+   * `speechMs` is how long the speaking in it took, for the pace figure.
+   */
+  onPhrase(text: string, speechMs: number): void | Promise<void>;
   /** Fired when transcription work starts and finishes, to drive the HUD state. */
   onPendingChange(pending: number): void;
   onError(message: string): void;
@@ -391,7 +395,7 @@ export class AudioCapture {
         // Must finish before pending drops to zero: idle flush races the
         // phrase IPC, and an early flush drops the words before history
         // sees them (audio is already stashed).
-        await this.handlers.onPhrase(text);
+        await this.handlers.onPhrase(text, speechSpanMs(wav));
       } catch (error: unknown) {
         if (this.discarding) return;
         this.failed += 1;
