@@ -4,7 +4,7 @@
  * plain data, so they can be tested without a window.
  */
 
-import type { Activity, DayStat, MonthStat } from "./contracts";
+import type { Activity, DayStat, MonthStat, Pace, Paces } from "./contracts";
 
 /** Word counts worth marking. Each one is roughly double the last. */
 export const MILESTONES = [
@@ -293,4 +293,74 @@ export function streakLine(activity: Activity): string {
   if (currentStreak === 0) return longestStreak > 0 ? `Longest streak ${longestStreak} days` : "No streak yet";
   const current = `${currentStreak}-day streak`;
   return currentStreak >= longestStreak ? `${current}, your longest` : `${current} · longest ${longestStreak}`;
+}
+
+/** Where the pace gauge tops out. Fast conversational speech is about 160. */
+export const PACE_SCALE_WPM = 200;
+/** A typical typist, the figure speaking is compared against. */
+export const TYPING_WPM = 40;
+/** Less speech than this and the average is mostly noise. */
+export const PACE_MINIMUM_MS = 3 * 60_000;
+
+/** No timed speech at all: the shape of `Activity.pace` before any numbers. */
+export const NO_PACE: Paces = {
+  allTime: { words: 0, speechMs: 0 },
+  last7: { words: 0, speechMs: 0 },
+  last30: { words: 0, speechMs: 0 },
+};
+
+export interface PaceGauge {
+  /** False until there is enough timed speech to say anything. */
+  ready: boolean;
+  /** Words per minute, rounded; 0 when not ready. */
+  wpm: number;
+  /** How far round the gauge, 0..1. */
+  fraction: number;
+  /** Which window `wpm` describes. */
+  window: "last 30 days" | "all time";
+  /** "3× faster than typing", or as close as the numbers allow. */
+  comparison: string;
+  /** The other windows, for the small print. Empty when there is nothing to add. */
+  detail: string;
+}
+
+export function wordsPerMinute(pace: Pace): number {
+  return pace.speechMs > 0 ? (pace.words * 60_000) / pace.speechMs : 0;
+}
+
+/**
+ * The gauge reads the last thirty days once they hold enough speech, so it
+ * moves as the person's habits do; until then, everything there is.
+ */
+export function paceGauge(paces: Paces): PaceGauge {
+  const recent = paces.last30.speechMs >= PACE_MINIMUM_MS;
+  const ready = recent || paces.allTime.speechMs >= PACE_MINIMUM_MS;
+  const wpm = ready ? Math.round(wordsPerMinute(recent ? paces.last30 : paces.allTime)) : 0;
+  const details: string[] = [];
+  if (recent && paces.last7.speechMs >= PACE_MINIMUM_MS) {
+    details.push(`Last 7 days: ${Math.round(wordsPerMinute(paces.last7))}`);
+  }
+  if (recent && paces.allTime.speechMs > paces.last30.speechMs) {
+    details.push(`All time: ${Math.round(wordsPerMinute(paces.allTime))}`);
+  }
+  return {
+    ready,
+    wpm,
+    fraction: Math.min(1, wpm / PACE_SCALE_WPM),
+    window: recent ? "last 30 days" : "all time",
+    comparison: ready ? typingComparison(wpm) : "",
+    detail: details.join(" · "),
+  };
+}
+
+/** Speaking against typing, said the way a person would say it. */
+export function typingComparison(wpm: number): string {
+  const ratio = wpm / TYPING_WPM;
+  if (ratio >= 1.95) {
+    const rounded = Math.round(ratio * 2) / 2;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}× faster than typing`;
+  }
+  if (ratio >= 1.1) return `${Math.round((ratio - 1) * 100)}% faster than typing`;
+  if (ratio > 0.9) return "About as fast as typing";
+  return "Slower than typing, for now";
 }

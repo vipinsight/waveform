@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 /// Shared handle to the open database.
 ///
@@ -304,6 +304,15 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                 rusqlite::params![day, words],
             )?;
         }
+    }
+    if version < 8 {
+        // How long the speaking took each day, for words per minute. Only
+        // phrases timed from here on count, so `timed_words` keeps their
+        // words apart: days from before have words but no time to divide by.
+        transaction.execute_batch(
+            "ALTER TABLE daily_stats ADD COLUMN speech_ms INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE daily_stats ADD COLUMN timed_words INTEGER NOT NULL DEFAULT 0;",
+        )?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()

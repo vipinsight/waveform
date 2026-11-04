@@ -10,7 +10,10 @@ import {
   monthBars,
   monthChange,
   monthDelta,
+  NO_PACE,
+  paceGauge,
   streakLine,
+  typingComparison,
 } from "../src/shared/activity";
 import type { Activity } from "../src/shared/contracts";
 
@@ -188,11 +191,53 @@ describe("monthBars", () => {
 });
 
 describe("streakLine", () => {
-  const base: Activity = { today: "2026-10-02", days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0 };
+  const base: Activity = { today: "2026-10-02", days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0, pace: NO_PACE };
   it("says what there is", () => {
     expect(streakLine(base)).toBe("No streak yet");
     expect(streakLine({ ...base, longestStreak: 4 })).toBe("Longest streak 4 days");
     expect(streakLine({ ...base, currentStreak: 3, longestStreak: 3 })).toBe("3-day streak, your longest");
     expect(streakLine({ ...base, currentStreak: 2, longestStreak: 9 })).toBe("2-day streak · longest 9");
+  });
+});
+
+describe("paceGauge", () => {
+  const minutes = (n: number) => n * 60_000;
+  const pace = (words: number, speechMs: number) => ({ words, speechMs });
+
+  it("waits for a few minutes of speech", () => {
+    const gauge = paceGauge({ allTime: pace(200, minutes(2)), last7: pace(200, minutes(2)), last30: pace(200, minutes(2)) });
+    expect(gauge.ready).toBe(false);
+    expect(gauge.wpm).toBe(0);
+    expect(gauge.comparison).toBe("");
+  });
+
+  it("reads the last 30 days once they hold enough, with the others beside it", () => {
+    const gauge = paceGauge({
+      allTime: pace(12_000, minutes(100)),
+      last7: pace(1_400, minutes(10)),
+      last30: pace(4_800, minutes(40)),
+    });
+    expect(gauge).toMatchObject({ ready: true, wpm: 120, window: "last 30 days", comparison: "3× faster than typing" });
+    expect(gauge.fraction).toBeCloseTo(0.6);
+    expect(gauge.detail).toBe("Last 7 days: 140 · All time: 120");
+  });
+
+  it("falls back to all time when the month is quiet", () => {
+    const gauge = paceGauge({ allTime: pace(1_500, minutes(10)), last7: pace(0, 0), last30: pace(100, minutes(1)) });
+    expect(gauge).toMatchObject({ ready: true, wpm: 150, window: "all time", detail: "" });
+  });
+
+  it("keeps the needle on the dial", () => {
+    expect(paceGauge({ allTime: pace(1_500, minutes(4)), last7: pace(0, 0), last30: pace(1_500, minutes(4)) }).fraction).toBe(1);
+  });
+});
+
+describe("typingComparison", () => {
+  it("speaks in multiples, then percentages, then plainly", () => {
+    expect(typingComparison(130)).toBe("3.5× faster than typing");
+    expect(typingComparison(80)).toBe("2× faster than typing");
+    expect(typingComparison(60)).toBe("50% faster than typing");
+    expect(typingComparison(40)).toBe("About as fast as typing");
+    expect(typingComparison(20)).toBe("Slower than typing, for now");
   });
 });

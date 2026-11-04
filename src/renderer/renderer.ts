@@ -42,6 +42,8 @@ import {
   monthBars,
   monthChange,
   monthDelta,
+  NO_PACE,
+  paceGauge,
   streakLine,
 } from "../shared/activity";
 import type { Activity } from "../shared/contracts";
@@ -154,6 +156,11 @@ const element = {
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
+  paceWindow: requireElement<HTMLElement>("pace-window"),
+  paceGauge: requireElement<HTMLElement>("pace-gauge"),
+  paceNumber: requireElement<HTMLElement>("pace-number"),
+  paceComparison: requireElement<HTMLElement>("pace-comparison"),
+  paceDetail: requireElement<HTMLElement>("pace-detail"),
   keyInput: requireElement<HTMLInputElement>("key-input"),
   keySave: requireElement<HTMLButtonElement>("key-save"),
   keyRemove: requireElement<HTMLButtonElement>("key-remove"),
@@ -4353,6 +4360,25 @@ function renderActivity(activity: Activity): void {
   renderActivityCalendar(activity);
   renderInsights();
   renderMonths(activity);
+  renderPace(activity);
+}
+
+/**
+ * Words per minute as a half dial in the accent, filled to the share of
+ * 200 the pace reaches. Greyed, with a nudge, until there is enough speech.
+ */
+function renderPace(activity: Activity): void {
+  const gauge = paceGauge(activity.pace);
+  element.paceGauge.classList.toggle("is-waiting", !gauge.ready);
+  element.paceGauge.style.setProperty("--pace", (gauge.fraction * 100).toFixed(2));
+  element.paceNumber.textContent = gauge.ready ? String(gauge.wpm) : "—";
+  element.paceWindow.textContent = gauge.ready ? (gauge.window === "all time" ? "All time" : "Last 30 days") : "";
+  element.paceComparison.textContent = gauge.ready ? gauge.comparison : "Dictate a little more to see your pace";
+  element.paceDetail.textContent = gauge.detail;
+  element.paceGauge.setAttribute(
+    "aria-label",
+    gauge.ready ? `${gauge.wpm} words per minute, ${gauge.window}` : "Speaking pace: not enough speech yet",
+  );
 }
 
 /** The lifetime word count the hero already shows, read back as a number. */
@@ -4464,7 +4490,15 @@ function bindActivityTooltip(): void {
 /** The first thing on the page before any numbers arrive: the shape of a calendar. */
 function renderActivityPlaceholder(): void {
   const today = dayKey(new Date());
-  renderActivityCalendar({ today, days: [], months: [], currentStreak: 0, longestStreak: 0, activeDays: 0 });
+  renderActivityCalendar({
+    today,
+    days: [],
+    months: [],
+    currentStreak: 0,
+    longestStreak: 0,
+    activeDays: 0,
+    pace: NO_PACE,
+  });
   element.activityCalendar.classList.add("is-loading");
   element.activityActiveDays.textContent = "";
   element.activityStreak.textContent = "—";

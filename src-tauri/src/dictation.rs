@@ -89,6 +89,10 @@ pub struct DictationPhrase {
     pub text: String,
     #[serde(default = "default_sink")]
     pub sink: String,
+    /// How long the speaking took, first voiced frame to last. The overlay
+    /// measures it; nothing sends it back the other way.
+    #[serde(default, skip_serializing)]
+    pub speech_ms: u64,
 }
 
 /// Phrase audio stashed before transcription finishes.
@@ -180,12 +184,13 @@ pub struct Dictation {
     /// Incremented per session, so a timeout only ends the session it was
     /// started for and never a later one.
     generation: Mutex<u64>,
-    /// Phrases transcribed so far in this session.
+    /// Phrases transcribed so far in this session, each with how long its
+    /// speech took in milliseconds (zero when the overlay did not say).
     ///
     /// Held until the session ends rather than inserted as they arrive:
     /// text appearing mid-sentence interrupts the person still speaking, and
     /// pastes into whatever they may have clicked on in the meantime.
-    pending: Mutex<Vec<String>>,
+    pending: Mutex<Vec<(String, u64)>>,
     /// WAV clips stashed as soon as a phrase is cut, before transcription.
     ///
     /// Idle flush used to run against an empty buffer when the engine returned
@@ -888,7 +893,7 @@ impl Dictation {
             return;
         }
         *self.pending_sink.lock().await = phrase.sink;
-        self.pending.lock().await.push(trimmed);
+        self.pending.lock().await.push((trimmed, phrase.speech_ms));
 
         // A completed phrase means the speaker paused, which is what a tapped
         // session was waiting for.
@@ -940,7 +945,7 @@ impl Dictation {
     /// Retry needs, and disappearing without a trace is worse than a
     /// placeholder the user can re-run.
     async fn flush_pending(self: &Arc<Self>) {
-        let phrases: Vec<String> = self.pending.lock().await.drain(..).collect();
+        let (phrases, speech_ms): (Vec<String>, Vec<u64>) = self.pending.lock().await.drain(..).unzip();
         let clips: Vec<Vec<u8>> = self.pending_audio.lock().await.drain(..).collect();
         let discard = std::mem::replace(&mut *self.discard_pending.lock().await, false);
         if discard {
@@ -992,8 +997,8 @@ impl Dictation {
         // Counted per phrase so the Activity figures still describe speech
         // rather than sessions.
         let mut stats = None;
-        for phrase in &phrases {
-            stats = Some(self.stats.lock().await.record_phrase(phrase));
+        for (phrase, &speech_ms) in phrases.iter().zip(&speech_ms) {
+            stats = Some(self.stats.lock().await.record_phrase(phrase, speech_ms));
         }
         if let Some(stats) = stats {
             let _ = self.app.emit("stats-changed", stats);
@@ -1027,7 +1032,7 @@ impl Dictation {
                     message: None,
                     can_retry: false,
                 },
-                phrase: Some(DictationPhrase { text, sink }),
+                phrase: Some(DictationPhrase { text, sink, speech_ms: 0 }),
             },
         );
     }

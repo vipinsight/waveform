@@ -473,12 +473,30 @@
             </section>
           </div>
 
-          <div class="overview-grid">
+          <div class="overview-grid is-three">
             <section class="panel overview-card insight-panel" aria-labelledby="insight-title">
               <h2 class="overview-card-title" id="insight-title">What your words add up to</h2>
               <p class="insight-lede" id="insight-lede"></p>
               <p class="insight-headline display" id="insight-headline">—</p>
               <p class="insight-list" id="insight-list"></p>
+            </section>
+
+            <!-- Speaking pace: timed words over the time they took. -->
+            <section class="panel overview-card pace-panel" id="pace-panel" aria-labelledby="pace-title">
+              <div class="activity-head">
+                <h2 class="overview-card-title" id="pace-title">How fast you speak</h2>
+                <span class="view-note" id="pace-window"></span>
+              </div>
+              <div class="pace-gauge" role="img" id="pace-gauge" aria-label="Speaking pace">
+                <svg viewBox="0 0 120 66" aria-hidden="true">
+                  <path class="pace-track" d="M 10 60 A 50 50 0 0 1 110 60" pathLength="100" />
+                  <path class="pace-fill" d="M 10 60 A 50 50 0 0 1 110 60" pathLength="100" />
+                </svg>
+                <p class="pace-number display" id="pace-number">—</p>
+                <p class="pace-unit">words per minute</p>
+              </div>
+              <p class="pace-comparison" id="pace-comparison"></p>
+              <p class="pace-detail" id="pace-detail"></p>
             </section>
 
             <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">

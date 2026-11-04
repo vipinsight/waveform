@@ -103,7 +103,7 @@ let sessionReleased = false;
 
 const capture = new AudioCapture({
   onClip: (wav) => host().reportDictationClip({ wavBytes: Array.from(wav) }),
-  onPhrase: (text) => host().reportDictationPhrase({ text, sink }),
+  onPhrase: (text, speechMs) => host().reportDictationPhrase({ text, sink, speechMs }),
   onPendingChange: () => syncDerivedState(),
   log: (message) => {
     void host().log("info", "capture", message);
