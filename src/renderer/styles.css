@@ -6322,8 +6322,8 @@ select {
 
 /*
  * The home screen. The pace and the big number, with the streak beside them, then two rows
- * of two cards: the half-year calendar beside the months, what the words
- * add up to beside the milestones. The machine's own rows and the privacy
+ * of two cards: the half-year calendar beside the milestones, what the words
+ * add up to beside the months. The machine's own rows and the privacy
  * note come last. Under ~760px the pairs stack. The accent is the only
  * colour that means anything: the days, the bars and the milestones all
  * speak in it.
@@ -6451,7 +6451,7 @@ select {
 
 /* The two in a row stand the same height, whatever each holds. */
 .activity-panel,
-.months-panel {
+.milestone-panel {
   min-height: 236px;
 }
 
@@ -6804,27 +6804,27 @@ select {
   margin-bottom: 14px;
 }
 
+/* With nothing beneath it, the equivalent sits in the middle of the card. */
 .insight-lede {
-  margin: 0 0 4px;
+  margin: auto 0 4px;
   min-height: 18px;
   color: var(--ink-soft);
   font-size: 13px;
 }
 
 .insight-headline {
-  margin: 0 0 10px;
+  margin: 0 0 auto;
+  padding-bottom: 18px;
   min-height: 34px;
   font-size: 30px;
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
 
-.insight-list {
-  margin: auto 0 0;
-  min-height: 18px;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.5;
+/* The second row: the equivalent and the months, the same height. */
+.insight-panel,
+.months-panel {
+  min-height: 200px;
 }
 
 /* --- Overview: speaking pace ---------------------------------------------- */
@@ -6927,8 +6927,19 @@ select {
 
 /* --- Overview: milestones ------------------------------------------------- */
 
+/* How far to the next one, large; then every milestone as a stop on a
+   line filled to where the count stands. */
+.milestone-headline {
+  margin: 0 0 4px;
+  min-height: 34px;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
 .milestone-next {
-  margin: 0 0 18px;
+  margin: 0;
   min-height: 18px;
   color: var(--ink-soft);
   font-size: 13px;
@@ -6938,6 +6949,89 @@ select {
   color: var(--ink);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.milestone-trail {
+  position: relative;
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+/* The line runs between the first stop's centre and the last's. */
+.milestone-line {
+  position: absolute;
+  top: calc(22px + 6px);
+  left: calc(100% / 26);
+  right: calc(100% / 26);
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+.milestone-line i {
+  display: block;
+  width: var(--fill, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.milestone-stops {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.milestone-stop {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone-stop::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  margin-top: 1px;
+  border: 2px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--surface-raised);
+}
+
+.milestone-stop.is-reached {
+  color: var(--ink-soft);
+}
+
+.milestone-stop.is-reached::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.milestone-stop.is-next {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.milestone-stop.is-next::before {
+  width: 13px;
+  height: 13px;
+  margin-top: -1px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milestone-line i {
+    transition: none;
+  }
 }
 
 /* A passed milestone warms the card for a moment. */
@@ -6986,10 +7080,4 @@ select {
 
 #view-overview [hidden] {
   display: none;
-}
-
-.milestone-passed {
-  margin: 6px 0 0;
-  color: var(--ink-faint);
-  font-size: 12px;
 }

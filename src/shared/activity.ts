@@ -33,6 +33,45 @@ export function milestoneProgress(words: number): MilestoneProgress {
   return { reached, next, previous, fraction, remaining: next === null ? 0 : next - words };
 }
 
+export interface TrailNode {
+  words: number;
+  /** "1k", "2.5M". */
+  label: string;
+  state: "reached" | "next" | "ahead";
+}
+
+export interface MilestoneTrail {
+  nodes: TrailNode[];
+  /** How far along the line, 0..1, with nodes evenly spaced. */
+  fill: number;
+}
+
+/**
+ * Every milestone as a stop on one line: the ones passed lit, the next one
+ * ringed, the line filled to where the count stands between the last stop
+ * and the next. Evenly spaced, since the milestones roughly double.
+ */
+export function milestoneTrail(words: number): MilestoneTrail {
+  const progress = milestoneProgress(words);
+  const nodes = MILESTONES.map((value): TrailNode => ({
+    words: value,
+    label: shortWords(value),
+    state: words >= value ? "reached" : value === progress.next ? "next" : "ahead",
+  }));
+  const reached = progress.reached.length;
+  const steps = MILESTONES.length - 1;
+  const fill = reached === 0 ? 0 : progress.next === null ? 1 : (reached - 1 + progress.fraction) / steps;
+  return { nodes, fill };
+}
+
+/** 1,000 → "1k", 2,500,000 → "2.5M". */
+export function shortWords(value: number): string {
+  const trim = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  if (value >= 1_000_000) return `${trim(value / 1_000_000)}M`;
+  if (value >= 1_000) return `${trim(value / 1_000)}k`;
+  return String(value);
+}
+
 /** Things a word count can be measured against, smallest first. */
 export interface Equivalent {
   /** Singular, with its article: "a page". */

@@ -39,6 +39,7 @@ import {
   dayKey,
   insights,
   milestoneProgress,
+  milestoneTrail,
   monthBars,
   monthChange,
   monthDelta,
@@ -148,10 +149,11 @@ const element = {
   activityCalendar: requireElement<HTMLElement>("activity-calendar"),
   insightHeadline: requireElement<HTMLElement>("insight-headline"),
   insightLede: requireElement<HTMLElement>("insight-lede"),
-  insightList: requireElement<HTMLElement>("insight-list"),
   milestoneNextLabel: requireElement<HTMLElement>("milestone-next-label"),
   milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
   milestonePassed: requireElement<HTMLElement>("milestone-passed"),
+  milestoneFill: requireElement<HTMLElement>("milestone-fill"),
+  milestoneStops: requireElement<HTMLElement>("milestone-stops"),
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
@@ -4509,16 +4511,6 @@ function renderInsights(): void {
   element.insightHeadline.textContent = headline ? headline.text : "—";
   element.insightLede.textContent =
     words === 0 ? "Dictate something and this starts counting." : `${words.toLocaleString()} words so far. That is about`;
-  // "60% of a novel" is the share of the next unit up; said as a distance.
-  const rest = lines
-    .filter((line) => !line.headline)
-    .map((line) => line.text.replace(/^(\d+%) of (.+)$/, "$1 of the way to $2"));
-  element.insightList.textContent =
-    rest.length === 2
-      ? `Put another way: ${rest[0]} — and ${rest[1]}.`
-      : rest.length === 1
-        ? `Put another way: ${rest[0]}.`
-        : "";
   renderMilestones(words);
 }
 
@@ -4528,23 +4520,30 @@ function renderInsights(): void {
  */
 function renderMilestones(words: number): void {
   const progress = milestoneProgress(words);
-  const remaining = progress.next === null ? "" : `${progress.remaining.toLocaleString()} to go`;
+  const trail = milestoneTrail(words);
+  const remaining = `${progress.reached.length} of ${MILESTONES.length} reached`;
   element.milestoneRemaining.textContent = remaining;
   if (progress.next === null) {
     element.milestoneNextLabel.textContent = "Every milestone reached";
+    element.milestonePassed.textContent = `${words.toLocaleString()} words and counting.`;
   } else {
-    element.milestoneNextLabel.replaceChildren(
-      progress.reached.length === 0 ? "First milestone: " : "Next milestone: ",
+    element.milestoneNextLabel.textContent = `${progress.remaining.toLocaleString()} words to go`;
+    element.milestonePassed.replaceChildren(
+      progress.reached.length === 0 ? "To your first milestone, " : "To ",
       Object.assign(document.createElement("strong"), { textContent: `${progress.next.toLocaleString()} words` }),
+      ` · ${Math.floor(progress.fraction * 100)}% of the way there`,
     );
   }
-  const passed = progress.reached.map((milestone) => milestone.toLocaleString());
-  element.milestonePassed.textContent =
-    passed.length === 0
-      ? ""
-      : passed.length === 1
-        ? `Passed ${passed[0]} words`
-        : `Passed ${passed.slice(0, -1).join(", ")} and ${passed[passed.length - 1]} words`;
+  element.milestoneFill.style.setProperty("--fill", `${(trail.fill * 100).toFixed(2)}%`);
+  element.milestoneStops.replaceChildren(
+    ...trail.nodes.map((node) => {
+      const stop = document.createElement("li");
+      stop.className = `milestone-stop is-${node.state}`;
+      stop.textContent = node.label;
+      stop.title = `${node.words.toLocaleString()} words${node.state === "reached" ? ", reached" : ""}`;
+      return stop;
+    }),
+  );
 
   const latest = progress.reached[progress.reached.length - 1] ?? null;
   const celebrate = milestonesSeen !== null && latest !== null && latest > milestonesSeen;

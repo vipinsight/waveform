@@ -469,13 +469,17 @@
               </div>
             </section>
 
-            <section class="panel overview-card months-panel" aria-labelledby="months-title">
+            <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">
               <div class="activity-head">
-                <h2 class="overview-card-title" id="months-title">By month</h2>
-                <span class="change-pill" id="months-change" hidden></span>
+                <h2 class="overview-card-title" id="milestone-title">Milestones</h2>
+                <span class="change-pill is-flat" id="milestone-remaining"></span>
               </div>
-              <p class="view-note months-this" id="months-this"></p>
-              <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month"></div>
+              <p class="milestone-headline display" id="milestone-next-label">—</p>
+              <p class="milestone-next" id="milestone-passed"></p>
+              <div class="milestone-trail" id="milestone-trail">
+                <div class="milestone-line" aria-hidden="true"><i id="milestone-fill"></i></div>
+                <ol class="milestone-stops" id="milestone-stops" aria-label="Every milestone"></ol>
+              </div>
             </section>
           </div>
 
@@ -484,16 +488,15 @@
               <h2 class="overview-card-title" id="insight-title">What your words add up to</h2>
               <p class="insight-lede" id="insight-lede"></p>
               <p class="insight-headline display" id="insight-headline">—</p>
-              <p class="insight-list" id="insight-list"></p>
             </section>
 
-            <section class="panel overview-card milestone-panel" id="milestone-panel" aria-labelledby="milestone-title">
+            <section class="panel overview-card months-panel" aria-labelledby="months-title">
               <div class="activity-head">
-                <h2 class="overview-card-title" id="milestone-title">Milestones</h2>
-                <span class="view-note" id="milestone-remaining"></span>
+                <h2 class="overview-card-title" id="months-title">By month</h2>
+                <span class="change-pill" id="months-change" hidden></span>
               </div>
-              <p class="milestone-next" id="milestone-next-label">—</p>
-              <p class="milestone-passed" id="milestone-passed"></p>
+              <p class="view-note months-this" id="months-this"></p>
+              <div class="month-bars" id="month-bars" role="img" aria-label="Words dictated per month"></div>
             </section>
           </div>
 
