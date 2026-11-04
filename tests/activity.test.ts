@@ -203,8 +203,8 @@ describe("streakCard", () => {
 describe("paceGauge", () => {
   const minutes = (n: number) => n * 60_000;
 
-  it("waits for a couple of minutes of speech this week", () => {
-    const gauge = paceGauge({ words: 150, speechMs: minutes(1) });
+  it("waits for half a minute of speech this week", () => {
+    const gauge = paceGauge({ words: 40, speechMs: 20_000 });
     expect(gauge).toEqual({ ready: false, wpm: 0, fraction: 0, comparison: "" });
   });
 
