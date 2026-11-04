@@ -205,6 +205,43 @@ impl HistoryStore {
         self.entries()
     }
 
+    /// Deletes the recordings of dictations made before `cutoff_ms`, keeping
+    /// their words. A row that had only its recording -- no words were found
+    /// -- has nothing left to show or retry, so it goes too. Returns how many
+    /// recordings were deleted.
+    pub fn drop_audio_before(&mut self, cutoff_ms: u64) -> Result<usize, String> {
+        let files = self
+            .db
+            .with(|connection| {
+                let transaction = connection.transaction()?;
+                let files = {
+                    let mut select = transaction.prepare(
+                        "SELECT audio_file FROM dictations
+                          WHERE created_at < ?1 AND audio_file IS NOT NULL",
+                    )?;
+                    let rows = select.query_map([cutoff_ms as i64], |row| row.get::<_, String>(0))?;
+                    rows.collect::<rusqlite::Result<Vec<String>>>()?
+                };
+                transaction.execute(
+                    "DELETE FROM dictations
+                      WHERE created_at < ?1 AND audio_file IS NOT NULL AND transcribed_text = ''",
+                    [cutoff_ms as i64],
+                )?;
+                transaction.execute(
+                    "UPDATE dictations SET audio_file = NULL
+                      WHERE created_at < ?1 AND audio_file IS NOT NULL",
+                    [cutoff_ms as i64],
+                )?;
+                transaction.commit()?;
+                Ok(files)
+            })
+            .map_err(describe)?;
+        for file in &files {
+            self.remove_audio(file);
+        }
+        Ok(files.len())
+    }
+
     /// Bytes of the saved WAV, or an error when this entry has none.
     pub fn audio(&self, id: &str) -> Result<Vec<u8>, String> {
         let file = self
@@ -688,6 +725,38 @@ mod tests {
             history.audio(&id).unwrap_err(),
             "That dictation has no recording."
         );
+    }
+
+    /// Old recordings go, their words stay, and newer recordings are left
+    /// alone. A row that was only a recording has nothing left and goes.
+    #[test]
+    fn dropping_old_audio_keeps_the_words() {
+        let mut history = store();
+        let wav = tiny_wav();
+        let old = history.add(spoken("old words", Some(&wav))).unwrap()[0].id.clone();
+        let blank = history.add(spoken("", Some(&wav))).unwrap()[0].id.clone();
+        history
+            .db
+            .with(|connection| {
+                connection.execute(
+                    "UPDATE dictations SET created_at = 1_000 WHERE id IN (?1, ?2)",
+                    params![old, blank],
+                )
+            })
+            .unwrap();
+        let new = history.add(spoken("new words", Some(&wav))).unwrap()[0].id.clone();
+
+        assert_eq!(history.drop_audio_before(2_000).unwrap(), 2);
+
+        let entries = history.entries().unwrap();
+        assert_eq!(entries.len(), 2);
+        let kept = entries.iter().find(|entry| entry.id == old).unwrap();
+        assert_eq!(kept.text, "old words");
+        assert!(!kept.has_audio);
+        assert!(!history.audio_path(&format!("{old}.wav")).exists());
+        assert!(!history.audio_path(&format!("{blank}.wav")).exists());
+        assert_eq!(history.audio(&new).unwrap(), wav);
+        assert_eq!(history.drop_audio_before(2_000).unwrap(), 0);
     }
 
     #[test]

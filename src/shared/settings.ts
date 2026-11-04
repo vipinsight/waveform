@@ -33,6 +33,11 @@ export type ThemePreference = "system" | "light" | "dark";
 /** Where a rewrite runs: a hosted model, or one downloaded onto this Mac. */
 export type PolishEngine = "openrouter" | "local";
 export type OverlayPlacement = "bottom" | "top";
+/** How many days a recording's audio is kept. Zero keeps it forever. */
+export const KEEP_AUDIO_DAYS = [0, 1, 14, 30, 60] as const;
+export type KeepAudioDays = (typeof KEEP_AUDIO_DAYS)[number];
+/** How long a change to `keepAudioDays` waits before anything is deleted. */
+export const KEEP_AUDIO_GRACE_MS = 2 * 60 * 60 * 1000;
 /** Whether a word fixed where a dictation landed becomes a dictionary term. */
 export type DictionaryLearning = "on" | "off";
 
@@ -152,6 +157,18 @@ export interface AppSettings {
   meetingsIntroSeen: boolean;
   /** The last permission check heard the other side of calls. */
   meetingsOtherSideAllowed: boolean;
+  /**
+   * Days a dictation's or meeting's audio is kept before it is deleted. Zero
+   * keeps it forever. Only the audio goes; the words stay.
+   */
+  keepAudioDays: KeepAudioDays;
+  /**
+   * When `keepAudioDays` last changed. Set by the host: nothing is deleted
+   * until `KEEP_AUDIO_GRACE_MS` after it, so a mis-click can be put back.
+   */
+  keepAudioChangedAt: number | null;
+  /** Write dictation and meeting audio to disk at all. */
+  saveAudio: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -198,6 +215,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboardingCompleted: false,
   meetingsIntroSeen: false,
   meetingsOtherSideAllowed: false,
+  keepAudioDays: 0,
+  keepAudioChangedAt: null,
+  saveAudio: true,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -289,6 +309,11 @@ export function normalizeSettings(
       typeof input.meetingsOtherSideAllowed === "boolean"
         ? input.meetingsOtherSideAllowed
         : base.meetingsOtherSideAllowed,
+    keepAudioDays: KEEP_AUDIO_DAYS.includes(input.keepAudioDays as never)
+      ? (input.keepAudioDays as KeepAudioDays)
+      : base.keepAudioDays,
+    keepAudioChangedAt: coordinate(input.keepAudioChangedAt, base.keepAudioChangedAt),
+    saveAudio: typeof input.saveAudio === "boolean" ? input.saveAudio : base.saveAudio,
   };
 }
 

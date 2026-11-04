@@ -25,6 +25,7 @@ mod model_server;
 mod panel;
 mod paths;
 mod resources;
+mod retention;
 mod rewrite;
 mod settings;
 mod stats;
@@ -458,13 +459,13 @@ async fn save_dictation(
     text: String,
     wav_bytes: Option<Vec<u8>>,
 ) -> Result<Vec<SavedDictation>, String> {
-    let speech_model = state.settings.lock().await.value().model_id;
+    let settings = state.settings.lock().await.value();
     let entries = state.history.lock().await.add(NewDictation {
         transcribed: &text,
         polished: None,
-        speech_model: &speech_model,
+        speech_model: &settings.model_id,
         polish_model: None,
-        wav: wav_bytes.as_deref(),
+        wav: wav_bytes.as_deref().filter(|_| settings.save_audio),
     })?;
     let _ = app.emit("history-changed", &entries);
     Ok(entries)
@@ -1645,6 +1646,47 @@ pub fn run() {
                     "meeting",
                     format!("closed {count} meeting(s) left recording by a previous run"),
                 ),
+            }
+
+            // Old recordings are deleted on launch and every quarter hour
+            // after, per "Keep audio for".
+            {
+                let app = app.handle().clone();
+                let (settings, history, meetings, logs) =
+                    (settings.clone(), history.clone(), meetings.clone(), logs.clone());
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let current = settings.lock().await.value();
+                        let swept = {
+                            let mut history = history.lock().await;
+                            let mut meetings = meetings.lock().await;
+                            retention::sweep(&current, &mut history, &mut meetings, retention::now_ms())
+                        };
+                        match swept {
+                            Ok((0, 0)) => {}
+                            Ok((dictations, meetings_dropped)) => {
+                                logs.info(
+                                    &app,
+                                    "retention",
+                                    format!(
+                                        "deleted audio older than {} day(s): {dictations} dictation(s), {meetings_dropped} meeting(s)",
+                                        current.keep_audio_days
+                                    ),
+                                );
+                                if dictations > 0 {
+                                    if let Ok(entries) = history.lock().await.entries() {
+                                        let _ = app.emit("history-changed", &entries);
+                                    }
+                                }
+                                if meetings_dropped > 0 {
+                                    let _ = app.emit_to(MAIN_LABEL, "meetings-changed", ());
+                                }
+                            }
+                            Err(error) => logs.error(&app, "retention", error),
+                        }
+                        tokio::time::sleep(retention::SWEEP_EVERY).await;
+                    }
+                });
             }
 
             let handle = app.handle().clone();
