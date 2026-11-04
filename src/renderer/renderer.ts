@@ -39,7 +39,7 @@ import {
   dayKey,
   insights,
   milestoneProgress,
-  milestoneTrail,
+  shortWords,
   monthBars,
   monthChange,
   monthDelta,
@@ -153,7 +153,8 @@ const element = {
   milestoneRemaining: requireElement<HTMLElement>("milestone-remaining"),
   milestonePassed: requireElement<HTMLElement>("milestone-passed"),
   milestoneFill: requireElement<HTMLElement>("milestone-fill"),
-  milestoneStops: requireElement<HTMLElement>("milestone-stops"),
+  milestoneFrom: requireElement<HTMLElement>("milestone-from"),
+  milestoneTo: requireElement<HTMLElement>("milestone-to"),
   monthsChange: requireElement<HTMLElement>("months-change"),
   monthsThis: requireElement<HTMLElement>("months-this"),
   monthBars: requireElement<HTMLElement>("month-bars"),
@@ -4520,8 +4521,9 @@ function renderInsights(): void {
  */
 function renderMilestones(words: number): void {
   const progress = milestoneProgress(words);
-  const trail = milestoneTrail(words);
-  const remaining = `${progress.reached.length} of ${MILESTONES.length} reached`;
+  // Only how many are behind, never the whole ladder ahead.
+  const passed = progress.reached.length;
+  const remaining = passed === 0 ? "" : `${passed} passed`;
   element.milestoneRemaining.textContent = remaining;
   if (progress.next === null) {
     element.milestoneNextLabel.textContent = "Every milestone reached";
@@ -4534,16 +4536,9 @@ function renderMilestones(words: number): void {
       ` · ${Math.floor(progress.fraction * 100)}% of the way there`,
     );
   }
-  element.milestoneFill.style.setProperty("--fill", `${(trail.fill * 100).toFixed(2)}%`);
-  element.milestoneStops.replaceChildren(
-    ...trail.nodes.map((node) => {
-      const stop = document.createElement("li");
-      stop.className = `milestone-stop is-${node.state}`;
-      stop.textContent = node.label;
-      stop.title = `${node.words.toLocaleString()} words${node.state === "reached" ? ", reached" : ""}`;
-      return stop;
-    }),
-  );
+  element.milestoneFill.style.setProperty("--fill", `${(progress.fraction * 100).toFixed(2)}%`);
+  element.milestoneFrom.textContent = progress.next === null ? "" : `${shortWords(progress.previous)} words`;
+  element.milestoneTo.textContent = progress.next === null ? "" : `${shortWords(progress.next)} words`;
 
   const latest = progress.reached[progress.reached.length - 1] ?? null;
   const celebrate = milestonesSeen !== null && latest !== null && latest > milestonesSeen;

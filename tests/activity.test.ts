@@ -7,7 +7,6 @@ import {
   insights,
   localDate,
   milestoneProgress,
-  milestoneTrail,
   shortWords,
   monthBars,
   monthChange,
@@ -231,26 +230,7 @@ describe("typingComparison", () => {
   });
 });
 
-describe("milestoneTrail", () => {
-  it("lights the stops passed and rings the next", () => {
-    const trail = milestoneTrail(7_500);
-    expect(trail.nodes.slice(0, 5).map((node) => `${node.label}:${node.state}`)).toEqual([
-      "1k:reached",
-      "2k:reached",
-      "5k:reached",
-      "10k:next",
-      "25k:ahead",
-    ]);
-    // Halfway from the third stop to the fourth, of twelve gaps.
-    expect(trail.fill).toBeCloseTo(2.5 / 12);
-  });
-
-  it("starts empty and ends full", () => {
-    expect(milestoneTrail(0).fill).toBe(0);
-    expect(milestoneTrail(0).nodes[0]?.state).toBe("next");
-    expect(milestoneTrail(20_000_000).fill).toBe(1);
-  });
-
+describe("shortWords", () => {
   it("labels counts short", () => {
     expect([1_000, 2_500_000, 10_000_000, 25_000].map(shortWords)).toEqual(["1k", "2.5M", "10M", "25k"]);
   });
