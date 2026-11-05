@@ -676,6 +676,15 @@ impl Recorder {
             }
         }
 
+        // Speaker tagging hears echo by voice; this catches what it missed,
+        // and works without the speaker tool.
+        {
+            let mut store = self.meetings.lock().await;
+            let echoes = meetings::echo_lines(&store.all_lines(id)?);
+            let tags: Vec<(i64, String)> = echoes.into_iter().map(|idx| (idx, meetings::ECHO.to_string())).collect();
+            store.tag_lines(id, &tags)?;
+        }
+
         self.set_stage(id, "Preparing playback…").await;
         if let Err(error) = mixdown_in_background(dir.clone()).await {
             self.logs.error(&self.app, "meeting", format!("{id}: mixdown: {error}"));
@@ -1067,12 +1076,37 @@ impl Recorder {
                         continue;
                     }
                 };
-                let event = LineEvent {
-                    meeting_id: id.clone(),
-                    line,
+                // The call heard again on the mic is echo, whichever of the
+                // two lines was transcribed first. The windows drop a line
+                // that comes back labelled so.
+                let echoes = {
+                    let mut store = this.meetings.lock().await;
+                    let all = store.all_lines(&id).unwrap_or_default();
+                    let echoes: Vec<Line> = meetings::echoes_from(&line, &all)
+                        .into_iter()
+                        .filter_map(|idx| all.iter().find(|other| other.idx == idx).cloned())
+                        .map(|mut other| {
+                            other.speaker = Some(meetings::ECHO.to_string());
+                            other
+                        })
+                        .collect();
+                    let tags: Vec<(i64, String)> = echoes.iter().map(|other| (other.idx, meetings::ECHO.to_string())).collect();
+                    if let Err(error) = store.tag_lines(&id, &tags) {
+                        this.logs.error(&this.app, "meeting", format!("{id}: {error}"));
+                    }
+                    echoes
                 };
-                let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
-                let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
+                let new_idx = line.idx;
+                let line_is_echo = echoes.iter().any(|other| other.idx == new_idx);
+                let shown = echoes.into_iter().filter(|other| other.idx != new_idx);
+                for line in shown.chain((!line_is_echo).then_some(line)) {
+                    let event = LineEvent {
+                        meeting_id: id.clone(),
+                        line,
+                    };
+                    let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+                    let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
+                }
             }
         })
     }

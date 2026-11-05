@@ -21,8 +21,18 @@ export function mergeLines(current: MeetingLine[], incoming: MeetingLine[]): Mee
   for (const line of current) byIdx.set(line.idx, line);
   for (const line of incoming) byIdx.set(line.idx, line);
   return Array.from(byIdx.values())
+    .filter((line) => !isEcho(line))
     .sort((a, b) => a.idx - b.idx)
     .slice(-MAX_LINES);
+}
+
+/**
+ * A microphone line found to be the call coming back through the speakers.
+ * It arrives once as an ordinary line and again with this label when the
+ * matching words from the call land, and is then taken out.
+ */
+export function isEcho(line: MeetingLine): boolean {
+  return line.speaker === "echo";
 }
 
 /**
