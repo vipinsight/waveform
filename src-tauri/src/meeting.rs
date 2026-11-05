@@ -9,6 +9,7 @@
 
 use crate::audio::{self, Segmenter, SegmenterOptions, WavWriter};
 use crate::diarize;
+use crate::echo;
 use crate::history::HistoryStore;
 use crate::logs::Logs;
 use crate::meetings::{self, Line, Meeting, MeetingsStore, Note, State, Track, LOCAL_SPEAKER};
@@ -658,7 +659,7 @@ impl Recorder {
         if lines.is_empty() {
             notes.push(Note::new("nothing-said", "Nothing was picked up in this recording."));
             self.set_stage(id, "Preparing playback…").await;
-            let _ = mixdown(&dir);
+            let _ = mixdown_in_background(dir.clone()).await;
             return Ok(notes);
         }
 
@@ -676,7 +677,7 @@ impl Recorder {
         }
 
         self.set_stage(id, "Preparing playback…").await;
-        if let Err(error) = mixdown(&dir) {
+        if let Err(error) = mixdown_in_background(dir.clone()).await {
             self.logs.error(&self.app, "meeting", format!("{id}: mixdown: {error}"));
         }
 
@@ -1160,8 +1161,15 @@ async fn read_tap(mut stdout: tokio::process::ChildStdout, sender: SyncSender<Ca
     // Whatever is left is under a block; it is not worth a phrase.
 }
 
+/// `mixdown` off the async runtime: the echo canceller takes some seconds
+/// on an hour-long meeting.
+async fn mixdown_in_background(dir: PathBuf) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || mixdown(&dir)).await.map_err(|e| e.to_string())?
+}
+
 /// Sums the two tracks into `mixed.wav` for playback, at the microphone's
-/// rate. The tracks are mono PCM16 as `WavWriter` wrote them.
+/// rate, after taking the far end's echo out of the microphone; see echo.rs.
+/// The tracks are mono PCM16 as `WavWriter` wrote them.
 fn mixdown(dir: &Path) -> Result<(), String> {
     let mic = read_pcm16(&dir.join("mic.wav"));
     let system = read_pcm16(&dir.join("system.wav"));
@@ -1176,10 +1184,11 @@ fn mixdown(dir: &Path) -> Result<(), String> {
     } else {
         resample_linear(&system.0, system.1, rate)
     };
-    let length = mic.0.len().max(system_samples.len());
+    let mic_samples = echo::cancel(&mic.0, &system_samples);
+    let length = mic_samples.len().max(system_samples.len());
     let mut mixed = Vec::with_capacity(length);
     for index in 0..length {
-        let a = mic.0.get(index).copied().unwrap_or(0.0);
+        let a = mic_samples.get(index).copied().unwrap_or(0.0);
         let b = system_samples.get(index).copied().unwrap_or(0.0);
         mixed.push((a + b).clamp(-1.0, 1.0));
     }
