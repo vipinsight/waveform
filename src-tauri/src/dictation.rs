@@ -1162,7 +1162,14 @@ impl Dictation {
         // Never focus it: focus must stay with the app being dictated into, or
         // the synthetic paste lands in Waveform.
         let _ = overlay.show();
-        let _ = overlay.set_always_on_top(true);
+        // Not `set_always_on_top`: that drops the HUD to the floating level,
+        // which is below a full-screen app.
+        let window = overlay.clone();
+        let _ = overlay.run_on_main_thread(move || {
+            if let Err(reason) = crate::panel::keep_above_full_screen(&window) {
+                eprintln!("HUD may hide behind full-screen apps: {reason}");
+            }
+        });
     }
 
     fn hide_overlay(&self) {

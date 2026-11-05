@@ -37,6 +37,22 @@ use std::sync::OnceLock;
 /// `NSWindowStyleMaskNonactivatingPanel`, which AppKit honours only on a panel.
 const NON_ACTIVATING_PANEL: usize = 1 << 7;
 
+/// `NSWindowCollectionBehaviorCanJoinAllSpaces`: on every desktop, not just one.
+const CAN_JOIN_ALL_SPACES: usize = 1 << 0;
+/// `NSWindowCollectionBehaviorStationary`: stays put while Mission Control and
+/// space switches slide everything else around.
+const STATIONARY: usize = 1 << 4;
+/// `NSWindowCollectionBehaviorIgnoresCycle`: not one of the windows Cmd-` walks.
+const IGNORES_CYCLE: usize = 1 << 6;
+/// `NSWindowCollectionBehaviorFullScreenAuxiliary`: allowed onto the space of
+/// another app's full-screen window. Joining all spaces is not enough on its
+/// own -- a full-screen space only admits windows that say this.
+const FULL_SCREEN_AUXILIARY: usize = 1 << 8;
+
+/// `NSStatusWindowLevel`. The floating level `always_on_top` gives is below a
+/// full-screen window, so even an admitted HUD would sit behind it.
+const STATUS_WINDOW_LEVEL: isize = 25;
+
 const CLASS_NAME: &CStr = c"WaveformPanel";
 
 /// Answers `canBecomeKeyWindow` and `canBecomeMainWindow`.
@@ -95,6 +111,27 @@ pub fn make_non_activating(window: &tauri::WebviewWindow) -> Result<(), String> 
         // Panels take themselves off screen when their application deactivates,
         // which is precisely when this one has to be visible.
         let _: () = msg_send![object, setHidesOnDeactivate: false];
+    }
+    keep_above_full_screen(window)
+}
+
+/// Lets the window show over another app's full-screen window, on any space.
+///
+/// Must run on the main thread. Tauri's `set_always_on_top` and
+/// `visible_on_all_workspaces` each overwrite part of this, so nothing should
+/// call them on the window afterwards.
+pub fn keep_above_full_screen(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let pointer = window.ns_window().map_err(|error| error.to_string())?;
+    if pointer.is_null() {
+        return Err("the window has no NSWindow".into());
+    }
+    let object = unsafe { &*(pointer as *mut AnyObject) };
+    unsafe {
+        let behavior: usize = msg_send![object, collectionBehavior];
+        let behavior =
+            behavior | CAN_JOIN_ALL_SPACES | STATIONARY | IGNORES_CYCLE | FULL_SCREEN_AUXILIARY;
+        let _: () = msg_send![object, setCollectionBehavior: behavior];
+        let _: () = msg_send![object, setLevel: STATUS_WINDOW_LEVEL];
     }
     Ok(())
 }
