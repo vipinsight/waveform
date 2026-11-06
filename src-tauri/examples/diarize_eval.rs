@@ -20,6 +20,7 @@
 //!     --only ES2004a,...   AMI only: a subset of meetings
 //!     --threshold T        clustering threshold (default: the app's)
 //!     --embedding PATH     another voice-print model
+//!     --engine E           pyannote or sherpa (default: what the app would use)
 //!     --coreml             run the networks through CoreML instead of the CPU
 //!     --minutes N          only the first N minutes of each recording: a
 //!                          quick comparison, not a final number
@@ -95,6 +96,13 @@ fn parse(args: Vec<String>) -> Result<(Vec<String>, Options), String> {
             }
             "--embedding" => options.config.embedding = Some(PathBuf::from(value()?)),
             "--coreml" => options.config.provider = "coreml",
+            "--engine" => {
+                options.config.engine = match value()?.as_str() {
+                    "pyannote" => diarize::Engine::Pyannote,
+                    "sherpa" => diarize::Engine::Sherpa,
+                    other => return Err(format!("unknown engine {other}: pyannote or sherpa")),
+                }
+            }
             "--minutes" => {
                 let minutes: f64 = value()?.parse().map_err(|_| "--minutes takes a number")?;
                 options.limit_ms = Some((minutes * 60_000.0) as u64);

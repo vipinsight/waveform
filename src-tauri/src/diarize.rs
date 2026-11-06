@@ -6,8 +6,10 @@
 //! prints one line per speaker turn; this module installs it, runs it on a
 //! meeting's `system.wav`, and maps its turns onto the transcript's lines.
 //!
-//! Only the remote track is diarized. Everything on the microphone is the
-//! person at this Mac, which is one speaker the model never has to find.
+//! Two engines tell the voices apart. pyannote's own pipeline, run from a
+//! Python venv like Qwen, is the default when installed: on real calls it
+//! told apart two people sherpa-onnx merged. sherpa-onnx stays as the
+//! fallback for Macs without Python. Both print turns in the same format.
 
 use crate::download::{fetch, Download};
 use crate::paths;
@@ -76,8 +78,36 @@ fn binary_path() -> Option<PathBuf> {
     runtime_dir().map(|dir| dir.join("bin").join(BINARY))
 }
 
-/// Whether everything the diarizer needs is on this Mac.
+/// pyannote's worker, carried in the binary and written beside its venv, so
+/// the engine works the same from a checkout, a dev build or the .app.
+const PYANNOTE_WORKER: &str = include_str!("../../scripts/pyannote-worker.py");
+
+/// Rough size of pyannote's venv (torch is most of it) and pipeline.
+pub const PYANNOTE_BYTES: u64 = 1_300_000_000;
+
+/// Whether speaker tagging can run: either engine will do.
 pub fn is_installed() -> bool {
+    pyannote_installed() || sherpa_installed()
+}
+
+/// Whether the install is as good as this Mac allows: pyannote, or sherpa
+/// where there is no Python to run pyannote. The Models page offers the
+/// download until it is, so an install from before pyannote gets it.
+pub fn is_complete() -> bool {
+    pyannote_installed() || (sherpa_installed() && crate::install::system_python().is_none())
+}
+
+fn pyannote_python() -> Option<PathBuf> {
+    paths::pyannote_venv().map(|venv| venv.join("bin/python3")).filter(|python| paths::is_executable(python))
+}
+
+pub fn pyannote_installed() -> bool {
+    pyannote_python().is_some()
+        && paths::pyannote_model_dir().is_some_and(|dir| dir.join("config.yaml").is_file())
+}
+
+/// Whether sherpa-onnx's tool and models are on this Mac.
+pub fn sherpa_installed() -> bool {
     let Some(binary) = binary_path() else {
         return false;
     };
@@ -89,8 +119,13 @@ pub fn is_installed() -> bool {
         && models.join(EMBEDDING_FILE).is_file()
 }
 
+/// Bytes sherpa-onnx's part of the install downloads.
+pub const SHERPA_BYTES: u64 = RUNTIME.bytes + SEGMENTATION.bytes + EMBEDDING.bytes;
+
 /// Bytes the install downloads, for the page that offers it.
-pub const INSTALL_BYTES: u64 = RUNTIME.bytes + SEGMENTATION.bytes + EMBEDDING.bytes;
+pub fn install_bytes() -> u64 {
+    SHERPA_BYTES + if crate::install::system_python().is_some() { PYANNOTE_BYTES } else { 0 }
+}
 
 /// Downloads and lays out the diarizer. Safe to run again: files already in
 /// place are kept, and a half-finished install is finished.
@@ -101,18 +136,43 @@ pub async fn install(
     let runtime = runtime_dir().ok_or("Could not work out where the diarizer lives.")?;
     let models = models_dir().ok_or("Could not work out where the diarizer's models live.")?;
     let staging = runtime.join("downloads");
+    // sherpa first: small, needs nothing else, and the fallback if pyannote
+    // cannot install. It takes the first fifth of the bar when pyannote follows.
+    let python = crate::install::system_python().is_some();
+    let share = if python { 0.2 } else { 1.0 };
+    if !sherpa_installed() {
+        install_sherpa(&runtime, &models, &staging, cancel, &|message, part| on_progress(message, part * share)).await?;
+    }
+    if python && !pyannote_installed() {
+        // Short of 1.0, which the interface reads as done.
+        let pyannote_part = |message: &str, part: f32| on_progress(message, (share + part * (1.0 - share)).min(0.99));
+        crate::install::install_pyannote(cancel, &pyannote_part).await?;
+    }
+    if !is_installed() {
+        return Err("The diarizer did not install completely.".into());
+    }
+    on_progress("Speaker tagging ready", 1.0);
+    Ok(())
+}
 
+async fn install_sherpa(
+    runtime: &Path,
+    models: &Path,
+    staging: &Path,
+    cancel: &AtomicBool,
+    on_progress: &(dyn Fn(&str, f32) + Send + Sync),
+) -> Result<(), String> {
     on_progress("Downloading the speaker tool…", 0.0);
-    fetch(&RUNTIME, &staging, &|part| on_progress("Downloading the speaker tool…", part * 0.3), cancel).await?;
+    fetch(&RUNTIME, staging, &|part| on_progress("Downloading the speaker tool…", part * 0.3), cancel).await?;
     on_progress("Downloading the segmentation model…", 0.3);
-    fetch(&SEGMENTATION, &staging, &|part| on_progress("Downloading the segmentation model…", 0.3 + part * 0.1), cancel).await?;
+    fetch(&SEGMENTATION, staging, &|part| on_progress("Downloading the segmentation model…", 0.3 + part * 0.1), cancel).await?;
     on_progress("Downloading the voice model…", 0.4);
-    fetch(&EMBEDDING, &staging, &|part| on_progress("Downloading the voice model…", 0.4 + part * 0.5), cancel).await?;
+    fetch(&EMBEDDING, staging, &|part| on_progress("Downloading the voice model…", 0.4 + part * 0.5), cancel).await?;
 
     on_progress("Unpacking…", 0.9);
-    unpack_runtime(&staging.join(RUNTIME.file), &runtime).await?;
-    unpack_segmentation(&staging.join(SEGMENTATION.file), &models).await?;
-    tokio::fs::create_dir_all(&models)
+    unpack_runtime(&staging.join(RUNTIME.file), runtime).await?;
+    unpack_segmentation(&staging.join(SEGMENTATION.file), models).await?;
+    tokio::fs::create_dir_all(models)
         .await
         .map_err(|error| format!("Could not make {}: {error}", models.display()))?;
     tokio::fs::copy(staging.join(EMBEDDING.file), models.join(EMBEDDING_FILE))
@@ -123,17 +183,18 @@ pub async fn install(
 
     // The tarballs did their job; the embedding is copied, so the staging
     // copy of it is the only leftover worth the space.
-    let _ = tokio::fs::remove_dir_all(&staging).await;
-
-    if !is_installed() {
+    let _ = tokio::fs::remove_dir_all(staging).await;
+    if !sherpa_installed() {
         return Err("The diarizer did not install completely.".into());
     }
-    on_progress("Speaker tagging ready", 1.0);
     Ok(())
 }
 
-/// Removes the tool and models.
+/// Removes both engines and their models.
 pub async fn remove() -> Result<(), String> {
+    for dir in [paths::pyannote_venv(), paths::pyannote_model_dir()].into_iter().flatten() {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+    }
     if let Some(dir) = runtime_dir() {
         let _ = tokio::fs::remove_dir_all(dir).await;
     }
@@ -230,11 +291,21 @@ pub struct Config {
     pub embedding: Option<PathBuf>,
     /// Where the networks run: `cpu` or `coreml`.
     pub provider: &'static str,
+    pub engine: Engine,
+}
+
+/// Which tool tells the voices apart. The threshold, embedding and provider
+/// above are sherpa-onnx's; pyannote brings its own tuned settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    Pyannote,
+    Sherpa,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { cluster_threshold: CLUSTER_THRESHOLD, embedding: None, provider: "cpu" }
+        let engine = if pyannote_installed() { Engine::Pyannote } else { Engine::Sherpa };
+        Config { cluster_threshold: CLUSTER_THRESHOLD, embedding: None, provider: "cpu", engine }
     }
 }
 
@@ -244,6 +315,40 @@ pub async fn run(wav: &Path, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
 }
 
 pub async fn run_with(wav: &Path, config: &Config, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
+    match config.engine {
+        Engine::Pyannote => run_pyannote(wav, cancel).await,
+        Engine::Sherpa => run_sherpa(wav, config, cancel).await,
+    }
+}
+
+async fn run_pyannote(wav: &Path, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
+    let python = pyannote_python().ok_or("pyannote is not installed. Download it from Models, then try again.")?;
+    let venv = paths::pyannote_venv().ok_or("Could not work out where pyannote lives.")?;
+    let weights = paths::pyannote_model_dir().ok_or("Could not work out where pyannote's model lives.")?;
+    let worker = venv.join("pyannote-worker.py");
+    if std::fs::read_to_string(&worker).ok().as_deref() != Some(PYANNOTE_WORKER) {
+        std::fs::write(&worker, PYANNOTE_WORKER).map_err(|error| format!("Could not write the speaker worker: {error}"))?;
+    }
+    // Low priority, as for sherpa below. Offline: the pipeline is on disk,
+    // and nothing about a meeting should reach the network.
+    let child = Command::new("/usr/bin/nice")
+        .arg("-n")
+        .arg("10")
+        .arg(&python)
+        .arg(&worker)
+        .arg(&weights)
+        .arg(wav)
+        .env("HF_HUB_OFFLINE", "1")
+        .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| format!("Could not start the speaker tool: {error}"))?;
+    finish(child, cancel).await
+}
+
+async fn run_sherpa(wav: &Path, config: &Config, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
     let binary = binary_path().filter(|path| paths::is_executable(path)).ok_or(
         "Speaker tagging is not installed. Download it from Models, then try again.",
     )?;
@@ -278,7 +383,11 @@ pub async fn run_with(wav: &Path, config: &Config, cancel: &AtomicBool) -> Resul
         .kill_on_drop(true)
         .spawn()
         .map_err(|error| format!("Could not start the speaker tool: {error}"))?;
+    finish(child, cancel).await
+}
 
+/// Waits for either tool and reads its turns.
+async fn finish(child: tokio::process::Child, cancel: &AtomicBool) -> Result<Vec<Turn>, String> {
     let output = tokio::select! {
         output = child.wait_with_output() => output,
         _ = poll_cancel(cancel) => return Err(crate::download::CANCELLED.to_string()),
@@ -577,7 +686,7 @@ mod tests {
 
     #[test]
     fn the_install_size_is_the_sum_of_its_parts() {
-        assert_eq!(INSTALL_BYTES, 18_252_168 + 6_958_444 + 40_257_283);
+        assert_eq!(SHERPA_BYTES, 18_252_168 + 6_958_444 + 40_257_283);
     }
 
     fn turn(start: u64, end: u64, label: &str) -> Turn {

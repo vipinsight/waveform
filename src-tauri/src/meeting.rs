@@ -248,8 +248,8 @@ impl Recorder {
                 Some(_) => "unsupported",
             }
             .to_string(),
-            diarizer_installed: diarize::is_installed(),
-            diarizer_bytes: diarize::INSTALL_BYTES,
+            diarizer_installed: diarize::is_complete(),
+            diarizer_bytes: diarize::install_bytes(),
             has_open_router_key: self.rewriter.open_router_key().await.is_some(),
             local_name: local_name(),
         }
