@@ -624,10 +624,121 @@ fn describe(error: rusqlite::Error) -> String {
     format!("The meeting could not be saved: {error}")
 }
 
+/// How far apart, in ms, a mic line and the call's words may be and still be
+/// the same speech: the speaker-to-mic delay plus phrases cut differently.
+const ECHO_WINDOW_MS: u64 = 2_500;
+/// Share of a mic line's words that must appear, in order, in what the call
+/// said around it for the line to be its echo.
+const ECHO_MATCH: f64 = 0.6;
+
+/// The microphone lines that only repeat what the other side said: the call
+/// playing through the speakers, transcribed a second time. Judged on the
+/// words, so it works live and without the speaker tool.
+pub fn echo_lines(lines: &[Line]) -> Vec<i64> {
+    lines
+        .iter()
+        .filter(|line| line.track == Track::Mic && is_echo(line, lines))
+        .map(|line| line.idx)
+        .collect()
+}
+
+/// The mic lines `line` makes echo now that it has arrived: itself, when it is
+/// a mic line repeating the call, or the mic lines a new call line explains.
+pub fn echoes_from(line: &Line, lines: &[Line]) -> Vec<i64> {
+    match line.track {
+        Track::Mic => is_echo(line, lines).then_some(line.idx).into_iter().collect(),
+        Track::System => lines
+            .iter()
+            .filter(|mic| mic.track == Track::Mic && mic.speaker.as_deref() != Some(ECHO) && near(mic, line))
+            .filter(|mic| is_echo(mic, lines))
+            .map(|mic| mic.idx)
+            .collect(),
+    }
+}
+
+fn near(a: &Line, b: &Line) -> bool {
+    b.start_ms <= a.end_ms + ECHO_WINDOW_MS && a.start_ms <= b.end_ms + ECHO_WINDOW_MS
+}
+
+fn is_echo(mic: &Line, lines: &[Line]) -> bool {
+    let said = words(&mic.text);
+    if said.is_empty() {
+        return false;
+    }
+    let mut heard: Vec<&Line> = lines.iter().filter(|line| line.track == Track::System && near(mic, line)).collect();
+    if heard.is_empty() {
+        return false;
+    }
+    heard.sort_by_key(|line| (line.start_ms, line.idx));
+    let call: Vec<String> = heard.iter().flat_map(|line| words(&line.text)).collect();
+    let shared = common_in_order(&said, &call);
+    // A word or two ("yeah", "okay") said back is a reply as often as an
+    // echo, so short lines must match in full.
+    let needed = if said.len() < 3 { 1.0 } else { ECHO_MATCH };
+    shared as f64 / said.len() as f64 >= needed
+}
+
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|word| !word.is_empty())
+        .map(|word| word.to_lowercase())
+        .collect()
+}
+
+/// Length of the longest common subsequence of two word lists.
+fn common_in_order(a: &[String], b: &[String]) -> usize {
+    let mut row = vec![0usize; b.len() + 1];
+    for word in a {
+        let mut diagonal = 0;
+        for (j, other) in b.iter().enumerate() {
+            let above = row[j + 1];
+            row[j + 1] = if word == other { diagonal + 1 } else { above.max(row[j]) };
+            diagonal = above;
+        }
+    }
+    row[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::temp_dir;
+
+    fn line(idx: i64, track: Track, start_ms: u64, end_ms: u64, text: &str) -> Line {
+        Line { idx, start_ms, end_ms, track, speaker: None, text: text.into() }
+    }
+
+    #[test]
+    fn a_mic_line_repeating_the_call_is_echo() {
+        let lines = vec![
+            line(0, Track::System, 1_000, 4_000, "So the launch moves to Thursday, right after the review."),
+            line(1, Track::Mic, 1_300, 3_000, "so the launch moves to Thursday"),
+            line(2, Track::Mic, 3_200, 4_500, "right after the review"),
+            line(3, Track::Mic, 5_000, 6_000, "Thursday works for me, thanks."),
+        ];
+        assert_eq!(echo_lines(&lines), vec![1, 2]);
+    }
+
+    #[test]
+    fn far_apart_or_short_replies_are_not_echo() {
+        let lines = vec![
+            line(0, Track::System, 1_000, 2_000, "Okay, sounds good to me."),
+            line(1, Track::Mic, 20_000, 21_000, "okay sounds good to me"),
+            line(2, Track::Mic, 2_100, 2_500, "Sounds great."),
+            line(3, Track::Mic, 2_600, 3_000, "Okay."),
+        ];
+        // "Okay." is a full match of a short line: echo. The rest is not.
+        assert_eq!(echo_lines(&lines), vec![3]);
+    }
+
+    #[test]
+    fn a_late_call_line_catches_the_mic_line_before_it() {
+        let mic = line(0, Track::Mic, 1_200, 3_000, "we should ship the beta next week");
+        let system = line(1, Track::System, 1_000, 2_900, "We should ship the beta next week.");
+        let lines = vec![mic.clone(), system.clone()];
+        assert_eq!(echoes_from(&mic, &lines[..1]), Vec::<i64>::new());
+        assert_eq!(echoes_from(&system, &lines), vec![0]);
+    }
 
     fn store() -> MeetingsStore {
         MeetingsStore::new(Database::open(&temp_dir("meetings")).database)
