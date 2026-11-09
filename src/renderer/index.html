@@ -295,6 +295,8 @@
 
             <section class="meetings-pane meetings-pane-detail" aria-live="off">
               <section id="meeting-detail" class="meeting-detail" hidden>
+                <!-- The page scrolls; the ask box under it stays put. -->
+                <div id="meeting-scroll" class="meeting-scroll">
                 <header class="meeting-detail-head" id="meeting-detail-head">
                   <div class="meeting-topbar">
                     <button id="meeting-back" class="meeting-icon-button" type="button" aria-label="All meetings" title="All meetings">
@@ -392,6 +394,7 @@
                     ></textarea>
                     <p id="meeting-memo-state" class="meeting-memo-state" aria-live="polite"></p>
                   </section>
+                </div>
                 </div>
 
                 <!-- Questions about this meeting, answered from its transcript.

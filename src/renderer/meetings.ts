@@ -63,6 +63,7 @@ const element = {
   noMatch: byId<HTMLElement>("meetings-no-match"),
   overview: byId<HTMLElement>("meetings-overview"),
   detail: byId<HTMLElement>("meeting-detail"),
+  scroller: byId<HTMLElement>("meeting-scroll"),
   detailHead: byId<HTMLElement>("meeting-detail-head"),
   back: byId<HTMLButtonElement>("meeting-back"),
   prev: byId<HTMLButtonElement>("meeting-prev"),
@@ -1120,7 +1121,7 @@ function openMeeting(id: string | null): void {
   renderEmpty();
   if (id) {
     if (changed) replay(element.detail);
-    element.detail.parentElement?.scrollTo({ top: 0 });
+    element.scroller.scrollTo({ top: 0 });
     const known = meetings.find((meeting) => meeting.id === id);
     if (known) {
       detail = { meeting: known, lines: [], summary: null };
@@ -1328,7 +1329,7 @@ function iconButton(glyph: IconName, label: string, run: () => void, withLabel =
 function askDelete(): void {
   confirmDelete = true;
   renderConfirm();
-  element.detail.parentElement?.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+  element.scroller.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   element.confirm.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
 }
 

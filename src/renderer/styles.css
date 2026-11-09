@@ -4790,10 +4790,9 @@ select {
 .meeting-detail {
   display: flex;
   width: 100%;
-  max-width: 880px;
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 auto;
   flex-direction: column;
-  margin: 0 auto;
   animation: detail-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -5920,8 +5919,30 @@ select {
   display: none;
 }
 
-.meetings-pane-detail {
+/* The pane itself holds still: the meeting scrolls inside it, and the ask
+   box sits under that, out of the scroll and its bounce. */
+.meetings-pane.meetings-pane-detail {
+  overflow: hidden;
+}
+
+.meeting-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.meeting-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.meeting-scroll > *,
+.meeting-ask {
+  width: 100%;
+  max-width: 880px;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 /* Back on the left; the menu, newer, older and the live window on the right. */
@@ -6109,16 +6130,16 @@ select {
 
 /* Held at the foot of the open meeting, over whatever scrolls beneath it. */
 .meeting-ask {
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
   display: flex;
-  max-width: 880px;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 8px;
-  margin-top: auto;
-  padding: 12px 0 14px;
-  background: linear-gradient(to bottom, transparent, var(--surface) 22px);
+  padding: 10px 0 14px;
+}
+
+.meeting-ask-input:focus,
+.meeting-ask-input:focus-visible {
+  outline: none;
 }
 
 .meeting-answers {
