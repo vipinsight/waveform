@@ -65,6 +65,12 @@ const element = {
   detail: byId<HTMLElement>("meeting-detail"),
   detailHead: byId<HTMLElement>("meeting-detail-head"),
   back: byId<HTMLButtonElement>("meeting-back"),
+  prev: byId<HTMLButtonElement>("meeting-prev"),
+  next: byId<HTMLButtonElement>("meeting-next"),
+  window: byId<HTMLButtonElement>("meeting-window"),
+  findToggle: byId<HTMLButtonElement>("meeting-find-toggle"),
+  copyTranscript: byId<HTMLButtonElement>("meeting-copy-transcript"),
+  speakersToggle: byId<HTMLButtonElement>("meeting-speakers-toggle"),
   title: byId<HTMLInputElement>("meeting-title"),
   actions: byId<HTMLElement>("meeting-actions"),
   meta: byId<HTMLElement>("meeting-meta"),
@@ -154,6 +160,9 @@ const answers = new Map<string, Answer[]>();
 let memoPending: { id: string; text: string; timer: number } | null = null;
 /** The meeting the list should put focus back on when the page returns to it. */
 let returnTo: string | null = null;
+/** Whether the transcript's find field and speaker names are out. */
+let findOpen = false;
+let speakersOpen = false;
 /** The meeting the panel beside the list is showing: the one pointed at or focused. */
 let previewId: string | null = null;
 
@@ -175,6 +184,30 @@ export function bindMeetings(given: Options): void {
     if (event.target === element.intro) hideIntro();
   });
   element.back.addEventListener("click", () => openMeeting(null));
+  element.prev.addEventListener("click", () => step(-1));
+  element.next.addEventListener("click", () => step(1));
+  element.window.addEventListener("click", () => void host().toggleMeetingPanel().catch(showError));
+  element.findToggle.addEventListener("click", () => {
+    findOpen = !findOpen;
+    if (!findOpen && element.find.value) {
+      element.find.value = "";
+      renderLines();
+    }
+    renderTranscriptTools();
+    if (findOpen) element.find.focus();
+  });
+  element.copyTranscript.addEventListener("click", () => {
+    if (!detail || detail.lines.length === 0) return;
+    const text = transcriptText(detail);
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => options.toast("Transcript copied"))
+      .catch(showError);
+  });
+  element.speakersToggle.addEventListener("click", () => {
+    speakersOpen = !speakersOpen;
+    renderTranscriptTools();
+  });
   element.memo.addEventListener("input", onMemoInput);
   element.memo.addEventListener("blur", () => void flushMemo());
   element.askForm.addEventListener("submit", (event) => {
@@ -203,9 +236,6 @@ export function bindMeetings(given: Options): void {
     const box = element.progress.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
     playback.audio.currentTime = fraction * playback.audio.duration;
-  });
-  element.detail.parentElement?.addEventListener("scroll", (event) => {
-    element.detailHead.classList.toggle("is-stuck", (event.target as HTMLElement).scrollTop > 2);
   });
   element.tabSummary.addEventListener("click", () => chooseTab("summary"));
   element.tabTranscript.addEventListener("click", () => chooseTab("transcript"));
@@ -802,6 +832,8 @@ function renderList(): void {
 
   element.shell.hidden = meetings.length === 0;
   element.shell.dataset.open = String(openId !== null);
+  // An open meeting has the page to itself: no Notetaker head above it.
+  element.view.classList.toggle("is-meeting-open", openId !== null);
   element.list.replaceChildren(...groupRows(shown));
   element.noMatch.hidden = meetings.length === 0 || shown.length > 0;
   renderPermissionAsk();
@@ -1081,6 +1113,8 @@ function openMeeting(id: string | null): void {
   element.detail.hidden = id === null;
   element.find.value = "";
   element.askInput.value = "";
+  findOpen = false;
+  speakersOpen = false;
   if (id === null && leaving) returnTo = leaving;
   renderList();
   renderEmpty();
@@ -1122,6 +1156,7 @@ function renderDetail(): void {
   renderLines();
   renderMemo();
   renderAsk();
+  renderTranscriptTools();
   if (detail.meeting.state === "recording") startTicker();
 }
 
@@ -1130,36 +1165,63 @@ function renderHead(): void {
   if (!detail) return;
   const { meeting } = detail;
 
-  element.meta.replaceChildren();
-  if (meeting.state === "recording") {
-    element.meta.append(`Started ${timeOfDay(meeting.createdAt)}`);
-  } else {
-    const parts: (string | HTMLElement)[] = [longWhen(meeting.createdAt)];
-    if (meeting.durationMs > 0) parts.push(duration(meeting.durationMs));
-    const people = participants();
-    if (people) parts.push(people);
-    parts.forEach((part, index) => {
-      if (index > 0) {
-        const sep = document.createElement("span");
-        sep.className = "meeting-meta-sep";
-        sep.textContent = "·";
-        element.meta.append(sep);
-      }
-      element.meta.append(part);
-    });
-  }
+  // Under the title: the day, and how long, as quiet chips.
+  const chip = (text: string, tone?: string) => {
+    const span = document.createElement("span");
+    span.className = tone ? `meeting-chip is-${tone}` : "meeting-chip";
+    span.textContent = text;
+    return span;
+  };
+  const date = new Date(meeting.createdAt);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  const chips: HTMLElement[] = [
+    chip(date.toLocaleDateString([], sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" })),
+    chip(timeOfDay(meeting.createdAt)),
+  ];
+  if (meeting.state === "recording") chips.push(chip("Recording", "live"));
+  else if (meeting.durationMs > 0) chips.push(chip(duration(meeting.durationMs)));
+  element.meta.replaceChildren(...chips);
+
+  // Newer and older, in the list's order.
+  const index = meetings.findIndex((entry) => entry.id === meeting.id);
+  element.prev.disabled = index <= 0;
+  element.next.disabled = index === -1 || index >= meetings.length - 1;
+  element.window.disabled = meeting.state !== "recording" && meeting.state !== "processing";
+  element.window.title = element.window.disabled
+    ? "The live transcript window is for a meeting being recorded"
+    : "Open the live transcript window";
 
   element.actions.replaceChildren();
   if (meeting.state === "recording" || meeting.state === "processing") return;
-
   const playing = Boolean(playback && !playback.audio.paused);
-  const play = iconButton(playing ? "pause" : "play", playing ? "Pause" : "Play", () => void togglePlay(), true);
-  play.id = "meeting-play";
-  play.disabled = !meeting.hasAudio;
-  const copy = dropdown(iconButton("copy", "Copy", () => {}, true), "Copy", copyItems(() => copy));
-  copy.querySelector("button")?.append(icon("chevron"));
-  const more = dropdown(iconButton("more", "More", () => {}), "More", moreItems());
-  element.actions.append(play, copy, more);
+  const trigger = iconButton("more", "More", () => {});
+  trigger.className = "meeting-icon-button is-plain";
+  const menu = dropdown(trigger, "More", [
+    { label: playing ? "Pause" : "Play", icon: playing ? "pause" : "play", run: () => void togglePlay(), disabled: !meeting.hasAudio },
+    "divider",
+    ...copyItems(() => menu),
+    "divider",
+    ...moreItems(),
+  ]);
+  element.actions.append(menu);
+}
+
+/** Opens the meeting before (-1) or after (1) this one in the list. */
+function step(by: number): void {
+  if (!openId) return;
+  const index = meetings.findIndex((entry) => entry.id === openId);
+  const next = meetings[index + by];
+  if (next) openMeeting(next.id);
+}
+
+/** The transcript bar's toggles: find, and naming the speakers. */
+function renderTranscriptTools(): void {
+  element.find.hidden = !findOpen;
+  element.findToggle.setAttribute("aria-pressed", String(findOpen));
+  element.speakersToggle.setAttribute("aria-expanded", String(speakersOpen));
+  element.speakersToggle.setAttribute("aria-pressed", String(speakersOpen));
+  element.copyTranscript.disabled = !detail || detail.lines.length === 0;
+  renderSpeakers();
 }
 
 /** What the Copy menu offers for the open meeting. `anchor` shows the "copied" tick. */
@@ -1234,25 +1296,6 @@ async function openRowMenu(id: string, x: number, y: number): Promise<void> {
           { label: "Delete meeting…", icon: "trash", run: thenOpen(askDelete), danger: true },
         ] as DropdownItem[])),
   ]);
-}
-
-/** Who spoke: a dot per voice in its colour, then the names. */
-function participants(): HTMLElement | null {
-  if (!detail || detail.lines.length === 0) return null;
-  const labels = Array.from(new Set(detail.lines.map((line) => line.speaker).filter((label): label is string => Boolean(label))));
-  if (labels.length === 0) return null;
-  const wrap = document.createElement("span");
-  wrap.className = "meeting-meta-people";
-  for (const label of labels) {
-    const dot = document.createElement("span");
-    dot.className = `speaker-dot ${speakerClass(label)}`;
-    wrap.append(dot);
-  }
-  const names = labels.map((label) => speakerName(label, detail!.meeting));
-  const text = document.createElement("span");
-  text.textContent = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
-  wrap.append(text);
-  return wrap;
 }
 
 function copyText(trigger: HTMLElement, what: string, text: string | null): void {
@@ -1991,12 +2034,7 @@ function renderSummary(): void {
 
   const noteOf = (kind: string) => meeting.notes.find((note) => note.kind === kind);
 
-  if (summary && meeting.summaryModel) {
-    const by = document.createElement("p");
-    by.className = "view-note meeting-summary-by";
-    by.textContent = `Written by ${meeting.summaryModel.split("/").pop() ?? meeting.summaryModel}`;
-    element.summary.append(by);
-  }
+  if (summary) element.summary.append(summaryBar(summary));
 
   if (meeting.state === "processing") {
     element.summary.append(skeleton());
@@ -2065,6 +2103,36 @@ function renderSummary(): void {
   card.append(summarySection("Next steps", summary.nextSteps));
   card.append(summarySection("Decisions", summary.decisions));
   element.summary.append(card);
+}
+
+/** Over the summary: how long it takes to read, and copying it. */
+function summaryBar(summary: MeetingSummary): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "panel-bar";
+  const info = document.createElement("span");
+  info.className = "panel-bar-info";
+  info.append(icon("sparkles"));
+  const words = summaryText(summary).split(/\s+/).filter(Boolean).length;
+  const label = document.createElement("span");
+  label.textContent = `${Math.max(1, Math.round(words / 230))} min read`;
+  info.append(label);
+  const tools = document.createElement("span");
+  tools.className = "panel-bar-tools";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "meeting-icon-button is-plain";
+  copy.setAttribute("aria-label", "Copy the summary");
+  copy.title = "Copy the summary";
+  copy.append(icon("copy"));
+  copy.addEventListener("click", () => {
+    void navigator.clipboard
+      .writeText(summaryText(summary))
+      .then(() => options.toast("Summary copied"))
+      .catch(showError);
+  });
+  tools.append(copy);
+  bar.append(info, tools);
+  return bar;
 }
 
 /** The shape of a summary, shimmering, while one is being written or fetched. */
@@ -2191,7 +2259,7 @@ function renderSpeakers(): void {
     new Set(detail.lines.map((line) => line.speaker).filter((label): label is string => Boolean(label))),
   );
   const unnamed = labels.filter((label) => label !== "me" && !meeting.speakers[label]);
-  element.speakersPrompt.hidden = meeting.state === "recording" || unnamed.length === 0;
+  element.speakersPrompt.hidden = !speakersOpen || meeting.state === "recording" || unnamed.length === 0;
   element.speakersPrompt.textContent = "Who was on the call? Click a name to change it.";
 
   element.speakers.replaceChildren(
@@ -2209,7 +2277,7 @@ function renderSpeakers(): void {
       return chip;
     }),
   );
-  element.speakers.hidden = labels.length === 0;
+  element.speakers.hidden = !speakersOpen || labels.length === 0;
 }
 
 /** Turns the chip into a field; Enter or blur saves, Esc cancels. */

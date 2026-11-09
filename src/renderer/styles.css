@@ -4806,60 +4806,18 @@ select {
 
 /* Stays put while the body scrolls under it; a hairline appears once it does. */
 .meeting-detail-head {
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 2px 0 12px;
-  margin-bottom: 10px;
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  gap: 10px;
+  padding: 18px 0 8px;
+  margin-bottom: 8px;
 }
 
-.meeting-detail-head::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--hairline);
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
 
-.meeting-detail-head.is-stuck::after {
-  opacity: 1;
-}
 
-.meeting-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  align-self: flex-start;
-  margin: 0 0 6px -6px;
-  padding: 3px 9px 3px 4px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 570;
-  transition: background 130ms ease;
-}
 
-.meeting-back:hover {
-  background: var(--accent-soft);
-}
 
-.meeting-back svg {
-  width: 14px;
-  height: 14px;
-}
 
 .meeting-title-row {
   display: flex;
@@ -4878,7 +4836,7 @@ select {
   background: transparent;
   color: var(--ink);
   font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 500;
   letter-spacing: -0.012em;
   transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
@@ -4910,48 +4868,10 @@ select {
   display: none;
 }
 
-.meeting-actions .pill-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--hairline);
-  background: var(--surface-raised);
-  font-size: 12.5px;
-  box-shadow: 0 1px 2px rgb(28 27 24 / 4%);
-}
-
-.meeting-actions .pill-button:hover {
-  border-color: var(--hairline-strong);
-  background: var(--surface-sunken);
-}
-
-.meeting-actions .pill-button svg {
-  width: 13px;
-  height: 13px;
-  flex: 0 0 auto;
-}
-
-.meeting-actions .pill-button.is-icon {
-  width: 30px;
-  padding: 0;
-  justify-content: center;
-}
-
-.meeting-actions .pill-button.is-copied {
-  border-color: color-mix(in srgb, var(--positive) 40%, transparent);
-  color: var(--positive);
-}
-
-.meeting-actions .pill-button[aria-expanded="true"] {
-  border-color: var(--hairline-strong);
-  background: var(--surface-sunken);
-}
-
 .meeting-meta {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   min-height: 18px;
   margin: 0;
@@ -5549,45 +5469,19 @@ select {
   margin: -4px 2px 0;
 }
 
-/* What the transcript holds, and finding in it, on one quiet bar. */
-.meeting-transcript-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 8px 7px 16px;
-  border-radius: 12px;
-  background: var(--surface-sunken);
-  gap: 10px;
-}
-
-.meeting-transcript-head .dictionary-field {
-  flex: 0 1 240px;
-}
-
-.meeting-transcript-info {
-  color: var(--ink-soft);
-  font-size: 11.5px;
-  font-weight: 640;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 .summary-card {
-  padding: 4px 20px;
-  border: 1px solid var(--hairline);
-  border-radius: 16px;
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-card);
+  padding: 0;
 }
 
 .summary-section {
   padding: 14px 0 16px;
 }
 
-.summary-section + .summary-section {
-  border-top: 1px solid var(--hairline);
+.summary-section:first-child {
+  margin: 0 -14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
 }
 
 .summary-section-head {
@@ -5600,19 +5494,17 @@ select {
 
 .summary-section-head h3 {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 11.5px;
+  color: var(--ink);
+  font-size: 15px;
   font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .summary-section ul {
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 14.5px;
+  line-height: 1.7;
   user-select: text;
   -webkit-user-select: text;
   cursor: auto;
@@ -5631,7 +5523,7 @@ select {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--ink-soft);
 }
 
 .summary-section li + li {
@@ -5641,9 +5533,8 @@ select {
 .meeting-overview {
   margin: 0;
   color: var(--ink);
-  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-size: 17px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.75;
   user-select: text;
   -webkit-user-select: text;
   cursor: auto;
@@ -6018,6 +5909,157 @@ select {
   border-radius: 3px;
   background: color-mix(in srgb, var(--warn) 32%, transparent);
   color: inherit;
+}
+
+
+/* --- Meetings: the meeting page ---------------------------------------------- */
+
+/* An open meeting has the page to itself: the Notetaker head steps away. */
+.view-meetings.is-meeting-open > .view-head,
+.view-meetings.is-meeting-open > .meetings-permission {
+  display: none;
+}
+
+.meetings-pane-detail {
+  overflow-x: hidden;
+}
+
+/* Back on the left; the menu, newer, older and the live window on the right. */
+.meeting-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.meeting-topbar-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meeting-icon-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.meeting-icon-button.is-plain {
+  background: transparent;
+}
+
+.meeting-icon-button:hover:not(:disabled),
+.meeting-icon-button[aria-expanded="true"],
+.meeting-icon-button[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.meeting-icon-button:disabled {
+  color: var(--ink-faint);
+  opacity: 0.5;
+}
+
+.meeting-icon-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.meeting-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meeting-chip.is-live {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+}
+
+/* The tabs' rule runs the full width of the page, not just the column. */
+.meeting-tabs {
+  position: relative;
+}
+
+.meeting-tabs::after {
+  content: "";
+  position: absolute;
+  right: -100vw;
+  bottom: -1px;
+  left: -100vw;
+  height: 1px;
+  background: var(--hairline);
+}
+
+/* What a panel holds, and what can be done with it, on one quiet bar. */
+.panel-bar {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+}
+
+.panel-bar-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.panel-bar-info svg {
+  width: 15px;
+  height: 15px;
+}
+
+.panel-bar-find {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: 0;
+}
+
+.panel-bar-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel-bar .meeting-icon-button:hover:not(:disabled),
+.panel-bar .meeting-icon-button[aria-pressed="true"] {
+  background: var(--surface-raised);
 }
 
 /* --- Meetings: notes --------------------------------------------------------- */
@@ -6665,7 +6707,7 @@ select {
   }
 
   .meeting-title {
-    font-size: 21px;
+    font-size: 26px;
   }
 
   .band-steps {
