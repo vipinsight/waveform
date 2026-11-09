@@ -6017,8 +6017,7 @@ select {
 }
 
 .meeting-memo:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--hairline-strong);
 }
 
 .meeting-memo-state {
@@ -6157,8 +6156,7 @@ select {
 }
 
 .meeting-ask-form:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-card);
+  border-color: var(--ink-faint);
 }
 
 .meeting-ask-form > svg {
