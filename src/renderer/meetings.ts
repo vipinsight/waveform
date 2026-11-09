@@ -9,6 +9,7 @@ import type {
 } from "../shared/contracts";
 import { host } from "./host";
 import { audioFileToMonoWav } from "./audio/file-wav";
+import { onRowContextMenu } from "./context-menu";
 
 /**
  * The Meetings page: a list of recordings on the left, and the one that is
@@ -880,6 +881,7 @@ function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTM
       open();
     }
   });
+  onRowContextMenu(row, (event) => void openRowMenu(meeting.id, event.clientX, event.clientY));
 
   const title = document.createElement("span");
   title.className = "meeting-row-title";
@@ -1039,32 +1041,69 @@ function renderHead(): void {
   const play = iconButton(playing ? "pause" : "play", playing ? "Pause" : "Play", () => void togglePlay(), true);
   play.id = "meeting-play";
   play.disabled = !meeting.hasAudio;
-  const copy = dropdown(iconButton("copy", "Copy", () => {}, true), "Copy", [
-    { label: "Copy summary", icon: "sparkles", run: () => copyText(copy, "Summary", detail?.meeting.summary ? summaryTextOf(detail) : null), disabled: !meeting.summary },
-    { label: "Copy transcript", icon: "text", run: () => copyText(copy, "Transcript", detail && detail.lines.length > 0 ? transcriptText(detail) : null), disabled: detail.lines.length === 0 },
+  const copy = dropdown(iconButton("copy", "Copy", () => {}, true), "Copy", copyItems(() => copy));
+  copy.querySelector("button")?.append(icon("chevron"));
+  const more = dropdown(iconButton("more", "More", () => {}), "More", moreItems());
+  element.actions.append(play, copy, more);
+}
+
+/** What the Copy menu offers for the open meeting. `anchor` shows the "copied" tick. */
+function copyItems(anchor: () => HTMLElement): DropdownItem[] {
+  const lines = detail?.lines.length ?? 0;
+  return [
+    { label: "Copy summary", icon: "sparkles", run: () => copyText(anchor(), "Summary", detail?.meeting.summary ? summaryTextOf(detail) : null), disabled: !detail?.meeting.summary },
+    { label: "Copy transcript", icon: "text", run: () => copyText(anchor(), "Transcript", detail && detail.lines.length > 0 ? transcriptText(detail) : null), disabled: lines === 0 },
     {
       label: "Copy both",
       icon: "copy",
       run: () =>
         copyText(
-          copy,
+          anchor(),
           "Summary and transcript",
           detail && detail.lines.length > 0
             ? [detail.meeting.summary ? summaryTextOf(detail) : null, "Transcript", transcriptText(detail)].filter(Boolean).join("\n\n")
             : null,
         ),
-      disabled: detail.lines.length === 0,
+      disabled: lines === 0,
     },
-  ]);
-  copy.querySelector("button")?.append(icon("chevron"));
-  const more = dropdown(iconButton("more", "More", () => {}), "More", [
+  ];
+}
+
+/** What the More menu offers for the open meeting. */
+function moreItems(): DropdownItem[] {
+  const meeting = detail?.meeting;
+  if (!meeting) return [];
+  return [
     { label: "Rename", icon: "pencil", run: () => { element.title.focus(); element.title.select(); } },
-    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey || detail.lines.length === 0 },
+    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey || !detail || detail.lines.length === 0 },
     { label: "Save audio…", icon: "download", run: () => void saveAudio(meeting), disabled: !meeting.hasAudio },
     "divider",
     { label: "Delete meeting…", icon: "trash", run: askDelete, danger: true },
+  ];
+}
+
+/**
+ * Right-click on a row: opens that meeting, as a click would, then offers
+ * everything its head does (Play, the Copy menu, the More menu) in one menu
+ * at the pointer. A meeting still recording or finishing has none of those.
+ */
+async function openRowMenu(id: string, x: number, y: number): Promise<void> {
+  closeMenus();
+  if (openId !== id) {
+    openMeeting(id);
+    focusRow(id);
+  }
+  await reloadDetail();
+  const meeting = detail?.meeting;
+  if (!meeting || meeting.id !== id || meeting.state === "recording" || meeting.state === "processing") return;
+  const playing = Boolean(playback && !playback.audio.paused);
+  const wrap = floatingMenu(x, y, "Meeting", [
+    { label: playing ? "Pause" : "Play", icon: playing ? "pause" : "play", run: () => void togglePlay(), disabled: !meeting.hasAudio },
+    "divider",
+    ...copyItems(() => element.actions.querySelector<HTMLElement>(".copy-menu") ?? wrap),
+    "divider",
+    ...moreItems(),
   ]);
-  element.actions.append(play, copy, more);
 }
 
 /** Who spoke: a dot per voice in its colour, then the names. */
@@ -1438,25 +1477,7 @@ function dropdown(trigger: HTMLButtonElement, aria: string, items: DropdownItem[
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", aria);
 
-  for (const item of items) {
-    if (item === "divider") {
-      menu.append(document.createElement("hr"));
-      continue;
-    }
-    const entry = document.createElement("button");
-    entry.type = "button";
-    entry.setAttribute("role", "menuitem");
-    entry.tabIndex = -1;
-    if (item.icon) entry.append(icon(item.icon));
-    entry.append(item.label);
-    entry.disabled = Boolean(item.disabled);
-    if (item.danger) entry.classList.add("is-danger");
-    entry.addEventListener("click", () => {
-      closeMenus();
-      item.run();
-    });
-    menu.append(entry);
-  }
+  fillMenu(menu, items);
 
   const entries = () => Array.from(menu.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not(:disabled)"));
   trigger.addEventListener("click", (event) => {
@@ -1496,12 +1517,78 @@ function dropdown(trigger: HTMLButtonElement, aria: string, items: DropdownItem[
   return wrap;
 }
 
+function fillMenu(menu: HTMLElement, items: DropdownItem[]): void {
+  for (const item of items) {
+    if (item === "divider") {
+      menu.append(document.createElement("hr"));
+      continue;
+    }
+    const entry = document.createElement("button");
+    entry.type = "button";
+    entry.setAttribute("role", "menuitem");
+    entry.tabIndex = -1;
+    if (item.icon) entry.append(icon(item.icon, item.icon === "play" || item.icon === "pause"));
+    entry.append(item.label);
+    entry.disabled = Boolean(item.disabled);
+    if (item.danger) entry.classList.add("is-danger");
+    entry.addEventListener("click", () => {
+      closeMenus();
+      item.run();
+    });
+    menu.append(entry);
+  }
+}
+
+/**
+ * A menu at a point rather than under a button: the right-click one. It goes
+ * away with the others: on a choice, Escape, or a click elsewhere.
+ */
+function floatingMenu(x: number, y: number, aria: string, items: DropdownItem[]): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "copy-menu is-open is-floating";
+  const menu = document.createElement("div");
+  menu.className = "copy-menu-list";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", aria);
+  fillMenu(menu, items);
+  wrap.append(menu);
+  element.view.append(wrap);
+
+  // Down and right of the pointer, flipped where the window runs out.
+  const margin = 8;
+  const top = y + menu.offsetHeight > window.innerHeight - margin ? y - menu.offsetHeight : y;
+  const left = x + menu.offsetWidth > window.innerWidth - margin ? x - menu.offsetWidth : x;
+  wrap.style.top = `${Math.max(margin, top)}px`;
+  wrap.style.left = `${Math.max(margin, left)}px`;
+
+  const entries = () => Array.from(menu.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not(:disabled)"));
+  menu.addEventListener("keydown", (event) => {
+    const all = entries();
+    const at = all.findIndex((entry) => entry === document.activeElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const next = event.key === "ArrowDown" ? (at + 1) % all.length : (at - 1 + all.length) % all.length;
+      all[next]?.focus();
+    } else if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenus();
+    }
+  });
+  entries()[0]?.focus();
+  return wrap;
+}
+
 /** Closes every open menu on the page; true if there was one. */
 function closeMenus(): boolean {
   let any = false;
   for (const open of element.view.querySelectorAll<HTMLElement>(".copy-menu.is-open")) {
     open.classList.remove("is-open");
     open.querySelector("[aria-haspopup]")?.setAttribute("aria-expanded", "false");
+    any = true;
+  }
+  for (const floating of element.view.querySelectorAll(".copy-menu.is-floating")) {
+    floating.remove();
     any = true;
   }
   return any;

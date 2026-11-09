@@ -5978,6 +5978,17 @@ select {
   border-top: 1px solid var(--hairline);
 }
 
+/* The right-click menu: at the pointer, over everything else on the page. */
+.copy-menu.is-floating {
+  position: fixed;
+  z-index: 40;
+}
+
+.copy-menu.is-floating .copy-menu-list {
+  position: static;
+  transform-origin: top left;
+}
+
 /* --- Meetings: first-run sheet ------------------------------------------------ */
 
 .meeting-intro {
