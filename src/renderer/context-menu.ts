@@ -6,7 +6,7 @@
  * switched off, and the system's menu is given back only where it has
  * something to offer: in a text field, where it brings Cut, Copy, Paste and
  * Spelling, and over selected text, where it brings Copy. Rows that have
- * actions of their own open those with `onRowContextMenu`.
+ * actions of their own open those instead, with `onRowContextMenu`.
  */
 
 /** Input types the system menu edits text in. Checkboxes, ranges and buttons get nothing. */
@@ -19,33 +19,38 @@ export interface MenuTarget {
 
 /** Whether a right-click on `target` should get the system's own menu. */
 export function wantsNativeMenu(target: MenuTarget | null, selectedText: string): boolean {
-  if (selectedText.trim() !== "") return true;
+  return selectedText.trim() !== "" || inTextField(target);
+}
+
+/** Whether `target` is in a field that edits text. */
+export function inTextField(target: MenuTarget | null): boolean {
   const field = target?.closest("input, textarea, [contenteditable]:not([contenteditable='false'])");
   if (!field) return false;
   if (field.tagName !== "INPUT") return true;
   return TEXT_INPUT_TYPES.has((field.getAttribute("type") ?? "").toLowerCase());
 }
 
-function nativeMenuFor(event: MouseEvent): boolean {
-  const target = event.target instanceof Element ? event.target : null;
-  return wantsNativeMenu(target, window.getSelection()?.toString() ?? "");
+function targetOf(event: MouseEvent): Element | null {
+  return event.target instanceof Element ? event.target : null;
 }
 
 /** Switches the webview's own menu off for this window. Call once per window. */
 export function installContextMenu(): void {
   document.addEventListener("contextmenu", (event) => {
-    if (!nativeMenuFor(event)) event.preventDefault();
+    if (!wantsNativeMenu(targetOf(event), window.getSelection()?.toString() ?? "")) event.preventDefault();
   });
 }
 
 /**
- * Opens a row's own menu on right-click, unless the click belongs to a text
- * field or selected text, which keep the system's menu.
+ * Opens a row's own menu on right-click. Only a text field inside the row
+ * keeps the system's menu: right-click selects the word under the pointer,
+ * and that word is not what the row's menu acts on, so it is let go.
  */
 export function onRowContextMenu(row: HTMLElement, open: (event: MouseEvent) => void): void {
   row.addEventListener("contextmenu", (event) => {
-    if (nativeMenuFor(event)) return;
+    if (inTextField(targetOf(event))) return;
     event.preventDefault();
+    window.getSelection()?.removeAllRanges();
     open(event);
   });
 }
