@@ -185,6 +185,13 @@ export function bindMeetings(given: Options): void {
     if (event.target === element.intro) hideIntro();
   });
   element.back.addEventListener("click", () => openMeeting(null));
+  // Scrolled: the head slims down, so more of the meeting shows.
+  element.scroller.addEventListener("scroll", () => {
+    // Apart, so the head changing height does not flip it straight back.
+    const top = element.scroller.scrollTop;
+    if (top > 24) element.detail.classList.add("is-compact");
+    else if (top < 4) element.detail.classList.remove("is-compact");
+  });
   element.prev.addEventListener("click", () => step(-1));
   element.next.addEventListener("click", () => step(1));
   element.window.addEventListener("click", () => void host().toggleMeetingPanel().catch(showError));
@@ -1114,6 +1121,7 @@ function openMeeting(id: string | null): void {
   element.detail.hidden = id === null;
   element.find.value = "";
   element.askInput.value = "";
+  element.detail.classList.remove("is-compact");
   findOpen = false;
   speakersOpen = false;
   if (id === null && leaving) returnTo = leaving;

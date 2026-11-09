@@ -4956,6 +4956,49 @@ select {
   flex: 0 0 auto;
 }
 
+/* Scrolled: a smaller title, the chips folded away, less air. */
+.meeting-detail-head {
+  transition: padding 200ms ease, gap 200ms ease;
+}
+
+.meeting-detail-head .meeting-title {
+  transition: font-size 200ms ease;
+}
+
+.meeting-detail-head .meeting-topbar {
+  transition: margin 200ms ease;
+}
+
+.meeting-detail.is-compact .meeting-detail-head {
+  gap: 4px;
+  padding-top: 10px;
+  padding-bottom: 2px;
+}
+
+.meeting-detail.is-compact .meeting-topbar {
+  margin-bottom: 4px;
+}
+
+.meeting-detail.is-compact .meeting-title {
+  font-size: 22px;
+}
+
+.meeting-detail.is-compact .meeting-meta {
+  display: none;
+}
+
+.meeting-detail.is-compact .meeting-tab {
+  height: 32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meeting-detail-head,
+  .meeting-detail-head .meeting-title,
+  .meeting-detail-head .meeting-topbar {
+    transition: none;
+  }
+}
+
 /* While a meeting finishes: one line, a spinner and what is happening now. */
 .band-status {
   display: flex;
