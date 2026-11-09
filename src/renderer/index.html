@@ -200,6 +200,11 @@
           <div class="view-head">
             <h1 class="display">Notetaker</h1>
             <span class="head-tools">
+              <button id="meeting-import" class="pill-button import-button" type="button" title="Make notes from an audio file. You can also drop one on this page.">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+                <span>Import audio</span>
+              </button>
+              <input id="meeting-import-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.caf,.aiff,.aif,.webm" hidden />
               <button id="meeting-record" class="pill-button is-primary record-button" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                 <span id="meeting-record-label">Record</span>

@@ -8,6 +8,7 @@ import type {
   RecorderStatus,
 } from "../shared/contracts";
 import { host } from "./host";
+import { audioFileToMonoWav } from "./audio/file-wav";
 
 /**
  * The Meetings page: a list of recordings on the left, and the one that is
@@ -44,6 +45,8 @@ const element = {
   view: byId<HTMLElement>("view-meetings"),
   search: byId<HTMLInputElement>("meetings-search"),
   record: byId<HTMLButtonElement>("meeting-record"),
+  importButton: byId<HTMLButtonElement>("meeting-import"),
+  importFile: byId<HTMLInputElement>("meeting-import-file"),
   intro: byId<HTMLElement>("meeting-intro"),
   introStart: byId<HTMLButtonElement>("meeting-intro-start"),
   introCancel: byId<HTMLButtonElement>("meeting-intro-cancel"),
@@ -130,6 +133,12 @@ export function bindMeetings(given: Options): void {
 
   element.record.addEventListener("click", () => void onRecordButton());
   element.emptyRecord.addEventListener("click", () => void onRecordButton());
+  element.importButton.addEventListener("click", () => element.importFile.click());
+  element.importFile.addEventListener("change", () => {
+    const file = element.importFile.files?.[0];
+    element.importFile.value = "";
+    if (file) void importAudioFile(file);
+  });
   element.introStart.addEventListener("click", () => void startFromIntro());
   element.introCancel.addEventListener("click", hideIntro);
   element.introClose.addEventListener("click", hideIntro);
@@ -241,6 +250,40 @@ export function showMeetings(): void {
   void refreshStatus();
   void refreshList();
   if (openId) void reloadDetail();
+}
+
+/** Whether the Meetings page is the one showing, so a drop lands here. */
+export function meetingsShown(): boolean {
+  return !element.view.hidden;
+}
+
+let importing = false;
+
+/**
+ * Makes a meeting from an audio file, picked or dropped: the host keeps the
+ * audio, transcribes it, tags speakers and writes the summary, the same as
+ * after a recording. The meeting opens at once and fills in as it goes.
+ */
+export async function importAudioFile(file: File): Promise<void> {
+  if (importing) {
+    options.toast("Another file is still being read.");
+    return;
+  }
+  importing = true;
+  element.importButton.disabled = true;
+  options.toast(`Reading ${file.name}…`);
+  try {
+    // 16 kHz is what the engine and the speaker tool use.
+    const wav = await audioFileToMonoWav(file, 16_000);
+    const meeting = await host().importMeetingAudio(wav, file.name.replace(/\.[^.]+$/, ""));
+    await refreshList();
+    openMeeting(meeting.id);
+  } catch (error) {
+    showError(error);
+  } finally {
+    importing = false;
+    element.importButton.disabled = false;
+  }
 }
 
 /** For the strip on other pages: open the live meeting. */
@@ -1179,6 +1222,9 @@ function renderBand(): void {
     band.className = "meeting-band is-processing";
     const steps = STEPS.filter((step) => step.when?.() ?? true);
     const current = (meeting.stage ?? "").replace(/…$/, "");
+    // An imported file is still being transcribed: its own stage, with a
+    // way out, since a long file takes as long as the engine needs.
+    const importing = current.startsWith("Transcribing");
     let currentIndex = stopping ? 0 : steps.findIndex((step) => step.stage !== null && current.startsWith(step.stage));
     if (currentIndex === -1) currentIndex = 1;
 
@@ -1194,14 +1240,22 @@ function renderBand(): void {
       const mark = document.createElement("span");
       mark.className = "step-mark";
       mark.append(icon("check"));
-      item.append(mark, step.label);
+      const label = importing && index === 0 ? "Reading the file" : importing && index === 1 ? (meeting.stage ?? step.label) : step.label;
+      item.append(mark, label);
       if (state === "now") item.setAttribute("aria-current", "step");
       list.append(item);
     });
     const sub = document.createElement("p");
     sub.className = "band-note";
-    sub.textContent = "Usually under a minute. You can leave this page.";
+    sub.textContent = importing
+      ? "Long files take a while. You can leave this page."
+      : "Usually under a minute. You can leave this page.";
     card.append(list, sub);
+    if (importing) {
+      const cancel = linkButton("Cancel import", () => void deleteMeeting(meeting, "Import cancelled."));
+      cancel.classList.add("band-cancel");
+      card.append(cancel);
+    }
     band.replaceChildren(card);
     return;
   }

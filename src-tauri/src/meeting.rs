@@ -549,6 +549,116 @@ impl Recorder {
         Ok(())
     }
 
+    /// Makes a meeting from an audio file instead of a recording: the file is
+    /// kept as the other side of a call, cut into phrases and transcribed in
+    /// the background, then tagged and summed up like any recorded meeting.
+    ///
+    /// The window decodes the file and sends it as a mono WAV; whatever its
+    /// rate, it is resampled here to the 16 kHz the engine and diarizer use.
+    /// Returns as soon as the meeting exists, so the window can open it and
+    /// watch its lines arrive.
+    pub async fn import(self: &Arc<Self>, title: &str, wav: &[u8]) -> Result<Meeting, String> {
+        let samples = crate::whisper_cpp::decode_wav(wav)?;
+        if samples.is_empty() {
+            return Err("That file has no audio in it.".into());
+        }
+        let rate = diarize::RATE;
+        let duration_ms = samples.len() as u64 * 1_000 / rate as u64;
+        let settings = self.engine.settings.lock().await.value();
+        let (meeting, dir) = {
+            let mut store = self.meetings.lock().await;
+            let meeting = store.create(title, &settings.speech_language, &settings.model_id)?;
+            let id = meeting.id.clone();
+            let dir = store.dir(&id);
+            let written = std::fs::create_dir_all(&dir)
+                .and_then(|_| std::fs::write(dir.join("system.wav"), audio::encode_wav(&samples, rate)))
+                .map_err(|error| format!("Could not save the audio: {error}"));
+            if let Err(error) = written {
+                let _ = store.delete(&id);
+                return Err(error);
+            }
+            store.rename_speaker(&id, LOCAL_SPEAKER, &local_name())?;
+            store.set_has_system_audio(&id, true)?;
+            store.set_duration(&id, duration_ms)?;
+            store.set_state(&id, State::Processing, Some("Transcribing…"))?;
+            (store.get(&id)?.ok_or_else(|| "The meeting was not saved.".to_string())?, dir)
+        };
+        self.logs.info(
+            &self.app,
+            "meeting",
+            format!("{}: imported {:.0} s of audio into {}", meeting.id, duration_ms as f64 / 1_000.0, dir.display()),
+        );
+        let _ = self.app.emit_to(MAIN_LABEL, "meetings-changed", ());
+        self.emit_changed(&meeting).await;
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.processing.lock().await.insert(meeting.id.clone(), cancel.clone());
+        let this = self.clone();
+        let id = meeting.id.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(reason) = this.transcribe_file(&id, &samples, rate, &cancel).await {
+                this.processing.lock().await.remove(&id);
+                if reason == crate::download::CANCELLED {
+                    return;
+                }
+                this.logs.error(&this.app, "meeting", format!("{id}: {reason}"));
+                let meeting = {
+                    let mut store = this.meetings.lock().await;
+                    let _ = store.set_state(&id, State::Failed, Some(&reason));
+                    store.get(&id).ok().flatten()
+                };
+                if let Some(meeting) = meeting {
+                    this.emit_changed(&meeting).await;
+                }
+                return;
+            }
+            this.process(&id, cancel, Steps::all()).await;
+        });
+        Ok(meeting)
+    }
+
+    /// Cuts an imported file into phrases the way a live track is cut, and
+    /// transcribes them in order onto the system track.
+    async fn transcribe_file(&self, id: &str, samples: &[f32], rate: u32, cancel: &AtomicBool) -> Result<(), String> {
+        // Cutting is quick; the engine is the slow part, so cut it all first
+        // and show progress by phrase.
+        let mut segmenter = Segmenter::new(SegmenterOptions::meeting(rate));
+        let mut phrases: Vec<audio::Phrase> = samples.chunks(TAP_BLOCK).filter_map(|block| segmenter.push(block)).collect();
+        phrases.extend(segmenter.flush());
+        let total = phrases.len();
+        let mut prior = String::new();
+        for (index, phrase) in phrases.into_iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(crate::download::CANCELLED.to_string());
+            }
+            self.set_stage(id, &format!("Transcribing… {}%", index * 100 / total)).await;
+            let wav = audio::encode_wav(&audio::normalize_phrase(&phrase.samples), rate);
+            let text = match self.engine.transcribe(wav, &prior, "meeting").await {
+                Ok(text) => text,
+                Err(error) => {
+                    self.logs.error(&self.app, "meeting", format!("{id}: phrase failed: {error}"));
+                    continue;
+                }
+            };
+            // Cancelled while the engine was busy: the meeting is gone.
+            if cancel.load(Ordering::Relaxed) {
+                return Err(crate::download::CANCELLED.to_string());
+            }
+            if text.trim().is_empty() {
+                continue;
+            }
+            prior = format!("{prior} {text}").trim().chars().rev().take(2_000).collect::<Vec<_>>().into_iter().rev().collect();
+            let line = self
+                .meetings
+                .lock()
+                .await
+                .add_line(id, Track::System, phrase.start_ms, phrase.end_ms, &text)?;
+            let event = LineEvent { meeting_id: id.to_string(), line };
+            let _ = self.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+        }
+        Ok(())
+    }
+
     /// Tags speakers, mixes the tracks down for playback, and writes the
     /// summary. Each step that cannot run leaves a note and the rest goes on;
     /// a transcript is never lost to a missing tool or a missing key.
