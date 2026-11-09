@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Bumped when the schema changes; `migrate_schema` brings older files up.
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 
 /// Shared handle to the open database.
 ///
@@ -313,6 +313,10 @@ fn migrate_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             "ALTER TABLE daily_stats ADD COLUMN speech_ms INTEGER NOT NULL DEFAULT 0;
              ALTER TABLE daily_stats ADD COLUMN timed_words INTEGER NOT NULL DEFAULT 0;",
         )?;
+    }
+    if version < 9 {
+        // The user's own notes on a meeting, typed beside the transcript.
+        transaction.execute_batch("ALTER TABLE meetings ADD COLUMN memo TEXT NOT NULL DEFAULT '';")?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()

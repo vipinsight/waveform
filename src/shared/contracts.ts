@@ -328,6 +328,8 @@ export interface Meeting {
   userTitled: boolean;
   /** Whether a recording exists on disk to play or save. */
   hasAudio: boolean;
+  /** What the user wrote about the meeting themselves, as plain text. */
+  memo: string;
 }
 
 export type MeetingNoteKind =
@@ -598,6 +600,10 @@ export interface DesktopApi {
   renameMeetingSpeaker(id: string, label: string, name: string): Promise<Meeting>;
   /** Writes the summary again, after renames or once a key is added. */
   summarizeMeeting(id: string): Promise<MeetingDetail>;
+  /** Keeps the user's own notes on a meeting. */
+  setMeetingMemo(id: string, memo: string): Promise<Meeting>;
+  /** Answers a question from the meeting's transcript and notes; nothing is kept. */
+  askMeeting(id: string, question: string): Promise<string>;
   deleteMeeting(id: string): Promise<void>;
   getMeetingAudio(id: string): Promise<Uint8Array>;
   /** Copies the recording into Downloads and reveals it; resolves to its path. */

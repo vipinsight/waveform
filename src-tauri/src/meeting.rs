@@ -981,6 +981,35 @@ impl Recorder {
         Ok(meeting)
     }
 
+    pub async fn set_memo(self: &Arc<Self>, id: &str, memo: &str) -> Result<Meeting, String> {
+        let meeting = self.meetings.lock().await.set_memo(id, memo)?;
+        self.emit_changed(&meeting).await;
+        Ok(meeting)
+    }
+
+    /// Answers a question about the meeting from what was said so far.
+    pub async fn ask(&self, id: &str, question: &str) -> Result<String, String> {
+        if question.trim().is_empty() {
+            return Err("Type a question first.".into());
+        }
+        let key = self
+            .rewriter
+            .open_router_key()
+            .await
+            .ok_or_else(|| "Add an OpenRouter API key in AI Polish first.".to_string())?;
+        let model = self.rewriter.open_router_model().await;
+        let (meeting, lines) = {
+            let store = self.meetings.lock().await;
+            let meeting = store.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())?;
+            (meeting, store.lines(id)?)
+        };
+        if lines.is_empty() {
+            return Err("Nothing has been said yet, so there is nothing to ask about.".into());
+        }
+        let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
+        summary::answer(&key, &model, &transcript, &meeting.memo, question).await
+    }
+
     pub async fn meeting(&self, id: &str) -> Result<Meeting, String> {
         self.meetings
             .lock()

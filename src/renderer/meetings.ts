@@ -12,8 +12,10 @@ import { audioFileToMonoWav } from "./audio/file-wav";
 import { onRowContextMenu } from "./context-menu";
 
 /**
- * The Meetings page: a list of recordings on the left, and the one that is
- * open on the right, its summary and transcript a tab apart.
+ * The Meetings page: one page at a time. The list, grouped by day, with an
+ * overview beside it of the week and the next steps people took on; or the
+ * open meeting, its summary, transcript and the user's own notes a tab apart,
+ * with a box at the foot to ask about it.
  *
  * The host does the recording and transcribing; this file only shows what
  * it reports and asks it for changes. Nothing here has to survive the
@@ -59,7 +61,7 @@ const element = {
   shell: byId<HTMLElement>("meetings-shell"),
   list: byId<HTMLElement>("meetings-list"),
   noMatch: byId<HTMLElement>("meetings-no-match"),
-  placeholder: byId<HTMLElement>("meeting-placeholder"),
+  overview: byId<HTMLElement>("meetings-overview"),
   detail: byId<HTMLElement>("meeting-detail"),
   detailHead: byId<HTMLElement>("meeting-detail-head"),
   back: byId<HTMLButtonElement>("meeting-back"),
@@ -74,18 +76,36 @@ const element = {
   tabs: byId<HTMLElement>("meeting-tabs"),
   tabSummary: byId<HTMLButtonElement>("meeting-tab-summary"),
   tabTranscript: byId<HTMLButtonElement>("meeting-tab-transcript"),
+  tabNotes: byId<HTMLButtonElement>("meeting-tab-notes"),
   tabCount: byId<HTMLElement>("meeting-tab-count"),
   summary: byId<HTMLElement>("meeting-summary"),
   transcript: byId<HTMLElement>("meeting-transcript"),
   transcriptHead: byId<HTMLElement>("meeting-transcript-head"),
+  transcriptInfo: byId<HTMLElement>("meeting-transcript-info"),
   transcriptNote: byId<HTMLElement>("meeting-transcript-note"),
   find: byId<HTMLInputElement>("meeting-find"),
   speakers: byId<HTMLElement>("meeting-speakers"),
   speakersPrompt: byId<HTMLElement>("meeting-speakers-prompt"),
   lines: byId<HTMLOListElement>("meeting-lines"),
+  notes: byId<HTMLElement>("meeting-notes"),
+  memo: byId<HTMLTextAreaElement>("meeting-memo"),
+  memoState: byId<HTMLElement>("meeting-memo-state"),
+  ask: byId<HTMLElement>("meeting-ask"),
+  answers: byId<HTMLOListElement>("meeting-answers"),
+  askForm: byId<HTMLFormElement>("meeting-ask-form"),
+  askInput: byId<HTMLInputElement>("meeting-ask-input"),
+  askSend: byId<HTMLButtonElement>("meeting-ask-send"),
 };
 
-type Tab = "summary" | "transcript";
+type Tab = "summary" | "transcript" | "notes";
+const TABS: Tab[] = ["notes", "transcript", "summary"];
+
+/** One question asked about a meeting, and its answer once it lands. */
+interface Answer {
+  question: string;
+  answer: string | null;
+  error: string | null;
+}
 
 /** A recording stopped under this is offered up for discarding. */
 const SHORT_MS = 20_000;
@@ -128,6 +148,14 @@ let confirmDelete = false;
 let confirmDiscard = false;
 /** Short recordings the user said to keep, for this launch. */
 const shortKept = new Set<string>();
+/** Questions asked this launch, by meeting. Nothing is saved. */
+const answers = new Map<string, Answer[]>();
+/** The notes typed but not yet saved, and the timer that will save them. */
+let memoPending: { id: string; text: string; timer: number } | null = null;
+/** The meeting the list should put focus back on when the page returns to it. */
+let returnTo: string | null = null;
+/** The meeting the panel beside the list is showing: the one pointed at or focused. */
+let previewId: string | null = null;
 
 export function bindMeetings(given: Options): void {
   options = given;
@@ -147,6 +175,12 @@ export function bindMeetings(given: Options): void {
     if (event.target === element.intro) hideIntro();
   });
   element.back.addEventListener("click", () => openMeeting(null));
+  element.memo.addEventListener("input", onMemoInput);
+  element.memo.addEventListener("blur", () => void flushMemo());
+  element.askForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void ask();
+  });
   element.title.addEventListener("change", () => {
     if (!openId) return;
     void host()
@@ -175,6 +209,7 @@ export function bindMeetings(given: Options): void {
   });
   element.tabSummary.addEventListener("click", () => chooseTab("summary"));
   element.tabTranscript.addEventListener("click", () => chooseTab("transcript"));
+  element.tabNotes.addEventListener("click", () => chooseTab("notes"));
   element.tabs.addEventListener("keydown", onTabKey);
 
   // One listener for every menu on the page, rather than one per menu built.
@@ -193,6 +228,7 @@ export function bindMeetings(given: Options): void {
     detail.lines.sort((a, b) => a.startMs - b.startMs || a.idx - b.idx);
     renderLines();
     renderSpeakers();
+    if (detail.lines.length === 1) renderAsk();
   });
   host().onMeetingChanged((meeting) => {
     // A recording that heard nothing from the tap: macOS no longer allows
@@ -307,16 +343,16 @@ export async function stopRecording(): Promise<void> {
 // --- Keyboard ------------------------------------------------------------------
 
 /**
- * ⌘F finds; Escape puts away the nearest thing that is up; the arrows walk
- * the list, and the open meeting follows them.
+ * ⌘F finds; Escape puts away the nearest thing that is up, and then the open
+ * meeting; the arrows walk the list and Enter opens the row.
  */
 function onKey(event: KeyboardEvent): void {
   if (element.view.hidden) return;
 
   if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") {
     event.preventDefault();
-    // On a narrow window the list is behind the open meeting; go back first.
-    if (openId && isNarrow()) openMeeting(null);
+    // The list is behind the open meeting; go back to it first.
+    if (openId) openMeeting(null);
     element.search.focus();
     element.search.select();
     return;
@@ -344,7 +380,8 @@ function onKey(event: KeyboardEvent): void {
     // A field with text in it clears first; the page steps back only after.
     const active = document.activeElement;
     if (active instanceof HTMLInputElement && active.value) return;
-    if (openId && isNarrow()) {
+    if (active instanceof HTMLTextAreaElement) return;
+    if (openId) {
       event.stopPropagation();
       openMeeting(null);
     }
@@ -353,30 +390,24 @@ function onKey(event: KeyboardEvent): void {
 
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     const active = document.activeElement as HTMLElement | null;
-    if (!active || !(element.list.contains(active) || active === element.search)) return;
+    if (openId || !active || !(element.list.contains(active) || active === element.search)) return;
     const rows = Array.from(element.list.querySelectorAll<HTMLElement>(".meeting-row"));
     if (rows.length === 0) return;
     event.preventDefault();
     const down = event.key === "ArrowDown";
-    let index = rows.findIndex((row) => row.contains(active));
-    if (index === -1) index = rows.findIndex((row) => row.dataset.id === openId);
+    const index = rows.findIndex((row) => row.contains(active));
     const next = index === -1 ? (down ? 0 : rows.length - 1) : Math.min(rows.length - 1, Math.max(0, index + (down ? 1 : -1)));
     const id = rows[next]?.dataset.id;
-    if (!id) return;
-    if (id !== openId) openMeeting(id);
-    focusRow(id);
+    if (id) focusRow(id);
   }
 }
 
 function focusRow(id: string): void {
+  const rows = element.list.querySelectorAll<HTMLElement>(".meeting-row");
+  for (const row of rows) row.tabIndex = row.dataset.id === id ? 0 : -1;
   const row = element.list.querySelector<HTMLElement>(`.meeting-row[data-id="${CSS.escape(id)}"]`);
   row?.focus();
   row?.scrollIntoView({ block: "nearest" });
-}
-
-/** True when the panes take turns: the back button is only drawn then. */
-function isNarrow(): boolean {
-  return getComputedStyle(element.back).display !== "none";
 }
 
 // --- Data --------------------------------------------------------------------
@@ -402,6 +433,8 @@ async function refreshStatus(): Promise<void> {
   renderTranscriptNote();
   renderSummary();
   renderHead();
+  renderAsk();
+  renderOverview();
 }
 
 async function refreshList(): Promise<void> {
@@ -762,33 +795,34 @@ function renderList(): void {
     ? meetings.filter(
         (meeting) =>
           meeting.title.toLowerCase().includes(query) ||
-          (meeting.summary ?? "").toLowerCase().includes(query),
+          (meeting.summary ?? "").toLowerCase().includes(query) ||
+          meeting.memo.toLowerCase().includes(query),
       )
     : meetings;
 
   element.shell.hidden = meetings.length === 0;
   element.shell.dataset.open = String(openId !== null);
-  element.placeholder.hidden = openId !== null;
   element.list.replaceChildren(...groupRows(shown));
   element.noMatch.hidden = meetings.length === 0 || shown.length > 0;
   renderPermissionAsk();
+  renderOverview();
 }
 
 /**
  * The list in sections: the recording first, whatever the dates say, then
- * today, yesterday, the week, and months before that.
+ * one section a day, newest first.
  */
 function groupRows(shown: Meeting[]): HTMLElement[] {
   const groups = new Map<string, { label: string; live: boolean; rows: Meeting[] }>();
-  const selectedOrFirst = openId ?? shown[0]?.id ?? null;
+  const focusable = (returnTo && shown.some((meeting) => meeting.id === returnTo) ? returnTo : shown[0]?.id) ?? null;
   for (const meeting of shown) {
-    const key = meeting.state === "recording" ? "live" : groupKey(meeting.createdAt);
-    const group = groups.get(key) ?? { label: key === "live" ? "Now" : groupLabel(meeting.createdAt), live: key === "live", rows: [] };
+    const key = meeting.state === "recording" ? "live" : dayKey(meeting.createdAt);
+    const group = groups.get(key) ?? { label: key === "live" ? "Now" : dayLabel(meeting.createdAt), live: key === "live", rows: [] };
     group.rows.push(meeting);
     groups.set(key, group);
   }
-  const ordered = Array.from(groups.entries()).sort(([a], [b]) => Number(b === "live") - Number(a === "live"));
-  return ordered.map(([key, group]) => {
+  const ordered = Array.from(groups.values()).sort((a, b) => Number(b.live) - Number(a.live));
+  return ordered.map((group) => {
     const section = document.createElement("div");
     section.className = "meetings-group";
     if (group.live) section.classList.add("is-live");
@@ -797,28 +831,26 @@ function groupRows(shown: Meeting[]): HTMLElement[] {
     const label = document.createElement("h3");
     label.className = "meetings-group-label";
     label.textContent = group.label;
-    section.append(label, ...group.rows.map((meeting) => renderListRow(meeting, key, meeting.id === selectedOrFirst)));
+    section.append(label, ...group.rows.map((meeting) => renderListRow(meeting, meeting.id === focusable)));
     return section;
   });
 }
 
-function groupKey(at: number): string {
-  const days = daysAgo(at);
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return "week";
+function dayKey(at: number): string {
   const date = new Date(at);
-  return `${date.getFullYear()}-${date.getMonth()}`;
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function groupLabel(at: number): string {
+function dayLabel(at: number): string {
   const days = daysAgo(at);
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
-  if (days < 7) return "This week";
   const date = new Date(at);
   const sameYear = date.getFullYear() === new Date().getFullYear();
-  return date.toLocaleDateString([], sameYear ? { month: "long" } : { month: "long", year: "numeric" });
+  return date.toLocaleDateString(
+    [],
+    sameYear ? { weekday: "short", day: "numeric", month: "short" } : { weekday: "short", day: "numeric", month: "short", year: "numeric" },
+  );
 }
 
 function daysAgo(at: number): number {
@@ -868,20 +900,17 @@ function renderPermissionAsk(): void {
   element.permission.append(text, actions);
 }
 
-function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTMLElement {
+function renderListRow(meeting: Meeting, focusable: boolean): HTMLElement {
   const row = document.createElement("div");
   row.className = `meeting-row is-${meeting.state}`;
   row.dataset.id = meeting.id;
   row.tabIndex = focusable ? 0 : -1;
   row.setAttribute("role", "option");
-  row.setAttribute("aria-selected", String(meeting.id === openId));
-  // The rows are rebuilt on open, so focus is put back on the one chosen:
-  // the arrows keep working from there.
-  const open = () => {
-    openMeeting(meeting.id);
-    focusRow(meeting.id);
-  };
+  row.setAttribute("aria-selected", "false");
+  const open = () => openMeeting(meeting.id);
   row.addEventListener("click", open);
+  row.addEventListener("mouseenter", () => preview(meeting.id));
+  row.addEventListener("focus", () => preview(meeting.id));
   row.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -890,6 +919,12 @@ function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTM
   });
   onRowContextMenu(row, (event) => void openRowMenu(meeting.id, event.clientX, event.clientY));
 
+  const tile = document.createElement("span");
+  tile.className = "meeting-row-tile";
+  tile.append(icon(meeting.state === "recording" ? "mic" : "text"));
+
+  const main = document.createElement("span");
+  main.className = "meeting-row-main";
   const title = document.createElement("span");
   title.className = "meeting-row-title";
   if (meeting.state === "recording") {
@@ -900,34 +935,99 @@ function renderListRow(meeting: Meeting, group: string, focusable: boolean): HTM
   const name = document.createElement("span");
   name.textContent = meeting.title;
   title.append(name);
-
   const time = document.createElement("span");
   time.className = "meeting-row-time";
   time.textContent =
     meeting.state === "recording"
       ? clock(Date.now() - (recordingSince ?? meeting.createdAt))
-      : group === "today" || group === "yesterday"
-        ? timeOfDay(meeting.createdAt)
-        : shortDate(meeting.createdAt);
+      : [timeOfDay(meeting.createdAt), meeting.durationMs > 0 ? duration(meeting.durationMs) : ""].filter(Boolean).join(" · ");
+  main.append(title, time);
 
-  const lede = document.createElement("span");
-  lede.className = "meeting-row-lede";
-  lede.textContent = rowLede(meeting);
-
-  const foot = document.createElement("span");
-  foot.className = "meeting-row-foot";
-  if (meeting.state !== "recording") foot.append(duration(meeting.durationMs));
+  const side = document.createElement("span");
+  side.className = "meeting-row-side";
   const badge = rowBadge(meeting);
-  if (badge) foot.append(badge);
+  if (badge) side.append(badge);
   if (meeting.state === "recording") {
     const stopButton = linkButton("Stop", () => void stop());
     stopButton.className = "pill-button is-stop is-small";
     stopButton.addEventListener("click", (event) => event.stopPropagation());
-    foot.append(stopButton);
+    side.append(stopButton);
   }
 
-  row.append(title, time, lede, foot);
+  row.classList.toggle("is-previewed", meeting.id === previewedId());
+  row.append(tile, main, side);
   return row;
+}
+
+// --- Overview ------------------------------------------------------------------
+
+/** The meeting the panel shows: the one pointed at, else the newest finished one. */
+function previewedId(): string | null {
+  if (previewId && meetings.some((meeting) => meeting.id === previewId)) return previewId;
+  return (meetings.find((meeting) => meeting.state !== "recording") ?? meetings[0])?.id ?? null;
+}
+
+function preview(id: string): void {
+  if (previewId === id) return;
+  previewId = id;
+  for (const row of element.list.querySelectorAll<HTMLElement>(".meeting-row")) {
+    row.classList.toggle("is-previewed", row.dataset.id === id);
+  }
+  renderOverview();
+}
+
+/**
+ * Beside the list: the meeting pointed at, read without opening it: its
+ * title, when, and the summary's one-sentence overview.
+ */
+function renderOverview(): void {
+  const id = previewedId();
+  const meeting = meetings.find((entry) => entry.id === id);
+  if (!meeting) {
+    element.overview.replaceChildren();
+    return;
+  }
+
+  const head = document.createElement("header");
+  head.className = "overview-head";
+  const title = document.createElement("h2");
+  title.className = "overview-title";
+  title.textContent = meeting.title;
+  const when = document.createElement("p");
+  when.className = "overview-when";
+  when.textContent = [
+    new Date(meeting.createdAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }),
+    timeOfDay(meeting.createdAt),
+    meeting.durationMs > 0 ? duration(meeting.durationMs) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  head.append(title, when);
+
+  const body = document.createElement("div");
+  body.className = "overview-body";
+  const section = (label: string, content: HTMLElement) => {
+    const heading = document.createElement("h3");
+    heading.className = "overview-label";
+    heading.textContent = label;
+    body.append(heading, content);
+  };
+
+  const lede = rowLede(meeting);
+  const text = document.createElement("p");
+  text.className = "overview-text";
+  if (meeting.state === "recording") text.textContent = "Recording now. The overview is written when it stops.";
+  else if (meeting.state === "processing") text.textContent = "Finishing up. The overview is on its way.";
+  else if (lede) text.textContent = lede;
+  else {
+    text.classList.add("is-quiet");
+    text.textContent = status?.hasOpenRouterKey
+      ? "No summary for this meeting."
+      : "Summaries need an OpenRouter key; the transcript stays on this Mac.";
+  }
+  section("Overview", text);
+
+  element.overview.replaceChildren(head, body);
 }
 
 function rowLede(meeting: Meeting): string {
@@ -969,6 +1069,8 @@ function rowBadge(meeting: Meeting): HTMLElement | null {
 
 function openMeeting(id: string | null): void {
   const changed = id !== openId;
+  const leaving = openId;
+  void flushMemo();
   stopPlayback();
   openId = id;
   detail = null;
@@ -978,6 +1080,8 @@ function openMeeting(id: string | null): void {
   live = null;
   element.detail.hidden = id === null;
   element.find.value = "";
+  element.askInput.value = "";
+  if (id === null && leaving) returnTo = leaving;
   renderList();
   renderEmpty();
   if (id) {
@@ -989,8 +1093,10 @@ function openMeeting(id: string | null): void {
       renderDetail();
     }
     void reloadDetail();
-  } else if (!status?.recording) {
-    stopTicker();
+  } else {
+    if (!status?.recording) stopTicker();
+    // Back on the list: on the row that was open, so the arrows go on from there.
+    if (leaving) focusRow(leaving);
   }
 }
 
@@ -1014,6 +1120,8 @@ function renderDetail(): void {
   renderTranscriptNote();
   renderSpeakers();
   renderLines();
+  renderMemo();
+  renderAsk();
   if (detail.meeting.state === "recording") startTicker();
 }
 
@@ -1416,17 +1524,25 @@ function updateLive(): void {
 /** The tab showing: the user's pick this session, else Summary when there is one. */
 function activeTab(): Tab {
   if (!detail) return "transcript";
-  if (detail.meeting.state === "recording") return "transcript";
+  if (detail.meeting.state === "recording") return chosenTab === "notes" ? "notes" : "transcript";
   if (chosenTab) return chosenTab;
   return detail.summary || detail.meeting.summary ? "summary" : "transcript";
 }
 
+function tabButton(tab: Tab): HTMLButtonElement {
+  return tab === "summary" ? element.tabSummary : tab === "transcript" ? element.tabTranscript : element.tabNotes;
+}
+
+function tabPanel(tab: Tab): HTMLElement {
+  return tab === "summary" ? element.summary : tab === "transcript" ? element.transcript : element.notes;
+}
+
 function chooseTab(tab: Tab): void {
-  if (element.tabSummary.disabled && tab === "summary") return;
+  if (tabButton(tab).disabled) return;
   const before = activeTab();
   chosenTab = tab;
   renderTabs();
-  if (before !== tab) replay(tab === "summary" ? element.summary : element.transcript);
+  if (before !== tab) replay(tabPanel(tab));
 }
 
 function renderTabs(): void {
@@ -1435,15 +1551,13 @@ function renderTabs(): void {
   element.tabSummary.disabled = detail.meeting.state === "recording";
   element.tabSummary.setAttribute("aria-disabled", String(element.tabSummary.disabled));
   element.tabs.dataset.tab = tab;
-  for (const [button, name] of [
-    [element.tabSummary, "summary"],
-    [element.tabTranscript, "transcript"],
-  ] as const) {
+  for (const name of TABS) {
+    const button = tabButton(name);
     button.setAttribute("aria-selected", String(name === tab));
     button.tabIndex = name === tab ? 0 : -1;
+    tabPanel(name).hidden = name !== tab;
   }
-  element.summary.hidden = tab !== "summary";
-  element.transcript.hidden = tab !== "transcript";
+  if (tab === "notes") sizeMemo();
   updateTabCount();
 }
 
@@ -1452,17 +1566,179 @@ function updateTabCount(): void {
   element.tabCount.textContent = count > 0 ? ` · ${count}` : "";
 }
 
-/** ← and → move between the tabs; Home and End jump. */
+/** ← and → move between the tabs, skipping one that is off; Home and End jump. */
 function onTabKey(event: KeyboardEvent): void {
-  const order: Tab[] = ["summary", "transcript"];
-  const current = activeTab();
-  let next: Tab | null = null;
-  if (event.key === "ArrowRight" || event.key === "End") next = "transcript";
-  else if (event.key === "ArrowLeft" || event.key === "Home") next = "summary";
-  if (!next || next === current || (next === "summary" && element.tabSummary.disabled)) return;
+  const open = TABS.filter((tab) => !tabButton(tab).disabled);
+  const at = open.indexOf(activeTab());
+  let next: Tab | undefined;
+  if (event.key === "ArrowRight") next = open[Math.min(open.length - 1, at + 1)];
+  else if (event.key === "ArrowLeft") next = open[Math.max(0, at - 1)];
+  else if (event.key === "Home") next = open[0];
+  else if (event.key === "End") next = open[open.length - 1];
+  if (!next || next === activeTab()) return;
   event.preventDefault();
   chooseTab(next);
-  (order.indexOf(next) === 0 ? element.tabSummary : element.tabTranscript).focus();
+  tabButton(next).focus();
+}
+
+// --- Notes -----------------------------------------------------------------------
+
+/** The user's own notes: shown as saved, unless they are typing in them. */
+function renderMemo(): void {
+  if (!detail) return;
+  const typing = document.activeElement === element.memo || memoPending?.id === detail.meeting.id;
+  if (!typing && element.memo.value !== detail.meeting.memo) {
+    element.memo.value = detail.meeting.memo;
+    element.memoState.textContent = "";
+  }
+  if (!element.notes.hidden) sizeMemo();
+}
+
+/** Grows with what is written, so the page scrolls rather than the box. */
+function sizeMemo(): void {
+  element.memo.style.height = "auto";
+  element.memo.style.height = `${Math.max(240, element.memo.scrollHeight + 2)}px`;
+}
+
+function onMemoInput(): void {
+  if (!openId) return;
+  sizeMemo();
+  if (memoPending) window.clearTimeout(memoPending.timer);
+  element.memoState.textContent = "";
+  memoPending = { id: openId, text: element.memo.value, timer: window.setTimeout(() => void flushMemo(), 700) };
+}
+
+/** Saves notes still waiting to be; called on a pause, on blur, and on leaving. */
+async function flushMemo(): Promise<void> {
+  const pending = memoPending;
+  if (!pending) return;
+  window.clearTimeout(pending.timer);
+  memoPending = null;
+  try {
+    const meeting = await host().setMeetingMemo(pending.id, pending.text);
+    if (openId === pending.id && !memoPending) element.memoState.textContent = "Saved";
+    const index = meetings.findIndex((entry) => entry.id === meeting.id);
+    if (index !== -1) meetings[index] = meeting;
+    if (detail && detail.meeting.id === meeting.id) detail.meeting = meeting;
+  } catch (error) {
+    showError(error);
+  }
+}
+
+// --- Ask ---------------------------------------------------------------------------
+
+/** The box at the foot: what it can do now, and what was asked so far. */
+function renderAsk(): void {
+  if (!detail) return;
+  const { meeting } = detail;
+  const keyed = Boolean(status?.hasOpenRouterKey);
+  const said = detail.lines.length > 0;
+  const asked = answers.get(meeting.id) ?? [];
+  const waiting = asked.some((entry) => entry.answer === null && entry.error === null);
+  element.askInput.disabled = !keyed || !said;
+  element.askSend.disabled = !keyed || !said || waiting;
+  element.askInput.placeholder = !keyed
+    ? "Add an OpenRouter key in AI Polish to ask about meetings"
+    : !said
+      ? meeting.state === "recording"
+        ? "Ask once something has been said"
+        : "Nothing was said to ask about"
+      : waiting
+        ? "Thinking…"
+        : meeting.state === "recording"
+          ? "Ask about what has been said so far"
+          : "Ask about this meeting";
+  element.ask.classList.toggle("is-off", !keyed);
+
+  element.answers.hidden = asked.length === 0;
+  element.answers.replaceChildren(
+    ...asked.map((entry, index) => {
+      const item = document.createElement("li");
+      item.className = "meeting-answer";
+      const question = document.createElement("p");
+      question.className = "meeting-answer-question";
+      question.textContent = entry.question;
+      const reply = document.createElement("div");
+      reply.className = "meeting-answer-reply";
+      if (entry.answer !== null) {
+        reply.append(...answerBlocks(entry.answer));
+        const copy = copyButton("Copy the answer", () => entry.answer ?? "");
+        reply.append(copy);
+      } else if (entry.error !== null) {
+        reply.classList.add("is-error");
+        reply.textContent = entry.error;
+      } else {
+        reply.classList.add("is-waiting");
+        reply.append(listening());
+      }
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.className = "meeting-answer-dismiss";
+      dismiss.setAttribute("aria-label", "Remove this question");
+      dismiss.title = "Remove";
+      dismiss.append(icon("close"));
+      dismiss.addEventListener("click", () => {
+        const list = answers.get(meeting.id) ?? [];
+        list.splice(index, 1);
+        renderAsk();
+      });
+      item.append(question, reply, dismiss);
+      return item;
+    }),
+  );
+  element.answers.scrollTop = element.answers.scrollHeight;
+}
+
+/** An answer's text as paragraphs and lists, its "- " lines becoming points. */
+function answerBlocks(text: string): HTMLElement[] {
+  const blocks: HTMLElement[] = [];
+  let list: HTMLUListElement | null = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      list = null;
+      continue;
+    }
+    const point = /^[-*•]\s+(.*)$/.exec(line);
+    if (point) {
+      if (!list) {
+        list = document.createElement("ul");
+        blocks.push(list);
+      }
+      const item = document.createElement("li");
+      item.textContent = point[1]!.replace(/\*\*/g, "");
+      list.append(item);
+    } else {
+      list = null;
+      const paragraph = document.createElement("p");
+      paragraph.textContent = line.replace(/\*\*/g, "");
+      blocks.push(paragraph);
+    }
+  }
+  return blocks;
+}
+
+async function ask(): Promise<void> {
+  if (!detail || element.askSend.disabled) return;
+  const question = element.askInput.value.trim();
+  if (!question) return;
+  const id = detail.meeting.id;
+  const entry: Answer = { question, answer: null, error: null };
+  const list = answers.get(id) ?? [];
+  list.push(entry);
+  answers.set(id, list);
+  element.askInput.value = "";
+  renderAsk();
+  try {
+    await flushMemo();
+    entry.answer = await host().askMeeting(id, question);
+  } catch (error) {
+    entry.error = error instanceof Error ? error.message : String(error);
+  }
+  if (openId === id) {
+    renderAsk();
+    element.askInput.focus();
+  }
 }
 
 // --- Menus -------------------------------------------------------------------
@@ -1980,12 +2256,22 @@ function renderLines(): void {
   let previous: string | null | undefined;
   element.lines.replaceChildren(
     ...shown.map((line) => {
+      const label = line.speaker ?? "";
+      const name = speakerName(line.speaker, meeting);
       const item = document.createElement("li");
-      item.className = `meeting-line ${speakerClass(line.speaker ?? "")}`;
+      item.className = `meeting-line ${speakerClass(label)}`;
       item.dataset.idx = String(line.idx);
       if (!query && previous !== undefined && previous === line.speaker) item.classList.add("is-continued");
       previous = line.speaker;
 
+      const body = document.createElement("div");
+      body.className = "meeting-line-body";
+
+      const head = document.createElement("div");
+      head.className = "meeting-line-head";
+      const who = document.createElement("span");
+      who.className = "meeting-line-speaker";
+      who.textContent = label === "me" ? `${name} (you)` : name;
       const time = document.createElement("button");
       time.type = "button";
       time.className = "meeting-line-time";
@@ -1994,18 +2280,17 @@ function renderLines(): void {
       time.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
       time.disabled = meeting.state === "recording" || !meeting.hasAudio;
       time.addEventListener("click", () => void playFrom(line.startMs));
+      head.append(who, time);
 
-      const who = document.createElement("span");
-      who.className = "meeting-line-speaker";
-      who.textContent = speakerName(line.speaker, meeting);
-
+      const bubble = document.createElement("div");
+      bubble.className = "meeting-line-bubble";
       const text = document.createElement("p");
       text.className = "meeting-line-text";
       text.append(...highlight(line.text, query));
+      bubble.append(text, copyButton("Copy this line", () => line.text));
 
-      const copy = copyButton("Copy this line", () => line.text);
-
-      item.append(time, who, text, copy);
+      body.append(head, bubble);
+      item.append(body);
       return item;
     }),
   );
@@ -2029,7 +2314,19 @@ function renderLines(): void {
     element.lines.lastElementChild?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }
   updateTabCount();
+  renderTranscriptInfo();
   markPlayingLine();
+}
+
+/** Over the transcript: how many voices, and how long. */
+function renderTranscriptInfo(): void {
+  if (!detail) return;
+  const voices = new Set(detail.lines.map((line) => line.speaker).filter(Boolean)).size;
+  const parts: string[] = [];
+  if (voices > 0) parts.push(voices === 1 ? "1 speaker" : `${voices} speakers`);
+  const length = detail.meeting.state === "recording" ? Date.now() - (recordingSince ?? detail.meeting.createdAt) : detail.meeting.durationMs;
+  if (length > 0) parts.push(clock(length));
+  element.transcriptInfo.textContent = parts.join(" · ");
 }
 
 /** Three dots that take turns: the page is listening, not stuck. */
@@ -2209,10 +2506,6 @@ function timeOfDay(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function shortDate(at: number): string {
-  return new Date(at).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-}
-
 function longWhen(at: number): string {
   const date = new Date(at);
   const days = daysAgo(at);
@@ -2240,6 +2533,7 @@ const ICONS = {
   pencil:
     '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
   headphones:
     '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',

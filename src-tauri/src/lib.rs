@@ -724,6 +724,18 @@ async fn rename_meeting_speaker(
     state.recorder.rename_speaker(&id, &label, &name).await
 }
 
+/// Keeps the user's own notes on a meeting.
+#[tauri::command]
+async fn set_meeting_memo(state: State<'_, AppState>, id: String, memo: String) -> Result<Meeting, String> {
+    state.recorder.set_memo(&id, &memo).await
+}
+
+/// Answers a question about a meeting from its transcript; nothing is kept.
+#[tauri::command]
+async fn ask_meeting(state: State<'_, AppState>, id: String, question: String) -> Result<String, String> {
+    state.recorder.ask(&id, &question).await
+}
+
 /// Writes the summary again, after speakers were renamed or a key was added.
 #[tauri::command]
 async fn summarize_meeting(state: State<'_, AppState>, id: String) -> Result<MeetingDetail, String> {
@@ -1951,6 +1963,8 @@ pub fn run() {
             rename_meeting,
             rename_meeting_speaker,
             summarize_meeting,
+            set_meeting_memo,
+            ask_meeting,
             finish_meeting,
             tag_meeting_speakers,
             delete_meeting,

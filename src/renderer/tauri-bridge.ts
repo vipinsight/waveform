@@ -176,6 +176,8 @@ const api: DesktopApi = {
   renameMeetingSpeaker: (id, label, name) =>
     invoke<Meeting>("rename_meeting_speaker", { id, label, name }),
   summarizeMeeting: (id) => invoke<MeetingDetail>("summarize_meeting", { id }),
+  setMeetingMemo: (id, memo) => invoke<Meeting>("set_meeting_memo", { id, memo }),
+  askMeeting: (id, question) => invoke<string>("ask_meeting", { id, question }),
   deleteMeeting: (id) => invoke<void>("delete_meeting", { id }),
   getMeetingAudio: async (id) => {
     const bytes = await invoke<number[]>("get_meeting_audio", { id });
