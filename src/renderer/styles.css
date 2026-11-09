@@ -903,7 +903,7 @@ kbd {
 .entry-menu-item:hover,
 .entry-menu-item:focus-visible {
   outline: none;
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
 }
 
 .entry-menu-item.is-danger,
@@ -5959,7 +5959,7 @@ select {
 
 .copy-menu-list button:hover:not(:disabled),
 .copy-menu-list button:focus-visible {
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
   outline: 0;
 }
 
@@ -5976,6 +5976,33 @@ select {
   margin: 4px 6px;
   border: 0;
   border-top: 1px solid var(--hairline);
+}
+
+/*
+ * A menu's padding would otherwise be dead space: the pointer at the very
+ * edge picks nothing. Each item reaches out over the padding beside it, and
+ * the first and last over the padding above and below.
+ */
+.entry-menu-item,
+.copy-menu-list button {
+  position: relative;
+}
+
+.entry-menu-item::after,
+.copy-menu-list button::after {
+  content: "";
+  position: absolute;
+  inset: 0 -7px;
+}
+
+.entry-menu-item:first-child::after,
+.copy-menu-list button:first-child::after {
+  top: -7px;
+}
+
+.entry-menu-item:last-child::after,
+.copy-menu-list button:last-child::after {
+  bottom: -7px;
 }
 
 /* The right-click menu: at the pointer, over everything else on the page. */
