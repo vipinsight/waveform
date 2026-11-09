@@ -1405,9 +1405,12 @@ function renderBand(): void {
     const spinner = document.createElement("span");
     spinner.className = "band-spinner";
     spinner.setAttribute("aria-hidden", "true");
+    const count = document.createElement("span");
+    count.className = "band-count";
+    count.textContent = `${Math.min(currentIndex, steps.length - 1) + 1}/${steps.length}`;
     const text = document.createElement("span");
     text.textContent = `${label.replace(/…$/, "")}…`;
-    card.append(spinner, text);
+    card.append(spinner, count, text);
     if (importing) {
       const cancel = document.createElement("button");
       cancel.type = "button";

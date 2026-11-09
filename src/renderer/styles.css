@@ -5067,6 +5067,11 @@ select {
   }
 }
 
+.band-count {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .band-status .band-cancel {
   margin-left: 4px;
 }
