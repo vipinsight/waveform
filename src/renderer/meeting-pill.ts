@@ -1,5 +1,6 @@
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
+import { installContextMenu } from "./context-menu";
 import { clock } from "./meeting-feed";
 
 /**
@@ -13,6 +14,7 @@ import { clock } from "./meeting-feed";
 const DRAG_THRESHOLD = 3;
 
 installTauriBridge();
+installContextMenu();
 
 const pill = requireElement<HTMLElement>("pill");
 const time = requireElement<HTMLElement>("pill-time");

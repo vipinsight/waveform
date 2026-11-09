@@ -30,6 +30,7 @@ import {
 import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
+import { installContextMenu, onRowContextMenu } from "./context-menu";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import {
   DEFAULT_SETTINGS,
@@ -340,6 +341,7 @@ let permissionsPending = false;
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+installContextMenu();
 
 void bootstrap();
 
@@ -2637,12 +2639,27 @@ function renderEntry(entry: SavedDictation): HTMLElement {
   }
   // Play and Copy are the everyday actions and stay on the row; the rest
   // (one of them destructive) wait behind the menu.
+  const more = entryMenuButton(entry, text);
   actions.append(
     iconButton("Copy", COPY_ICON, "", () => {
       void navigator.clipboard.writeText(entry.text);
     }),
-    entryMenuButton(entry, text),
+    more,
   );
+
+  // Right-click opens the same menu at the pointer, with Copy first, since
+  // the row's own Copy button is not under the pointer.
+  onRowContextMenu(article, (event) => {
+    const copy: EntryMenuItem = {
+      label: "Copy transcript",
+      icon: COPY_ICON,
+      onSelect: () => void navigator.clipboard.writeText(entry.text),
+    };
+    openEntryMenu(more, [copy, ...entryMenuItems(entry, more, text)], {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  });
 
   article.append(time, text, actions);
   return article;
@@ -2711,12 +2728,17 @@ function entryMenuItems(
 }
 
 /**
- * Floats the menu on the body, beside its trigger.
+ * Floats the menu on the body, beside its trigger, or at `at` when it was
+ * opened by a right-click.
  *
  * Inside the row it would be clipped by the day card's rounded corners, and
  * the last row of the list has no room below it, so it flips above.
  */
-function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void {
+function openEntryMenu(
+  trigger: HTMLButtonElement,
+  items: EntryMenuItem[],
+  at?: { x: number; y: number },
+): void {
   closeEntryMenu();
   const menu = document.createElement("div");
   menu.className = "entry-menu";
@@ -2739,15 +2761,23 @@ function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void
   menu.append(...buttons);
   document.body.append(menu);
 
-  const anchor = trigger.getBoundingClientRect();
-  const gap = 6;
   const margin = 8;
-  const below = anchor.bottom + gap;
-  const top =
-    below + menu.offsetHeight > window.innerHeight - margin
-      ? anchor.top - gap - menu.offsetHeight
-      : below;
-  const left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  let top: number;
+  let left: number;
+  if (at) {
+    // Down and right of the pointer, flipped where the window runs out.
+    top = at.y + menu.offsetHeight > window.innerHeight - margin ? at.y - menu.offsetHeight : at.y;
+    left = at.x + menu.offsetWidth > window.innerWidth - margin ? at.x - menu.offsetWidth : at.x;
+  } else {
+    const anchor = trigger.getBoundingClientRect();
+    const gap = 6;
+    const below = anchor.bottom + gap;
+    top =
+      below + menu.offsetHeight > window.innerHeight - margin
+        ? anchor.top - gap - menu.offsetHeight
+        : below;
+    left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  }
   menu.style.top = `${Math.max(margin, top)}px`;
   menu.style.left = `${Math.max(margin, left)}px`;
 
