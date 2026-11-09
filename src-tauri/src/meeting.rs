@@ -640,6 +640,10 @@ impl Recorder {
                     continue;
                 }
             };
+            // Cancelled while the engine was busy: the meeting is gone.
+            if cancel.load(Ordering::Relaxed) {
+                return Err(crate::download::CANCELLED.to_string());
+            }
             if text.trim().is_empty() {
                 continue;
             }

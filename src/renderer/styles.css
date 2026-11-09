@@ -5239,6 +5239,10 @@ select {
   font-size: 12.5px;
 }
 
+.band-cancel {
+  justify-self: start;
+}
+
 /* --- Meetings: banners ------------------------------------------------------- */
 
 .meeting-banners {

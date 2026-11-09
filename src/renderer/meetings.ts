@@ -1222,6 +1222,9 @@ function renderBand(): void {
     band.className = "meeting-band is-processing";
     const steps = STEPS.filter((step) => step.when?.() ?? true);
     const current = (meeting.stage ?? "").replace(/…$/, "");
+    // An imported file is still being transcribed: its own stage, with a
+    // way out, since a long file takes as long as the engine needs.
+    const importing = current.startsWith("Transcribing");
     let currentIndex = stopping ? 0 : steps.findIndex((step) => step.stage !== null && current.startsWith(step.stage));
     if (currentIndex === -1) currentIndex = 1;
 
@@ -1237,14 +1240,22 @@ function renderBand(): void {
       const mark = document.createElement("span");
       mark.className = "step-mark";
       mark.append(icon("check"));
-      item.append(mark, step.label);
+      const label = importing && index === 0 ? "Reading the file" : importing && index === 1 ? (meeting.stage ?? step.label) : step.label;
+      item.append(mark, label);
       if (state === "now") item.setAttribute("aria-current", "step");
       list.append(item);
     });
     const sub = document.createElement("p");
     sub.className = "band-note";
-    sub.textContent = "Usually under a minute. You can leave this page.";
+    sub.textContent = importing
+      ? "Long files take a while. You can leave this page."
+      : "Usually under a minute. You can leave this page.";
     card.append(list, sub);
+    if (importing) {
+      const cancel = linkButton("Cancel import", () => void deleteMeeting(meeting, "Import cancelled."));
+      cancel.classList.add("band-cancel");
+      card.append(cancel);
+    }
     band.replaceChildren(card);
     return;
   }
