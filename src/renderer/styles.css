@@ -4947,7 +4947,13 @@ select {
   max-width: 880px;
   flex-direction: column;
   gap: 18px;
+  padding-top: 18px;
   padding-bottom: 24px;
+}
+
+.meeting-detail-head,
+.meeting-detail > .meeting-tabs {
+  flex: 0 0 auto;
 }
 
 /* While a meeting finishes: one line, a spinner and what is happening now. */
@@ -5937,6 +5943,8 @@ select {
   display: none;
 }
 
+.meeting-detail-head,
+.meeting-detail > .meeting-tabs,
 .meeting-scroll > *,
 .meeting-ask {
   width: 100%;

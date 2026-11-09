@@ -295,8 +295,6 @@
 
             <section class="meetings-pane meetings-pane-detail" aria-live="off">
               <section id="meeting-detail" class="meeting-detail" hidden>
-                <!-- The page scrolls; the ask box under it stays put. -->
-                <div id="meeting-scroll" class="meeting-scroll">
                 <header class="meeting-detail-head" id="meeting-detail-head">
                   <div class="meeting-topbar">
                     <button id="meeting-back" class="meeting-icon-button" type="button" aria-label="All meetings" title="All meetings">
@@ -332,25 +330,26 @@
                     <span class="meeting-progress-fill"></span>
                   </button>
                 </header>
+                <!-- The user's own notes, the transcript and the summary take turns. -->
+                <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Notes, transcript or summary" data-tab="summary">
+                  <button id="meeting-tab-notes" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-notes" tabindex="-1">My notes</button>
+                  <button id="meeting-tab-transcript" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-transcript" tabindex="-1">
+                    Transcript<span id="meeting-tab-count" class="meeting-tab-count"></span>
+                  </button>
+                  <button id="meeting-tab-summary" class="meeting-tab" role="tab" type="button" aria-selected="true" aria-controls="meeting-summary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                    Summary
+                  </button>
+                </div>
 
+                <!-- The meeting scrolls between the head and the ask box, which stay put. -->
+                <div id="meeting-scroll" class="meeting-scroll">
                 <div class="meeting-detail-body">
                   <!-- Questions the page asks inline, never in a browser dialog. -->
                   <div id="meeting-confirm" class="meeting-confirm" role="alertdialog" aria-live="assertive" hidden></div>
                   <div id="meeting-short" class="meeting-short" role="status" hidden></div>
                   <div id="meeting-band" class="meeting-band" aria-live="polite"></div>
                   <div id="meeting-banners" class="meeting-banners"></div>
-
-                  <!-- The user's own notes, the transcript and the summary take turns. -->
-                  <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Notes, transcript or summary" data-tab="summary">
-                    <button id="meeting-tab-notes" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-notes" tabindex="-1">My notes</button>
-                    <button id="meeting-tab-transcript" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-transcript" tabindex="-1">
-                      Transcript<span id="meeting-tab-count" class="meeting-tab-count"></span>
-                    </button>
-                    <button id="meeting-tab-summary" class="meeting-tab" role="tab" type="button" aria-selected="true" aria-controls="meeting-summary">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
-                      Summary
-                    </button>
-                  </div>
 
                   <section id="meeting-summary" class="meeting-summary meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-summary" hidden></section>
                   <section id="meeting-transcript" class="meeting-transcript meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-transcript">
