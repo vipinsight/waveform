@@ -176,6 +176,8 @@ const api: DesktopApi = {
   renameMeetingSpeaker: (id, label, name) =>
     invoke<Meeting>("rename_meeting_speaker", { id, label, name }),
   summarizeMeeting: (id) => invoke<MeetingDetail>("summarize_meeting", { id }),
+  setMeetingMemo: (id, memo) => invoke<Meeting>("set_meeting_memo", { id, memo }),
+  askMeeting: (id, question) => invoke<string>("ask_meeting", { id, question }),
   deleteMeeting: (id) => invoke<void>("delete_meeting", { id }),
   getMeetingAudio: async (id) => {
     const bytes = await invoke<number[]>("get_meeting_audio", { id });
@@ -193,6 +195,8 @@ const api: DesktopApi = {
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),
   toggleMeetingPanel: () => invoke<void>("toggle_meeting_panel"),
+  showMeetingPanel: (id) => invoke<void>("show_meeting_panel", { id }),
+  meetingPanelTarget: () => invoke<string | null>("meeting_panel_target"),
   beginMeetingPillDrag: () => void invoke("begin_meeting_pill_drag"),
   moveMeetingPill: (deltaX, deltaY) => void invoke("drag_meeting_pill", { deltaX, deltaY }),
   endMeetingPillDrag: (deltaX, deltaY) => void invoke("end_meeting_pill_drag", { deltaX, deltaY }),

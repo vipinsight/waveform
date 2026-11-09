@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 
 const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 const PROMPT: &str = include_str!("prompts/meeting-summary.txt");
+const ASK_PROMPT: &str = include_str!("prompts/meeting-ask.txt");
 /// A long meeting's summary is still a page; past this the model is padding.
 const MAX_REPLY_TOKENS: u32 = 1_500;
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
@@ -103,6 +104,21 @@ pub async fn summarize(key: &str, model: &str, transcript: &str) -> Result<(Stri
     Ok((second, parsed))
 }
 
+/// Answers a question about one meeting from its transcript and the user's
+/// own notes. Nothing is kept: the answer is for the window to show.
+pub async fn answer(key: &str, model: &str, transcript: &str, memo: &str, question: &str) -> Result<String, String> {
+    ask(key, model, ASK_PROMPT, &question_message(transcript, memo, question)).await
+}
+
+fn question_message(transcript: &str, memo: &str, question: &str) -> String {
+    let mut message = format!("Transcript:\n{}", clip_transcript(transcript));
+    if !memo.trim().is_empty() {
+        message.push_str(&format!("\n\nMy notes:\n{}", memo.trim()));
+    }
+    message.push_str(&format!("\n\nQuestion: {}", question.trim()));
+    message
+}
+
 /// Keeps the most recent part of an overlong transcript, saying so.
 fn clip_transcript(transcript: &str) -> String {
     if transcript.chars().count() <= MAX_TRANSCRIPT_CHARS {
@@ -149,7 +165,7 @@ async fn ask(key: &str, model: &str, system: &str, transcript: &str) -> Result<S
         .and_then(|content| content.as_str())
         .map(|content| content.trim().to_string())
         .filter(|content| !content.is_empty())
-        .ok_or_else(|| "OpenRouter sent back an empty summary.".to_string())
+        .ok_or_else(|| "OpenRouter sent back an empty reply.".to_string())
 }
 
 /// Reads the fixed shape. Forgiving about blank lines and markdown bullets,
@@ -374,6 +390,14 @@ mod tests {
             text,
             "[00:00] Vipin: Hello all.\n[01:05] Priya: Hi.\n[1:01:40] Speaker 2: Bye.\n[1:01:42] Speaker: ?"
         );
+    }
+
+    #[test]
+    fn a_question_carries_the_transcript_the_notes_and_the_question() {
+        let message = question_message("[00:01] Ann: hi", "  budget  ", " what was decided? ");
+        assert_eq!(message, "Transcript:\n[00:01] Ann: hi\n\nMy notes:\nbudget\n\nQuestion: what was decided?");
+        let bare = question_message("[00:01] Ann: hi", "", "who?");
+        assert!(!bare.contains("My notes"));
     }
 
     #[test]

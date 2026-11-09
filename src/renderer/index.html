@@ -270,36 +270,49 @@
 
           <div id="meetings-permission" class="meeting-banner is-warn meetings-permission" hidden></div>
 
-          <!-- Two panes on a wide window, one at a time on a narrow one. The
-               shell's data-open says which pane the narrow layout shows. -->
+          <!-- One page at a time: the list with its overview beside it, or the
+               open meeting. The shell's data-open says which. -->
           <div id="meetings-shell" class="meetings-shell" data-open="false" hidden>
-            <aside class="meetings-pane meetings-pane-list">
-              <input
-                id="meetings-search"
-                class="dictionary-field is-search meetings-search"
-                type="search"
-                placeholder="Search meetings"
-                aria-label="Search meetings"
-                aria-keyshortcuts="Meta+F"
-                spellcheck="false"
-              />
-              <div id="meetings-list" class="meetings-list" role="listbox" aria-label="Meetings"></div>
-              <p id="meetings-no-match" class="meetings-no-match" hidden>No meeting matches that.</p>
-            </aside>
+            <div class="meetings-pane meetings-pane-list">
+              <div class="meetings-home">
+                <div class="meetings-home-main">
+                  <input
+                    id="meetings-search"
+                    class="dictionary-field is-search meetings-search"
+                    type="search"
+                    placeholder="Search meetings"
+                    aria-label="Search meetings"
+                    aria-keyshortcuts="Meta+F"
+                    spellcheck="false"
+                  />
+                  <div id="meetings-list" class="meetings-list" role="listbox" aria-label="Meetings"></div>
+                  <p id="meetings-no-match" class="meetings-no-match" hidden>No meeting matches that.</p>
+                </div>
+                <!-- What the meetings add up to: the week, and what was promised. -->
+                <aside id="meetings-overview" class="meetings-overview" aria-label="Overview"></aside>
+              </div>
+            </div>
 
             <section class="meetings-pane meetings-pane-detail" aria-live="off">
-              <div id="meeting-placeholder" class="meeting-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                <p>Pick a meeting to read it</p>
-                <small>Or press Record to start one. Use ↑ ↓ to move through the list.</small>
-              </div>
-
               <section id="meeting-detail" class="meeting-detail" hidden>
                 <header class="meeting-detail-head" id="meeting-detail-head">
-                  <button id="meeting-back" class="meeting-back" type="button">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-                    All meetings
-                  </button>
+                  <div class="meeting-topbar">
+                    <button id="meeting-back" class="meeting-icon-button" type="button" aria-label="All meetings" title="All meetings">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                    </button>
+                    <span class="meeting-topbar-tools">
+                      <span id="meeting-actions" class="meeting-actions"></span>
+                      <button id="meeting-prev" class="meeting-icon-button is-plain" type="button" aria-label="Newer meeting" title="Newer meeting">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                      </button>
+                      <button id="meeting-next" class="meeting-icon-button is-plain" type="button" aria-label="Older meeting" title="Older meeting">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                      </button>
+                      <button id="meeting-window" class="meeting-icon-button is-plain" type="button" aria-label="Open in the transcript window" title="Open in the transcript window">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="14" x="3" y="5" rx="2"/><rect width="8" height="6" x="11" y="11" rx="1"/></svg>
+                      </button>
+                    </span>
+                  </div>
                   <div class="meeting-title-row">
                     <input
                       id="meeting-title"
@@ -311,14 +324,26 @@
                       spellcheck="false"
                       maxlength="200"
                     />
-                    <div id="meeting-actions" class="meeting-actions"></div>
                   </div>
                   <p id="meeting-meta" class="meeting-meta"></p>
                   <button id="meeting-progress" class="meeting-progress" type="button" aria-label="Playback position" hidden>
                     <span class="meeting-progress-fill"></span>
                   </button>
                 </header>
+                <!-- The user's own notes, the transcript and the summary take turns. -->
+                <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Notes, transcript or summary" data-tab="summary">
+                  <button id="meeting-tab-notes" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-notes" tabindex="-1">My notes</button>
+                  <button id="meeting-tab-transcript" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-transcript" tabindex="-1">
+                    Transcript<span id="meeting-tab-count" class="meeting-tab-count"></span>
+                  </button>
+                  <button id="meeting-tab-summary" class="meeting-tab" role="tab" type="button" aria-selected="true" aria-controls="meeting-summary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                    Summary
+                  </button>
+                </div>
 
+                <!-- The meeting scrolls between the head and the ask box, which stay put. -->
+                <div id="meeting-scroll" class="meeting-scroll">
                 <div class="meeting-detail-body">
                   <!-- Questions the page asks inline, never in a browser dialog. -->
                   <div id="meeting-confirm" class="meeting-confirm" role="alertdialog" aria-live="assertive" hidden></div>
@@ -326,32 +351,71 @@
                   <div id="meeting-band" class="meeting-band" aria-live="polite"></div>
                   <div id="meeting-banners" class="meeting-banners"></div>
 
-                  <!-- Summary and transcript take turns; the thumb slides to the one showing. -->
-                  <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Summary or transcript" data-tab="summary">
-                    <span class="meeting-tabs-thumb" aria-hidden="true"></span>
-                    <button id="meeting-tab-summary" class="meeting-tab" role="tab" type="button" aria-selected="true" aria-controls="meeting-summary">Summary</button>
-                    <button id="meeting-tab-transcript" class="meeting-tab" role="tab" type="button" aria-selected="false" aria-controls="meeting-transcript" tabindex="-1">
-                      Transcript<span id="meeting-tab-count" class="meeting-tab-count"></span>
-                    </button>
-                  </div>
-
                   <section id="meeting-summary" class="meeting-summary meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-summary" hidden></section>
                   <section id="meeting-transcript" class="meeting-transcript meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-transcript">
-                    <div class="meeting-transcript-head" id="meeting-transcript-head">
+                    <div class="panel-bar" id="meeting-transcript-head">
+                      <span class="panel-bar-info">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                        <span id="meeting-transcript-info"></span>
+                      </span>
                       <input
                         id="meeting-find"
-                        class="dictionary-field is-search"
+                        class="panel-bar-find"
                         type="search"
                         placeholder="Find in transcript"
                         aria-label="Find in transcript"
                         spellcheck="false"
+                        hidden
                       />
+                      <span class="panel-bar-tools">
+                        <button id="meeting-find-toggle" class="meeting-icon-button is-plain" type="button" aria-label="Find in transcript" title="Find in transcript">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                        </button>
+                        <button id="meeting-copy-transcript" class="meeting-icon-button is-plain" type="button" aria-label="Copy the transcript" title="Copy the transcript">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                        <button id="meeting-speakers-toggle" class="meeting-icon-button is-plain" type="button" aria-label="Name the speakers" title="Name the speakers" aria-expanded="false">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                        </button>
+                      </span>
                     </div>
                     <p id="meeting-transcript-note" class="meeting-transcript-note" hidden></p>
                     <p id="meeting-speakers-prompt" class="meeting-speakers-prompt" hidden></p>
                     <div id="meeting-speakers" class="meeting-speakers" hidden></div>
                     <ol id="meeting-lines" class="meeting-lines"></ol>
                   </section>
+                  <section id="meeting-notes" class="meeting-notes meeting-panel" role="tabpanel" aria-labelledby="meeting-tab-notes" hidden>
+                    <textarea
+                      id="meeting-memo"
+                      class="meeting-memo"
+                      aria-label="Your notes"
+                      placeholder="Write your own notes. They stay with this meeting, on this Mac, and Ask reads them too."
+                    ></textarea>
+                    <p id="meeting-memo-state" class="meeting-memo-state" aria-live="polite"></p>
+                  </section>
+                </div>
+                </div>
+
+                <!-- Questions about this meeting, answered from its transcript.
+                     Kept for this launch only; nothing is saved. -->
+                <div id="meeting-ask" class="meeting-ask">
+                  <ol id="meeting-answers" class="meeting-answers" aria-live="polite" hidden></ol>
+                  <form id="meeting-ask-form" class="meeting-ask-form">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                    <input
+                      id="meeting-ask-input"
+                      class="meeting-ask-input"
+                      type="text"
+                      aria-label="Ask about this meeting"
+                      placeholder="Ask about this meeting"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="500"
+                    />
+                    <button id="meeting-ask-send" class="meeting-ask-send" type="submit" aria-label="Ask">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                    </button>
+                  </form>
                 </div>
               </section>
             </section>
