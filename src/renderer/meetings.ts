@@ -1397,32 +1397,23 @@ function renderBand(): void {
     let currentIndex = stopping ? 0 : steps.findIndex((step) => step.stage !== null && current.startsWith(step.stage));
     if (currentIndex === -1) currentIndex = 1;
 
+    // One quiet line: what is happening now, with a small spinner.
+    const label = importing && currentIndex <= 1 ? (meeting.stage ?? "Reading the file") : (steps[currentIndex]?.label ?? "Finishing");
     const card = document.createElement("div");
-    card.className = "steps-card";
-    const list = document.createElement("ol");
-    list.className = "band-steps";
-    list.setAttribute("aria-label", "Finishing the meeting");
-    steps.forEach((step, index) => {
-      const item = document.createElement("li");
-      const state = index < currentIndex ? "done" : index === currentIndex ? "now" : "pending";
-      item.dataset.state = state;
-      const mark = document.createElement("span");
-      mark.className = "step-mark";
-      mark.append(icon("check"));
-      const label = importing && index === 0 ? "Reading the file" : importing && index === 1 ? (meeting.stage ?? step.label) : step.label;
-      item.append(mark, label);
-      if (state === "now") item.setAttribute("aria-current", "step");
-      list.append(item);
-    });
-    const sub = document.createElement("p");
-    sub.className = "band-note";
-    sub.textContent = importing
-      ? "Long files take a while. You can leave this page."
-      : "Usually under a minute. You can leave this page.";
-    card.append(list, sub);
+    card.className = "band-status";
+    card.setAttribute("role", "status");
+    const spinner = document.createElement("span");
+    spinner.className = "band-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    const text = document.createElement("span");
+    text.textContent = `${label.replace(/…$/, "")}…`;
+    card.append(spinner, text);
     if (importing) {
-      const cancel = linkButton("Cancel import", () => void deleteMeeting(meeting, "Import cancelled."));
-      cancel.classList.add("band-cancel");
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "link band-cancel";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => void deleteMeeting(meeting, "Import cancelled."));
       card.append(cancel);
     }
     band.replaceChildren(card);
