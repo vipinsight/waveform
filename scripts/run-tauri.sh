@@ -58,6 +58,10 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 cd "$ROOT"
+# Cargo never deletes old artifacts, so target/ grows by gigabytes a week.
+# Drop stale worktrees' targets and any oversized profile here before building.
+"$ROOT/scripts/clean-builds.sh" --quiet || true
+
 pnpm build
 
 cd src-tauri

@@ -8,6 +8,7 @@
   "scripts": {
     "build": "pnpm typecheck && node scripts/copy-static.mjs && node scripts/build-helper.mjs",
     "app": "./scripts/run-tauri.sh",
+    "clean:builds": "./scripts/clean-builds.sh",
     "dmg": "tauri build --bundles dmg && scripts/finish-dmg.sh",
     "bump": "scripts/bump.sh",
     "release": "./scripts/release.sh",
