@@ -1163,11 +1163,11 @@ function renderHead(): void {
 }
 
 /** What the Copy menu offers for the open meeting. `anchor` shows the "copied" tick. */
-function copyItems(anchor: () => HTMLElement): DropdownItem[] {
-  const lines = detail?.lines.length ?? 0;
+function copyItems(anchor: () => HTMLElement, given: MeetingDetail | null = detail): DropdownItem[] {
+  const lines = given?.lines.length ?? 0;
   return [
-    { label: "Copy summary", icon: "sparkles", run: () => copyText(anchor(), "Summary", detail?.meeting.summary ? summaryTextOf(detail) : null), disabled: !detail?.meeting.summary },
-    { label: "Copy transcript", icon: "text", run: () => copyText(anchor(), "Transcript", detail && detail.lines.length > 0 ? transcriptText(detail) : null), disabled: lines === 0 },
+    { label: "Copy summary", icon: "sparkles", run: () => copyText(anchor(), "Summary", given?.meeting.summary ? summaryTextOf(given) : null), disabled: !given?.meeting.summary },
+    { label: "Copy transcript", icon: "text", run: () => copyText(anchor(), "Transcript", given && given.lines.length > 0 ? transcriptText(given) : null), disabled: lines === 0 },
     {
       label: "Copy both",
       icon: "copy",
@@ -1175,8 +1175,8 @@ function copyItems(anchor: () => HTMLElement): DropdownItem[] {
         copyText(
           anchor(),
           "Summary and transcript",
-          detail && detail.lines.length > 0
-            ? [detail.meeting.summary ? summaryTextOf(detail) : null, "Transcript", transcriptText(detail)].filter(Boolean).join("\n\n")
+          given && given.lines.length > 0
+            ? [given.meeting.summary ? summaryTextOf(given) : null, "Transcript", transcriptText(given)].filter(Boolean).join("\n\n")
             : null,
         ),
       disabled: lines === 0,
@@ -1198,26 +1198,41 @@ function moreItems(): DropdownItem[] {
 }
 
 /**
- * Right-click on a row: opens that meeting, as a click would, then offers
- * everything its head does (Play, the Copy menu, the More menu) in one menu
- * at the pointer. A meeting still recording or finishing has none of those.
+ * Right-click on a row: the list stays where it is, and the menu offers what
+ * can be done without opening the meeting -- open it, copy from it, save its
+ * audio -- and the rest by opening it first. A meeting still recording or
+ * finishing offers only Open.
  */
 async function openRowMenu(id: string, x: number, y: number): Promise<void> {
   closeMenus();
-  if (openId !== id) {
-    openMeeting(id);
-    focusRow(id);
+  preview(id);
+  let given: MeetingDetail;
+  try {
+    given = await host().getMeeting(id);
+  } catch (error) {
+    showError(error);
+    return;
   }
-  await reloadDetail();
-  const meeting = detail?.meeting;
-  if (!meeting || meeting.id !== id || meeting.state === "recording" || meeting.state === "processing") return;
-  const playing = Boolean(playback && !playback.audio.paused);
+  const meeting = given.meeting;
+  const busy = meeting.state === "recording" || meeting.state === "processing";
+  const thenOpen = (run: () => void) => () => {
+    openMeeting(id);
+    run();
+  };
   const wrap = floatingMenu(x, y, "Meeting", [
-    { label: playing ? "Pause" : "Play", icon: playing ? "pause" : "play", run: () => void togglePlay(), disabled: !meeting.hasAudio },
-    "divider",
-    ...copyItems(() => element.actions.querySelector<HTMLElement>(".copy-menu") ?? wrap),
-    "divider",
-    ...moreItems(),
+    { label: "Open", icon: "text", run: () => openMeeting(id) },
+    ...(busy
+      ? []
+      : ([
+          { label: "Play", icon: "play", run: thenOpen(() => void togglePlay()), disabled: !meeting.hasAudio },
+          "divider",
+          ...copyItems(() => wrap, given),
+          "divider",
+          { label: "Rename", icon: "pencil", run: thenOpen(() => { element.title.focus(); element.title.select(); }) },
+          { label: "Save audio…", icon: "download", run: () => void saveAudio(meeting), disabled: !meeting.hasAudio },
+          "divider",
+          { label: "Delete meeting…", icon: "trash", run: thenOpen(askDelete), danger: true },
+        ] as DropdownItem[])),
   ]);
 }
 
