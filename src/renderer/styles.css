@@ -4609,11 +4609,6 @@ select {
   border-radius: 10px;
   background: var(--surface-sunken);
   color: var(--ink-soft);
-  transition: background 150ms ease;
-}
-
-.meeting-row.is-previewed .meeting-row-tile {
-  background: var(--surface-raised);
 }
 
 .meeting-row-tile svg {
