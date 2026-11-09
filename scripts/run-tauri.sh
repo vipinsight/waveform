@@ -58,8 +58,7 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 cd "$ROOT"
-# Cargo never deletes old artifacts, so target/ grows by gigabytes a week.
-# Drop stale worktrees' targets and any oversized profile here before building.
+# Other worktrees' build output, once they go a week without a build.
 "$ROOT/scripts/clean-builds.sh" --quiet || true
 
 pnpm build
@@ -68,10 +67,12 @@ cd src-tauri
 # `dev-data` keeps this build's settings, history and weights in
 # "Application Support/Waveform Dev" rather than over the installed app's.
 # Only here: a published build must never read a folder only developers have.
+# cargo-pruned.sh deletes whatever this build did not use: cargo itself never
+# removes old artifacts, and target/ used to grow by gigabytes a week.
 if [ "$PROFILE" = "release" ]; then
-  cargo build --release --features dev-data
+  "$ROOT/scripts/cargo-pruned.sh" build --release --features dev-data
 else
-  cargo build --features dev-data
+  "$ROOT/scripts/cargo-pruned.sh" build --features dev-data
 fi
 cd "$ROOT"
 
