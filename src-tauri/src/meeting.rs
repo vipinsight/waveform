@@ -553,12 +553,10 @@ impl Recorder {
     /// kept as the other side of a call, cut into phrases and transcribed in
     /// the background, then tagged and summed up like any recorded meeting.
     ///
-    /// The window decodes the file and sends it as a mono WAV; whatever its
-    /// rate, it is resampled here to the 16 kHz the engine and diarizer use.
-    /// Returns as soon as the meeting exists, so the window can open it and
-    /// watch its lines arrive.
-    pub async fn import(self: &Arc<Self>, title: &str, wav: &[u8]) -> Result<Meeting, String> {
-        let samples = crate::whisper_cpp::decode_wav(wav)?;
+    /// `samples` are mono at 16 kHz, the rate the engine and diarizer use;
+    /// see `decode_audio_file`. Returns as soon as the meeting exists, so the
+    /// window can open it and watch its lines arrive.
+    pub async fn import(self: &Arc<Self>, title: &str, samples: Vec<f32>) -> Result<Meeting, String> {
         if samples.is_empty() {
             return Err("That file has no audio in it.".into());
         }
@@ -1187,6 +1185,43 @@ impl Recorder {
     }
 }
 
+/// Decodes an audio file to mono 16 kHz with Core Audio's `afconvert`.
+///
+/// The webview's `decodeAudioData` was the first way in, and it cut long
+/// files short without a word: an 18-minute ALAC recording came back as
+/// 11 min 44 s. Core Audio reads the whole file and covers what a Mac
+/// records and shares -- M4A (AAC, ALAC), MP3, WAV, AIFF, CAF, FLAC.
+pub async fn decode_audio_file(bytes: &[u8], extension: &str) -> Result<Vec<f32>, String> {
+    let extension: String = extension.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
+    let dir = std::env::temp_dir().join(format!(
+        "waveform-import-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).map_err(|error| format!("Could not read that file: {error}"))?;
+    let source = dir.join(format!("source.{extension}"));
+    let target = dir.join("speech.wav");
+    let outcome = async {
+        std::fs::write(&source, bytes).map_err(|error| format!("Could not read that file: {error}"))?;
+        let output = tokio::process::Command::new("/usr/bin/afconvert")
+            .args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"])
+            .arg(&source)
+            .arg(&target)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|error| format!("Could not run afconvert: {error}"))?;
+        if !output.status.success() {
+            return Err("Could not read that audio file. Try a WAV, MP3, M4A, or CAF recording.".to_string());
+        }
+        let wav = std::fs::read(&target).map_err(|error| format!("Could not read that file: {error}"))?;
+        crate::whisper_cpp::decode_wav(&wav)
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&dir);
+    outcome
+}
+
 /// Starts the tap helper and waits for its ready line. Returns the child,
 /// the sample rate it announced, and the channel its blocks arrive on.
 async fn start_tap(
@@ -1411,5 +1446,25 @@ mod tests {
     #[test]
     fn the_local_name_is_never_empty() {
         assert!(!local_name().is_empty());
+    }
+
+    #[tokio::test]
+    async fn core_audio_decodes_a_whole_file_to_16k() {
+        // Three minutes at 44.1 kHz: long enough that a decoder cutting it
+        // short would show.
+        let rate = 44_100;
+        let tone: Vec<f32> = (0..rate * 180).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
+        let samples = decode_audio_file(&audio::encode_wav(&tone, rate as u32), "wav").await.unwrap();
+        assert!((samples.len() as i64 - 16_000 * 180).abs() < 16_000 / 10, "{} samples", samples.len());
+    }
+
+    /// `WAVEFORM_IMPORT_FILE=/path/to/long.m4a cargo test -- --ignored import_file_length`
+    #[tokio::test]
+    #[ignore]
+    async fn import_file_length() {
+        let path = std::env::var("WAVEFORM_IMPORT_FILE").unwrap();
+        let extension = path.rsplit('.').next().unwrap().to_string();
+        let samples = decode_audio_file(&std::fs::read(&path).unwrap(), &extension).await.unwrap();
+        println!("{path}: {:.1} s", samples.len() as f64 / 16_000.0);
     }
 }

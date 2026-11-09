@@ -183,9 +183,12 @@ const api: DesktopApi = {
   },
   exportMeetingAudio: (id) => invoke<string>("export_meeting_audio", { id }),
   // An hour of audio is ~100 MB: sent as the raw body, not a number array.
-  importMeetingAudio: (wav, title) =>
-    tauri().core.invoke<Meeting>("import_meeting_audio", wav, {
-      headers: { "x-title": encodeURIComponent(title) },
+  importMeetingAudio: (bytes, title, extension) =>
+    tauri().core.invoke<Meeting>("import_meeting_audio", bytes, {
+      headers: {
+        "x-title": encodeURIComponent(title),
+        ...(extension ? { "x-extension": extension } : {}),
+      },
     }),
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),

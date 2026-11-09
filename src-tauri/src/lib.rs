@@ -747,9 +747,11 @@ async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), St
     state.recorder.delete(&id).await
 }
 
-/// Makes a meeting from an audio file the window decoded. The WAV comes as
-/// the raw request body rather than a JSON number array, since an hour of
-/// audio is a hundred megabytes; the file's name rides in a header.
+/// Makes a meeting from an audio file. The bytes come as the raw request
+/// body rather than a JSON number array, since an hour of audio is a hundred
+/// megabytes; the name rides in a header. With `x-extension` the body is the
+/// file itself, decoded here by Core Audio; without it, a mono WAV the
+/// window decoded (formats Core Audio cannot read, such as Ogg and WebM).
 #[tauri::command]
 async fn import_meeting_audio(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<Meeting, String> {
     let tauri::ipc::InvokeBody::Raw(wav) = request.body() else {
@@ -761,7 +763,11 @@ async fn import_meeting_audio(state: State<'_, AppState>, request: tauri::ipc::R
         .and_then(|value| value.to_str().ok())
         .map(|value| percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned())
         .unwrap_or_default();
-    state.recorder.import(&title, wav).await
+    let samples = match request.headers().get("x-extension").and_then(|value| value.to_str().ok()) {
+        Some(extension) => meeting::decode_audio_file(wav, extension).await?,
+        None => whisper_cpp::decode_wav(wav)?,
+    };
+    state.recorder.import(&title, samples).await
 }
 
 #[tauri::command]
