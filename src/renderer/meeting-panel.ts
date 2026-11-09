@@ -183,19 +183,23 @@ function lineItem(line: MeetingLine, previous: MeetingLine | undefined): HTMLLIE
   item.classList.add(voiceClass(line));
   if (previous && voiceOf(previous) === voiceOf(line)) item.classList.add("is-continued");
 
+  // As on the Meetings page: the name and time over a bubble of what was said.
+  const head = document.createElement("div");
+  head.className = "panel-line-head";
+  const who = document.createElement("span");
+  who.className = "panel-line-speaker";
+  const name = speakerName(line, speakers, localName);
+  who.textContent = voiceClass(line) === "is-me" ? `${name} (you)` : name;
   const time = document.createElement("span");
   time.className = "panel-line-time";
   time.textContent = clock(line.startMs);
-
-  const who = document.createElement("span");
-  who.className = "panel-line-speaker";
-  who.textContent = speakerName(line, speakers, localName);
+  head.append(who, time);
 
   const text = document.createElement("p");
   text.className = "panel-line-text";
   text.textContent = line.text;
 
-  item.append(time, who, text);
+  item.append(head, text);
   return item;
 }
 
