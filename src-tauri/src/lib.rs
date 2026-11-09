@@ -835,9 +835,36 @@ async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// The meeting the transcript window shows when it is not the one recording:
+/// set from a meeting's page, cleared by the pill, which always means the live one.
+static MEETING_PANEL_TARGET: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_meeting_panel_target(id: Option<String>) {
+    if let Ok(mut target) = MEETING_PANEL_TARGET.lock() {
+        *target = id;
+    }
+}
+
+/// Which meeting the transcript window should show; none means the recording.
+#[tauri::command]
+fn meeting_panel_target() -> Option<String> {
+    MEETING_PANEL_TARGET.lock().ok().and_then(|target| target.clone())
+}
+
+/// Opens the transcript window on one meeting, from that meeting's page.
+#[tauri::command]
+async fn show_meeting_panel(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    set_meeting_panel_target(Some(id));
+    let settings = app.state::<AppState>().settings.lock().await.value();
+    let handle = app.clone();
+    app.run_on_main_thread(move || open_meeting_panel(&handle, &settings))
+        .map_err(|error| error.to_string())
+}
+
 /// Opens or closes the live transcript window; the meeting pill calls this.
 #[tauri::command]
 async fn toggle_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    set_meeting_panel_target(None);
     let settings = app.state::<AppState>().settings.lock().await.value();
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -1974,6 +2001,8 @@ pub fn run() {
             install_diarizer,
             show_meetings,
             toggle_meeting_panel,
+            show_meeting_panel,
+            meeting_panel_target,
             begin_meeting_pill_drag,
             drag_meeting_pill,
             end_meeting_pill_drag,

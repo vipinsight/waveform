@@ -40,6 +40,8 @@ let localName: string | null = null;
 let hasOther = false;
 let lines: MeetingLine[] = [];
 let level: MeetingLevelEvent | null = null;
+/** Set while the window shows a meeting recorded before, not one just stopped. */
+let past = false;
 /** Whether new lines scroll into view; off while the reader has scrolled up. */
 let following = true;
 
@@ -52,21 +54,42 @@ function open(): void {
 
 window.setInterval(renderClock, 1_000);
 
-/** Catches up on the recording: its title, who is on it, and the lines so far. */
-async function load(): Promise<void> {
+/**
+ * Catches up on the meeting: the one opened from its page, else the
+ * recording. Its title, who is on it, and the lines so far. `live` is set
+ * when a recording has just started, which the window always follows.
+ */
+async function load(live = false): Promise<void> {
   const status = await host().meetingRecorderStatus().catch(() => null);
-  if (!status?.recording) return;
-  const detail = await host().getMeeting(status.recording).catch(() => null);
+  const target = live ? null : await host().meetingPanelTarget().catch(() => null);
+  const id = target ?? status?.recording;
+  if (!id) return;
+  const detail = await host().getMeeting(id).catch(() => null);
   if (!detail) return;
   if (detail.meeting.id !== meetingId) {
     meetingId = detail.meeting.id;
     lines = [];
     level = null;
     following = true;
+    stoppedAfter = null;
   }
+  if (detail.meeting.state !== "recording") {
+    // A meeting already recorded: the transcript to read, and when it was.
+    past = true;
+    localName = status?.localName || null;
+    speakers = detail.meeting.speakers;
+    startedAt = detail.meeting.createdAt;
+    titleText.textContent = detail.meeting.title;
+    statusText.textContent = `Recorded ${new Date(detail.meeting.createdAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}`;
+    setStopped(detail.meeting.durationMs || null);
+    lines = mergeLines(lines, detail.lines);
+    renderLines();
+    return;
+  }
+  past = false;
   setRecording();
-  localName = status.localName || null;
-  hasOther = status.systemAudio === "available" && detail.meeting.hasSystemAudio;
+  localName = status?.localName || null;
+  hasOther = status?.systemAudio === "available" && detail.meeting.hasSystemAudio;
   startedAt = detail.meeting.createdAt;
   speakers = detail.meeting.speakers;
   titleText.textContent = detail.meeting.title;
@@ -239,9 +262,9 @@ void host()
   .then((settings) => applyTheme(settings.theme))
   .catch(() => {});
 host().onMeetingState((event) => {
-  if (event.recording && event.meetingId !== meetingId) void load();
+  if (event.recording && event.meetingId !== meetingId) void load(true);
   // Stopped elsewhere too: from the pill, the menu bar or the main window.
-  if (!event.recording && meetingId !== null) setStopped(null);
+  if (!event.recording && meetingId !== null && !past) setStopped(null);
 });
 host().onMeetingLine((event) => {
   if (event.meetingId !== meetingId) return;
@@ -259,7 +282,7 @@ host().onMeetingChanged((meeting) => {
   if (meeting.id !== meetingId) return;
   titleText.textContent = meeting.title;
   speakers = meeting.speakers;
-  if (stoppedAfter !== null) renderOutcome(meeting);
+  if (stoppedAfter !== null && !past) renderOutcome(meeting);
 });
 
 // The window is built on the first open, after the host has already said so,

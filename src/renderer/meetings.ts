@@ -194,7 +194,9 @@ export function bindMeetings(given: Options): void {
   });
   element.prev.addEventListener("click", () => step(-1));
   element.next.addEventListener("click", () => step(1));
-  element.window.addEventListener("click", () => void host().toggleMeetingPanel().catch(showError));
+  element.window.addEventListener("click", () => {
+    if (openId) void host().showMeetingPanel(openId).catch(showError);
+  });
   element.findToggle.addEventListener("click", () => {
     findOpen = !findOpen;
     if (!findOpen && element.find.value) {
@@ -1195,10 +1197,6 @@ function renderHead(): void {
   const index = meetings.findIndex((entry) => entry.id === meeting.id);
   element.prev.disabled = index <= 0;
   element.next.disabled = index === -1 || index >= meetings.length - 1;
-  element.window.disabled = meeting.state !== "recording" && meeting.state !== "processing";
-  element.window.title = element.window.disabled
-    ? "The live transcript window is for a meeting being recorded"
-    : "Open the live transcript window";
 
   element.actions.replaceChildren();
   if (meeting.state === "recording" || meeting.state === "processing") return;

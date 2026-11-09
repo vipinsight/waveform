@@ -619,6 +619,10 @@ export interface DesktopApi {
   showMeetings(): Promise<void>;
   /** Opens or closes the live transcript window. */
   toggleMeetingPanel(): Promise<void>;
+  /** Opens the transcript window on one meeting, recording or not. */
+  showMeetingPanel(id: string): Promise<void>;
+  /** The meeting the transcript window was opened on; null means the recording. */
+  meetingPanelTarget(): Promise<string | null>;
   /** The meeting pill is dragged like the HUD: deltas from where it started, in screen points. */
   beginMeetingPillDrag(): void;
   moveMeetingPill(deltaX: number, deltaY: number): void;
