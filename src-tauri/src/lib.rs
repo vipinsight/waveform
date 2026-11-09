@@ -747,6 +747,23 @@ async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), St
     state.recorder.delete(&id).await
 }
 
+/// Makes a meeting from an audio file the window decoded. The WAV comes as
+/// the raw request body rather than a JSON number array, since an hour of
+/// audio is a hundred megabytes; the file's name rides in a header.
+#[tauri::command]
+async fn import_meeting_audio(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<Meeting, String> {
+    let tauri::ipc::InvokeBody::Raw(wav) = request.body() else {
+        return Err("The audio did not arrive.".into());
+    };
+    let title = request
+        .headers()
+        .get("x-title")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned())
+        .unwrap_or_default();
+    state.recorder.import(&title, wav).await
+}
+
 #[tauri::command]
 async fn get_meeting_audio(state: State<'_, AppState>, id: String) -> Result<Vec<u8>, String> {
     state.recorder.audio(&id).await
@@ -1933,6 +1950,7 @@ pub fn run() {
             delete_meeting,
             get_meeting_audio,
             export_meeting_audio,
+            import_meeting_audio,
             install_diarizer,
             show_meetings,
             toggle_meeting_panel,
