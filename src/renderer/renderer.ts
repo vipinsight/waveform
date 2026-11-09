@@ -63,7 +63,15 @@ import {
   transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
-import { bindMeetings, clock, openRecordingMeeting, showMeetings, stopRecording } from "./meetings";
+import {
+  bindMeetings,
+  clock,
+  importAudioFile,
+  meetingsShown,
+  openRecordingMeeting,
+  showMeetings,
+  stopRecording,
+} from "./meetings";
 import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
@@ -3215,6 +3223,10 @@ const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a
  * select, and Copy -- until it is closed. There is no page for it: the drop
  * is the way in, and it can happen from any page.
  *
+ * On the Meetings page a drop makes a meeting instead -- transcript,
+ * speakers and summary -- whether or not the setting is on, since that page
+ * asks for nothing else.
+ *
  * Every drop is claimed whether or not the feature is on. A file dropped
  * where nothing handles it is opened by the webview in place of the app:
  * an audio file became a full-window player with no way back.
@@ -3232,8 +3244,13 @@ function bindDropTranscribe(): void {
     if (!carriesFiles(event)) return;
     event.preventDefault();
     dragDepth += 1;
-    if (dragDepth > 1 || !settings.transcribeOnDrop || transcribeBusy) return;
-    showDropHint(event);
+    if (dragDepth > 1) return;
+    if (meetingsShown()) {
+      showDropHint(event, "Drop to make meeting notes");
+      return;
+    }
+    if (!settings.transcribeOnDrop || transcribeBusy) return;
+    showDropHint(event, "Drop to transcribe");
   });
   document.addEventListener("dragleave", (event) => {
     if (!carriesFiles(event)) return;
@@ -3245,6 +3262,11 @@ function bindDropTranscribe(): void {
     event.preventDefault();
     dragDepth = 0;
     const file = event.dataTransfer?.files?.[0];
+    if (meetingsShown()) {
+      closeDropOverlay();
+      if (file && isAudioFile(file)) void importAudioFile(file);
+      return;
+    }
     if (!settings.transcribeOnDrop || transcribeBusy) return;
     if (!file || !isAudioFile(file)) {
       closeDropOverlay();
@@ -3297,7 +3319,7 @@ function setDropStage(stage: DropStage, title: string, hint: string): void {
  * Says what letting go will do. The file cannot be read before the drop,
  * but its type usually can, so a PDF is told it will be ignored.
  */
-function showDropHint(event: DragEvent): void {
+function showDropHint(event: DragEvent, title: string): void {
   const known = Array.from(event.dataTransfer?.items ?? [])
     .filter((item) => item.kind === "file" && item.type !== "")
     .map((item) => item.type);
@@ -3305,7 +3327,7 @@ function showDropHint(event: DragEvent): void {
   element.dropOverlay.dataset.refuse = String(notAudio);
   setDropStage(
     "drag",
-    notAudio ? "Only audio files can be transcribed" : "Drop to transcribe",
+    notAudio ? "Only audio files can be transcribed" : title,
     notAudio
       ? "WAV, MP3, M4A, and other formats WebKit can decode."
       : "The audio stays on this Mac.",

@@ -602,6 +602,8 @@ export interface DesktopApi {
   getMeetingAudio(id: string): Promise<Uint8Array>;
   /** Copies the recording into Downloads and reveals it; resolves to its path. */
   exportMeetingAudio(id: string): Promise<string>;
+  /** Makes a meeting from a mono WAV: transcribed, tagged and summed up in the background. */
+  importMeetingAudio(wav: Uint8Array, title: string): Promise<Meeting>;
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;

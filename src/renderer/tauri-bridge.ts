@@ -41,7 +41,13 @@ import type {
 import type { AppSettings } from "../shared/settings";
 
 interface TauriGlobal {
-  core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> };
+  core: {
+    invoke<T>(
+      command: string,
+      args?: Record<string, unknown> | Uint8Array,
+      options?: { headers: Record<string, string> },
+    ): Promise<T>;
+  };
   event: {
     listen<T>(
       event: string,
@@ -176,6 +182,11 @@ const api: DesktopApi = {
     return Uint8Array.from(bytes);
   },
   exportMeetingAudio: (id) => invoke<string>("export_meeting_audio", { id }),
+  // An hour of audio is ~100 MB: sent as the raw body, not a number array.
+  importMeetingAudio: (wav, title) =>
+    tauri().core.invoke<Meeting>("import_meeting_audio", wav, {
+      headers: { "x-title": encodeURIComponent(title) },
+    }),
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),
   toggleMeetingPanel: () => invoke<void>("toggle_meeting_panel"),
