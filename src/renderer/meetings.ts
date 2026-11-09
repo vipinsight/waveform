@@ -260,6 +260,9 @@ export function meetingsShown(): boolean {
 
 let importing = false;
 
+/** What `afconvert` reads; anything else is decoded by WebKit. */
+const HOST_DECODES = new Set(["wav", "mp3", "m4a", "m4b", "mp4", "aac", "caf", "aif", "aiff", "flac"]);
+
 /**
  * Makes a meeting from an audio file, picked or dropped: the host keeps the
  * audio, transcribes it, tags speakers and writes the summary, the same as
@@ -274,9 +277,13 @@ export async function importAudioFile(file: File): Promise<void> {
   element.importButton.disabled = true;
   options.toast(`Reading ${file.name}…`);
   try {
-    // 16 kHz is what the engine and the speaker tool use.
-    const wav = await audioFileToMonoWav(file, 16_000);
-    const meeting = await host().importMeetingAudio(wav, file.name.replace(/\.[^.]+$/, ""));
+    const title = file.name.replace(/\.[^.]+$/, "");
+    const extension = /\.([a-z0-9]+)$/i.exec(file.name)?.[1]?.toLowerCase() ?? "";
+    // Core Audio, in the host, reads these whole. WebKit's decoder is only
+    // the fallback: it cut an 18-minute M4A to under 12 without an error.
+    const meeting = HOST_DECODES.has(extension)
+      ? await host().importMeetingAudio(new Uint8Array(await file.arrayBuffer()), title, extension)
+      : await host().importMeetingAudio(await audioFileToMonoWav(file, 16_000), title);
     await refreshList();
     openMeeting(meeting.id);
   } catch (error) {
