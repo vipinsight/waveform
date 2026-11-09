@@ -309,6 +309,7 @@ export function bindMeetings(given: Options): void {
     renderEmpty();
     renderBanners();
     renderTranscriptNote();
+    renderHead();
   });
   host().onOpenMeetings((mode) => {
     if (mode === "record") {
@@ -1210,7 +1211,38 @@ function renderHead(): void {
     "divider",
     ...moreItems(),
   ]);
+  // Speakers not told apart yet: the one thing to do, beside the menu.
+  if (meeting.notes.some((note) => note.kind === "speaker-tool-missing")) {
+    const label = installing
+      ? installing.message
+      : status?.diarizerInstalled
+        ? "Tag speakers now"
+        : `Tell speakers apart (${megabytes(status?.diarizerBytes ?? 0)} download)`;
+    const tag = iconButton("users", label, () => tagSpeakers(meeting));
+    tag.className = "meeting-icon-button is-plain is-attention";
+    tag.disabled = Boolean(installing);
+    element.actions.append(tag);
+  }
   element.actions.append(menu);
+}
+
+/** Tags the meeting's speakers, fetching the speaker tool first if need be. */
+function tagSpeakers(meeting: Meeting): void {
+  if (status?.diarizerInstalled) {
+    void host()
+      .tagMeetingSpeakers(meeting.id)
+      .then(() => options.toast("Tagging speakers…"))
+      .catch(showError);
+    return;
+  }
+  if (installing) return;
+  installing = { stage: "downloading", message: "Starting…", progress: 0 };
+  renderHead();
+  renderTranscriptNote();
+  void host()
+    .installDiarizer()
+    .catch(showError)
+    .finally(() => void refreshStatus());
 }
 
 /** Opens the meeting before (-1) or after (1) this one in the list. */
@@ -1260,6 +1292,7 @@ function moreItems(): DropdownItem[] {
   return [
     { label: "Rename", icon: "pencil", run: () => { element.title.focus(); element.title.select(); } },
     { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey || !detail || detail.lines.length === 0 },
+    { label: "Tag speakers again", icon: "users", run: () => tagSpeakers(meeting), disabled: !status?.diarizerInstalled || !meeting.hasAudio },
     { label: "Save audio…", icon: "download", run: () => void saveAudio(meeting), disabled: !meeting.hasAudio },
     "divider",
     { label: "Delete meeting…", icon: "trash", run: askDelete, danger: true },
@@ -2232,22 +2265,10 @@ function renderTranscriptNote(): void {
   element.transcriptNote.hidden = !missing || meeting.state === "recording";
   if (!missing || meeting.state === "recording") return;
   const text = document.createElement("span");
-  text.textContent = installing ? installing.message : "Everyone else is shown as one speaker.";
+  text.textContent = installing
+    ? installing.message
+    : "Everyone else is shown as one speaker. Tag speakers from the button at the top.";
   element.transcriptNote.append(text);
-  if (status?.diarizerInstalled) {
-    element.transcriptNote.append(
-      linkButton("Tag speakers now", () => {
-        void host()
-          .tagMeetingSpeakers(meeting.id)
-          .then(() => options.toast("Tagging speakers…"))
-          .catch(showError);
-      }, true),
-    );
-  } else {
-    const button = diarizerButton();
-    if (!installing) button.textContent = `Tell speakers apart (${megabytes(status?.diarizerBytes ?? 0)})`;
-    element.transcriptNote.append(button);
-  }
 }
 
 function speakerName(label: string | null, meeting: Meeting): string {

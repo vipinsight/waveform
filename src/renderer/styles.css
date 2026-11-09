@@ -6037,6 +6037,16 @@ select {
   color: var(--ink);
 }
 
+/* Something left to do on this meeting: drawn in the accent. */
+.meeting-icon-button.is-attention {
+  color: var(--accent);
+}
+
+.meeting-icon-button.is-attention:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .meeting-icon-button:disabled {
   color: var(--ink-faint);
   opacity: 0.5;
