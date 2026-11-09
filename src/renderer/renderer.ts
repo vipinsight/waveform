@@ -2623,19 +2623,21 @@ function renderEntry(entry: SavedDictation): HTMLElement {
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
+  let play: HTMLButtonElement | null = null;
   if (entry.hasAudio) {
     const playing = Boolean(isActive && playback && !playback.audio.paused);
-    const play = iconButton(
+    const button = iconButton(
       playing ? "Pause audio" : "Play audio",
       playing ? PAUSE_ICON : PLAY_ICON,
       `is-play${playing ? " is-playing" : ""}`,
       () => {
-        void togglePlayback(entry.id, play);
+        void togglePlayback(entry.id, button);
       },
     );
-    play.dataset.playId = entry.id;
-    if (isActive) playback!.button = play;
-    actions.append(play);
+    button.dataset.playId = entry.id;
+    if (isActive) playback!.button = button;
+    actions.append(button);
+    play = button;
   }
   // Play and Copy are the everyday actions and stay on the row; the rest
   // (one of them destructive) wait behind the menu.
@@ -2647,15 +2649,25 @@ function renderEntry(entry: SavedDictation): HTMLElement {
     more,
   );
 
-  // Right-click opens the same menu at the pointer, with Copy first, since
-  // the row's own Copy button is not under the pointer.
+  // Right-click opens everything the row offers in one menu at the pointer:
+  // Play and Copy from the row, then what waits behind the ⋯ button.
   onRowContextMenu(article, (event) => {
-    const copy: EntryMenuItem = {
+    const items: EntryMenuItem[] = [];
+    if (play) {
+      const button = play;
+      const playing = playback?.id === entry.id && !playback.audio.paused;
+      items.push({
+        label: playing ? "Pause audio" : "Play audio",
+        icon: playing ? PAUSE_ICON : PLAY_ICON,
+        onSelect: () => void togglePlayback(entry.id, button),
+      });
+    }
+    items.push({
       label: "Copy transcript",
       icon: COPY_ICON,
       onSelect: () => void navigator.clipboard.writeText(entry.text),
-    };
-    openEntryMenu(more, [copy, ...entryMenuItems(entry, more, text)], {
+    });
+    openEntryMenu(more, [...items, ...entryMenuItems(entry, more, text)], {
       x: event.clientX,
       y: event.clientY,
     });
