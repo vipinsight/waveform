@@ -11,6 +11,7 @@ import type {
 } from "../shared/contracts";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
+import { installContextMenu } from "./context-menu";
 
 const BAR_COUNT = 7;
 const BAR_GAP = 2.5;
@@ -136,6 +137,7 @@ const capture = new AudioCapture({
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+installContextMenu();
 
 host().onCaptureBlock((block) => {
   capture.feed(Float32Array.from(block.samples), block.sampleRate);

@@ -30,6 +30,7 @@ import {
 import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
 import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
+import { installContextMenu, onRowContextMenu } from "./context-menu";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import {
   DEFAULT_SETTINGS,
@@ -340,6 +341,7 @@ let permissionsPending = false;
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+installContextMenu();
 
 void bootstrap();
 
@@ -2621,28 +2623,55 @@ function renderEntry(entry: SavedDictation): HTMLElement {
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
+  let play: HTMLButtonElement | null = null;
   if (entry.hasAudio) {
     const playing = Boolean(isActive && playback && !playback.audio.paused);
-    const play = iconButton(
+    const button = iconButton(
       playing ? "Pause audio" : "Play audio",
       playing ? PAUSE_ICON : PLAY_ICON,
       `is-play${playing ? " is-playing" : ""}`,
       () => {
-        void togglePlayback(entry.id, play);
+        void togglePlayback(entry.id, button);
       },
     );
-    play.dataset.playId = entry.id;
-    if (isActive) playback!.button = play;
-    actions.append(play);
+    button.dataset.playId = entry.id;
+    if (isActive) playback!.button = button;
+    actions.append(button);
+    play = button;
   }
   // Play and Copy are the everyday actions and stay on the row; the rest
   // (one of them destructive) wait behind the menu.
+  const more = entryMenuButton(entry, text);
   actions.append(
     iconButton("Copy", COPY_ICON, "", () => {
       void navigator.clipboard.writeText(entry.text);
     }),
-    entryMenuButton(entry, text),
+    more,
   );
+
+  // Right-click opens everything the row offers in one menu at the pointer:
+  // Play and Copy from the row, then what waits behind the ⋯ button.
+  onRowContextMenu(article, (event) => {
+    const items: EntryMenuItem[] = [];
+    if (play) {
+      const button = play;
+      const playing = playback?.id === entry.id && !playback.audio.paused;
+      items.push({
+        label: playing ? "Pause audio" : "Play audio",
+        icon: playing ? PAUSE_ICON : PLAY_ICON,
+        onSelect: () => void togglePlayback(entry.id, button),
+      });
+    }
+    items.push({
+      label: "Copy transcript",
+      icon: COPY_ICON,
+      onSelect: () => void navigator.clipboard.writeText(entry.text),
+    });
+    openEntryMenu(more, [...items, ...entryMenuItems(entry, more, text)], {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  });
 
   article.append(time, text, actions);
   return article;
@@ -2711,12 +2740,17 @@ function entryMenuItems(
 }
 
 /**
- * Floats the menu on the body, beside its trigger.
+ * Floats the menu on the body, beside its trigger, or at `at` when it was
+ * opened by a right-click.
  *
  * Inside the row it would be clipped by the day card's rounded corners, and
  * the last row of the list has no room below it, so it flips above.
  */
-function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void {
+function openEntryMenu(
+  trigger: HTMLButtonElement,
+  items: EntryMenuItem[],
+  at?: { x: number; y: number },
+): void {
   closeEntryMenu();
   const menu = document.createElement("div");
   menu.className = "entry-menu";
@@ -2739,15 +2773,23 @@ function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void
   menu.append(...buttons);
   document.body.append(menu);
 
-  const anchor = trigger.getBoundingClientRect();
-  const gap = 6;
   const margin = 8;
-  const below = anchor.bottom + gap;
-  const top =
-    below + menu.offsetHeight > window.innerHeight - margin
-      ? anchor.top - gap - menu.offsetHeight
-      : below;
-  const left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  let top: number;
+  let left: number;
+  if (at) {
+    // Down and right of the pointer, flipped where the window runs out.
+    top = at.y + menu.offsetHeight > window.innerHeight - margin ? at.y - menu.offsetHeight : at.y;
+    left = at.x + menu.offsetWidth > window.innerWidth - margin ? at.x - menu.offsetWidth : at.x;
+  } else {
+    const anchor = trigger.getBoundingClientRect();
+    const gap = 6;
+    const below = anchor.bottom + gap;
+    top =
+      below + menu.offsetHeight > window.innerHeight - margin
+        ? anchor.top - gap - menu.offsetHeight
+        : below;
+    left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  }
   menu.style.top = `${Math.max(margin, top)}px`;
   menu.style.left = `${Math.max(margin, left)}px`;
 

@@ -2,6 +2,7 @@ import type { Meeting, MeetingLevelEvent, MeetingLine } from "../shared/contract
 import type { AppSettings } from "../shared/settings";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
+import { installContextMenu } from "./context-menu";
 import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from "./meeting-feed";
 
 /**
@@ -15,6 +16,7 @@ import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from 
 const UNHEARD_AFTER_MS = 5_000;
 
 installTauriBridge();
+installContextMenu();
 
 const panel = requireElement<HTMLElement>("panel");
 const titleText = requireElement<HTMLElement>("panel-title");
