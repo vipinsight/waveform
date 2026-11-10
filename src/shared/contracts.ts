@@ -396,7 +396,8 @@ export interface RecorderStatus {
   systemAudio: "available" | "unsupported" | "missing";
   diarizerInstalled: boolean;
   diarizerBytes: number;
-  hasOpenRouterKey: boolean;
+  /** A downloaded local model or an OpenRouter key: something to write a summary. */
+  canSummarize: boolean;
   localName: string;
 }
 

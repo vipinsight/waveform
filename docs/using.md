@@ -238,10 +238,14 @@ the search field at the top of the list; on a narrow one they take turns, with
 meeting, **↑** and **↓** move through the list, and **Esc** closes whatever is
 up.
 
-Summaries use OpenRouter and need the API key from **AI Polish**. Transcription
-stays on this Mac; only the transcript text is sent for the summary, and only
-when you have a key. Without one, everything else still works and the page says
-how to add it.
+Summaries, the meeting's title and **Ask** use the local model chosen in **AI
+Polish** whenever it has been downloaded, whichever engine polish is set to, so
+the whole meeting stays on this Mac. A local model reads about the last 40,000
+characters of a long meeting (roughly 45 minutes of talk); the larger models
+write noticeably better summaries than 0.6B. Without a local model, an
+OpenRouter key from **AI Polish** is used instead, and only the transcript text
+is sent. With neither, everything else still works and the page says how to set
+one up.
 
 If the app closes during a recording, the meeting is kept up to that point and
 marked interrupted; **Finish this meeting** runs speakers and the summary on

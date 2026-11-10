@@ -100,7 +100,8 @@ Network activity includes:
 - **AI Polish set to OpenRouter**, when you request it, sends text through
   OpenRouter to your selected model. OpenRouter and the model provider's privacy
   and retention terms apply. Set to run on this Mac, it sends nothing: the model
-  is downloaded once and then runs here.
+  is downloaded once and then runs here. Meeting summaries go through
+  OpenRouter only when no local model has been downloaded.
 - **Model and optional runtime downloads**, during setup or model installation.
 - **The update check**, which you can switch off in **Settings → General**.
 
