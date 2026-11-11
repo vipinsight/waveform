@@ -5815,17 +5815,17 @@ select {
   --chip: var(--ink-soft);
   position: relative;
   display: grid;
-  grid-template-columns: 44px minmax(0, 132px) minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 150px) minmax(0, 1fr);
   align-items: baseline;
-  column-gap: 12px;
-  padding: 9px 44px 9px 10px;
+  column-gap: 16px;
+  padding: 12px 44px 12px 14px;
   border-bottom: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 10px;
   transition: background 150ms ease;
 }
 
 .can-play > .meeting-line {
-  grid-template-columns: 24px 44px minmax(0, 132px) minmax(0, 1fr);
+  grid-template-columns: 24px 52px minmax(0, 150px) minmax(0, 1fr);
 }
 
 .meeting-line:last-child {
@@ -5870,8 +5870,8 @@ select {
 /* Copy sits at the row's right edge, out of the words' way. */
 .meeting-line .meeting-line-copy {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 11px;
+  right: 10px;
 }
 
 .meeting-line.is-empty {
