@@ -4909,44 +4909,79 @@ select {
 }
 
 /* Playback position, under the head: a thin bar, thicker when pointed at. */
-.meeting-progress {
-  position: relative;
-  width: 100%;
-  height: 14px;
-  margin: 2px 0 -8px;
+/* The whole recording as a waveform, with play/pause and the time beside it.
+   What has been heard takes the accent; the rest stays quiet. */
+.meeting-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.meeting-play {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
   padding: 0;
   border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.meeting-progress::before,
-.meeting-progress-fill {
-  position: absolute;
-  top: 6px;
-  left: 0;
-  height: 3px;
-  border-radius: 3px;
-  transition: top 120ms ease, height 120ms ease;
-}
-
-.meeting-progress::before {
-  content: "";
-  right: 0;
-  background: var(--hairline-strong);
-}
-
-.meeting-progress-fill {
-  width: 100%;
+  border-radius: 50%;
   background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
+  color: var(--accent-ink);
+  transition: background 150ms ease, width 200ms ease, height 200ms ease;
 }
 
-.meeting-progress:hover::before,
-.meeting-progress:hover .meeting-progress-fill {
-  top: 5px;
-  height: 5px;
+.meeting-play:hover {
+  background: var(--accent-hover);
+}
+
+.meeting-play svg {
+  width: 13px;
+  height: 13px;
+}
+
+.meeting-wave {
+  --wave-heard: var(--accent);
+  --wave-rest: var(--hairline-strong);
+  position: relative;
+  height: 40px;
+  min-width: 0;
+  flex: 1 1 auto;
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: none;
+  transition: height 200ms ease;
+}
+
+.meeting-wave:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.meeting-wave-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.meeting-play-time {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meeting-detail.is-compact .meeting-wave {
+  height: 24px;
+}
+
+.meeting-detail.is-compact .meeting-play {
+  width: 26px;
+  height: 26px;
 }
 
 .meeting-detail-body {
@@ -5858,6 +5893,16 @@ select {
   width: 9px;
   height: 9px;
   fill: currentColor;
+}
+
+/* The line being heard shows pause while the audio runs. */
+.meeting-line-play .is-pause,
+.is-audio-playing .meeting-line.is-playing .meeting-line-play .is-play {
+  display: none;
+}
+
+.is-audio-playing .meeting-line.is-playing .meeting-line-play .is-pause {
+  display: block;
 }
 
 .meeting-line-play:hover,
