@@ -369,10 +369,11 @@ impl Dictation {
         }
         let command = {
             let mut gestures = self.gestures.lock().await;
-            if phase == "down" {
-                gestures.key_down(at)
-            } else {
-                gestures.key_up(at)
+            match phase {
+                "down" => gestures.key_down(at),
+                // Another key went down while ours was held: a shortcut.
+                "chord" => gestures.chord(),
+                _ => gestures.key_up(at),
             }
         };
         if let Some(command) = command {

@@ -449,6 +449,82 @@ pub fn prompt_sentence(terms: &[&Term]) -> String {
     }
 }
 
+/// How every `prompt_sentence` begins, lowercased and without punctuation.
+const PROMPT_LEAD: [&str; 6] = ["in", "this", "recording", "we", "talk", "about"];
+
+/// The reply with any sentence the engine copied out of its own prompt taken
+/// out.
+///
+/// Given little or no speech, an engine primed with text tends to hand that
+/// text back: a silent dictation came back as "In this recording we talk
+/// about Waveform, OP, Wispr Flow, navbar, readme and Vercel." and was pasted
+/// as if it had been said. `primers` is the fixed text the prompt carried
+/// (the vocabulary sentence, the Hinglish primer), not what the session said
+/// so far, so a sentence the user really does repeat is never dropped.
+///
+/// A sentence goes if it opens the way `prompt_sentence` does, or if two or
+/// more of its words appear, in order and together, in one of the primers. A
+/// lone term ("Vercel.") stays: saying one dictionary word is ordinary.
+pub fn without_prompt_echo(text: &str, primers: &[&str]) -> String {
+    let primers: Vec<Vec<String>> = primers.iter().map(|primer| plain_words(primer)).collect();
+    let all = sentences(text);
+    let total = all.len();
+    let kept: Vec<&str> = all
+        .into_iter()
+        .filter(|sentence| {
+            let words = plain_words(sentence);
+            if words.is_empty() {
+                return false;
+            }
+            let opens_like_prompt = words.len() >= PROMPT_LEAD.len()
+                && words.iter().zip(PROMPT_LEAD).all(|(word, lead)| word == lead);
+            let copied = words.len() >= 2
+                && primers
+                    .iter()
+                    .any(|primer| primer.windows(words.len()).any(|window| window == words.as_slice()));
+            !(opens_like_prompt || copied)
+        })
+        .collect();
+    // Untouched text goes back exactly as it came.
+    if kept.len() == total {
+        return text.to_string();
+    }
+    kept.join(" ")
+}
+
+/// Splits after `.`, `!` or `?` followed by a space, keeping the mark.
+fn sentences(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((index, c)) = chars.next() {
+        let at_break = matches!(c, '.' | '!' | '?')
+            && chars.peek().map(|&(_, next)| next.is_whitespace()).unwrap_or(true);
+        if at_break {
+            let end = index + c.len_utf8();
+            let piece = text[start..end].trim();
+            if !piece.is_empty() {
+                out.push(piece);
+            }
+            start = end;
+        }
+    }
+    let rest = text[start..].trim();
+    if !rest.is_empty() {
+        out.push(rest);
+    }
+    out
+}
+
+/// Lowercased words with punctuation dropped, for comparing text loosely.
+fn plain_words(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Correction: fixing what still came back wrong.
 // ---------------------------------------------------------------------------
@@ -977,6 +1053,44 @@ mod tests {
         let ranked = rank(&terms, "", 0, 2);
         let names: Vec<&str> = ranked.iter().map(|t| t.text.as_str()).collect();
         assert_eq!(names, vec!["alpha", "Bravo"]);
+    }
+
+    #[test]
+    fn a_reply_that_is_the_prompt_is_dropped() {
+        let prompt = "In this recording we talk about Waveform, OP, Wispr Flow, navbar, readme and Vercel.";
+        assert_eq!(
+            without_prompt_echo(
+                "In this recording we talk about Waveform, OP, Wispr Flow, navbar, readme and Vercel. ",
+                &[prompt]
+            ),
+            ""
+        );
+        // Cut short, or with a term mis-heard, it is still the prompt.
+        assert_eq!(without_prompt_echo("In this recording, we talk about Waveform", &[prompt]), "");
+        assert_eq!(without_prompt_echo("In this recording we talk about wave form.", &[]), "");
+        // A fragment of it.
+        assert_eq!(without_prompt_echo("Navbar, readme and Vercel.", &[prompt]), "");
+    }
+
+    #[test]
+    fn speech_around_an_echo_is_kept() {
+        let prompt = "In this recording we talk about Waveform and Vercel.";
+        assert_eq!(
+            without_prompt_echo("Deploy it to Vercel. In this recording we talk about Waveform and Vercel.", &[prompt]),
+            "Deploy it to Vercel."
+        );
+    }
+
+    #[test]
+    fn ordinary_speech_is_left_alone() {
+        let prompt = "In this recording we talk about Waveform and Vercel.";
+        assert_eq!(without_prompt_echo("Vercel.", &[prompt]), "Vercel.");
+        assert_eq!(
+            without_prompt_echo("Ship Waveform today. Is v1.0 out?", &[prompt]),
+            "Ship Waveform today. Is v1.0 out?"
+        );
+        assert_eq!(without_prompt_echo("", &[prompt]), "");
+        assert_eq!(without_prompt_echo("Hello there", &[""]), "Hello there");
     }
 
     #[test]
