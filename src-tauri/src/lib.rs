@@ -165,6 +165,17 @@ struct MicrophoneResult {
     status: String,
 }
 
+/// The window chrome (traffic lights, title bar) follows the app's native
+/// appearance, not the page's CSS. Pin it to the app's theme so the buttons
+/// stay legible when the app and macOS disagree; "system" follows macOS.
+fn apply_theme(app: &tauri::AppHandle, theme: &str) {
+    app.set_theme(match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    });
+}
+
 /// Brings the window back and restores the Dock icon with it.
 ///
 /// The Dock icon and the window are shown together: an app in the Dock whose
@@ -356,6 +367,10 @@ async fn update_settings(
 
     if next.hide_from_screen_share != previous.hide_from_screen_share {
         set_meeting_windows_shareable(&app, !next.hide_from_screen_share);
+    }
+
+    if next.theme != previous.theme {
+        apply_theme(&app, &next.theme);
     }
 
     if next.polish_shortcut != previous.polish_shortcut {
@@ -1684,6 +1699,7 @@ pub fn run() {
             let dictionary = Arc::new(Mutex::new(DictionaryStore::new(opened.database.clone())));
             let meetings = Arc::new(Mutex::new(MeetingsStore::new(opened.database)));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
+            apply_theme(app.handle(), &initial.theme);
             let selected = initial.model_id.clone();
 
             // The one release before this kept a comma list in settings. It

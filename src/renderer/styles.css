@@ -9,13 +9,13 @@
  * than a parallel set of rules.
  */
 :root {
-  --paper: #ffffff;
-  --surface: #fcfcfb;
+  --paper: #f5f4f1;
+  --surface: #fbfbfb;
   /* The rail carries the same surface as the window behind it: the sidebar is
      not a panel floating on the page, it *is* the page, and the content card
      is the only thing raised off it. Kept as its own token so the two can be
      pulled apart again without hunting for which rules meant which. */
-  --rail: #ffffff;
+  --rail: #f5f4f1;
   --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --ink: #1a1a1a;
@@ -44,6 +44,8 @@
   --inset: 14px;
   --titlebar: 58px;
   --surface-raised: #ffffff;
+  /* An empty day in the activity calendar, and the base its levels mix into. */
+  --heat-empty: var(--surface-sunken);
   --shadow-card: 0 1px 2px rgb(28 27 24 / 4%), 0 6px 20px rgb(28 27 24 / 6%);
   --shadow-card-hover: 0 2px 4px rgb(28 27 24 / 6%), 0 14px 34px rgb(28 27 24 / 10%);
   --shadow-menu: 0 12px 36px rgb(28 27 24 / 16%);
@@ -68,11 +70,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #1b1a17;
-    --surface: #1f1e1a;
-    --rail: #1b1a17;
-    --surface-sunken: #26241f;
-    --surface-hover: #302e28;
+    --paper: #202020;
+    --surface: #1a1a1a;
+    --rail: #202020;
+    --surface-sunken: #2a2a2a;
+    --surface-hover: #333333;
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
@@ -93,7 +95,8 @@
     --hint-hairline: rgb(169 205 242 / 24%);
     --hint-key: rgb(255 255 255 / 9%);
     --hint-border: rgb(169 205 242 / 30%);
-    --surface-raised: #26241f;
+    --surface-raised: #242424;
+    --heat-empty: #333333;
     --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 34%);
     --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 36%), 0 16px 40px rgb(0 0 0 / 46%);
     --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
@@ -111,11 +114,11 @@
 }
 
 :root[data-theme="dark"] {
-  --paper: #1b1a17;
-  --surface: #1f1e1a;
-  --rail: #1b1a17;
-  --surface-sunken: #26241f;
-  --surface-hover: #302e28;
+  --paper: #202020;
+  --surface: #1a1a1a;
+  --rail: #202020;
+  --surface-sunken: #2a2a2a;
+  --surface-hover: #333333;
   --ink: #f2efe8;
   --ink-soft: #a8a49a;
   --ink-faint: #78746b;
@@ -135,7 +138,8 @@
   --hint-ink: #a9cdf2;
   --hint-hairline: rgb(169 205 242 / 24%);
   --hint-key: rgb(255 255 255 / 9%);
-  --surface-raised: #26241f;
+  --surface-raised: #242424;
+  --heat-empty: #333333;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 34%);
   --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 36%), 0 16px 40px rgb(0 0 0 / 46%);
   --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
@@ -255,8 +259,10 @@ kbd {
   justify-content: space-between;
   /* The bottom inset belongs to the title bar rather than to the panels below,
      so the empty band above the content is draggable too. Left padding clears
-     the traffic lights. */
-  padding: 0 12px var(--inset) 112px;
+     the traffic lights. The top padding puts the row's centre 26px down, level
+     with the traffic lights (trafficLightPosition in tauri.conf.json), which
+     sit 19px from the top and left edges like a native unified toolbar's. */
+  padding: 8px 12px var(--inset) 112px;
   grid-column: 1 / -1;
 }
 
@@ -636,7 +642,7 @@ kbd {
   cursor: pointer;
 }
 
-.rail-toggle:hover {
+.icon-button.rail-toggle:hover {
   color: var(--ink);
   background: var(--surface-hover);
 }
@@ -1205,7 +1211,7 @@ kbd {
   width: min(860px, 94vw);
   height: min(600px, 88vh);
   border-radius: 12px;
-  background: var(--paper);
+  background: var(--surface);
   isolation: isolate;
   box-shadow: var(--shadow-modal);
   grid-template-columns: 188px minmax(0, 1fr);
@@ -1224,7 +1230,7 @@ kbd {
   gap: 4px;
   padding: 22px 12px 14px;
   border-right: 1px solid var(--hairline);
-  background: var(--paper);
+  background: var(--rail);
 }
 
 .modal-nav h2 {
@@ -3111,7 +3117,7 @@ select {
   position: fixed;
   z-index: 20;
   inset: 0;
-  background: var(--paper);
+  background: var(--surface);
   animation: fade-in 180ms ease both;
 }
 
@@ -6863,7 +6869,7 @@ select {
 
 /*
  * The home screen. The pace and the big number, with the streak beside them, then two rows
- * of two cards: the half-year calendar beside the milestones, what the words
+ * of two cards: the five-month calendar beside the milestones, what the words
  * add up to beside the months. The machine's own rows and the privacy
  * note come last. Under ~760px the pairs stack. The accent is the only
  * colour that means anything: the days, the bars and the milestones all
@@ -7046,7 +7052,7 @@ select {
   grid-column: 2;
   grid-row: 1;
   display: grid;
-  grid-template-columns: repeat(26, minmax(0, 1fr));
+  grid-template-columns: repeat(22, minmax(0, 1fr));
   gap: 3px;
   height: 14px;
   color: var(--ink-faint);
@@ -7081,7 +7087,7 @@ select {
   grid-column: 2;
   grid-row: 2;
   display: grid;
-  grid-template-columns: repeat(26, minmax(0, 1fr));
+  grid-template-columns: repeat(22, minmax(0, 1fr));
   grid-template-rows: repeat(7, auto);
   grid-auto-flow: column;
   gap: 3px;
@@ -7091,7 +7097,7 @@ select {
   display: block;
   aspect-ratio: 1;
   border-radius: 3px;
-  background: var(--surface-sunken);
+  background: var(--heat-empty);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 4%);
   transition: transform 120ms ease, opacity 200ms ease;
 }
@@ -7101,14 +7107,19 @@ select {
   z-index: 1;
 }
 
-.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
-.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
-.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
+.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--heat-empty)); }
+.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--heat-empty)); }
+.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--heat-empty)); }
 .activity-cell[data-level="4"] { background: var(--accent); }
 
+/* Days still to come in this week: empty slots, so the grid stays a whole
+   rectangle, but nothing to point at -- no lift and no tooltip. */
 .activity-cell.is-future {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 3%);
+  background: var(--heat-empty);
+}
+
+.activity-cell.is-future:hover {
+  transform: none;
 }
 
 /* The time before the first word: there, but not pointed at. */
@@ -7130,6 +7141,8 @@ select {
 .activity-tip {
   position: absolute;
   z-index: 6;
+  top: 0;
+  left: 0;
   display: grid;
   gap: 1px;
   padding: 7px 10px;
@@ -7141,7 +7154,20 @@ select {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
-  animation: tip-in 120ms ease both;
+  opacity: 0;
+  /* Glides from cell to cell rather than jumping; set by bindActivityTooltip. */
+  transition: opacity 100ms ease-out, transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.activity-tip.is-visible {
+  opacity: 1;
+}
+
+/* Where it first opens it is placed, not slid in from the last spot. */
+.activity-tip.is-snapping,
+.activity-tip.is-snapping::after {
+  transition: none;
 }
 
 .activity-tip::after {
@@ -7154,6 +7180,17 @@ select {
   background: var(--ink);
   transform: translateX(-50%) rotate(45deg);
   border-radius: 2px;
+  transition: left 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-tip {
+    transition: opacity 100ms ease-out;
+  }
+
+  .activity-tip::after {
+    transition: none;
+  }
 }
 
 .activity-tip strong {
@@ -7162,13 +7199,6 @@ select {
 
 .activity-tip-date {
   opacity: 0.7;
-}
-
-@keyframes tip-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
 }
 
 .activity-legend {
@@ -7186,12 +7216,12 @@ select {
   width: 11px;
   height: 11px;
   border-radius: 3px;
-  background: var(--surface-sunken);
+  background: var(--heat-empty);
 }
 
-.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
-.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
-.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
+.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--heat-empty)); }
+.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--heat-empty)); }
+.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--heat-empty)); }
 .activity-legend i[data-level="4"] { background: var(--accent); }
 
 .activity-legend span + i { margin-left: 4px; }

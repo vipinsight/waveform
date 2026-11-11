@@ -133,8 +133,8 @@ export interface CalendarColumn {
 const WEEK = 7;
 /** A year of weeks, as a commit graph draws it. */
 export const YEAR_WEEKS = 53;
-/** Half a year: what fits beside the months at ordinary window widths. */
-export const HALF_YEAR_WEEKS = 26;
+/** About five months: recent enough to read at a glance, with cells big enough to point at. */
+export const FIVE_MONTH_WEEKS = 22;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function monthName(index: number): string {

@@ -46,7 +46,7 @@ import {
   type KeepAudioDays,
 } from "../shared/settings";
 import {
-  HALF_YEAR_WEEKS,
+  FIVE_MONTH_WEEKS,
   MILESTONES,
   calendar,
   dayKey,
@@ -4517,14 +4517,14 @@ function renderActivityCalendar(activity: Activity): void {
         ? "1 day with words"
         : `${activity.activeDays.toLocaleString()} days with words`;
 
-  const columns = calendar(activity.today, activity.days, HALF_YEAR_WEEKS);
+  const columns = calendar(activity.today, activity.days, FIVE_MONTH_WEEKS);
   const months = document.createElement("div");
   months.className = "activity-months";
   months.setAttribute("aria-hidden", "true");
   const weekdays = document.createElement("div");
   weekdays.className = "activity-weekdays";
   weekdays.setAttribute("aria-hidden", "true");
-  for (const name of ["Mon", "", "Wed", "", "Fri", "", ""]) {
+  for (const name of ["Mon", "", "Wed", "", "Fri", "", "Sun"]) {
     const label = document.createElement("span");
     label.textContent = name;
     weekdays.append(label);
@@ -4563,15 +4563,18 @@ function renderActivityCalendar(activity: Activity): void {
 function bindActivityTooltip(): void {
   const calendarBox = element.activityCalendar;
   const tip = element.activityTip;
-  const hide = () => {
-    tip.hidden = true;
-  };
-  calendarBox.addEventListener("mouseover", (event) => {
-    const cell = (event.target as HTMLElement).closest<HTMLElement>(".activity-cell");
-    if (!cell || !cell.dataset.day) {
-      hide();
-      return;
-    }
+  // One tooltip for the whole grid. Moving from cell to cell only changes its
+  // text and glides it across; it is hidden only once the pointer has left the
+  // calendar, after a short grace so brushing past the edge does not flash it.
+  // The gaps between cells keep the last one rather than hiding.
+  const OPEN_DELAY_MS = 60;
+  const CLOSE_GRACE_MS = 120;
+  let current: HTMLElement | null = null;
+  let visible = false;
+  let openTimer: number | undefined;
+  let closeTimer: number | undefined;
+
+  const fill = (cell: HTMLElement) => {
     const words = Number(cell.dataset.words ?? 0);
     const phrases = Number(cell.dataset.phrases ?? 0);
     const when = new Date(cell.dataset.day + "T12:00:00").toLocaleDateString(undefined, {
@@ -4588,18 +4591,63 @@ function bindActivityTooltip(): void {
         ? "Nothing dictated"
         : `${words.toLocaleString()} ${words === 1 ? "word" : "words"} · ${phrases.toLocaleString()} ${phrases === 1 ? "phrase" : "phrases"}`;
     tip.replaceChildren(count, date);
-    tip.hidden = false;
-    // Above the cell, centred, and kept inside the panel.
+  };
+
+  // Above the cell, centred, and kept inside the panel.
+  const place = (cell: HTMLElement) => {
     const panel = calendarBox.parentElement ?? calendarBox;
     const box = cell.getBoundingClientRect();
     const home = panel.getBoundingClientRect();
     const width = tip.offsetWidth;
-    const left = Math.min(Math.max(8, box.left + box.width / 2 - home.left - width / 2), home.width - width - 8);
-    tip.style.left = `${left}px`;
-    tip.style.top = `${box.top - home.top - tip.offsetHeight - 8}px`;
-    tip.style.setProperty("--tip-arrow", `${box.left + box.width / 2 - home.left - left}px`);
+    const centre = box.left + box.width / 2 - home.left;
+    const left = Math.min(Math.max(8, centre - width / 2), home.width - width - 8);
+    const top = box.top - home.top - tip.offsetHeight - 8;
+    tip.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+    tip.style.setProperty("--tip-arrow", `${centre - left}px`);
+  };
+
+  const show = (cell: HTMLElement) => {
+    window.clearTimeout(closeTimer);
+    if (cell === current && (visible || openTimer !== undefined)) return;
+    current = cell;
+    if (visible) {
+      fill(cell);
+      place(cell);
+      return;
+    }
+    if (openTimer !== undefined) return;
+    openTimer = window.setTimeout(() => {
+      openTimer = undefined;
+      if (!current) return;
+      // Placed where it opens with no glide, then faded in.
+      tip.classList.add("is-snapping");
+      tip.hidden = false;
+      fill(current);
+      place(current);
+      void tip.offsetWidth;
+      tip.classList.remove("is-snapping");
+      tip.classList.add("is-visible");
+      visible = true;
+    }, OPEN_DELAY_MS);
+  };
+
+  const hide = () => {
+    window.clearTimeout(openTimer);
+    openTimer = undefined;
+    window.clearTimeout(closeTimer);
+    closeTimer = window.setTimeout(() => {
+      tip.classList.remove("is-visible");
+      visible = false;
+      current = null;
+    }, CLOSE_GRACE_MS);
+  };
+
+  calendarBox.addEventListener("pointermove", (event) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>(".activity-cell");
+    if (cell?.dataset.day) show(cell);
+    else window.clearTimeout(closeTimer);
   });
-  calendarBox.addEventListener("mouseleave", hide);
+  calendarBox.addEventListener("pointerleave", hide);
 }
 
 /** The first thing on the page before any numbers arrive: the shape of a calendar. */
