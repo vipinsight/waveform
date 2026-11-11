@@ -2179,6 +2179,12 @@ pub fn run() {
                     let _ = stopped.send(());
                 });
                 let _ = wait.recv_timeout(std::time::Duration::from_millis(1500));
+                // Last, once the engine has had its chance to stop: a pending
+                // update is applied on any quit or restart, not only "Restart
+                // to Update", and the bundle is not swapped under a running
+                // engine. Nothing types after stop_typing above, so this
+                // cannot reopen the stray-paste window around quit.
+                updates::install_pending_on_exit();
             }
             _ => {}
         });
