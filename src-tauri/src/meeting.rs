@@ -53,7 +53,9 @@ pub struct RecorderStatus {
     pub system_audio: String,
     pub diarizer_installed: bool,
     pub diarizer_bytes: u64,
-    pub has_open_router_key: bool,
+    /// Whether a summary has a model to write it: a downloaded local model,
+    /// or an OpenRouter key.
+    pub can_summarize: bool,
     /// The name the local speaker is given, from the macOS account.
     pub local_name: String,
 }
@@ -110,7 +112,13 @@ enum SummaryOutcome {
     Unparsed,
 }
 
+/// Why a meeting has no summary when there is no model to write one.
+const NO_MODEL_NOTE: &str = "Summaries need a local model or an OpenRouter key from AI Polish.";
+/// What to do about it, for a request that was refused.
+const NO_MODEL_ACTION: &str = "Download a local model or add an OpenRouter key in AI Polish first.";
+
 enum SummaryError {
+    /// No local model downloaded and no OpenRouter key.
     NoKey,
     Failed(String),
 }
@@ -250,7 +258,7 @@ impl Recorder {
             .to_string(),
             diarizer_installed: diarize::is_installed(),
             diarizer_bytes: diarize::INSTALL_BYTES,
-            has_open_router_key: self.rewriter.open_router_key().await.is_some(),
+            can_summarize: self.rewriter.meeting_assistant().await.is_some(),
             local_name: local_name(),
         }
     }
@@ -797,7 +805,7 @@ impl Recorder {
                 )),
                 Err(SummaryError::NoKey) => notes.push(Note::new(
                     "no-summary-key",
-                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                    NO_MODEL_NOTE,
                 )),
                 Err(SummaryError::Failed(reason)) => notes.push(Note::new("summary-failed", reason)),
             }
@@ -875,14 +883,11 @@ impl Recorder {
         Ok(tags)
     }
 
-    /// Writes (or rewrites) the summary. Needs an OpenRouter key.
+    /// Writes (or rewrites) the summary, with the local model when there is
+    /// one and OpenRouter otherwise.
     async fn write_summary(self: &Arc<Self>, id: &str) -> Result<SummaryOutcome, SummaryError> {
-        let key = self
-            .rewriter
-            .open_router_key()
-            .await
-            .ok_or(SummaryError::NoKey)?;
-        let model = self.rewriter.open_router_model().await;
+        let assistant = self.rewriter.meeting_assistant().await.ok_or(SummaryError::NoKey)?;
+        let model = assistant.model_name();
         let (meeting, lines) = {
             let store = self.meetings.lock().await;
             let meeting = store
@@ -896,7 +901,7 @@ impl Recorder {
         }
         self.set_stage(id, "Writing the summary…").await;
         let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
-        let (text, parsed) = summary::summarize(&key, &model, &transcript)
+        let (text, parsed) = summary::summarize(&self.rewriter, &assistant, &transcript)
             .await
             .map_err(SummaryError::Failed)?;
         {
@@ -952,9 +957,9 @@ impl Recorder {
             Err(SummaryError::NoKey) => {
                 notes.push(Note::new(
                     "no-summary-key",
-                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                    NO_MODEL_NOTE,
                 ));
-                Some("Add an OpenRouter API key in AI Polish first.".to_string())
+                Some(NO_MODEL_ACTION.to_string())
             }
             Err(SummaryError::Failed(reason)) => {
                 notes.push(Note::new("summary-failed", reason.clone()));
@@ -992,12 +997,11 @@ impl Recorder {
         if question.trim().is_empty() {
             return Err("Type a question first.".into());
         }
-        let key = self
+        let assistant = self
             .rewriter
-            .open_router_key()
+            .meeting_assistant()
             .await
-            .ok_or_else(|| "Add an OpenRouter API key in AI Polish first.".to_string())?;
-        let model = self.rewriter.open_router_model().await;
+            .ok_or_else(|| NO_MODEL_ACTION.to_string())?;
         let (meeting, lines) = {
             let store = self.meetings.lock().await;
             let meeting = store.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())?;
@@ -1007,7 +1011,7 @@ impl Recorder {
             return Err("Nothing has been said yet, so there is nothing to ask about.".into());
         }
         let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
-        summary::answer(&key, &model, &transcript, &meeting.memo, question).await
+        summary::answer(&self.rewriter, &assistant, &transcript, &meeting.memo, question).await
     }
 
     pub async fn meeting(&self, id: &str) -> Result<Meeting, String> {

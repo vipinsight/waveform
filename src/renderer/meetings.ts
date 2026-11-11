@@ -743,13 +743,13 @@ function renderEmpty(): void {
       ),
     );
   }
-  if (!status.hasOpenRouterKey) {
+  if (!status.canSummarize) {
     cards.push(
       setupCard(
         "sparkles",
         "Write a summary",
-        "Summaries use OpenRouter and need a key. Transcripts never leave this Mac; the summary sends only the text.",
-        { actions: [linkButton("Add key", () => options.openAiPolish())] },
+        "Download a local model in AI Polish and summaries stay on this Mac. An OpenRouter key works too; it sends only the transcript text.",
+        { actions: [linkButton("Set up", () => options.openAiPolish())] },
       ),
     );
   }
@@ -1064,9 +1064,9 @@ function renderOverview(): void {
   else if (lede) text.textContent = lede;
   else {
     text.classList.add("is-quiet");
-    text.textContent = status?.hasOpenRouterKey
+    text.textContent = status?.canSummarize
       ? "No summary for this meeting."
-      : "Summaries need an OpenRouter key; the transcript stays on this Mac.";
+      : "Summaries need a local model or an OpenRouter key from AI Polish.";
   }
   section("Overview", text);
 
@@ -1291,7 +1291,7 @@ function moreItems(): DropdownItem[] {
   if (!meeting) return [];
   return [
     { label: "Rename", icon: "pencil", run: () => { element.title.focus(); element.title.select(); } },
-    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.hasOpenRouterKey || !detail || detail.lines.length === 0 },
+    { label: "Rewrite summary", icon: "sparkles", run: () => void rewriteSummary(), disabled: !status?.canSummarize || !detail || detail.lines.length === 0 },
     { label: "Tag speakers again", icon: "users", run: () => tagSpeakers(meeting), disabled: !status?.diarizerInstalled || !meeting.hasAudio },
     { label: "Save audio…", icon: "download", run: () => void saveAudio(meeting), disabled: !meeting.hasAudio },
     "divider",
@@ -1455,7 +1455,7 @@ const STEPS: { label: string; stage: string | null; when?: () => boolean }[] = [
   { label: "Transcribing the last phrases", stage: "Finishing the last phrases" },
   { label: "Tagging speakers", stage: "Tagging speakers", when: () => Boolean(status?.diarizerInstalled) },
   { label: "Preparing playback", stage: "Preparing playback" },
-  { label: "Writing the summary", stage: "Writing the summary", when: () => Boolean(status?.hasOpenRouterKey) },
+  { label: "Writing the summary", stage: "Writing the summary", when: () => Boolean(status?.canSummarize) },
 ];
 
 /** The card under the head: live while recording, steps while finishing. */
@@ -1723,14 +1723,14 @@ async function flushMemo(): Promise<void> {
 function renderAsk(): void {
   if (!detail) return;
   const { meeting } = detail;
-  const keyed = Boolean(status?.hasOpenRouterKey);
+  const keyed = Boolean(status?.canSummarize);
   const said = detail.lines.length > 0;
   const asked = answers.get(meeting.id) ?? [];
   const waiting = asked.some((entry) => entry.answer === null && entry.error === null);
   element.askInput.disabled = !keyed || !said;
   element.askSend.disabled = !keyed || !said || waiting;
   element.askInput.placeholder = !keyed
-    ? "Add an OpenRouter key in AI Polish to ask about meetings"
+    ? "Download a local model or add an OpenRouter key in AI Polish to ask about meetings"
     : !said
       ? meeting.state === "recording"
         ? "Ask once something has been said"
@@ -2099,10 +2099,10 @@ function renderSummary(): void {
       quiet.className = "meeting-summary-note";
       quiet.textContent = "Nothing was said, so there is nothing to summarise.";
       element.summary.append(quiet);
-    } else if (noteOf("no-summary-key") || !status?.hasOpenRouterKey) {
+    } else if (noteOf("no-summary-key") || !status?.canSummarize) {
       element.summary.append(
-        banner("info", "No summary yet.", "Summaries need an OpenRouter key; the transcript stays on this Mac.", [
-          linkButton("Add key", () => options.openAiPolish(), true),
+        banner("info", "No summary yet.", "Summaries need a local model or an OpenRouter key from AI Polish.", [
+          linkButton("Set up", () => options.openAiPolish(), true),
         ]),
       );
     } else if (noteOf("summary-failed")) {
