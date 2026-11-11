@@ -14,6 +14,7 @@
 //! the clear, and never returned to a window. It travels no further than the
 //! one request that needs it, and the local engine never sees it at all.
 
+use crate::hinglish;
 use crate::local_llm::{self, LocalPolisher};
 use crate::settings::{AppSettings, SettingsStore};
 use serde::Serialize;
@@ -221,13 +222,15 @@ impl Rewriter {
         }
         // No worked examples: those are typed corrections, and this prompt is
         // for spoken filler. A 0.6B model follows the examples.
-        self.run(&settings.transform_prompt, text, false)
+        let prompt = hinglish::rewrite_prompt(&settings.speech_language, &settings.transform_prompt);
+        self.run(&prompt, text, false)
             .await
             .map(Some)
     }
 
     pub async fn polish(&self, text: &str) -> Result<String, String> {
-        let prompt = self.settings.lock().await.value().polish_prompt;
+        let settings = self.settings.lock().await.value();
+        let prompt = hinglish::rewrite_prompt(&settings.speech_language, &settings.polish_prompt);
         self.run(&prompt, text, true).await
     }
 

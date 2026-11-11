@@ -28,7 +28,12 @@ import {
   type SpeechModelId,
 } from "../shared/models";
 import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
-import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
+import {
+  SPEECH_LANGUAGES,
+  engineHearsLanguage,
+  isSpeechLanguage,
+  speechLanguageLabel,
+} from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
 import { installContextMenu, onRowContextMenu } from "./context-menu";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
@@ -99,6 +104,7 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
+  speechLanguageNote: requireElement<HTMLElement>("speech-language-note"),
   dictationSetup: requireElement<HTMLElement>("dictation-setup"),
   dictationSteps: requireElement<HTMLOListElement>("dictation-steps"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
@@ -2277,6 +2283,15 @@ function renderLanguageSelect(): void {
     );
   }
   element.speechLanguage.value = settings.speechLanguage;
+
+  const model = getSpeechModel(settings.modelId);
+  const heard = engineHearsLanguage(model.engine, settings.speechLanguage);
+  element.speechLanguageNote.hidden = heard;
+  element.speechLanguageNote.textContent = heard
+    ? ""
+    : `${model.label} only knows European languages. For ${speechLanguageLabel(
+        settings.speechLanguage,
+      )}, use Whisper Large v3 Turbo or Qwen3-ASR.`;
 }
 
 function resolveSetupStep(id: string): void {

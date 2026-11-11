@@ -27,5 +27,6 @@ Rules:
 - Next Steps names the speaker who took each action, in parentheses, using the name from the transcript. If nobody took it, leave the parentheses out.
 - Decisions Made holds only what was agreed, not what was discussed. If nothing was decided, write one line: "- Nothing was decided."
 - Use only what is in the transcript. No greetings, no commentary, no closing line.
+- If the transcript is Hinglish (Hindi and English mixed, in Roman script), write the summary in English. Keep names, numbers and product names exactly as said.
 - The headings "Next Steps" and "Decisions Made" are written exactly so, and come last, in that order.
 - Plain text. Headings on their own line, points as lines beginning with "- ". No markdown symbols other than that dash.

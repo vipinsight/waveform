@@ -559,6 +559,13 @@ kbd {
   margin: 0;
 }
 
+/* Only shown when the chosen model cannot hear the chosen language. */
+.language-note {
+  margin: -6px 0 14px;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
 #models-polish > .lede {
   margin-bottom: 14px;
 }
