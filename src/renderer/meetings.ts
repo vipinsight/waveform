@@ -2358,7 +2358,9 @@ function renderLines(): void {
   const query = element.find.value.trim().toLowerCase();
   const shown = query ? detail.lines.filter((line) => line.text.toLowerCase().includes(query)) : detail.lines;
 
-  let previous: string | null | undefined;
+  // Play buttons only when there is stored audio to jump into.
+  const canPlay = meeting.state !== "recording" && meeting.hasAudio;
+  element.lines.classList.toggle("can-play", canPlay);
   element.lines.replaceChildren(
     ...shown.map((line) => {
       const label = line.speaker ?? "";
@@ -2366,36 +2368,32 @@ function renderLines(): void {
       const item = document.createElement("li");
       item.className = `meeting-line ${speakerClass(label)}`;
       item.dataset.idx = String(line.idx);
-      if (!query && previous !== undefined && previous === line.speaker) item.classList.add("is-continued");
-      previous = line.speaker;
 
-      const body = document.createElement("div");
-      body.className = "meeting-line-body";
+      if (canPlay) {
+        const play = document.createElement("button");
+        play.type = "button";
+        play.className = "meeting-line-play";
+        play.append(icon("play", true));
+        play.title = "Play from here";
+        play.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
+        play.addEventListener("click", () => void playFrom(line.startMs));
+        item.append(play);
+      }
 
-      const head = document.createElement("div");
-      head.className = "meeting-line-head";
+      const time = document.createElement("span");
+      time.className = "meeting-line-time";
+      time.textContent = clock(line.startMs);
+
       const who = document.createElement("span");
       who.className = "meeting-line-speaker";
       who.textContent = label === "me" ? `${name} (you)` : name;
-      const time = document.createElement("button");
-      time.type = "button";
-      time.className = "meeting-line-time";
-      time.append(icon("play", true), clock(line.startMs));
-      time.title = "Play from here";
-      time.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
-      time.disabled = meeting.state === "recording" || !meeting.hasAudio;
-      time.addEventListener("click", () => void playFrom(line.startMs));
-      head.append(who, time);
+      who.title = who.textContent;
 
-      const bubble = document.createElement("div");
-      bubble.className = "meeting-line-bubble";
       const text = document.createElement("p");
       text.className = "meeting-line-text";
       text.append(...highlight(line.text, query));
-      bubble.append(text, copyButton("Copy this line", () => line.text));
 
-      body.append(head, bubble);
-      item.append(body);
+      item.append(time, who, text, copyButton("Copy this line", () => line.text));
       return item;
     }),
   );

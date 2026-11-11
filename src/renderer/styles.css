@@ -5800,13 +5800,12 @@ select {
   background: var(--chip);
 }
 
-/* The transcript as a conversation: a face, a name and a time, then what was
-   said in a bubble. This Mac's user is on the right, everyone else on the left;
-   the same voice again just adds a bubble under the last. */
+/* The transcript as rows: when, who, then what was said. Each line is its own
+   row, even when the same voice goes on; a play button leads the row when the
+   meeting's audio is kept. */
 .meeting-lines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 0;
   padding: 4px 0;
   list-style: none;
@@ -5815,59 +5814,64 @@ select {
 .meeting-line {
   --chip: var(--ink-soft);
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 100%;
-  margin-top: 14px;
-}
-
-.meeting-line:first-child,
-.meeting-line.is-continued {
-  margin-top: 0;
-}
-
-.meeting-line-body {
-  display: flex;
-  min-width: 0;
-  max-width: min(86%, 680px);
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-}
-
-.meeting-line-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 132px) minmax(0, 1fr);
   align-items: baseline;
-  gap: 8px;
-  padding: 0 4px;
+  column-gap: 12px;
+  padding: 9px 44px 9px 10px;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 8px;
+  transition: background 150ms ease;
 }
 
-.meeting-line.is-continued .meeting-line-head {
-  display: none;
+.can-play > .meeting-line {
+  grid-template-columns: 24px 44px minmax(0, 132px) minmax(0, 1fr);
 }
 
-.meeting-line-bubble {
-  position: relative;
-  padding: 8px 13px 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--surface-raised);
-  box-shadow: 0 1px 2px rgb(28 27 24 / 4%);
-  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+.meeting-line:last-child {
+  border-bottom-color: transparent;
 }
 
-.meeting-line.is-playing .meeting-line-bubble {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.meeting-line:not(.is-empty):hover {
+  background: var(--surface-sunken);
 }
 
-/* Copy sits on the bubble's outer edge, out of the words' way. */
-.meeting-line-bubble .meeting-line-copy {
+.meeting-line.is-playing {
+  background: var(--accent-soft);
+}
+
+.meeting-line-play {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  align-self: center;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.meeting-line-play svg {
+  width: 9px;
+  height: 9px;
+  fill: currentColor;
+}
+
+.meeting-line-play:hover,
+.meeting-line-play:focus-visible,
+.meeting-line.is-playing .meeting-line-play {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+/* Copy sits at the row's right edge, out of the words' way. */
+.meeting-line .meeting-line-copy {
   position: absolute;
-  top: 50%;
-  left: calc(100% + 6px);
-  transform: translateY(-50%);
+  top: 8px;
+  right: 8px;
 }
 
 .meeting-line.is-empty {
@@ -5908,42 +5912,18 @@ select {
 }
 
 .meeting-line-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--ink-faint);
-  font: inherit;
-  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  text-align: left;
-  transition: color 150ms ease;
-}
-
-.meeting-line-time svg {
-  width: 8px;
-  height: 8px;
-  fill: currentColor;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.meeting-line-time:not(:disabled):hover {
-  color: var(--accent);
-}
-
-.meeting-line-time:not(:disabled):hover svg,
-.meeting-line.is-playing .meeting-line-time svg {
-  opacity: 1;
 }
 
 .meeting-line-speaker {
   overflow: hidden;
   color: var(--chip);
-  font-size: 13px;
-  font-weight: 650;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6813,8 +6793,18 @@ select {
     display: none;
   }
 
-  .meeting-line-body {
-    max-width: calc(100% - 40px);
+  /* Narrow: when and who on one line, the words beneath. */
+  .meeting-line {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 4px;
+  }
+
+  .can-play > .meeting-line {
+    grid-template-columns: 24px auto minmax(0, 1fr);
+  }
+
+  .meeting-line-text {
+    grid-column: 1 / -1;
   }
 }
 
