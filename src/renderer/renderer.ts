@@ -46,7 +46,7 @@ import {
   type KeepAudioDays,
 } from "../shared/settings";
 import {
-  QUARTER_WEEKS,
+  FIVE_MONTH_WEEKS,
   MILESTONES,
   calendar,
   dayKey,
@@ -4517,7 +4517,7 @@ function renderActivityCalendar(activity: Activity): void {
         ? "1 day with words"
         : `${activity.activeDays.toLocaleString()} days with words`;
 
-  const columns = calendar(activity.today, activity.days, QUARTER_WEEKS);
+  const columns = calendar(activity.today, activity.days, FIVE_MONTH_WEEKS);
   const months = document.createElement("div");
   months.className = "activity-months";
   months.setAttribute("aria-hidden", "true");

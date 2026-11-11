@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  QUARTER_WEEKS,
+  FIVE_MONTH_WEEKS,
   calendar,
   dayKey,
   firstDay,
@@ -87,11 +87,11 @@ describe("calendar", () => {
     expect(columns[0]?.cells[0]?.day).toBe("2025-09-29");
   });
 
-  it("draws a quarter when asked, ending on the same week", () => {
-    const columns = calendar("2026-10-02", [], QUARTER_WEEKS);
-    expect(columns).toHaveLength(13);
-    expect(columns[12]?.cells[4]?.day).toBe("2026-10-02");
-    expect(columns[0]?.cells[0]?.day).toBe("2026-07-06");
+  it("draws five months when asked, ending on the same week", () => {
+    const columns = calendar("2026-10-02", [], FIVE_MONTH_WEEKS);
+    expect(columns).toHaveLength(22);
+    expect(columns[21]?.cells[4]?.day).toBe("2026-10-02");
+    expect(columns[0]?.cells[0]?.day).toBe("2026-05-04");
   });
 
   it("shades days by their share of the busiest day", () => {
@@ -120,7 +120,7 @@ describe("calendar", () => {
    * sits where it always does, but the time before is unlabelled and marked.
    */
   it("keeps the months before the first words quiet", () => {
-    const columns = calendar("2026-10-02", [{ day: "2026-09-15", words: 50, phrases: 2 }], QUARTER_WEEKS);
+    const columns = calendar("2026-10-02", [{ day: "2026-09-15", words: 50, phrases: 2 }], FIVE_MONTH_WEEKS);
     const labels = columns.map((c) => c.monthLabel).filter(Boolean);
     // September began before the first word, so it is named at the week the
     // words start in; October has not begun a column yet in this window.
