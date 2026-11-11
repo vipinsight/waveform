@@ -255,8 +255,10 @@ kbd {
   justify-content: space-between;
   /* The bottom inset belongs to the title bar rather than to the panels below,
      so the empty band above the content is draggable too. Left padding clears
-     the traffic lights. */
-  padding: 0 12px var(--inset) 112px;
+     the traffic lights. The top padding puts the row's centre 26px down, level
+     with the traffic lights (trafficLightPosition in tauri.conf.json), which
+     sit 19px from the top and left edges like a native unified toolbar's. */
+  padding: 8px 12px var(--inset) 112px;
   grid-column: 1 / -1;
 }
 
