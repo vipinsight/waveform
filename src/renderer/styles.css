@@ -44,6 +44,8 @@
   --inset: 14px;
   --titlebar: 58px;
   --surface-raised: #ffffff;
+  /* An empty day in the activity calendar, and the base its levels mix into. */
+  --heat-empty: var(--surface-sunken);
   --shadow-card: 0 1px 2px rgb(28 27 24 / 4%), 0 6px 20px rgb(28 27 24 / 6%);
   --shadow-card-hover: 0 2px 4px rgb(28 27 24 / 6%), 0 14px 34px rgb(28 27 24 / 10%);
   --shadow-menu: 0 12px 36px rgb(28 27 24 / 16%);
@@ -71,8 +73,8 @@
     --paper: #202020;
     --surface: #1a1a1a;
     --rail: #202020;
-    --surface-sunken: #26241f;
-    --surface-hover: #302e28;
+    --surface-sunken: #2a2a2a;
+    --surface-hover: #333333;
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
@@ -93,7 +95,8 @@
     --hint-hairline: rgb(169 205 242 / 24%);
     --hint-key: rgb(255 255 255 / 9%);
     --hint-border: rgb(169 205 242 / 30%);
-    --surface-raised: #26241f;
+    --surface-raised: #242424;
+    --heat-empty: #333333;
     --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 34%);
     --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 36%), 0 16px 40px rgb(0 0 0 / 46%);
     --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
@@ -114,8 +117,8 @@
   --paper: #202020;
   --surface: #1a1a1a;
   --rail: #202020;
-  --surface-sunken: #26241f;
-  --surface-hover: #302e28;
+  --surface-sunken: #2a2a2a;
+  --surface-hover: #333333;
   --ink: #f2efe8;
   --ink-soft: #a8a49a;
   --ink-faint: #78746b;
@@ -135,7 +138,8 @@
   --hint-ink: #a9cdf2;
   --hint-hairline: rgb(169 205 242 / 24%);
   --hint-key: rgb(255 255 255 / 9%);
-  --surface-raised: #26241f;
+  --surface-raised: #242424;
+  --heat-empty: #333333;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 34%);
   --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 36%), 0 16px 40px rgb(0 0 0 / 46%);
   --shadow-menu: 0 12px 36px rgb(0 0 0 / 55%);
@@ -7093,7 +7097,7 @@ select {
   display: block;
   aspect-ratio: 1;
   border-radius: 3px;
-  background: var(--surface-sunken);
+  background: var(--heat-empty);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 4%);
   transition: transform 120ms ease, opacity 200ms ease;
 }
@@ -7103,9 +7107,9 @@ select {
   z-index: 1;
 }
 
-.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
-.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
-.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
+.activity-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--heat-empty)); }
+.activity-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--heat-empty)); }
+.activity-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--heat-empty)); }
 .activity-cell[data-level="4"] { background: var(--accent); }
 
 .activity-cell.is-future {
@@ -7188,12 +7192,12 @@ select {
   width: 11px;
   height: 11px;
   border-radius: 3px;
-  background: var(--surface-sunken);
+  background: var(--heat-empty);
 }
 
-.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--surface-sunken)); }
-.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--surface-sunken)); }
-.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-sunken)); }
+.activity-legend i[data-level="1"] { background: color-mix(in srgb, var(--accent) 30%, var(--heat-empty)); }
+.activity-legend i[data-level="2"] { background: color-mix(in srgb, var(--accent) 55%, var(--heat-empty)); }
+.activity-legend i[data-level="3"] { background: color-mix(in srgb, var(--accent) 78%, var(--heat-empty)); }
 .activity-legend i[data-level="4"] { background: var(--accent); }
 
 .activity-legend span + i { margin-left: 4px; }

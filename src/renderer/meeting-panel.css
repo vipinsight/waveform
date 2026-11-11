@@ -39,9 +39,9 @@
   :root:not([data-theme="light"]) {
     --paper: #202020;
     --surface: #1a1a1a;
-    --surface-sunken: #26241f;
-    --surface-hover: #302e28;
-    --surface-raised: #26241f;
+    --surface-sunken: #2a2a2a;
+    --surface-hover: #333333;
+    --surface-raised: #242424;
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
@@ -65,9 +65,9 @@
 :root[data-theme="dark"] {
   --paper: #202020;
   --surface: #1a1a1a;
-  --surface-sunken: #26241f;
-  --surface-hover: #302e28;
-  --surface-raised: #26241f;
+  --surface-sunken: #2a2a2a;
+  --surface-hover: #333333;
+  --surface-raised: #242424;
   --ink: #f2efe8;
   --ink-soft: #a8a49a;
   --ink-faint: #78746b;
