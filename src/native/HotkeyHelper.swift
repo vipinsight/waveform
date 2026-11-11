@@ -11,7 +11,7 @@
 //                    events while the pasted text is edited in place)
 //                    {"type":"permissions"}
 //                    {"type":"request","scope":"accessibility"|"input-monitoring"}
-// Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up","keyCode":63}
+// Events (stdout)    {"type":"ready"} | {"type":"key","phase":"down"|"up"|"chord","keyCode":63}
 //                    {"type":"tap","active":true} | {"type":"permissions",…}
 //                    {"type":"paste","ok":true} | {"type":"selection","ok":…}
 
@@ -477,6 +477,9 @@ private final class ModifierWatcher {
   private var hadAccess = false
   private(set) var watchedKeyCode: Int64?
   private var isDown = false
+  /// Another key went down during the current press, which makes it a
+  /// shortcut (⌘Q with Command bound) rather than a dictation gesture.
+  private var chorded = false
 
   func watch(keyCode: Int64) {
     watchedKeyCode = keyCode
@@ -494,6 +497,7 @@ private final class ModifierWatcher {
   func unwatch() {
     watchedKeyCode = nil
     isDown = false
+    chorded = false
   }
 
   /// Re-broadcasts a flagsChanged event as an unambiguous down/up for the bound key.
@@ -506,7 +510,16 @@ private final class ModifierWatcher {
     let down = (event.flags.rawValue & mask) != 0
     guard down != isDown else { return }
     isDown = down
+    chorded = false
     emit(["type": "key", "phase": down ? "down" : "up", "keyCode": watched])
+  }
+
+  /// Reports, once per press, that another key went down while the bound key
+  /// was held. Only that fact leaves the tap: never which key it was.
+  func handleKeyDown() {
+    guard let watched = watchedKeyCode, isDown, !chorded else { return }
+    chorded = true
+    emit(["type": "key", "phase": "chord", "keyCode": watched])
   }
 
   func reenable() {
@@ -552,11 +565,16 @@ private final class ModifierWatcher {
   }
 
   private func install() {
+    // Key-downs only to notice a shortcut made with the bound key held; the
+    // tap is listen-only and nothing about the key itself is kept or sent.
     let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+      | CGEventMask(1 << CGEventType.keyDown.rawValue)
     let callback: CGEventTapCallBack = { _, type, event, _ in
       switch type {
       case .flagsChanged:
         watcher.handle(event: event)
+      case .keyDown:
+        watcher.handleKeyDown()
       case .tapDisabledByTimeout, .tapDisabledByUserInput:
         watcher.reenable()
       default:

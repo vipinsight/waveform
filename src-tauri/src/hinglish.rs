@@ -39,6 +39,16 @@ pub fn engine_language(setting: &str) -> &str {
 }
 
 /// What the session has said so far, with the primer in front for Hinglish.
+/// The fixed text a setting primes the engine with, which an engine given
+/// silence may hand back; see `dictionary::without_prompt_echo`.
+pub fn primer(setting: &str) -> &'static str {
+    if setting == CODE {
+        PRIMER
+    } else {
+        ""
+    }
+}
+
 pub fn primed_context(setting: &str, prior: &str) -> String {
     if setting != CODE {
         return prior.to_string();

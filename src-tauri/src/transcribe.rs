@@ -30,7 +30,7 @@ impl Engine {
     /// so far, oldest first; `source` names the caller in the log.
     pub async fn transcribe(&self, wav_bytes: Vec<u8>, prior: &str, source: &str) -> Result<String, String> {
         let terms = self.dictionary.lock().await.terms().unwrap_or_default();
-        let (model_id, language, prompt) = {
+        let (model_id, language, prompt, vocabulary) = {
             let settings = self.settings.lock().await.value();
             // The terms most likely to come up, as one sentence, after the
             // carried context: whisper.cpp truncates a long prompt from the
@@ -39,7 +39,7 @@ impl Engine {
             let vocabulary = dictionary::prompt_sentence(&ranked);
             let context = hinglish::primed_context(&settings.speech_language, prior);
             let prompt = whisper_cpp::build_prompt(&vocabulary, &context);
-            (settings.model_id, settings.speech_language, prompt)
+            (settings.model_id, settings.speech_language, prompt, vocabulary)
         };
         let is_hinglish = language == hinglish::CODE;
 
@@ -54,6 +54,15 @@ impl Engine {
         // Priming keeps Hinglish in Roman script most of the time, not every
         // time; what still came back in Devanagari is written out here.
         let outcome = outcome.map(|text| if is_hinglish { hinglish::romanize(&text) } else { text });
+        // Given silence, a primed engine can hand its prompt back as if it
+        // had been said; that must come out as nothing, not be pasted.
+        let outcome = outcome.map(|text| {
+            let kept = dictionary::without_prompt_echo(&text, &[vocabulary.as_str(), hinglish::primer(&language)]);
+            if kept != text {
+                self.logs.info(&self.app, source, format!("dropped prompt echo {text:?}"));
+            }
+            kept
+        });
         let took = started.elapsed().as_millis();
 
         // What the engine still got wrong, put right from the dictionary,
