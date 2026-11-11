@@ -7136,6 +7136,8 @@ select {
 .activity-tip {
   position: absolute;
   z-index: 6;
+  top: 0;
+  left: 0;
   display: grid;
   gap: 1px;
   padding: 7px 10px;
@@ -7147,7 +7149,20 @@ select {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
-  animation: tip-in 120ms ease both;
+  opacity: 0;
+  /* Glides from cell to cell rather than jumping; set by bindActivityTooltip. */
+  transition: opacity 100ms ease-out, transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.activity-tip.is-visible {
+  opacity: 1;
+}
+
+/* Where it first opens it is placed, not slid in from the last spot. */
+.activity-tip.is-snapping,
+.activity-tip.is-snapping::after {
+  transition: none;
 }
 
 .activity-tip::after {
@@ -7160,6 +7175,17 @@ select {
   background: var(--ink);
   transform: translateX(-50%) rotate(45deg);
   border-radius: 2px;
+  transition: left 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-tip {
+    transition: opacity 100ms ease-out;
+  }
+
+  .activity-tip::after {
+    transition: none;
+  }
 }
 
 .activity-tip strong {
@@ -7168,13 +7194,6 @@ select {
 
 .activity-tip-date {
   opacity: 0.7;
-}
-
-@keyframes tip-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
 }
 
 .activity-legend {
