@@ -9,6 +9,7 @@ import type {
 } from "../shared/contracts";
 import { host } from "./host";
 import { audioFileToMonoWav } from "./audio/file-wav";
+import { wavPeaks } from "./audio/peaks";
 import { onRowContextMenu } from "./context-menu";
 
 /**
@@ -75,7 +76,10 @@ const element = {
   title: byId<HTMLInputElement>("meeting-title"),
   actions: byId<HTMLElement>("meeting-actions"),
   meta: byId<HTMLElement>("meeting-meta"),
-  progress: byId<HTMLButtonElement>("meeting-progress"),
+  player: byId<HTMLElement>("meeting-player"),
+  play: byId<HTMLButtonElement>("meeting-play"),
+  wave: byId<HTMLElement>("meeting-wave"),
+  playTime: byId<HTMLElement>("meeting-play-time"),
   confirm: byId<HTMLElement>("meeting-confirm"),
   short: byId<HTMLElement>("meeting-short"),
   band: byId<HTMLElement>("meeting-band"),
@@ -129,7 +133,13 @@ let status: RecorderStatus | null = null;
 let meetings: Meeting[] = [];
 let openId: string | null = null;
 let detail: MeetingDetail | null = null;
-let playback: { audio: HTMLAudioElement; url: string } | null = null;
+let playback: { id: string; audio: HTMLAudioElement; url: string; peaks: Float32Array } | null = null;
+/** The open meeting's recording on its way in, so two asks share one load. */
+let loadingAudio: { id: string; token: object; done: Promise<HTMLAudioElement | null> } | null = null;
+/** The meeting whose recording was already asked for, so a failure is not retried on every render. */
+let audioAskedFor: string | null = null;
+/** While playing, the waveform redraws every frame rather than on the coarse timeupdate. */
+let playFrame = 0;
 let ticker: number | null = null;
 let installing: DiarizerInstallEvent | null = null;
 let level: MeetingLevelEvent | null = null;
@@ -241,12 +251,21 @@ export function bindMeetings(given: Options): void {
   });
   element.search.addEventListener("input", renderList);
   element.find.addEventListener("input", renderLines);
-  element.progress.addEventListener("click", (event) => {
-    if (!playback || !Number.isFinite(playback.audio.duration)) return;
-    const box = element.progress.getBoundingClientRect();
-    const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
-    playback.audio.currentTime = fraction * playback.audio.duration;
+  element.play.addEventListener("click", () => void togglePlay());
+  element.wave.addEventListener("pointerdown", (event) => {
+    element.wave.setPointerCapture(event.pointerId);
+    seekToPointer(event);
   });
+  element.wave.addEventListener("pointermove", (event) => {
+    if (element.wave.hasPointerCapture(event.pointerId)) seekToPointer(event);
+  });
+  element.wave.addEventListener("keydown", (event) => {
+    const step = event.key === "ArrowRight" ? 5 : event.key === "ArrowLeft" ? -5 : 0;
+    if (!step || !playback) return;
+    event.preventDefault();
+    playback.audio.currentTime = Math.max(0, Math.min(audioLength(playback.audio) / 1_000, playback.audio.currentTime + step));
+  });
+  new ResizeObserver(() => drawWave()).observe(element.wave);
   element.tabSummary.addEventListener("click", () => chooseTab("summary"));
   element.tabTranscript.addEventListener("click", () => chooseTab("transcript"));
   element.tabNotes.addEventListener("click", () => chooseTab("notes"));
@@ -1193,6 +1212,7 @@ function renderHead(): void {
   if (meeting.state === "recording") chips.push(chip("Recording", "live"));
   else if (meeting.durationMs > 0) chips.push(chip(duration(meeting.durationMs)));
   element.meta.replaceChildren(...chips);
+  renderPlayer();
 
   // Newer and older, in the list's order.
   const index = meetings.findIndex((entry) => entry.id === meeting.id);
@@ -2358,7 +2378,9 @@ function renderLines(): void {
   const query = element.find.value.trim().toLowerCase();
   const shown = query ? detail.lines.filter((line) => line.text.toLowerCase().includes(query)) : detail.lines;
 
-  let previous: string | null | undefined;
+  // Play buttons only when there is stored audio to jump into.
+  const canPlay = meeting.state !== "recording" && meeting.hasAudio;
+  element.lines.classList.toggle("can-play", canPlay);
   element.lines.replaceChildren(
     ...shown.map((line) => {
       const label = line.speaker ?? "";
@@ -2366,36 +2388,40 @@ function renderLines(): void {
       const item = document.createElement("li");
       item.className = `meeting-line ${speakerClass(label)}`;
       item.dataset.idx = String(line.idx);
-      if (!query && previous !== undefined && previous === line.speaker) item.classList.add("is-continued");
-      previous = line.speaker;
 
-      const body = document.createElement("div");
-      body.className = "meeting-line-body";
+      if (canPlay) {
+        const play = document.createElement("button");
+        play.type = "button";
+        play.className = "meeting-line-play";
+        const playIcon = icon("play", true);
+        playIcon.classList.add("is-play");
+        const pauseIcon = icon("pause", true);
+        pauseIcon.classList.add("is-pause");
+        play.append(playIcon, pauseIcon);
+        play.title = "Play from here";
+        play.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
+        // The line being heard pauses and resumes in place; any other jumps there.
+        play.addEventListener("click", () => {
+          if (item.classList.contains("is-playing")) void togglePlay();
+          else void playFrom(line.startMs);
+        });
+        item.append(play);
+      }
 
-      const head = document.createElement("div");
-      head.className = "meeting-line-head";
+      const time = document.createElement("span");
+      time.className = "meeting-line-time";
+      time.textContent = clock(line.startMs);
+
       const who = document.createElement("span");
       who.className = "meeting-line-speaker";
       who.textContent = label === "me" ? `${name} (you)` : name;
-      const time = document.createElement("button");
-      time.type = "button";
-      time.className = "meeting-line-time";
-      time.append(icon("play", true), clock(line.startMs));
-      time.title = "Play from here";
-      time.setAttribute("aria-label", `Play from ${clock(line.startMs)}`);
-      time.disabled = meeting.state === "recording" || !meeting.hasAudio;
-      time.addEventListener("click", () => void playFrom(line.startMs));
-      head.append(who, time);
+      who.title = who.textContent;
 
-      const bubble = document.createElement("div");
-      bubble.className = "meeting-line-bubble";
       const text = document.createElement("p");
       text.className = "meeting-line-text";
       text.append(...highlight(line.text, query));
-      bubble.append(text, copyButton("Copy this line", () => line.text));
 
-      body.append(head, bubble);
-      item.append(body);
+      item.append(time, who, text, copyButton("Copy this line", () => line.text));
       return item;
     }),
   );
@@ -2469,22 +2495,54 @@ function transcriptText(given: MeetingDetail): string {
 
 // --- Playback ----------------------------------------------------------------
 
+/**
+ * The open meeting's recording, as audio to play and as peaks to draw. Loaded
+ * once a meeting with audio opens, so the waveform is there before Play.
+ */
 async function ensurePlayback(): Promise<HTMLAudioElement | null> {
   if (!detail) return null;
-  if (playback) return playback.audio;
-  const bytes = await host().getMeetingAudio(detail.meeting.id);
-  const copy = new Uint8Array(bytes);
-  const url = URL.createObjectURL(new Blob([copy], { type: "audio/wav" }));
-  const audio = new Audio(url);
-  for (const name of ["ended", "pause", "play"]) {
-    audio.addEventListener(name, renderHead);
+  const id = detail.meeting.id;
+  if (playback?.id === id) return playback.audio;
+  if (loadingAudio?.id === id) return loadingAudio.done;
+  audioAskedFor = id;
+  // Left behind by a meeting change or a reopen: this load is then dropped.
+  const token = {};
+  const done = (async () => {
+    const bytes = new Uint8Array(await host().getMeetingAudio(id));
+    if (loadingAudio?.token !== token || detail?.meeting.id !== id) return null;
+    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+    const audio = new Audio(url);
+    for (const name of ["ended", "pause", "play"]) {
+      audio.addEventListener(name, onPlayState);
+    }
+    for (const name of ["timeupdate", "loadedmetadata", "seeked"]) {
+      audio.addEventListener(name, updateProgress);
+    }
+    playback = { id, audio, url, peaks: wavPeaks(bytes, WAVE_SLICES) };
+    updateProgress();
+    return audio;
+  })();
+  loadingAudio = { id, token, done };
+  try {
+    return await done;
+  } finally {
+    if (loadingAudio?.done === done) loadingAudio = null;
   }
-  for (const name of ["timeupdate", "loadedmetadata", "seeked"]) {
-    audio.addEventListener(name, updateProgress);
+}
+
+/** How finely the recording is sliced for drawing; resampled to the width. */
+const WAVE_SLICES = 2_000;
+
+function onPlayState(): void {
+  cancelAnimationFrame(playFrame);
+  if (playback && !playback.audio.paused) {
+    const tick = () => {
+      updateProgress();
+      playFrame = requestAnimationFrame(tick);
+    };
+    playFrame = requestAnimationFrame(tick);
   }
-  playback = { audio, url };
-  element.progress.hidden = false;
-  return audio;
+  renderHead();
 }
 
 async function togglePlay(): Promise<void> {
@@ -2510,40 +2568,133 @@ async function playFrom(ms: number): Promise<void> {
 }
 
 function stopPlayback(): void {
-  element.progress.hidden = true;
-  markPlayingLine(null);
-  if (!playback) return;
-  playback.audio.pause();
-  URL.revokeObjectURL(playback.url);
-  playback = null;
-}
-
-/** The bar under the head and the line being heard follow the audio. */
-function updateProgress(): void {
-  if (!playback || !detail) return;
-  const { audio } = playback;
-  const fraction = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.currentTime / audio.duration : 0;
-  const fill = element.progress.querySelector<HTMLElement>(".meeting-progress-fill");
-  if (fill) fill.style.transform = `scaleX(${fraction})`;
-  element.progress.setAttribute("aria-valuetext", `${clock(audio.currentTime * 1_000)} of ${clock(audio.duration * 1_000)}`);
-  const at = audio.currentTime * 1_000;
-  let current: number | null = null;
-  for (const line of detail.lines) {
-    if (line.startMs <= at) current = line.idx;
-    else break;
+  cancelAnimationFrame(playFrame);
+  loadingAudio = null;
+  audioAskedFor = null;
+  element.player.hidden = true;
+  if (playback) {
+    playback.audio.pause();
+    URL.revokeObjectURL(playback.url);
+    playback = null;
   }
-  markPlayingLine(current);
+  markPlayingLine();
 }
 
-function markPlayingLine(idx?: number | null): void {
-  if (idx === undefined) {
-    if (!playback || playback.audio.paused) idx = null;
-    else {
-      updateProgress();
-      return;
+/** Milliseconds of audio: the file's own length once known, else the meeting's. */
+function audioLength(audio: HTMLAudioElement | null): number {
+  if (audio && Number.isFinite(audio.duration) && audio.duration > 0) return audio.duration * 1_000;
+  return detail?.meeting.durationMs ?? 0;
+}
+
+/** The player over the tabs: shown for a finished meeting with its audio kept. */
+function renderPlayer(): void {
+  if (!detail) return;
+  const { meeting } = detail;
+  const show = meeting.hasAudio && meeting.state !== "recording" && meeting.state !== "processing";
+  element.player.hidden = !show;
+  if (!show) return;
+  const playing = Boolean(playback && !playback.audio.paused);
+  element.play.replaceChildren(icon(playing ? "pause" : "play", true));
+  element.play.setAttribute("aria-label", playing ? "Pause" : "Play");
+  element.play.title = playing ? "Pause" : "Play";
+  element.lines.classList.toggle("is-audio-playing", playing);
+  if (!playback && audioAskedFor !== meeting.id) void ensurePlayback().catch(showError);
+  updateProgress();
+}
+
+/** The waveform, the time and the line being heard follow the audio. */
+function updateProgress(): void {
+  if (!detail) return;
+  const audio = playback?.audio ?? null;
+  const total = audioLength(audio);
+  const at = audio ? audio.currentTime * 1_000 : 0;
+  element.playTime.textContent = `${clock(at)} / ${clock(total)}`;
+  element.wave.setAttribute("aria-valuenow", String(total > 0 ? Math.round((at / total) * 100) : 0));
+  element.wave.setAttribute("aria-valuetext", `${clock(at)} of ${clock(total)}`);
+  drawWave();
+  markPlayingLine();
+}
+
+/**
+ * The recording's peaks as rounded bars across the full width: what has been
+ * heard in the accent, the rest quieter. A flat line until the audio is in.
+ */
+function drawWave(): void {
+  const canvas = element.wave.querySelector("canvas");
+  if (!canvas || element.player.hidden) return;
+  const ratio = window.devicePixelRatio || 1;
+  const width = element.wave.clientWidth;
+  const height = element.wave.clientHeight;
+  if (width === 0 || height === 0) return;
+  if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+  }
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const style = getComputedStyle(element.wave);
+  const heard = style.getPropertyValue("--wave-heard").trim() || "#888";
+  const rest = style.getPropertyValue("--wave-rest").trim() || "#ccc";
+  const audio = playback?.audio ?? null;
+  const total = audioLength(audio);
+  const split = audio && total > 0 ? ((audio.currentTime * 1_000) / total) * width : 0;
+
+  const peaks = playback?.peaks ?? new Float32Array();
+  const bar = 2;
+  const gap = 1;
+  const bars = Math.max(1, Math.floor((width + gap) / (bar + gap)));
+  let loudest = 0;
+  for (const peak of peaks) loudest = Math.max(loudest, peak);
+  for (let index = 0; index < bars; index += 1) {
+    let level = 0;
+    if (peaks.length > 0 && loudest > 0) {
+      const from = Math.floor((index * peaks.length) / bars);
+      const to = Math.max(from + 1, Math.floor(((index + 1) * peaks.length) / bars));
+      for (let slice = from; slice < to && slice < peaks.length; slice += 1) level = Math.max(level, peaks[slice] ?? 0);
+      // Quiet calls still read as speech: lift the low end a little.
+      level = Math.sqrt(level / loudest);
+    }
+    const tall = Math.max(2, level * height);
+    const x = index * (bar + gap);
+    context.fillStyle = x < split ? heard : rest;
+    context.beginPath();
+    context.roundRect(x, (height - tall) / 2, bar, tall, 1);
+    context.fill();
+  }
+}
+
+async function seekToPointer(event: PointerEvent): Promise<void> {
+  const box = element.wave.getBoundingClientRect();
+  const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+  try {
+    const audio = await ensurePlayback();
+    if (!audio) return;
+    audio.currentTime = (fraction * audioLength(audio)) / 1_000;
+    updateProgress();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+/**
+ * The line at the play position is marked, playing or paused, so its button
+ * can pause and resume it. Nothing is marked before the audio has moved.
+ */
+function markPlayingLine(): void {
+  let idx: number | null = null;
+  if (playback && detail && playback.id === detail.meeting.id && playback.audio.currentTime > 0) {
+    const at = playback.audio.currentTime * 1_000;
+    for (const line of detail.lines) {
+      if (line.startMs <= at) idx = line.idx;
+      else break;
     }
   }
-  element.lines.querySelector(".meeting-line.is-playing")?.classList.remove("is-playing");
+  const marked = element.lines.querySelector<HTMLElement>(".meeting-line.is-playing");
+  if (marked && marked.dataset.idx === String(idx)) return;
+  marked?.classList.remove("is-playing");
   if (idx === null) return;
   element.lines.querySelector(`.meeting-line[data-idx="${idx}"]`)?.classList.add("is-playing");
 }

@@ -326,9 +326,14 @@
                     />
                   </div>
                   <p id="meeting-meta" class="meeting-meta"></p>
-                  <button id="meeting-progress" class="meeting-progress" type="button" aria-label="Playback position" hidden>
-                    <span class="meeting-progress-fill"></span>
-                  </button>
+                  <!-- The whole recording as a waveform: click or drag to move through it. -->
+                  <div id="meeting-player" class="meeting-player" hidden>
+                    <button id="meeting-play" class="meeting-play" type="button" aria-label="Play"></button>
+                    <div id="meeting-wave" class="meeting-wave" role="slider" tabindex="0" aria-label="Playback position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                      <canvas class="meeting-wave-canvas"></canvas>
+                    </div>
+                    <span id="meeting-play-time" class="meeting-play-time"></span>
+                  </div>
                 </header>
                 <!-- The user's own notes, the transcript and the summary take turns. -->
                 <div id="meeting-tabs" class="meeting-tabs" role="tablist" aria-label="Notes, transcript or summary" data-tab="summary">
