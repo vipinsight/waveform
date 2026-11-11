@@ -1,17 +1,22 @@
-//! The meeting summary: one request to OpenRouter, in a fixed shape.
+//! The meeting summary: one request to a model, in a fixed shape.
 //!
 //! The shape is the product. The prompt asks for it, this module checks the
 //! reply has it, asks once more with the shape restated when it does not,
-//! and parses it into sections so each can be copied on its own. Only the
-//! transcript text leaves the Mac, and only when the user has already put
-//! an OpenRouter key into AI Polish; the audio never does.
+//! and parses it into sections so each can be copied on its own.
+//!
+//! The model is the local one chosen in AI Polish whenever it has been
+//! downloaded, so the transcript stays on this Mac. OpenRouter is used only
+//! without one, and only when the user has put a key into AI Polish; then the
+//! transcript text leaves the Mac, and the audio still never does.
 
 use crate::meetings::{Line, LOCAL_SPEAKER};
+use crate::rewrite::{Assistant, Rewriter};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
 const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 const PROMPT: &str = include_str!("prompts/meeting-summary.txt");
+const ASK_PROMPT: &str = include_str!("prompts/meeting-ask.txt");
 /// A long meeting's summary is still a page; past this the model is padding.
 const MAX_REPLY_TOKENS: u32 = 1_500;
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
@@ -89,26 +94,61 @@ pub fn clock(ms: u64) -> String {
 /// The text always comes back when the request succeeded; the parsed
 /// summary only when it had the shape. A model that misses twice is shown
 /// as it came back rather than asked a third time or thrown away.
-pub async fn summarize(key: &str, model: &str, transcript: &str) -> Result<(String, Option<Summary>), String> {
-    let transcript = clip_transcript(transcript);
-    let first = ask(key, model, PROMPT, &transcript).await?;
+pub async fn summarize(
+    rewriter: &Rewriter,
+    assistant: &Assistant,
+    transcript: &str,
+) -> Result<(String, Option<Summary>), String> {
+    let transcript = clip_transcript(transcript, transcript_limit(assistant));
+    let first = ask(rewriter, assistant, PROMPT, &transcript).await?;
     if let Ok(parsed) = parse(&first) {
         return Ok((first, Some(parsed)));
     }
     let restated = format!(
         "{PROMPT}\n\nYour previous reply did not follow the shape. Reply again, in exactly the shape above, starting with the Title line and then the one-sentence overview."
     );
-    let second = ask(key, model, &restated, &transcript).await?;
+    let second = ask(rewriter, assistant, &restated, &transcript).await?;
     let parsed = parse(&second).ok();
     Ok((second, parsed))
 }
 
+/// Answers a question about one meeting from its transcript and the user's
+/// own notes. Nothing is kept: the answer is for the window to show.
+pub async fn answer(
+    rewriter: &Rewriter,
+    assistant: &Assistant,
+    transcript: &str,
+    memo: &str,
+    question: &str,
+) -> Result<String, String> {
+    let message = question_message(transcript, memo, question, transcript_limit(assistant));
+    ask(rewriter, assistant, ASK_PROMPT, &message).await
+}
+
+/// How much transcript the model is given. A local model's context is far
+/// smaller than a hosted one's.
+fn transcript_limit(assistant: &Assistant) -> usize {
+    match assistant {
+        Assistant::Local { .. } => crate::local_llm::MEETING_INPUT_CHARS,
+        Assistant::OpenRouter { .. } => MAX_TRANSCRIPT_CHARS,
+    }
+}
+
+fn question_message(transcript: &str, memo: &str, question: &str, limit: usize) -> String {
+    let mut message = format!("Transcript:\n{}", clip_transcript(transcript, limit));
+    if !memo.trim().is_empty() {
+        message.push_str(&format!("\n\nMy notes:\n{}", memo.trim()));
+    }
+    message.push_str(&format!("\n\nQuestion: {}", question.trim()));
+    message
+}
+
 /// Keeps the most recent part of an overlong transcript, saying so.
-fn clip_transcript(transcript: &str) -> String {
-    if transcript.chars().count() <= MAX_TRANSCRIPT_CHARS {
+fn clip_transcript(transcript: &str, limit: usize) -> String {
+    if transcript.chars().count() <= limit {
         return transcript.to_string();
     }
-    let start = transcript.chars().count() - MAX_TRANSCRIPT_CHARS;
+    let start = transcript.chars().count() - limit;
     let tail: String = transcript.chars().skip(start).collect();
     let from_line = tail.find('\n').map(|at| at + 1).unwrap_or(0);
     format!(
@@ -117,7 +157,14 @@ fn clip_transcript(transcript: &str) -> String {
     )
 }
 
-async fn ask(key: &str, model: &str, system: &str, transcript: &str) -> Result<String, String> {
+async fn ask(rewriter: &Rewriter, assistant: &Assistant, system: &str, user: &str) -> Result<String, String> {
+    match assistant {
+        Assistant::Local { id } => rewriter.chat_local(id, system, user, MAX_REPLY_TOKENS as usize).await,
+        Assistant::OpenRouter { key, model } => ask_open_router(key, model, system, user).await,
+    }
+}
+
+async fn ask_open_router(key: &str, model: &str, system: &str, transcript: &str) -> Result<String, String> {
     let response = reqwest::Client::new()
         .post(ENDPOINT)
         .bearer_auth(key)
@@ -149,7 +196,7 @@ async fn ask(key: &str, model: &str, system: &str, transcript: &str) -> Result<S
         .and_then(|content| content.as_str())
         .map(|content| content.trim().to_string())
         .filter(|content| !content.is_empty())
-        .ok_or_else(|| "OpenRouter sent back an empty summary.".to_string())
+        .ok_or_else(|| "OpenRouter sent back an empty reply.".to_string())
 }
 
 /// Reads the fixed shape. Forgiving about blank lines and markdown bullets,
@@ -377,10 +424,18 @@ mod tests {
     }
 
     #[test]
+    fn a_question_carries_the_transcript_the_notes_and_the_question() {
+        let message = question_message("[00:01] Ann: hi", "  budget  ", " what was decided? ", MAX_TRANSCRIPT_CHARS);
+        assert_eq!(message, "Transcript:\n[00:01] Ann: hi\n\nMy notes:\nbudget\n\nQuestion: what was decided?");
+        let bare = question_message("[00:01] Ann: hi", "", "who?", MAX_TRANSCRIPT_CHARS);
+        assert!(!bare.contains("My notes"));
+    }
+
+    #[test]
     fn an_overlong_transcript_keeps_its_end_and_says_so() {
         let line = "[00:00] A: ".to_string() + &"x".repeat(100) + "\n";
         let transcript = line.repeat(2_000);
-        let clipped = clip_transcript(&transcript);
+        let clipped = clip_transcript(&transcript, MAX_TRANSCRIPT_CHARS);
         assert!(clipped.starts_with("[The first part of this meeting is omitted"));
         assert!(clipped.chars().count() <= MAX_TRANSCRIPT_CHARS + 100);
         assert!(clipped.ends_with(&line));

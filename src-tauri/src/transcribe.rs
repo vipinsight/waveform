@@ -6,6 +6,7 @@
 //! counted, so the ranking learns from use.
 
 use crate::dictionary::{self, DictionaryStore};
+use crate::hinglish;
 use crate::logs::Logs;
 use crate::model_server::ModelServer;
 use crate::settings::SettingsStore;
@@ -36,15 +37,23 @@ impl Engine {
             // front, so the context is what gives way, never the names.
             let ranked = dictionary::rank(&terms, prior, now_ms(), dictionary::PROMPT_TERMS);
             let vocabulary = dictionary::prompt_sentence(&ranked);
-            let prompt = whisper_cpp::build_prompt(&vocabulary, prior);
+            let context = hinglish::primed_context(&settings.speech_language, prior);
+            let prompt = whisper_cpp::build_prompt(&vocabulary, &context);
             (settings.model_id, settings.speech_language, prompt)
         };
+        let is_hinglish = language == hinglish::CODE;
 
         // 44 bytes of header, then 16-bit mono. Reported in seconds because
         // that is the number worth comparing against what was actually said.
         let seconds = wav_bytes.len().saturating_sub(44) as f64 / 2.0 / 48_000.0;
         let started = std::time::Instant::now();
-        let outcome = self.models.transcribe(wav_bytes, &language, &prompt).await;
+        let outcome = self
+            .models
+            .transcribe(wav_bytes, hinglish::engine_language(&language), &prompt)
+            .await;
+        // Priming keeps Hinglish in Roman script most of the time, not every
+        // time; what still came back in Devanagari is written out here.
+        let outcome = outcome.map(|text| if is_hinglish { hinglish::romanize(&text) } else { text });
         let took = started.elapsed().as_millis();
 
         // What the engine still got wrong, put right from the dictionary,

@@ -4,11 +4,13 @@ import { encodeMonoPcm16Wav } from "./wav";
  * Turns a dropped audio file into the mono PCM16 WAV the speech engine takes.
  *
  * WebKit decodes the container; this mixes to one channel and re-encodes at
- * the file's own rate. Whisper resamples from there.
+ * the file's own rate, or at `sampleRate` when given. Whisper resamples from there.
  */
-export async function audioFileToMonoWav(file: File): Promise<Uint8Array> {
+export async function audioFileToMonoWav(file: File, sampleRate?: number): Promise<Uint8Array> {
   const raw = await file.arrayBuffer();
-  const context = new AudioContext();
+  // With a rate given, WebKit resamples while decoding: a long file then
+  // crosses to the host at speech rate rather than at 48 kHz.
+  const context = new AudioContext(sampleRate ? { sampleRate } : undefined);
   try {
     const decoded = await context.decodeAudioData(raw.slice(0));
     const mono = mixToMono(decoded);

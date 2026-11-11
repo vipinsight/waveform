@@ -242,3 +242,16 @@ describe("audio retention", () => {
     expect(normalizeSettings({ saveAudio: false }).saveAudio).toBe(false);
   });
 });
+
+describe("hide from screen sharing", () => {
+  it("is off by default, on both sides", () => {
+    expect(DEFAULT_SETTINGS.hideFromScreenShare).toBe(false);
+    const rust = readFileSync("src-tauri/src/settings.rs", "utf8");
+    expect(rust).toContain("hide_from_screen_share: false,");
+  });
+
+  it("keeps a boolean and ignores anything else", () => {
+    expect(normalizeSettings({ hideFromScreenShare: true }).hideFromScreenShare).toBe(true);
+    expect(normalizeSettings({ hideFromScreenShare: "yes" }).hideFromScreenShare).toBe(false);
+  });
+});

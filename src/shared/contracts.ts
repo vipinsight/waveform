@@ -328,6 +328,8 @@ export interface Meeting {
   userTitled: boolean;
   /** Whether a recording exists on disk to play or save. */
   hasAudio: boolean;
+  /** What the user wrote about the meeting themselves, as plain text. */
+  memo: string;
 }
 
 export type MeetingNoteKind =
@@ -394,7 +396,8 @@ export interface RecorderStatus {
   systemAudio: "available" | "unsupported" | "missing";
   diarizerInstalled: boolean;
   diarizerBytes: number;
-  hasOpenRouterKey: boolean;
+  /** A downloaded local model or an OpenRouter key: something to write a summary. */
+  canSummarize: boolean;
   localName: string;
 }
 
@@ -598,15 +601,29 @@ export interface DesktopApi {
   renameMeetingSpeaker(id: string, label: string, name: string): Promise<Meeting>;
   /** Writes the summary again, after renames or once a key is added. */
   summarizeMeeting(id: string): Promise<MeetingDetail>;
+  /** Keeps the user's own notes on a meeting. */
+  setMeetingMemo(id: string, memo: string): Promise<Meeting>;
+  /** Answers a question from the meeting's transcript and notes; nothing is kept. */
+  askMeeting(id: string, question: string): Promise<string>;
   deleteMeeting(id: string): Promise<void>;
   getMeetingAudio(id: string): Promise<Uint8Array>;
   /** Copies the recording into Downloads and reveals it; resolves to its path. */
   exportMeetingAudio(id: string): Promise<string>;
+  /**
+   * Makes a meeting from audio: transcribed, tagged and summed up in the
+   * background. With `extension`, `bytes` are the file as it is, decoded by
+   * the host; without, a mono WAV the window decoded.
+   */
+  importMeetingAudio(bytes: Uint8Array, title: string, extension?: string): Promise<Meeting>;
   installDiarizer(): Promise<void>;
   /** Brings the window up on the live meeting. */
   showMeetings(): Promise<void>;
   /** Opens or closes the live transcript window. */
   toggleMeetingPanel(): Promise<void>;
+  /** Opens the transcript window on one meeting, recording or not. */
+  showMeetingPanel(id: string): Promise<void>;
+  /** The meeting the transcript window was opened on; null means the recording. */
+  meetingPanelTarget(): Promise<string | null>;
   /** The meeting pill is dragged like the HUD: deltas from where it started, in screen points. */
   beginMeetingPillDrag(): void;
   moveMeetingPill(deltaX: number, deltaY: number): void;

@@ -41,7 +41,13 @@ import type {
 import type { AppSettings } from "../shared/settings";
 
 interface TauriGlobal {
-  core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> };
+  core: {
+    invoke<T>(
+      command: string,
+      args?: Record<string, unknown> | Uint8Array,
+      options?: { headers: Record<string, string> },
+    ): Promise<T>;
+  };
   event: {
     listen<T>(
       event: string,
@@ -170,15 +176,27 @@ const api: DesktopApi = {
   renameMeetingSpeaker: (id, label, name) =>
     invoke<Meeting>("rename_meeting_speaker", { id, label, name }),
   summarizeMeeting: (id) => invoke<MeetingDetail>("summarize_meeting", { id }),
+  setMeetingMemo: (id, memo) => invoke<Meeting>("set_meeting_memo", { id, memo }),
+  askMeeting: (id, question) => invoke<string>("ask_meeting", { id, question }),
   deleteMeeting: (id) => invoke<void>("delete_meeting", { id }),
   getMeetingAudio: async (id) => {
     const bytes = await invoke<number[]>("get_meeting_audio", { id });
     return Uint8Array.from(bytes);
   },
   exportMeetingAudio: (id) => invoke<string>("export_meeting_audio", { id }),
+  // An hour of audio is ~100 MB: sent as the raw body, not a number array.
+  importMeetingAudio: (bytes, title, extension) =>
+    tauri().core.invoke<Meeting>("import_meeting_audio", bytes, {
+      headers: {
+        "x-title": encodeURIComponent(title),
+        ...(extension ? { "x-extension": extension } : {}),
+      },
+    }),
   installDiarizer: () => invoke<void>("install_diarizer"),
   showMeetings: () => invoke<void>("show_meetings"),
   toggleMeetingPanel: () => invoke<void>("toggle_meeting_panel"),
+  showMeetingPanel: (id) => invoke<void>("show_meeting_panel", { id }),
+  meetingPanelTarget: () => invoke<string | null>("meeting_panel_target"),
   beginMeetingPillDrag: () => void invoke("begin_meeting_pill_drag"),
   moveMeetingPill: (deltaX, deltaY) => void invoke("drag_meeting_pill", { deltaX, deltaY }),
   endMeetingPillDrag: (deltaX, deltaY) => void invoke("end_meeting_pill_drag", { deltaX, deltaY }),

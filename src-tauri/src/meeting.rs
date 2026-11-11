@@ -54,7 +54,9 @@ pub struct RecorderStatus {
     pub system_audio: String,
     pub diarizer_installed: bool,
     pub diarizer_bytes: u64,
-    pub has_open_router_key: bool,
+    /// Whether a summary has a model to write it: a downloaded local model,
+    /// or an OpenRouter key.
+    pub can_summarize: bool,
     /// The name the local speaker is given, from the macOS account.
     pub local_name: String,
 }
@@ -111,7 +113,13 @@ enum SummaryOutcome {
     Unparsed,
 }
 
+/// Why a meeting has no summary when there is no model to write one.
+const NO_MODEL_NOTE: &str = "Summaries need a local model or an OpenRouter key from AI Polish.";
+/// What to do about it, for a request that was refused.
+const NO_MODEL_ACTION: &str = "Download a local model or add an OpenRouter key in AI Polish first.";
+
 enum SummaryError {
+    /// No local model downloaded and no OpenRouter key.
     NoKey,
     Failed(String),
 }
@@ -251,7 +259,7 @@ impl Recorder {
             .to_string(),
             diarizer_installed: diarize::is_installed(),
             diarizer_bytes: diarize::INSTALL_BYTES,
-            has_open_router_key: self.rewriter.open_router_key().await.is_some(),
+            can_summarize: self.rewriter.meeting_assistant().await.is_some(),
             local_name: local_name(),
         }
     }
@@ -550,6 +558,114 @@ impl Recorder {
         Ok(())
     }
 
+    /// Makes a meeting from an audio file instead of a recording: the file is
+    /// kept as the other side of a call, cut into phrases and transcribed in
+    /// the background, then tagged and summed up like any recorded meeting.
+    ///
+    /// `samples` are mono at 16 kHz, the rate the engine and diarizer use;
+    /// see `decode_audio_file`. Returns as soon as the meeting exists, so the
+    /// window can open it and watch its lines arrive.
+    pub async fn import(self: &Arc<Self>, title: &str, samples: Vec<f32>) -> Result<Meeting, String> {
+        if samples.is_empty() {
+            return Err("That file has no audio in it.".into());
+        }
+        let rate = diarize::RATE;
+        let duration_ms = samples.len() as u64 * 1_000 / rate as u64;
+        let settings = self.engine.settings.lock().await.value();
+        let (meeting, dir) = {
+            let mut store = self.meetings.lock().await;
+            let meeting = store.create(title, &settings.speech_language, &settings.model_id)?;
+            let id = meeting.id.clone();
+            let dir = store.dir(&id);
+            let written = std::fs::create_dir_all(&dir)
+                .and_then(|_| std::fs::write(dir.join("system.wav"), audio::encode_wav(&samples, rate)))
+                .map_err(|error| format!("Could not save the audio: {error}"));
+            if let Err(error) = written {
+                let _ = store.delete(&id);
+                return Err(error);
+            }
+            store.rename_speaker(&id, LOCAL_SPEAKER, &local_name())?;
+            store.set_has_system_audio(&id, true)?;
+            store.set_duration(&id, duration_ms)?;
+            store.set_state(&id, State::Processing, Some("Transcribing…"))?;
+            (store.get(&id)?.ok_or_else(|| "The meeting was not saved.".to_string())?, dir)
+        };
+        self.logs.info(
+            &self.app,
+            "meeting",
+            format!("{}: imported {:.0} s of audio into {}", meeting.id, duration_ms as f64 / 1_000.0, dir.display()),
+        );
+        let _ = self.app.emit_to(MAIN_LABEL, "meetings-changed", ());
+        self.emit_changed(&meeting).await;
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.processing.lock().await.insert(meeting.id.clone(), cancel.clone());
+        let this = self.clone();
+        let id = meeting.id.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(reason) = this.transcribe_file(&id, &samples, rate, &cancel).await {
+                this.processing.lock().await.remove(&id);
+                if reason == crate::download::CANCELLED {
+                    return;
+                }
+                this.logs.error(&this.app, "meeting", format!("{id}: {reason}"));
+                let meeting = {
+                    let mut store = this.meetings.lock().await;
+                    let _ = store.set_state(&id, State::Failed, Some(&reason));
+                    store.get(&id).ok().flatten()
+                };
+                if let Some(meeting) = meeting {
+                    this.emit_changed(&meeting).await;
+                }
+                return;
+            }
+            this.process(&id, cancel, Steps::all()).await;
+        });
+        Ok(meeting)
+    }
+
+    /// Cuts an imported file into phrases the way a live track is cut, and
+    /// transcribes them in order onto the system track.
+    async fn transcribe_file(&self, id: &str, samples: &[f32], rate: u32, cancel: &AtomicBool) -> Result<(), String> {
+        // Cutting is quick; the engine is the slow part, so cut it all first
+        // and show progress by phrase.
+        let mut segmenter = Segmenter::new(SegmenterOptions::meeting(rate));
+        let mut phrases: Vec<audio::Phrase> = samples.chunks(TAP_BLOCK).filter_map(|block| segmenter.push(block)).collect();
+        phrases.extend(segmenter.flush());
+        let total = phrases.len();
+        let mut prior = String::new();
+        for (index, phrase) in phrases.into_iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(crate::download::CANCELLED.to_string());
+            }
+            self.set_stage(id, &format!("Transcribing… {}%", index * 100 / total)).await;
+            let wav = audio::encode_wav(&audio::normalize_phrase(&phrase.samples), rate);
+            let text = match self.engine.transcribe(wav, &prior, "meeting").await {
+                Ok(text) => text,
+                Err(error) => {
+                    self.logs.error(&self.app, "meeting", format!("{id}: phrase failed: {error}"));
+                    continue;
+                }
+            };
+            // Cancelled while the engine was busy: the meeting is gone.
+            if cancel.load(Ordering::Relaxed) {
+                return Err(crate::download::CANCELLED.to_string());
+            }
+            if text.trim().is_empty() {
+                continue;
+            }
+            prior = format!("{prior} {text}").trim().chars().rev().take(2_000).collect::<Vec<_>>().into_iter().rev().collect();
+            let line = self
+                .meetings
+                .lock()
+                .await
+                .add_line(id, Track::System, phrase.start_ms, phrase.end_ms, &text)?;
+            let event = LineEvent { meeting_id: id.to_string(), line };
+            let _ = self.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+        }
+        Ok(())
+    }
+
     /// Tags speakers, mixes the tracks down for playback, and writes the
     /// summary. Each step that cannot run leaves a note and the rest goes on;
     /// a transcript is never lost to a missing tool or a missing key.
@@ -699,7 +815,7 @@ impl Recorder {
                 )),
                 Err(SummaryError::NoKey) => notes.push(Note::new(
                     "no-summary-key",
-                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                    NO_MODEL_NOTE,
                 )),
                 Err(SummaryError::Failed(reason)) => notes.push(Note::new("summary-failed", reason)),
             }
@@ -777,14 +893,11 @@ impl Recorder {
         Ok(tags)
     }
 
-    /// Writes (or rewrites) the summary. Needs an OpenRouter key.
+    /// Writes (or rewrites) the summary, with the local model when there is
+    /// one and OpenRouter otherwise.
     async fn write_summary(self: &Arc<Self>, id: &str) -> Result<SummaryOutcome, SummaryError> {
-        let key = self
-            .rewriter
-            .open_router_key()
-            .await
-            .ok_or(SummaryError::NoKey)?;
-        let model = self.rewriter.open_router_model().await;
+        let assistant = self.rewriter.meeting_assistant().await.ok_or(SummaryError::NoKey)?;
+        let model = assistant.model_name();
         let (meeting, lines) = {
             let store = self.meetings.lock().await;
             let meeting = store
@@ -798,7 +911,7 @@ impl Recorder {
         }
         self.set_stage(id, "Writing the summary…").await;
         let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
-        let (text, parsed) = summary::summarize(&key, &model, &transcript)
+        let (text, parsed) = summary::summarize(&self.rewriter, &assistant, &transcript)
             .await
             .map_err(SummaryError::Failed)?;
         {
@@ -854,9 +967,9 @@ impl Recorder {
             Err(SummaryError::NoKey) => {
                 notes.push(Note::new(
                     "no-summary-key",
-                    "Summaries need an OpenRouter key; the transcript stays on this Mac.",
+                    NO_MODEL_NOTE,
                 ));
-                Some("Add an OpenRouter API key in AI Polish first.".to_string())
+                Some(NO_MODEL_ACTION.to_string())
             }
             Err(SummaryError::Failed(reason)) => {
                 notes.push(Note::new("summary-failed", reason.clone()));
@@ -881,6 +994,34 @@ impl Recorder {
         let meeting = self.meetings.lock().await.set_title(id, title, true)?;
         self.emit_changed(&meeting).await;
         Ok(meeting)
+    }
+
+    pub async fn set_memo(self: &Arc<Self>, id: &str, memo: &str) -> Result<Meeting, String> {
+        let meeting = self.meetings.lock().await.set_memo(id, memo)?;
+        self.emit_changed(&meeting).await;
+        Ok(meeting)
+    }
+
+    /// Answers a question about the meeting from what was said so far.
+    pub async fn ask(&self, id: &str, question: &str) -> Result<String, String> {
+        if question.trim().is_empty() {
+            return Err("Type a question first.".into());
+        }
+        let assistant = self
+            .rewriter
+            .meeting_assistant()
+            .await
+            .ok_or_else(|| NO_MODEL_ACTION.to_string())?;
+        let (meeting, lines) = {
+            let store = self.meetings.lock().await;
+            let meeting = store.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())?;
+            (meeting, store.lines(id)?)
+        };
+        if lines.is_empty() {
+            return Err("Nothing has been said yet, so there is nothing to ask about.".into());
+        }
+        let transcript = summary::transcript_text(&lines, &meeting.speakers, &local_name());
+        summary::answer(&self.rewriter, &assistant, &transcript, &meeting.memo, question).await
     }
 
     pub async fn meeting(&self, id: &str) -> Result<Meeting, String> {
@@ -1110,6 +1251,43 @@ impl Recorder {
             }
         })
     }
+}
+
+/// Decodes an audio file to mono 16 kHz with Core Audio's `afconvert`.
+///
+/// The webview's `decodeAudioData` was the first way in, and it cut long
+/// files short without a word: an 18-minute ALAC recording came back as
+/// 11 min 44 s. Core Audio reads the whole file and covers what a Mac
+/// records and shares -- M4A (AAC, ALAC), MP3, WAV, AIFF, CAF, FLAC.
+pub async fn decode_audio_file(bytes: &[u8], extension: &str) -> Result<Vec<f32>, String> {
+    let extension: String = extension.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
+    let dir = std::env::temp_dir().join(format!(
+        "waveform-import-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).map_err(|error| format!("Could not read that file: {error}"))?;
+    let source = dir.join(format!("source.{extension}"));
+    let target = dir.join("speech.wav");
+    let outcome = async {
+        std::fs::write(&source, bytes).map_err(|error| format!("Could not read that file: {error}"))?;
+        let output = tokio::process::Command::new("/usr/bin/afconvert")
+            .args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"])
+            .arg(&source)
+            .arg(&target)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|error| format!("Could not run afconvert: {error}"))?;
+        if !output.status.success() {
+            return Err("Could not read that audio file. Try a WAV, MP3, M4A, or CAF recording.".to_string());
+        }
+        let wav = std::fs::read(&target).map_err(|error| format!("Could not read that file: {error}"))?;
+        crate::whisper_cpp::decode_wav(&wav)
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&dir);
+    outcome
 }
 
 /// Starts the tap helper and waits for its ready line. Returns the child,
@@ -1344,5 +1522,25 @@ mod tests {
     #[test]
     fn the_local_name_is_never_empty() {
         assert!(!local_name().is_empty());
+    }
+
+    #[tokio::test]
+    async fn core_audio_decodes_a_whole_file_to_16k() {
+        // Three minutes at 44.1 kHz: long enough that a decoder cutting it
+        // short would show.
+        let rate = 44_100;
+        let tone: Vec<f32> = (0..rate * 180).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
+        let samples = decode_audio_file(&audio::encode_wav(&tone, rate as u32), "wav").await.unwrap();
+        assert!((samples.len() as i64 - 16_000 * 180).abs() < 16_000 / 10, "{} samples", samples.len());
+    }
+
+    /// `WAVEFORM_IMPORT_FILE=/path/to/long.m4a cargo test -- --ignored import_file_length`
+    #[tokio::test]
+    #[ignore]
+    async fn import_file_length() {
+        let path = std::env::var("WAVEFORM_IMPORT_FILE").unwrap();
+        let extension = path.rsplit('.').next().unwrap().to_string();
+        let samples = decode_audio_file(&std::fs::read(&path).unwrap(), &extension).await.unwrap();
+        println!("{path}: {:.1} s", samples.len() as f64 / 16_000.0);
     }
 }

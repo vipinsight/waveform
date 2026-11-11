@@ -169,6 +169,8 @@ export interface AppSettings {
   keepAudioChangedAt: number | null;
   /** Write dictation and meeting audio to disk at all. */
   saveAudio: boolean;
+  /** Keep the meeting pill and transcript window out of screen shares. */
+  hideFromScreenShare: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -218,6 +220,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepAudioDays: 0,
   keepAudioChangedAt: null,
   saveAudio: true,
+  hideFromScreenShare: false,
 };
 
 const HOLD_RANGE = { min: 120, max: 900 } as const;
@@ -314,6 +317,10 @@ export function normalizeSettings(
       : base.keepAudioDays,
     keepAudioChangedAt: coordinate(input.keepAudioChangedAt, base.keepAudioChangedAt),
     saveAudio: typeof input.saveAudio === "boolean" ? input.saveAudio : base.saveAudio,
+    hideFromScreenShare:
+      typeof input.hideFromScreenShare === "boolean"
+        ? input.hideFromScreenShare
+        : base.hideFromScreenShare,
   };
 }
 

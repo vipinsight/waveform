@@ -42,6 +42,16 @@ const CONTEXT_TOKENS: u32 = 4_096;
 /// that reason alone.
 pub const MAX_INPUT_CHARS: usize = 4_000;
 
+/// The context a meeting summary or question gets: a transcript, the
+/// instructions and a page of reply. Larger than a rewrite's, and only
+/// allocated while a meeting is being read.
+const MEETING_CONTEXT_TOKENS: u32 = 16_384;
+
+/// Transcript that fits that context with room for the instructions and the
+/// reply, at a cautious three characters a token. A longer meeting is read
+/// from its end, as it is for OpenRouter.
+pub const MEETING_INPUT_CHARS: usize = 40_000;
+
 /// One model the app can fetch and run for polishing.
 pub struct LocalModel {
     pub id: &'static str,
@@ -498,11 +508,36 @@ impl LocalPolisher {
         reply_tokens: usize,
         show_examples: bool,
     ) -> Result<String, String> {
+        self.run(id, system_prompt, user_message, reply_tokens, show_examples, CONTEXT_TOKENS)
+            .await
+    }
+
+    /// Answers a meeting prompt with the larger context a transcript needs.
+    pub async fn chat_long(
+        &self,
+        id: &str,
+        system_prompt: &str,
+        user_message: &str,
+        reply_tokens: usize,
+    ) -> Result<String, String> {
+        self.run(id, system_prompt, user_message, reply_tokens, false, MEETING_CONTEXT_TOKENS)
+            .await
+    }
+
+    async fn run(
+        &self,
+        id: &str,
+        system_prompt: &str,
+        user_message: &str,
+        reply_tokens: usize,
+        show_examples: bool,
+        context_tokens: u32,
+    ) -> Result<String, String> {
         let definition = model(id);
         let model = self.loaded_model(definition).await?;
         let prompt = chat_prompt(definition.format, system_prompt, user_message, show_examples);
 
-        tokio::task::spawn_blocking(move || generate(&model, &prompt, reply_tokens))
+        tokio::task::spawn_blocking(move || generate(&model, &prompt, reply_tokens, context_tokens))
             .await
             .map_err(|error| format!("The local model stopped: {error}"))?
     }
@@ -552,14 +587,14 @@ impl LocalPolisher {
 }
 
 /// One rewrite, start to finish, on this thread.
-fn generate(model: &LlamaModel, prompt: &str, reply_tokens: usize) -> Result<String, String> {
+fn generate(model: &LlamaModel, prompt: &str, reply_tokens: usize, context_tokens: u32) -> Result<String, String> {
     let backend = backend()?;
     // The whole prompt is handed over in one batch, so the batch has to be as
     // large as the context: llama.cpp's own default is smaller, and a prompt
     // past it fails rather than being split.
     let params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
-        .with_n_batch(CONTEXT_TOKENS);
+        .with_n_ctx(NonZeroU32::new(context_tokens))
+        .with_n_batch(context_tokens);
     let mut context = model
         .new_context(backend, params)
         .map_err(|error| format!("Could not start the local model: {error}"))?;

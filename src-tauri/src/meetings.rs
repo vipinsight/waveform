@@ -131,6 +131,8 @@ pub struct Meeting {
     /// Whether a recording exists on disk to play or save. Read from the
     /// folder, not the row, so a file removed by hand is not promised.
     pub has_audio: bool,
+    /// What the user wrote about the meeting themselves, as plain text.
+    pub memo: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -399,6 +401,21 @@ impl MeetingsStore {
             .map_err(describe)
     }
 
+    /// Keeps the user's own notes. Trailing whitespace is not kept.
+    pub fn set_memo(&mut self, id: &str, memo: &str) -> Result<Meeting, String> {
+        let memo = memo.trim_end();
+        let changed = self
+            .db
+            .with(|connection| {
+                connection.execute("UPDATE meetings SET memo = ?2 WHERE id = ?1", params![id, memo])
+            })
+            .map_err(describe)?;
+        if changed == 0 {
+            return Err("That meeting is gone.".into());
+        }
+        self.get(id)?.ok_or_else(|| "That meeting is gone.".to_string())
+    }
+
     pub fn set_summary(&mut self, id: &str, summary: Option<&str>, model: Option<&str>) -> Result<(), String> {
         self.db
             .with(|connection| {
@@ -505,7 +522,7 @@ impl MeetingsStore {
 }
 
 const SELECT_MEETING: &str = "SELECT id, title, created_at, duration_ms, state, stage, language, speech_model,
-                                     speakers, summary, summary_model, has_system_audio, notes, user_titled
+                                     speakers, summary, summary_model, has_system_audio, notes, user_titled, memo
                                 FROM meetings";
 
 /// The recording to play or save: both sides mixed, or whichever exists.
@@ -540,6 +557,7 @@ fn read_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
             .unwrap_or_default(),
         user_titled: row.get::<_, i64>(13)? != 0,
         has_audio: false,
+        memo: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
     })
 }
 
@@ -893,6 +911,16 @@ mod tests {
         assert_eq!(meeting.notes[0].kind, "no-summary-key");
         meetings.set_notes(&id, &[]).unwrap();
         assert!(meetings.get(&id).unwrap().unwrap().notes.is_empty());
+    }
+
+    #[test]
+    fn the_memo_round_trips_and_starts_empty() {
+        let mut meetings = store();
+        let id = meetings.create("x", "en", "w").unwrap().id;
+        assert_eq!(meetings.get(&id).unwrap().unwrap().memo, "");
+        let meeting = meetings.set_memo(&id, "Ask Sam about the budget\n\n").unwrap();
+        assert_eq!(meeting.memo, "Ask Sam about the budget");
+        assert!(meetings.set_memo("missing", "x").is_err());
     }
 
     #[test]

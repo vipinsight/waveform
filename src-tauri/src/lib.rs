@@ -8,6 +8,7 @@ mod audio;
 mod download;
 mod focus;
 mod gestures;
+mod hinglish;
 mod history;
 mod install;
 mod logs;
@@ -352,6 +353,10 @@ async fn update_settings(
         || (next.polish_engine == "local" && next.local_model_id != previous.local_model_id)
     {
         state.rewriter.engine_changed().await;
+    }
+
+    if next.hide_from_screen_share != previous.hide_from_screen_share {
+        set_meeting_windows_shareable(&app, !next.hide_from_screen_share);
     }
 
     if next.polish_shortcut != previous.polish_shortcut {
@@ -725,6 +730,18 @@ async fn rename_meeting_speaker(
     state.recorder.rename_speaker(&id, &label, &name).await
 }
 
+/// Keeps the user's own notes on a meeting.
+#[tauri::command]
+async fn set_meeting_memo(state: State<'_, AppState>, id: String, memo: String) -> Result<Meeting, String> {
+    state.recorder.set_memo(&id, &memo).await
+}
+
+/// Answers a question about a meeting from its transcript; nothing is kept.
+#[tauri::command]
+async fn ask_meeting(state: State<'_, AppState>, id: String, question: String) -> Result<String, String> {
+    state.recorder.ask(&id, &question).await
+}
+
 /// Writes the summary again, after speakers were renamed or a key was added.
 #[tauri::command]
 async fn summarize_meeting(state: State<'_, AppState>, id: String) -> Result<MeetingDetail, String> {
@@ -746,6 +763,29 @@ async fn tag_meeting_speakers(state: State<'_, AppState>, id: String) -> Result<
 #[tauri::command]
 async fn delete_meeting(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.recorder.delete(&id).await
+}
+
+/// Makes a meeting from an audio file. The bytes come as the raw request
+/// body rather than a JSON number array, since an hour of audio is a hundred
+/// megabytes; the name rides in a header. With `x-extension` the body is the
+/// file itself, decoded here by Core Audio; without it, a mono WAV the
+/// window decoded (formats Core Audio cannot read, such as Ogg and WebM).
+#[tauri::command]
+async fn import_meeting_audio(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<Meeting, String> {
+    let tauri::ipc::InvokeBody::Raw(wav) = request.body() else {
+        return Err("The audio did not arrive.".into());
+    };
+    let title = request
+        .headers()
+        .get("x-title")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned())
+        .unwrap_or_default();
+    let samples = match request.headers().get("x-extension").and_then(|value| value.to_str().ok()) {
+        Some(extension) => meeting::decode_audio_file(wav, extension).await?,
+        None => whisper_cpp::decode_wav(wav)?,
+    };
+    state.recorder.import(&title, samples).await
 }
 
 #[tauri::command]
@@ -801,9 +841,36 @@ async fn show_meetings(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// The meeting the transcript window shows when it is not the one recording:
+/// set from a meeting's page, cleared by the pill, which always means the live one.
+static MEETING_PANEL_TARGET: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_meeting_panel_target(id: Option<String>) {
+    if let Ok(mut target) = MEETING_PANEL_TARGET.lock() {
+        *target = id;
+    }
+}
+
+/// Which meeting the transcript window should show; none means the recording.
+#[tauri::command]
+fn meeting_panel_target() -> Option<String> {
+    MEETING_PANEL_TARGET.lock().ok().and_then(|target| target.clone())
+}
+
+/// Opens the transcript window on one meeting, from that meeting's page.
+#[tauri::command]
+async fn show_meeting_panel(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    set_meeting_panel_target(Some(id));
+    let settings = app.state::<AppState>().settings.lock().await.value();
+    let handle = app.clone();
+    app.run_on_main_thread(move || open_meeting_panel(&handle, &settings))
+        .map_err(|error| error.to_string())
+}
+
 /// Opens or closes the live transcript window; the meeting pill calls this.
 #[tauri::command]
 async fn toggle_meeting_panel(app: tauri::AppHandle) -> Result<(), String> {
+    set_meeting_panel_target(None);
     let settings = app.state::<AppState>().settings.lock().await.value();
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -858,6 +925,7 @@ fn open_meeting_panel(app: &tauri::AppHandle, settings: &AppSettings) {
         None => match build_meeting_panel(app) {
             Ok(panel) => {
                 place_meeting_panel(app, &panel, settings);
+                let _ = panel.set_content_protected(settings.hide_from_screen_share);
                 panel
             }
             Err(error) => {
@@ -961,7 +1029,12 @@ pub(crate) fn set_meeting_pill(app: &tauri::AppHandle, recording: bool) {
             let pill = match handle.get_webview_window(MEETING_PILL_LABEL) {
                 Some(pill) => pill,
                 None => match build_meeting_pill(&handle) {
-                    Ok(pill) => pill,
+                    Ok(pill) => {
+                        // After the `NSPanel` reclass, so nothing it does can
+                        // put the window back into shares.
+                        let _ = pill.set_content_protected(settings.hide_from_screen_share);
+                        pill
+                    }
                     Err(error) => {
                         eprintln!("Could not build the meeting pill: {error}");
                         return;
@@ -972,6 +1045,21 @@ pub(crate) fn set_meeting_pill(app: &tauri::AppHandle, recording: bool) {
             let _ = pill.show();
         });
     });
+}
+
+/// Lets the meeting pill and transcript window into screen shares, or keeps
+/// them out. Applies to whichever are already built; each is built with the
+/// setting in force.
+///
+/// Sets `NSWindow.sharingType`, which capture through the legacy
+/// CoreGraphics path honours. Newer macOS versions let ScreenCaptureKit
+/// capture such windows anyway, so this is best effort, not a guarantee.
+fn set_meeting_windows_shareable(app: &tauri::AppHandle, shareable: bool) {
+    for label in [MEETING_PILL_LABEL, MEETING_PANEL_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.set_content_protected(!shareable);
+        }
+    }
 }
 
 /// From where the user last left it, or the top centre of the main display.
@@ -1929,14 +2017,19 @@ pub fn run() {
             rename_meeting,
             rename_meeting_speaker,
             summarize_meeting,
+            set_meeting_memo,
+            ask_meeting,
             finish_meeting,
             tag_meeting_speakers,
             delete_meeting,
             get_meeting_audio,
             export_meeting_audio,
+            import_meeting_audio,
             install_diarizer,
             show_meetings,
             toggle_meeting_panel,
+            show_meeting_panel,
+            meeting_panel_target,
             begin_meeting_pill_drag,
             drag_meeting_pill,
             end_meeting_pill_drag,

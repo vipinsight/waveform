@@ -14,6 +14,7 @@
 //! the clear, and never returned to a window. It travels no further than the
 //! one request that needs it, and the local engine never sees it at all.
 
+use crate::hinglish;
 use crate::local_llm::{self, LocalPolisher};
 use crate::settings::{AppSettings, SettingsStore};
 use serde::Serialize;
@@ -67,6 +68,38 @@ pub struct AiStatus {
     pub local_model_id: String,
     /// Whether that model's weights are on this machine.
     pub local_ready: bool,
+}
+
+/// What reads a meeting: the summary, its title, and questions about it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Assistant {
+    /// The local model chosen in AI Polish, by id.
+    Local { id: String },
+    OpenRouter { key: String, model: String },
+}
+
+impl Assistant {
+    /// The name a summary is filed under.
+    pub fn model_name(&self) -> String {
+        match self {
+            Assistant::Local { id } => local_llm::model(id).label.to_string(),
+            Assistant::OpenRouter { model, .. } => model.clone(),
+        }
+    }
+}
+
+/// The local model when its weights are here, whichever engine polish uses;
+/// OpenRouter only when there is no local model and there is a key.
+fn meeting_assistant(settings: &AppSettings, key: Option<String>) -> Option<Assistant> {
+    if local_llm::is_installed(local_llm::model(&settings.local_model_id)) {
+        return Some(Assistant::Local {
+            id: settings.local_model_id.clone(),
+        });
+    }
+    key.map(|key| Assistant::OpenRouter {
+        key,
+        model: settings.open_router_model.clone(),
+    })
 }
 
 pub struct Rewriter {
@@ -196,14 +229,22 @@ impl Rewriter {
         self.status().await
     }
 
-    /// The OpenRouter key, for callers with their own request to make.
-    pub async fn open_router_key(&self) -> Option<String> {
-        self.key.lock().await.clone()
+    /// What meetings are summarised and asked about with, if anything.
+    pub async fn meeting_assistant(&self) -> Option<Assistant> {
+        let settings = self.settings.lock().await.value();
+        meeting_assistant(&settings, self.key.lock().await.clone())
     }
 
-    /// The OpenRouter model the user chose for polish.
-    pub async fn open_router_model(&self) -> String {
-        self.settings.lock().await.value().open_router_model
+    /// One meeting prompt through the local model `id`. The weights are let
+    /// go afterwards unless they were already loaded or dictation keeps them
+    /// anyway: a meeting now and then is not worth a gigabyte held until quit.
+    pub async fn chat_local(&self, id: &str, system: &str, user: &str, reply_tokens: usize) -> Result<String, String> {
+        let was_loaded = self.local.is_loaded(id).await;
+        let reply = self.local.chat_long(id, system, user, reply_tokens).await;
+        if !was_loaded && !warms_for_dictation(&self.settings.lock().await.value()) {
+            self.local.drop_if(id).await;
+        }
+        reply
     }
 
     pub async fn clear_key(&self) -> AiStatus {
@@ -221,13 +262,15 @@ impl Rewriter {
         }
         // No worked examples: those are typed corrections, and this prompt is
         // for spoken filler. A 0.6B model follows the examples.
-        self.run(&settings.transform_prompt, text, false)
+        let prompt = hinglish::rewrite_prompt(&settings.speech_language, &settings.transform_prompt);
+        self.run(&prompt, text, false)
             .await
             .map(Some)
     }
 
     pub async fn polish(&self, text: &str) -> Result<String, String> {
-        let prompt = self.settings.lock().await.value().polish_prompt;
+        let settings = self.settings.lock().await.value();
+        let prompt = hinglish::rewrite_prompt(&settings.speech_language, &settings.polish_prompt);
         self.run(&prompt, text, true).await
     }
 

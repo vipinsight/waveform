@@ -31,9 +31,11 @@ fn is_known_model(id: &str) -> bool {
 }
 
 /// Kept in step with src/shared/languages.ts. ISO 639-1, which is what all
-/// three engines take; empty asks the engine to detect.
-const SPEECH_LANGUAGES: [&str; 14] = [
-    "", "en", "hi", "es", "fr", "de", "it", "pt", "nl", "ru", "ar", "ja", "ko", "zh",
+/// three engines take; empty asks the engine to detect. Hinglish is the one
+/// exception, and `hinglish::engine_language` turns it into a code.
+const SPEECH_LANGUAGES: [&str; 15] = [
+    "", "en", "hi", crate::hinglish::CODE, "es", "fr", "de", "it", "pt", "nl", "ru", "ar", "ja",
+    "ko", "zh",
 ];
 
 fn default_model_id() -> &'static str {
@@ -187,6 +189,9 @@ pub struct AppSettings {
     /// Write dictation and meeting audio to disk at all. Off keeps the words
     /// only, which also leaves Retry and voice-matching nothing to work with.
     pub save_audio: bool,
+    /// Keep the meeting pill and transcript window out of screen shares,
+    /// recordings and screenshots, so a call sees neither.
+    pub hide_from_screen_share: bool,
 }
 
 impl Default for AppSettings {
@@ -243,6 +248,9 @@ impl Default for AppSettings {
             keep_audio_days: 0,
             keep_audio_changed_at: None,
             save_audio: true,
+            // Off, so a fresh install behaves as before: the windows show in
+            // a share until somebody asks for them not to.
+            hide_from_screen_share: false,
         }
     }
 }

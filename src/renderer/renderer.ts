@@ -28,8 +28,14 @@ import {
   type SpeechModelId,
 } from "../shared/models";
 import { DEFAULT_LADDER_INDEX, chooseModel } from "../shared/model-ladder";
-import { SPEECH_LANGUAGES, isSpeechLanguage } from "../shared/languages";
+import {
+  SPEECH_LANGUAGES,
+  engineHearsLanguage,
+  isSpeechLanguage,
+  speechLanguageLabel,
+} from "../shared/languages";
 import { microphoneDevices } from "../shared/microphones";
+import { installContextMenu, onRowContextMenu } from "./context-menu";
 import { audioFileToMonoWav, isAudioFile } from "./audio/file-wav";
 import {
   DEFAULT_SETTINGS,
@@ -63,7 +69,15 @@ import {
   transformPromptFor,
 } from "../shared/prompts";
 import { host } from "./host";
-import { bindMeetings, clock, openRecordingMeeting, showMeetings, stopRecording } from "./meetings";
+import {
+  bindMeetings,
+  clock,
+  importAudioFile,
+  meetingsShown,
+  openRecordingMeeting,
+  showMeetings,
+  stopRecording,
+} from "./meetings";
 import { installTauriBridge } from "./tauri-bridge";
 
 const element = {
@@ -90,6 +104,7 @@ const element = {
   onboardCount: requireElement<HTMLElement>("onboard-count"),
   onboardBar: requireElement<HTMLElement>("onboard-bar"),
   speechLanguage: requireElement<HTMLSelectElement>("speech-language"),
+  speechLanguageNote: requireElement<HTMLElement>("speech-language-note"),
   dictationSetup: requireElement<HTMLElement>("dictation-setup"),
   dictationSteps: requireElement<HTMLOListElement>("dictation-steps"),
   dictionaryAdd: requireElement<HTMLFormElement>("dictionary-add"),
@@ -115,6 +130,7 @@ const element = {
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
   saveAudioToggle: requireElement<HTMLInputElement>("save-audio-toggle"),
+  hideFromShareToggle: requireElement<HTMLInputElement>("hide-from-share-toggle"),
   keepAudioSelect: requireElement<HTMLSelectElement>("keep-audio-select"),
   keepAudioNote: requireElement<HTMLElement>("keep-audio-note"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
@@ -332,6 +348,7 @@ let permissionsPending = false;
 
 // Supplies window.waveform under Tauri; a no-op under Electron.
 installTauriBridge();
+installContextMenu();
 
 void bootstrap();
 
@@ -736,6 +753,9 @@ function wireEvents(): void {
   element.saveAudioToggle.addEventListener("change", () => {
     void patchSettings({ saveAudio: element.saveAudioToggle.checked });
   });
+  element.hideFromShareToggle.addEventListener("change", () => {
+    void patchSettings({ hideFromScreenShare: element.hideFromShareToggle.checked });
+  });
   element.keepAudioSelect.addEventListener("change", () => {
     const days = Number(element.keepAudioSelect.value);
     if (KEEP_AUDIO_DAYS.includes(days as KeepAudioDays)) {
@@ -1004,6 +1024,7 @@ function applySettings(next: AppSettings): void {
   }
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.saveAudioToggle.checked = next.saveAudio;
+  element.hideFromShareToggle.checked = next.hideFromScreenShare;
   element.keepAudioSelect.value = String(next.keepAudioDays);
   element.keepAudioNote.textContent = keepAudioNote(next);
   element.dockToggle.checked = !next.hideDockWhenClosed;
@@ -2267,6 +2288,15 @@ function renderLanguageSelect(): void {
     );
   }
   element.speechLanguage.value = settings.speechLanguage;
+
+  const model = getSpeechModel(settings.modelId);
+  const heard = engineHearsLanguage(model.engine, settings.speechLanguage);
+  element.speechLanguageNote.hidden = heard;
+  element.speechLanguageNote.textContent = heard
+    ? ""
+    : `${model.label} only knows European languages. For ${speechLanguageLabel(
+        settings.speechLanguage,
+      )}, use Whisper Large v3 Turbo or Qwen3-ASR.`;
 }
 
 function resolveSetupStep(id: string): void {
@@ -2613,28 +2643,55 @@ function renderEntry(entry: SavedDictation): HTMLElement {
 
   const actions = document.createElement("span");
   actions.className = "entry-actions";
+  let play: HTMLButtonElement | null = null;
   if (entry.hasAudio) {
     const playing = Boolean(isActive && playback && !playback.audio.paused);
-    const play = iconButton(
+    const button = iconButton(
       playing ? "Pause audio" : "Play audio",
       playing ? PAUSE_ICON : PLAY_ICON,
       `is-play${playing ? " is-playing" : ""}`,
       () => {
-        void togglePlayback(entry.id, play);
+        void togglePlayback(entry.id, button);
       },
     );
-    play.dataset.playId = entry.id;
-    if (isActive) playback!.button = play;
-    actions.append(play);
+    button.dataset.playId = entry.id;
+    if (isActive) playback!.button = button;
+    actions.append(button);
+    play = button;
   }
   // Play and Copy are the everyday actions and stay on the row; the rest
   // (one of them destructive) wait behind the menu.
+  const more = entryMenuButton(entry, text);
   actions.append(
     iconButton("Copy", COPY_ICON, "", () => {
       void navigator.clipboard.writeText(entry.text);
     }),
-    entryMenuButton(entry, text),
+    more,
   );
+
+  // Right-click opens everything the row offers in one menu at the pointer:
+  // Play and Copy from the row, then what waits behind the ⋯ button.
+  onRowContextMenu(article, (event) => {
+    const items: EntryMenuItem[] = [];
+    if (play) {
+      const button = play;
+      const playing = playback?.id === entry.id && !playback.audio.paused;
+      items.push({
+        label: playing ? "Pause audio" : "Play audio",
+        icon: playing ? PAUSE_ICON : PLAY_ICON,
+        onSelect: () => void togglePlayback(entry.id, button),
+      });
+    }
+    items.push({
+      label: "Copy transcript",
+      icon: COPY_ICON,
+      onSelect: () => void navigator.clipboard.writeText(entry.text),
+    });
+    openEntryMenu(more, [...items, ...entryMenuItems(entry, more, text)], {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  });
 
   article.append(time, text, actions);
   return article;
@@ -2703,12 +2760,17 @@ function entryMenuItems(
 }
 
 /**
- * Floats the menu on the body, beside its trigger.
+ * Floats the menu on the body, beside its trigger, or at `at` when it was
+ * opened by a right-click.
  *
  * Inside the row it would be clipped by the day card's rounded corners, and
  * the last row of the list has no room below it, so it flips above.
  */
-function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void {
+function openEntryMenu(
+  trigger: HTMLButtonElement,
+  items: EntryMenuItem[],
+  at?: { x: number; y: number },
+): void {
   closeEntryMenu();
   const menu = document.createElement("div");
   menu.className = "entry-menu";
@@ -2731,15 +2793,23 @@ function openEntryMenu(trigger: HTMLButtonElement, items: EntryMenuItem[]): void
   menu.append(...buttons);
   document.body.append(menu);
 
-  const anchor = trigger.getBoundingClientRect();
-  const gap = 6;
   const margin = 8;
-  const below = anchor.bottom + gap;
-  const top =
-    below + menu.offsetHeight > window.innerHeight - margin
-      ? anchor.top - gap - menu.offsetHeight
-      : below;
-  const left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  let top: number;
+  let left: number;
+  if (at) {
+    // Down and right of the pointer, flipped where the window runs out.
+    top = at.y + menu.offsetHeight > window.innerHeight - margin ? at.y - menu.offsetHeight : at.y;
+    left = at.x + menu.offsetWidth > window.innerWidth - margin ? at.x - menu.offsetWidth : at.x;
+  } else {
+    const anchor = trigger.getBoundingClientRect();
+    const gap = 6;
+    const below = anchor.bottom + gap;
+    top =
+      below + menu.offsetHeight > window.innerHeight - margin
+        ? anchor.top - gap - menu.offsetHeight
+        : below;
+    left = Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - margin);
+  }
   menu.style.top = `${Math.max(margin, top)}px`;
   menu.style.left = `${Math.max(margin, left)}px`;
 
@@ -3215,6 +3285,10 @@ const TRASH_ICON = '<path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a
  * select, and Copy -- until it is closed. There is no page for it: the drop
  * is the way in, and it can happen from any page.
  *
+ * On the Meetings page a drop makes a meeting instead -- transcript,
+ * speakers and summary -- whether or not the setting is on, since that page
+ * asks for nothing else.
+ *
  * Every drop is claimed whether or not the feature is on. A file dropped
  * where nothing handles it is opened by the webview in place of the app:
  * an audio file became a full-window player with no way back.
@@ -3232,8 +3306,13 @@ function bindDropTranscribe(): void {
     if (!carriesFiles(event)) return;
     event.preventDefault();
     dragDepth += 1;
-    if (dragDepth > 1 || !settings.transcribeOnDrop || transcribeBusy) return;
-    showDropHint(event);
+    if (dragDepth > 1) return;
+    if (meetingsShown()) {
+      showDropHint(event, "Drop to make meeting notes");
+      return;
+    }
+    if (!settings.transcribeOnDrop || transcribeBusy) return;
+    showDropHint(event, "Drop to transcribe");
   });
   document.addEventListener("dragleave", (event) => {
     if (!carriesFiles(event)) return;
@@ -3245,6 +3324,11 @@ function bindDropTranscribe(): void {
     event.preventDefault();
     dragDepth = 0;
     const file = event.dataTransfer?.files?.[0];
+    if (meetingsShown()) {
+      closeDropOverlay();
+      if (file && isAudioFile(file)) void importAudioFile(file);
+      return;
+    }
     if (!settings.transcribeOnDrop || transcribeBusy) return;
     if (!file || !isAudioFile(file)) {
       closeDropOverlay();
@@ -3297,7 +3381,7 @@ function setDropStage(stage: DropStage, title: string, hint: string): void {
  * Says what letting go will do. The file cannot be read before the drop,
  * but its type usually can, so a PDF is told it will be ignored.
  */
-function showDropHint(event: DragEvent): void {
+function showDropHint(event: DragEvent, title: string): void {
   const known = Array.from(event.dataTransfer?.items ?? [])
     .filter((item) => item.kind === "file" && item.type !== "")
     .map((item) => item.type);
@@ -3305,7 +3389,7 @@ function showDropHint(event: DragEvent): void {
   element.dropOverlay.dataset.refuse = String(notAudio);
   setDropStage(
     "drag",
-    notAudio ? "Only audio files can be transcribed" : "Drop to transcribe",
+    notAudio ? "Only audio files can be transcribed" : title,
     notAudio
       ? "WAV, MP3, M4A, and other formats WebKit can decode."
       : "The audio stays on this Mac.",

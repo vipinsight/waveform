@@ -19,13 +19,13 @@ pnpm install --frozen-lockfile
 WAVEFORM_SIGN_TEAM=YOURTEAMID pnpm app
 ```
 
-`pnpm app` quits any running checkout copy, rebuilds, assembles
-`release/Waveform Dev.app` and opens it. It is a release build by default; set
+`pnpm app` quits any running Waveform, rebuilds, assembles
+`/Applications/Waveform.app` over the installed copy and opens it. It is a release build by default; set
 `WAVEFORM_PROFILE=debug` for a faster Rust iteration.
 
-That bundle is **Waveform Dev** (`com.webtiara.waveform.dev`), not the released
-app: a different name and identifier so the two can keep their own Accessibility,
-Input Monitoring and microphone grants.
+That bundle is the real **Waveform** (`com.webtiara.waveform`), reading and
+writing `~/Library/Application Support/Waveform`. There is no separate dev copy:
+set `WAVEFORM_APP` to assemble the bundle somewhere else.
 
 The bundle is put together by hand rather than by the Tauri CLI, and not just
 for convenience: WKWebView refuses microphone access to a bare binary, so the
@@ -53,18 +53,11 @@ signature is a hash of the bundle, so every rebuild looks like a new app and
 both permissions need granting again. `pnpm app` therefore signs with a real
 certificate.
 
-It also uses a different bundle identifier (`com.webtiara.waveform.dev`) from
-the released app. TCC keys those grants by identifier as well as signature, so
-a checkout build that shared `com.webtiara.waveform` with the copy in
-`/Applications` stole that copy's grants on every launch — and giving them
-back meant removing the released app from Accessibility and Input Monitoring
-first. The two appear as **Waveform** and **Waveform Dev** in System Settings.
-The data is separated too. `scripts/run-tauri.sh` builds with the `dev-data`
-feature, which moves settings, history, stats and every downloaded weight to
-`~/Library/Application Support/Waveform Dev`. Only that script sets it, so a
-published build can never read a folder only developers have. Before it
-existed, `pnpm app` wrote over the installed app's profile — a wizard or a
-migration tried out in a checkout landed on real dictation history.
+It prefers the team's Developer ID certificate. The released app's designated
+requirement names Developer ID, so a build signed with it replaces the
+installed bundle and keeps its Accessibility, Input Monitoring and microphone
+grants. With only an Apple Development certificate, macOS treats each switch
+between a release and a checkout build as a new client and asks again.
 
 The team is pinned rather than the certificate name. The name carries a
 per-certificate suffix that changes when the certificate is renewed, while the
@@ -102,7 +95,7 @@ Everything lands under Application Support:
 | What | Path |
 | --- | --- |
 | Dictations and lifetime counters | `~/Library/Application Support/Waveform/waveform.db` (SQLite, WAL mode; `audio/<id>.wav` beside it holds each recording) |
-| Whisper weights | `~/Library/Application Support/Waveform/models/whisper/` (`Waveform Dev/…` from `pnpm app`) |
+| Whisper weights | `~/Library/Application Support/Waveform/models/whisper/`  |
 | Parakeet weights | `~/Library/Application Support/Waveform/models/parakeet/` |
 | Qwen weights | `~/Library/Application Support/Waveform/models/qwen/` |
 | Qwen venv | `~/Library/Application Support/Waveform/runtimes/qwen/` |
@@ -145,7 +138,7 @@ directly when you need to override a path:
 NEMO_SPEECH_BIN=/path/to/nemo-speech \
 QWEN_ASR_PYTHON=/path/to/python3 \
 WAVEFORM_PORT=8178 \
-release/"Waveform Dev.app"/Contents/MacOS/Waveform
+/Applications/Waveform.app/Contents/MacOS/waveform
 ```
 
 ## Releasing
