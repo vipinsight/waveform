@@ -2,7 +2,7 @@
 # Runs a cargo build, then deletes every artifact that build did not use, so
 # target/ holds only the latest build instead of every build ever made.
 #
-# Usage: scripts/cargo-pruned.sh build --release --features dev-data
+# Usage: scripts/cargo-pruned.sh build --release
 #        scripts/cargo-pruned.sh test --no-run --manifest-path src-tauri/Cargo.toml
 #
 # Only commands that compile and stop belong here: the JSON messages cargo
