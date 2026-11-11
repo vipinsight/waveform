@@ -187,6 +187,9 @@ pub struct AppSettings {
     /// Write dictation and meeting audio to disk at all. Off keeps the words
     /// only, which also leaves Retry and voice-matching nothing to work with.
     pub save_audio: bool,
+    /// Keep the meeting pill and transcript window out of screen shares,
+    /// recordings and screenshots, so a call sees neither.
+    pub hide_from_screen_share: bool,
 }
 
 impl Default for AppSettings {
@@ -243,6 +246,9 @@ impl Default for AppSettings {
             keep_audio_days: 0,
             keep_audio_changed_at: None,
             save_audio: true,
+            // Off, so a fresh install behaves as before: the windows show in
+            // a share until somebody asks for them not to.
+            hide_from_screen_share: false,
         }
     }
 }

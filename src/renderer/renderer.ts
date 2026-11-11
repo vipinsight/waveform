@@ -124,6 +124,7 @@ const element = {
   logClear: requireElement<HTMLButtonElement>("log-clear"),
   updateToggle: requireElement<HTMLInputElement>("update-toggle"),
   saveAudioToggle: requireElement<HTMLInputElement>("save-audio-toggle"),
+  hideFromShareToggle: requireElement<HTMLInputElement>("hide-from-share-toggle"),
   keepAudioSelect: requireElement<HTMLSelectElement>("keep-audio-select"),
   keepAudioNote: requireElement<HTMLElement>("keep-audio-note"),
   updateCheck: requireElement<HTMLButtonElement>("update-check"),
@@ -746,6 +747,9 @@ function wireEvents(): void {
   element.saveAudioToggle.addEventListener("change", () => {
     void patchSettings({ saveAudio: element.saveAudioToggle.checked });
   });
+  element.hideFromShareToggle.addEventListener("change", () => {
+    void patchSettings({ hideFromScreenShare: element.hideFromShareToggle.checked });
+  });
   element.keepAudioSelect.addEventListener("change", () => {
     const days = Number(element.keepAudioSelect.value);
     if (KEEP_AUDIO_DAYS.includes(days as KeepAudioDays)) {
@@ -1014,6 +1018,7 @@ function applySettings(next: AppSettings): void {
   }
   element.updateToggle.checked = next.automaticUpdateCheck;
   element.saveAudioToggle.checked = next.saveAudio;
+  element.hideFromShareToggle.checked = next.hideFromScreenShare;
   element.keepAudioSelect.value = String(next.keepAudioDays);
   element.keepAudioNote.textContent = keepAudioNote(next);
   element.dockToggle.checked = !next.hideDockWhenClosed;
