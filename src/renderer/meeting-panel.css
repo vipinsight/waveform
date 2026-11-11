@@ -11,8 +11,8 @@
  * choice; without it the window follows macOS.
  */
 :root {
-  --paper: #ffffff;
-  --surface: #fcfcfb;
+  --paper: #f5f4f1;
+  --surface: #fbfbfb;
   --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --surface-raised: #ffffff;
@@ -37,8 +37,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #1b1a17;
-    --surface: #1f1e1a;
+    --paper: #202020;
+    --surface: #1a1a1a;
     --surface-sunken: #26241f;
     --surface-hover: #302e28;
     --surface-raised: #26241f;
@@ -63,8 +63,8 @@
 }
 
 :root[data-theme="dark"] {
-  --paper: #1b1a17;
-  --surface: #1f1e1a;
+  --paper: #202020;
+  --surface: #1a1a1a;
   --surface-sunken: #26241f;
   --surface-hover: #302e28;
   --surface-raised: #26241f;

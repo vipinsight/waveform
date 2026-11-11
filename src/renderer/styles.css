@@ -9,13 +9,13 @@
  * than a parallel set of rules.
  */
 :root {
-  --paper: #ffffff;
-  --surface: #fcfcfb;
+  --paper: #f5f4f1;
+  --surface: #fbfbfb;
   /* The rail carries the same surface as the window behind it: the sidebar is
      not a panel floating on the page, it *is* the page, and the content card
      is the only thing raised off it. Kept as its own token so the two can be
      pulled apart again without hunting for which rules meant which. */
-  --rail: #ffffff;
+  --rail: #f5f4f1;
   --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --ink: #1a1a1a;
@@ -68,9 +68,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #1b1a17;
-    --surface: #1f1e1a;
-    --rail: #1b1a17;
+    --paper: #202020;
+    --surface: #1a1a1a;
+    --rail: #202020;
     --surface-sunken: #26241f;
     --surface-hover: #302e28;
     --ink: #f2efe8;
@@ -111,9 +111,9 @@
 }
 
 :root[data-theme="dark"] {
-  --paper: #1b1a17;
-  --surface: #1f1e1a;
-  --rail: #1b1a17;
+  --paper: #202020;
+  --surface: #1a1a1a;
+  --rail: #202020;
   --surface-sunken: #26241f;
   --surface-hover: #302e28;
   --ink: #f2efe8;
@@ -638,7 +638,7 @@ kbd {
   cursor: pointer;
 }
 
-.rail-toggle:hover {
+.icon-button.rail-toggle:hover {
   color: var(--ink);
   background: var(--surface-hover);
 }
@@ -1207,7 +1207,7 @@ kbd {
   width: min(860px, 94vw);
   height: min(600px, 88vh);
   border-radius: 12px;
-  background: var(--paper);
+  background: var(--surface);
   isolation: isolate;
   box-shadow: var(--shadow-modal);
   grid-template-columns: 188px minmax(0, 1fr);
@@ -1226,7 +1226,7 @@ kbd {
   gap: 4px;
   padding: 22px 12px 14px;
   border-right: 1px solid var(--hairline);
-  background: var(--paper);
+  background: var(--rail);
 }
 
 .modal-nav h2 {
@@ -3113,7 +3113,7 @@ select {
   position: fixed;
   z-index: 20;
   inset: 0;
-  background: var(--paper);
+  background: var(--surface);
   animation: fade-in 180ms ease both;
 }
 
