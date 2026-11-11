@@ -6869,7 +6869,7 @@ select {
 
 /*
  * The home screen. The pace and the big number, with the streak beside them, then two rows
- * of two cards: the half-year calendar beside the milestones, what the words
+ * of two cards: the three-month calendar beside the milestones, what the words
  * add up to beside the months. The machine's own rows and the privacy
  * note come last. Under ~760px the pairs stack. The accent is the only
  * colour that means anything: the days, the bars and the milestones all
@@ -7052,7 +7052,7 @@ select {
   grid-column: 2;
   grid-row: 1;
   display: grid;
-  grid-template-columns: repeat(26, minmax(0, 1fr));
+  grid-template-columns: repeat(13, minmax(0, 1fr));
   gap: 3px;
   height: 14px;
   color: var(--ink-faint);
@@ -7087,7 +7087,7 @@ select {
   grid-column: 2;
   grid-row: 2;
   display: grid;
-  grid-template-columns: repeat(26, minmax(0, 1fr));
+  grid-template-columns: repeat(13, minmax(0, 1fr));
   grid-template-rows: repeat(7, auto);
   grid-auto-flow: column;
   gap: 3px;
