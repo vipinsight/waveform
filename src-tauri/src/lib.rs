@@ -1982,6 +1982,7 @@ pub fn run() {
                     _ = terminate.recv() => {}
                     _ = interrupt.recv() => {}
                 }
+                handle.state::<AppState>().dictation.stop_typing();
                 // Bounded, and then leave regardless. stop() takes the same
                 // locks as a dictation in flight, so a phrase mid-transcription
                 // can hold it long enough to look like a hang -- and an app
@@ -2149,6 +2150,7 @@ pub fn run() {
             // ever marked interrupted by a deliberate quit.
             RunEvent::ExitRequested { api, .. } => {
                 let state = app.state::<AppState>();
+                state.dictation.stop_typing();
                 if state.quitting_after_stop.swap(true, Ordering::SeqCst) {
                     return;
                 }
@@ -2168,6 +2170,7 @@ pub fn run() {
             // guaranteed to fire while this thread is blocked.
             RunEvent::Exit => {
                 let state = app.state::<AppState>();
+                state.dictation.stop_typing();
                 release_models(&state);
                 let models = state.models.clone();
                 let (stopped, wait) = std::sync::mpsc::channel();
@@ -2358,7 +2361,10 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            app.state::<AppState>().dictation.stop_typing();
+            app.exit(0);
+        }
         _ => {}
     }
 }
@@ -2684,17 +2690,20 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         &settings_item,
         &separator,
-        &model_menu,
-        &microphone_menu,
-        &shortcut_menu,
-        &separator,
-        &paste_last,
     ]);
+    // The items that type into another app sit well away from Quit, with the
+    // submenus between: a click that slips off Quit should open a submenu,
+    // not paste or rewrite text in whatever app is in front.
+    items.push(&paste_last);
     if let Some(preview) = paste_preview.as_ref() {
         items.push(preview);
     }
     items.extend([
         &polish as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
+        &separator,
+        &model_menu,
+        &microphone_menu,
+        &shortcut_menu,
         &separator,
         &quit,
     ]);
