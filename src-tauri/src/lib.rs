@@ -584,7 +584,7 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<Option<updates::Updat
     updates::check(&app).await
 }
 
-/// Installs the newer version and relaunches into it.
+/// Installs the downloaded version and relaunches into it.
 ///
 /// The engine is stopped first. It is a separate process of several hundred
 /// megabytes that would not notice its parent being replaced, and the same
@@ -636,14 +636,14 @@ async fn reset_dev_install(app: tauri::AppHandle, state: State<'_, AppState>) ->
     Ok(())
 }
 
-/// The version a check found and nobody has installed yet, for a window
-/// that opened after the event saying so.
+/// The version downloaded and waiting for a restart, for a window that opened
+/// after the event saying so.
 #[tauri::command]
 fn update_available() -> Option<String> {
     updates::available()
 }
 
-/// "Update and Restart" from the menu bar. Progress is shown in the window's
+/// "Restart to Update" from the menu bar. Progress is shown in the window's
 /// sidebar; a failure brings the window forward so it can be read there.
 fn install_update_from_menu(app: &tauri::AppHandle) {
     let app = app.clone();
@@ -2636,15 +2636,15 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // Assembled rather than declared, because the preview line is only there
     // when there is a dictation for it to preview.
     let separator = PredefinedMenuItem::separator(app)?;
-    // First, and only while there is one: the menu bar is where a menu bar
-    // app is looked at, so an update waiting is said here, not only in a
+    // First, and only once one is downloaded: the menu bar is where a menu
+    // bar app is looked at, so an update waiting is said here, not only in a
     // window that may never be opened.
     let update = updates::available()
         .map(|version| {
             MenuItem::with_id(
                 app,
                 "install-update",
-                format!("Update to {version} and Restart"),
+                format!("Restart to Update to {version}"),
                 true,
                 None::<&str>,
             )
@@ -2707,7 +2707,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The menu bar icon, with a small dot when an update is waiting.
+/// The menu bar icon, with a small dot when a downloaded update is waiting.
 ///
 /// The dot is part of the template image, so macOS draws it in the same ink
 /// as the bars: news, the way other menu bar apps show it, not an alarm.

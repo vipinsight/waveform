@@ -4184,6 +4184,57 @@ select {
   }
 }
 
+/* The same news in the title bar's empty right-hand corner, sized like the
+   rail toggle across from it. */
+.titlebar-update {
+  display: inline-flex;
+  height: 26px;
+  gap: 7px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft, rgb(50 132 208 / 10%));
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease;
+}
+
+.titlebar-update[hidden] {
+  display: none;
+}
+
+.titlebar-update:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.titlebar-update:disabled {
+  cursor: progress;
+}
+
+.titlebar-update-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.titlebar-update:disabled .titlebar-update-dot {
+  animation: update-pill-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-update:disabled .titlebar-update-dot {
+    animation: none;
+  }
+}
+
 .pill-button.is-danger {
   color: var(--danger);
 }
