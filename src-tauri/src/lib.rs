@@ -354,6 +354,10 @@ async fn update_settings(
         state.rewriter.engine_changed().await;
     }
 
+    if next.hide_from_screen_share != previous.hide_from_screen_share {
+        set_meeting_windows_shareable(&app, !next.hide_from_screen_share);
+    }
+
     if next.polish_shortcut != previous.polish_shortcut {
         state
             .dictation
@@ -920,6 +924,7 @@ fn open_meeting_panel(app: &tauri::AppHandle, settings: &AppSettings) {
         None => match build_meeting_panel(app) {
             Ok(panel) => {
                 place_meeting_panel(app, &panel, settings);
+                let _ = panel.set_content_protected(settings.hide_from_screen_share);
                 panel
             }
             Err(error) => {
@@ -1023,7 +1028,12 @@ pub(crate) fn set_meeting_pill(app: &tauri::AppHandle, recording: bool) {
             let pill = match handle.get_webview_window(MEETING_PILL_LABEL) {
                 Some(pill) => pill,
                 None => match build_meeting_pill(&handle) {
-                    Ok(pill) => pill,
+                    Ok(pill) => {
+                        // After the `NSPanel` reclass, so nothing it does can
+                        // put the window back into shares.
+                        let _ = pill.set_content_protected(settings.hide_from_screen_share);
+                        pill
+                    }
                     Err(error) => {
                         eprintln!("Could not build the meeting pill: {error}");
                         return;
@@ -1034,6 +1044,21 @@ pub(crate) fn set_meeting_pill(app: &tauri::AppHandle, recording: bool) {
             let _ = pill.show();
         });
     });
+}
+
+/// Lets the meeting pill and transcript window into screen shares, or keeps
+/// them out. Applies to whichever are already built; each is built with the
+/// setting in force.
+///
+/// Sets `NSWindow.sharingType`, which capture through the legacy
+/// CoreGraphics path honours. Newer macOS versions let ScreenCaptureKit
+/// capture such windows anyway, so this is best effort, not a guarantee.
+fn set_meeting_windows_shareable(app: &tauri::AppHandle, shareable: bool) {
+    for label in [MEETING_PILL_LABEL, MEETING_PANEL_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.set_content_protected(!shareable);
+        }
+    }
 }
 
 /// From where the user last left it, or the top centre of the main display.
