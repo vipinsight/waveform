@@ -29,6 +29,12 @@
             <path d="M9 3v18" />
           </svg>
         </button>
+        <!-- Only once an update is downloaded: the one place on screen that is
+             always in view, whichever page is open or the rail folded. -->
+        <button type="button" class="titlebar-update" id="titlebar-update" hidden>
+          <span class="titlebar-update-dot" aria-hidden="true"></span>
+          <span id="titlebar-update-label">Restart to update</span>
+        </button>
       </header>
 
       <aside class="sidebar" id="sidebar">

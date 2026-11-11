@@ -28,9 +28,10 @@ export interface UpdateInfo {
 
 export type UpdateStage =
   | "checking"
-  | "available"
   | "current"
   | "downloading"
+  /** Downloaded and verified; a restart installs it. */
+  | "ready"
   | "installing"
   | "installed"
   | "error";
@@ -40,7 +41,7 @@ export interface UpdateEvent {
   message: string;
   /** How much of the download is done, 0 to 1. Only sent while downloading. */
   progress?: number;
-  /** The version being offered or installed. */
+  /** The version being downloaded, offered or installed. */
   version?: string;
 }
 

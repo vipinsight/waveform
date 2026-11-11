@@ -1,4 +1,5 @@
-//! Finding out that a new version exists, and installing it.
+//! Finding out that a new version exists, downloading it in the background,
+//! and installing it when the user restarts for it.
 //!
 //! Waveform is not in the App Store, so nothing tells anyone that a release
 //! happened. The manifest is a static `latest.json` attached to the newest
@@ -14,7 +15,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// A release that is newer than this one.
 #[derive(Clone, Debug, Serialize)]
@@ -60,24 +61,39 @@ fn emit_version(
     );
 }
 
-/// The newer version the last check found, if any.
-///
-/// Kept here so the menu bar and a window opened later can both say so:
-/// the event announcing it is gone by the time either asks.
-static AVAILABLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// The version waiting to be installed, if a check has found one.
-pub fn available() -> Option<String> {
-    AVAILABLE.lock().ok().and_then(|found| found.clone())
+/// A new version, downloaded and verified, waiting for a restart to install it.
+struct Downloaded {
+    update: Update,
+    bytes: Vec<u8>,
 }
 
-fn set_available(app: &AppHandle, version: Option<String>) {
-    let changed = AVAILABLE
+/// The update a background download finished, if any.
+///
+/// Kept here so the menu bar and a window opened later can both say so: the
+/// event announcing it is gone by the time either asks. Only memory: an update
+/// downloaded and never applied is fetched again on the next launch, which is
+/// simpler than a file on disk that could outlive the version it was for.
+static READY: std::sync::Mutex<Option<Downloaded>> = std::sync::Mutex::new(None);
+
+/// The version downloaded and waiting for a restart, if any.
+///
+/// Not merely one a check has found: nothing offers a restart until there is
+/// something to install on it.
+pub fn available() -> Option<String> {
+    READY
         .lock()
-        .map(|mut found| {
-            let changed = *found != version;
-            *found = version;
-            changed
+        .ok()
+        .and_then(|ready| ready.as_ref().map(|ready| ready.update.version.clone()))
+}
+
+fn set_ready(app: &AppHandle, next: Option<Downloaded>) {
+    let changed = READY
+        .lock()
+        .map(|mut ready| {
+            let before = ready.as_ref().map(|ready| ready.update.version.clone());
+            let after = next.as_ref().map(|next| next.update.version.clone());
+            *ready = next;
+            before != after
         })
         .unwrap_or(false);
     // The menu bar's badge and menu item follow this.
@@ -85,6 +101,18 @@ fn set_available(app: &AppHandle, version: Option<String>) {
         crate::refresh_tray_menu(app);
     }
 }
+
+fn take_ready(app: &AppHandle) -> Option<Downloaded> {
+    let taken = READY.lock().ok().and_then(|mut ready| ready.take());
+    if taken.is_some() {
+        crate::refresh_tray_menu(app);
+    }
+    taken
+}
+
+/// Set while a download runs, so a daily check landing in the middle of a slow
+/// one does not start a second copy of the same tens of megabytes.
+static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 /// Set while an install runs. A second press used to start a second download
 /// over the first: the button stayed live through the silent re-check.
@@ -121,10 +149,12 @@ pub fn spawn_checks(app: AppHandle) {
     });
 }
 
-/// Asks the manifest what the newest version is.
+/// Asks the manifest what the newest version is, and starts downloading it.
 ///
 /// `None` means this is already it, which is worth saying: a check with no
-/// visible outcome reads as broken.
+/// visible outcome reads as broken. The download runs on its own and is
+/// announced with a `ready` event; nothing is installed until a restart is
+/// asked for, so finding an update never takes the app away mid-dictation.
 pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
     emit(app, "checking", "Checking for updates…", None);
 
@@ -140,18 +170,21 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
                 version: update.version.clone(),
                 notes: update.body.clone().unwrap_or_default(),
             };
-            set_available(app, Some(info.version.clone()));
-            emit_version(
-                app,
-                "available",
-                &format!("Waveform {} is available", info.version),
-                None,
-                Some(&info.version),
-            );
+            if available().as_deref() == Some(info.version.as_str()) {
+                emit_ready(app, &info.version);
+            } else {
+                // A newer release than the one waiting replaces it once its own
+                // download finishes; until then the older one stays offered.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    // Reported as an event; there is nobody here to tell.
+                    let _ = download(&app, update).await;
+                });
+            }
             Ok(Some(info))
         }
         Ok(None) => {
-            set_available(app, None);
+            set_ready(app, None);
             emit(app, "current", "Waveform is up to date", None);
             Ok(None)
         }
@@ -159,17 +192,86 @@ pub async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
             // Being unable to ask is not the same as there being nothing to
             // find, and saying "up to date" to a failed check is a lie.
             let message = format!("Could not check for updates: {error}");
-            emit(app, "error", &message, None);
+            // An update already downloaded is still good; a failed check is
+            // no reason to stop offering it.
+            match available() {
+                Some(version) => emit_ready(app, &version),
+                None => emit(app, "error", &message, None),
+            }
             Err(message)
         }
     }
 }
 
-/// Downloads the new version and swaps it in. Does not relaunch.
+fn emit_ready(app: &AppHandle, version: &str) {
+    emit_version(
+        app,
+        "ready",
+        &format!("Waveform {version} is ready"),
+        None,
+        Some(version),
+    );
+}
+
+/// Fetches and verifies the update, then keeps it for [`install`].
 ///
-/// Checks again rather than taking a handle from the caller: the reply to a
-/// check crosses to the window as plain data, and one JSON request is cheaper
-/// than holding a download open across it.
+/// Does nothing if a download is already running: whichever check started it
+/// will announce the result.
+async fn download(app: &AppHandle, update: Update) -> Result<(), String> {
+    if DOWNLOADING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    let outcome = download_once(app, update).await;
+    DOWNLOADING.store(false, Ordering::SeqCst);
+    outcome
+}
+
+async fn download_once(app: &AppHandle, update: Update) -> Result<(), String> {
+    let version = update.version.clone();
+    emit_version(
+        app,
+        "downloading",
+        &format!("Downloading Waveform {version}…"),
+        Some(0.0),
+        Some(&version),
+    );
+
+    let handle = app.clone();
+    let mut downloaded: u64 = 0;
+    let label = version.clone();
+    let bytes = update
+        .download(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let fraction =
+                    total.map(|total| (downloaded as f32 / total.max(1) as f32).min(1.0));
+                emit_version(
+                    &handle,
+                    "downloading",
+                    &format!("Downloading Waveform {label}…"),
+                    fraction,
+                    Some(&label),
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|error| {
+            let message = format!("Could not download the update: {error}");
+            emit(app, "error", &message, None);
+            message
+        })?;
+
+    set_ready(app, Some(Downloaded { update, bytes }));
+    emit_ready(app, &version);
+    Ok(())
+}
+
+/// Installs the downloaded version. Does not relaunch.
+///
+/// Normally the bytes are already here. Pressed with nothing downloaded -- a
+/// window still showing an offer from before a failed download -- it checks
+/// and downloads first, rather than doing nothing.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
     if INSTALLING.swap(true, Ordering::SeqCst) {
         return Err("An update is already installing.".into());
@@ -181,73 +283,48 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
 }
 
 async fn install_once(app: &AppHandle) -> Result<(), String> {
-    // Said before the re-check, which is a network round trip: without it the
-    // button sat unchanged after the press, and read as not working.
-    emit(app, "downloading", "Preparing the update…", None);
-    let update = app
-        .updater()
-        .map_err(|error| format!("The updater is not configured: {error}"))?
-        .check()
-        .await
-        .map_err(|error| {
-            let message = format!("Could not check for updates: {error}");
-            emit(app, "error", &message, None);
-            message
-        })?
-        .ok_or_else(|| {
-            let message = "There is no update to install.".to_string();
-            emit(app, "current", "Waveform is up to date", None);
-            message
-        })?;
+    let ready = match take_ready(app) {
+        Some(ready) => ready,
+        None => {
+            if DOWNLOADING.load(Ordering::SeqCst) {
+                let message = "The update is still downloading.".to_string();
+                emit(app, "error", &message, None);
+                return Err(message);
+            }
+            let update = app
+                .updater()
+                .map_err(|error| format!("The updater is not configured: {error}"))?
+                .check()
+                .await
+                .map_err(|error| {
+                    let message = format!("Could not check for updates: {error}");
+                    emit(app, "error", &message, None);
+                    message
+                })?
+                .ok_or_else(|| {
+                    emit(app, "current", "Waveform is up to date", None);
+                    "There is no update to install.".to_string()
+                })?;
+            download(app, update).await?;
+            take_ready(app).ok_or_else(|| "The update did not download.".to_string())?
+        }
+    };
 
-    let version = update.version.clone();
+    let version = ready.update.version.clone();
     emit_version(
         app,
-        "downloading",
-        &format!("Downloading Waveform {version}…"),
-        Some(0.0),
+        "installing",
+        &format!("Installing Waveform {version}…"),
+        None,
         Some(&version),
     );
-
-    let handle = app.clone();
-    let finished = app.clone();
-    let downloaded = std::sync::atomic::AtomicU64::new(0);
-    let label = version.clone();
-    let installing = version.clone();
-
-    update
-        .download_and_install(
-            move |chunk, total| {
-                let done = downloaded
-                    .fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed)
-                    + chunk as u64;
-                let fraction = total.map(|total| (done as f32 / total.max(1) as f32).min(1.0));
-                emit_version(
-                    &handle,
-                    "downloading",
-                    &format!("Downloading Waveform {label}…"),
-                    fraction,
-                    Some(&label),
-                );
-            },
-            // Unpacking and swapping the bundle takes a moment of its own;
-            // a bar parked at 100% looked stuck.
-            move || {
-                emit_version(
-                    &finished,
-                    "installing",
-                    &format!("Installing Waveform {installing}…"),
-                    None,
-                    Some(&installing),
-                );
-            },
-        )
-        .await
-        .map_err(|error| {
-            let message = format!("Could not install the update: {error}");
-            emit(app, "error", &message, None);
-            message
-        })?;
+    // A failed install drops the bytes: "Try Again" checks and downloads
+    // afresh rather than replaying whatever just failed.
+    ready.update.install(&ready.bytes).map_err(|error| {
+        let message = format!("Could not install the update: {error}");
+        emit(app, "error", &message, None);
+        message
+    })?;
 
     emit_version(
         app,
