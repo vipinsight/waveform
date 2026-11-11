@@ -8,6 +8,7 @@ mod audio;
 mod download;
 mod focus;
 mod gestures;
+mod hinglish;
 mod history;
 mod install;
 mod logs;

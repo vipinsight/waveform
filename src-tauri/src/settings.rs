@@ -31,9 +31,11 @@ fn is_known_model(id: &str) -> bool {
 }
 
 /// Kept in step with src/shared/languages.ts. ISO 639-1, which is what all
-/// three engines take; empty asks the engine to detect.
-const SPEECH_LANGUAGES: [&str; 14] = [
-    "", "en", "hi", "es", "fr", "de", "it", "pt", "nl", "ru", "ar", "ja", "ko", "zh",
+/// three engines take; empty asks the engine to detect. Hinglish is the one
+/// exception, and `hinglish::engine_language` turns it into a code.
+const SPEECH_LANGUAGES: [&str; 15] = [
+    "", "en", "hi", crate::hinglish::CODE, "es", "fr", "de", "it", "pt", "nl", "ru", "ar", "ja",
+    "ko", "zh",
 ];
 
 fn default_model_id() -> &'static str {
