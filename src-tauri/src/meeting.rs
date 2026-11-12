@@ -9,6 +9,7 @@
 
 use crate::audio::{self, Segmenter, SegmenterOptions, WavWriter};
 use crate::diarize;
+use crate::echo;
 use crate::history::HistoryStore;
 use crate::logs::Logs;
 use crate::meetings::{self, Line, Meeting, MeetingsStore, Note, State, Track, LOCAL_SPEAKER};
@@ -774,7 +775,7 @@ impl Recorder {
         if lines.is_empty() {
             notes.push(Note::new("nothing-said", "Nothing was picked up in this recording."));
             self.set_stage(id, "Preparing playback…").await;
-            let _ = mixdown(&dir);
+            let _ = mixdown_in_background(dir.clone()).await;
             return Ok(notes);
         }
 
@@ -791,8 +792,17 @@ impl Recorder {
             }
         }
 
+        // Speaker tagging hears echo by voice; this catches what it missed,
+        // and works without the speaker tool.
+        {
+            let mut store = self.meetings.lock().await;
+            let echoes = meetings::echo_lines(&store.all_lines(id)?);
+            let tags: Vec<(i64, String)> = echoes.into_iter().map(|idx| (idx, meetings::ECHO.to_string())).collect();
+            store.tag_lines(id, &tags)?;
+        }
+
         self.set_stage(id, "Preparing playback…").await;
-        if let Err(error) = mixdown(&dir) {
+        if let Err(error) = mixdown_in_background(dir.clone()).await {
             self.logs.error(&self.app, "meeting", format!("{id}: mixdown: {error}"));
         }
 
@@ -1207,12 +1217,37 @@ impl Recorder {
                         continue;
                     }
                 };
-                let event = LineEvent {
-                    meeting_id: id.clone(),
-                    line,
+                // The call heard again on the mic is echo, whichever of the
+                // two lines was transcribed first. The windows drop a line
+                // that comes back labelled so.
+                let echoes = {
+                    let mut store = this.meetings.lock().await;
+                    let all = store.all_lines(&id).unwrap_or_default();
+                    let echoes: Vec<Line> = meetings::echoes_from(&line, &all)
+                        .into_iter()
+                        .filter_map(|idx| all.iter().find(|other| other.idx == idx).cloned())
+                        .map(|mut other| {
+                            other.speaker = Some(meetings::ECHO.to_string());
+                            other
+                        })
+                        .collect();
+                    let tags: Vec<(i64, String)> = echoes.iter().map(|other| (other.idx, meetings::ECHO.to_string())).collect();
+                    if let Err(error) = store.tag_lines(&id, &tags) {
+                        this.logs.error(&this.app, "meeting", format!("{id}: {error}"));
+                    }
+                    echoes
                 };
-                let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
-                let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
+                let new_idx = line.idx;
+                let line_is_echo = echoes.iter().any(|other| other.idx == new_idx);
+                let shown = echoes.into_iter().filter(|other| other.idx != new_idx);
+                for line in shown.chain((!line_is_echo).then_some(line)) {
+                    let event = LineEvent {
+                        meeting_id: id.clone(),
+                        line,
+                    };
+                    let _ = this.app.emit_to(MAIN_LABEL, "meeting-line", &event);
+                    let _ = this.app.emit_to(MEETING_PANEL_LABEL, "meeting-line", &event);
+                }
             }
         })
     }
@@ -1338,8 +1373,15 @@ async fn read_tap(mut stdout: tokio::process::ChildStdout, sender: SyncSender<Ca
     // Whatever is left is under a block; it is not worth a phrase.
 }
 
+/// `mixdown` off the async runtime: the echo canceller takes some seconds
+/// on an hour-long meeting.
+async fn mixdown_in_background(dir: PathBuf) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || mixdown(&dir)).await.map_err(|e| e.to_string())?
+}
+
 /// Sums the two tracks into `mixed.wav` for playback, at the microphone's
-/// rate. The tracks are mono PCM16 as `WavWriter` wrote them.
+/// rate, after taking the far end's echo out of the microphone; see echo.rs.
+/// The tracks are mono PCM16 as `WavWriter` wrote them.
 fn mixdown(dir: &Path) -> Result<(), String> {
     let mic = read_pcm16(&dir.join("mic.wav"));
     let system = read_pcm16(&dir.join("system.wav"));
@@ -1354,10 +1396,11 @@ fn mixdown(dir: &Path) -> Result<(), String> {
     } else {
         resample_linear(&system.0, system.1, rate)
     };
-    let length = mic.0.len().max(system_samples.len());
+    let mic_samples = echo::cancel(&mic.0, &system_samples);
+    let length = mic_samples.len().max(system_samples.len());
     let mut mixed = Vec::with_capacity(length);
     for index in 0..length {
-        let a = mic.0.get(index).copied().unwrap_or(0.0);
+        let a = mic_samples.get(index).copied().unwrap_or(0.0);
         let b = system_samples.get(index).copied().unwrap_or(0.0);
         mixed.push((a + b).clamp(-1.0, 1.0));
     }

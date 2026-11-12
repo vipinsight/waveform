@@ -11,6 +11,7 @@ import { host } from "./host";
 import { audioFileToMonoWav } from "./audio/file-wav";
 import { wavPeaks } from "./audio/peaks";
 import { onRowContextMenu } from "./context-menu";
+import { isEcho } from "./meeting-feed";
 
 /**
  * The Meetings page: one page at a time. The list, grouped by day, with an
@@ -283,7 +284,8 @@ export function bindMeetings(given: Options): void {
 
   host().onMeetingLine(({ meetingId, line }) => {
     if (!detail || detail.meeting.id !== meetingId) return;
-    detail.lines.push(line);
+    detail.lines = detail.lines.filter((other) => other.idx !== line.idx);
+    if (!isEcho(line)) detail.lines.push(line);
     detail.lines.sort((a, b) => a.startMs - b.startMs || a.idx - b.idx);
     renderLines();
     renderSpeakers();

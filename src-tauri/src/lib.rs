@@ -18,6 +18,7 @@ pub mod diarize_eval;
 mod dev_reset;
 mod dictation;
 mod dictionary;
+mod echo;
 mod local_llm;
 mod meeting;
 mod meetings;
