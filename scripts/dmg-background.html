@@ -19,40 +19,36 @@
     position: relative;
     font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    background: linear-gradient(160deg, #ffffff 0%, #f5f4f1 55%, #ece9e2 100%);
+    background: linear-gradient(180deg, #eef5fd 0%, #f9fbfe 60%, #ffffff 100%);
   }
-  /* A soft blue band behind both icons, fading out at every edge. */
-  .band {
-    position: absolute; left: 0; right: 0; top: 64px; height: 244px;
-    background: radial-gradient(closest-side, rgba(50, 132, 208, 0.09), rgba(50, 132, 208, 0) 100%);
-    transform: scaleX(1.6);
+  /* A faint dot grid that shows only above and below the card. */
+  .dots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(50, 132, 208, 0.13) 1px, transparent 1.2px);
+    background-size: 16px 16px;
+    -webkit-mask: linear-gradient(180deg, #000 0, transparent 30%, transparent 80%, #000 100%);
   }
-  .brand {
-    position: absolute; top: 26px; width: 100%;
-    display: flex; justify-content: center; align-items: center; gap: 8px;
-    font-size: 14px; font-weight: 600; color: #2b2a27; letter-spacing: -0.01em;
+  /* One white card holding both icons and their names. */
+  .card {
+    position: absolute; left: 40px; right: 40px; top: 64px; height: 252px;
+    border-radius: 26px; background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 0 1px rgba(50, 132, 208, 0.10), 0 18px 40px rgba(50, 90, 140, 0.10);
   }
-  .brand svg { width: 22px; height: 22px; }
   .wave { position: absolute; left: 0; top: 0; fill: #3284d0; }
-  p {
-    position: absolute; bottom: 28px; width: 100%; text-align: center;
-    font-size: 12px; color: #7d7a72;
+  h1 {
+    position: absolute; top: 22px; width: 100%; text-align: center;
+    font-size: 14px; font-weight: 600; color: #1f3550; letter-spacing: -0.01em;
   }
-  p b { color: #3284d0; font-weight: 600; }
+  p {
+    position: absolute; bottom: 32px; width: 100%; text-align: center;
+    font-size: 11.5px; color: #6b7c90;
+  }
 </style>
 </head>
 <body>
-  <div class="band"></div>
-  <div class="brand">
-    <svg viewBox="0 0 100 100" fill="#2b2a27">
-      <rect x="17.20" y="35.55" width="7.81" height="28.90" rx="3.91"/>
-      <rect x="31.64" y="24.20" width="7.81" height="51.60" rx="3.91"/>
-      <rect x="46.09" y="35.55" width="7.81" height="28.90" rx="3.91" fill="#3284d0"/>
-      <rect x="60.55" y="24.20" width="7.81" height="51.60" rx="3.91"/>
-      <rect x="75.00" y="35.55" width="7.81" height="28.90" rx="3.91"/>
-    </svg>
-    Waveform
-  </div>
+  <div class="dots"></div>
+  <div class="card"></div>
+  <h1>Install Waveform</h1>
   <!-- The arrow: a sound wave that grows and brightens towards Applications. -->
   <svg class="wave" width="660" height="400">
     <rect x="258.0" y="166.0" width="3.6" height="8.0" rx="1.8" fill-opacity="0.25"/>
@@ -77,6 +73,6 @@
     <path d="M402 162 L410 170 L402 178" fill="none" stroke="#3284d0" stroke-width="3"
           stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <p>Drag the app onto <b>Applications</b> to install</p>
+  <p>Drag Waveform onto the Applications folder</p>
 </body>
 </html>
