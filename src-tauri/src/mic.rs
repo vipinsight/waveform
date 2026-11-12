@@ -186,11 +186,11 @@ fn open_stream(
     sender: SyncSender<CaptureBlock>,
 ) -> Result<(String, u32, Stream), String> {
     let device = pick_input_device(preferred_name)?;
-    let name = device.name().unwrap_or_else(|_| "microphone".into());
+    let name = device_name(&device).unwrap_or_else(|| "microphone".into());
     let supported = device
         .default_input_config()
         .map_err(|error| format!("Microphone unavailable: {error}"))?;
-    let sample_rate = supported.sample_rate().0;
+    let sample_rate = supported.sample_rate();
     let channels = supported.channels() as usize;
     let format = supported.sample_format();
     let config: StreamConfig = supported.into();
@@ -216,7 +216,7 @@ fn build_f32(
     let mut pending = Vec::with_capacity(BLOCK);
     device
         .build_input_stream(
-            config,
+            config.clone(),
             move |data: &[f32], _| {
                 push_frames(&mut pending, data, channels, sample_rate, &sender);
             },
@@ -236,7 +236,7 @@ fn build_i16(
     let mut pending = Vec::with_capacity(BLOCK);
     device
         .build_input_stream(
-            config,
+            config.clone(),
             move |data: &[i16], _| {
                 let converted: Vec<f32> = data.iter().map(|sample| *sample as f32 / 32768.0).collect();
                 push_frames(&mut pending, &converted, channels, sample_rate, &sender);
@@ -267,6 +267,10 @@ fn push_frames(
     }
 }
 
+fn device_name(device: &cpal::Device) -> Option<String> {
+    device.description().ok().map(|description| description.name().to_string())
+}
+
 fn pick_input_device(preferred_name: &str) -> Result<cpal::Device, String> {
     let host = cpal::default_host();
     let mut devices = host
@@ -276,8 +280,7 @@ fn pick_input_device(preferred_name: &str) -> Result<cpal::Device, String> {
 
     if !preferred_name.is_empty() {
         if let Some(index) = devices.iter().position(|device| {
-            device
-                .name()
+            device_name(device)
                 .map(|name| input_device_matches(&name, preferred_name))
                 .unwrap_or(false)
         }) {
@@ -292,7 +295,7 @@ fn pick_input_device(preferred_name: &str) -> Result<cpal::Device, String> {
     // unless the user has named something else.
     if let Some(index) = devices
         .iter()
-        .position(|device| device.name().map(|name| is_built_in_input(&name)).unwrap_or(false))
+        .position(|device| device_name(device).map(|name| is_built_in_input(&name)).unwrap_or(false))
     {
         return Ok(devices.swap_remove(index));
     }

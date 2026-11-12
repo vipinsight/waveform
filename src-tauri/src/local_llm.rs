@@ -20,7 +20,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::{send_logs_to_tracing, LogOptions};
 use serde::Serialize;
@@ -599,9 +599,9 @@ fn generate(model: &LlamaModel, prompt: &str, reply_tokens: usize, context_token
         .new_context(backend, params)
         .map_err(|error| format!("Could not start the local model: {error}"))?;
 
-    let tokens = model
-        .str_to_token(prompt, AddBos::Never)
-        .map_err(|error| format!("Could not read the prompt: {error}"))?;
+    let vocab = model.vocab();
+    // No BOS, but special tokens in the prompt template are parsed as tokens.
+    let tokens = vocab.tokenize(prompt.as_bytes(), false, true);
     let room = context.n_ctx() as usize;
     if tokens.len() + reply_tokens > room {
         return Err("That is more text than the local model will rewrite at once.".to_string());
@@ -630,14 +630,15 @@ fn generate(model: &LlamaModel, prompt: &str, reply_tokens: usize, context_token
     for _ in 0..reply_tokens {
         let token = sampler.sample(&context, batch.n_tokens() - 1);
         sampler.accept(token);
-        if model.is_eog_token(token) {
+        if vocab.is_eog(token) {
             break;
         }
-        reply.push_str(
-            &model
-                .token_to_piece(token, &mut decoder, false, None)
-                .map_err(|error| format!("The local model returned something unreadable: {error}"))?,
-        );
+        // A piece can end mid-character; the decoder carries the partial bytes
+        // into the next token's piece.
+        let piece = vocab.token_to_piece(token, false, None);
+        let needed = decoder.max_utf8_buffer_length(piece.len()).unwrap_or(piece.len() * 3 + 4);
+        reply.reserve(needed);
+        let _ = decoder.decode_to_string(&piece, &mut reply, false);
 
         batch.clear();
         batch
