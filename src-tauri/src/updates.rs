@@ -1,5 +1,6 @@
 //! Finding out that a new version exists, downloading it in the background,
-//! and installing it when the user restarts for it.
+//! and installing it when the user restarts for it -- or quits, or restarts
+//! for any other reason: see [`install_pending_on_exit`].
 //!
 //! Waveform is not in the App Store, so nothing tells anyone that a release
 //! happened. The manifest is a static `latest.json` attached to the newest
@@ -334,4 +335,37 @@ async fn install_once(app: &AppHandle) -> Result<(), String> {
         Some(&version),
     );
     Ok(())
+}
+
+/// Installs a downloaded update as the app exits, so the next launch is the
+/// new version.
+///
+/// "Restart to Update" is one way to get it; quitting from the menu bar or
+/// with ⌘Q, logging out, or any other restart should be another. Called from
+/// the Exit event, which a restart from a background task also passes through
+/// before relaunching, so that relaunch lands on the new version too.
+///
+/// Synchronous and quiet: this runs on the AppKit thread with the app on its
+/// way out, so there is no window left to tell and no tray worth refreshing.
+/// Skipped when nothing is downloaded, when a download is only part way
+/// through, and when "Restart to Update" is already installing -- that path
+/// has taken the bytes and will finish on its own. A failure leaves the old
+/// version in place, and the next launch's check downloads it again.
+///
+/// Not called on SIGTERM. That is how `pnpm app` replaces a running dev build,
+/// and installing a release over the bundle it just built would undo it.
+pub fn install_pending_on_exit() {
+    if INSTALLING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let ready = READY.lock().ok().and_then(|mut ready| ready.take());
+    if let Some(ready) = ready {
+        if let Err(error) = ready.update.install(&ready.bytes) {
+            eprintln!(
+                "Could not install Waveform {} on quit: {error}",
+                ready.update.version
+            );
+        }
+    }
+    // Left set: the app is exiting, and a second Exit must not try again.
 }
