@@ -3,7 +3,7 @@ import type { AppSettings } from "../shared/settings";
 import { host } from "./host";
 import { installTauriBridge } from "./tauri-bridge";
 import { installContextMenu } from "./context-menu";
-import { MAX_LINES, clock, isFollowing, mergeLines, speakerName, voiceOf } from "./meeting-feed";
+import { MAX_LINES, clock, isEcho, isFollowing, mergeLines, speakerName, voiceOf } from "./meeting-feed";
 
 /**
  * The live transcript window, opened from the meeting pill. It shows the
@@ -274,7 +274,7 @@ host().onMeetingLine((event) => {
   if (event.meetingId !== meetingId) return;
   const last = lines.at(-1)?.idx ?? -1;
   lines = mergeLines(lines, [event.line]);
-  if (event.line.idx > last) appendLines([event.line]);
+  if (event.line.idx > last && !isEcho(event.line)) appendLines([event.line]);
   else renderLines();
 });
 host().onMeetingLevel((event) => {
