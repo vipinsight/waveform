@@ -46,7 +46,7 @@ import {
   type KeepAudioDays,
 } from "../shared/settings";
 import {
-  HALF_YEAR_WEEKS,
+  FIVE_MONTH_WEEKS,
   MILESTONES,
   calendar,
   dayKey,
@@ -140,6 +140,8 @@ const element = {
   updateHint: requireElement<HTMLElement>("update-hint"),
   updateHintText: requireElement<HTMLElement>("update-hint-text"),
   updateNotes: requireElement<HTMLButtonElement>("update-notes"),
+  titlebarUpdate: requireElement<HTMLButtonElement>("titlebar-update"),
+  titlebarUpdateLabel: requireElement<HTMLElement>("titlebar-update-label"),
   aboutVersion: requireElement<HTMLElement>("about-version"),
   devReset: requireElement<HTMLElement>("dev-reset"),
   devResetNote: requireElement<HTMLElement>("dev-reset-note"),
@@ -288,6 +290,9 @@ let setupKnown = false;
 let appVersion = "";
 /** Whether the About button is asking for a check or installing one. */
 let updateAction: "check" | "install" = "check";
+/** The last update stage seen, so an error can say "Try Again" to a failed
+ *  download or install and "Check Again" to a failed check. */
+let lastUpdateStage: UpdateEvent["stage"] | null = null;
 /** The release the status line's "What's new" opens. */
 let updateNotesVersion: string | null = null;
 /** Everything the log has said this session, oldest first. */
@@ -425,14 +430,14 @@ function wireEvents(): void {
   host().onModelEvent(handleModelEvent);
   host().onPolishModelEvent(showPolishDownloadProgress);
   host().onUpdateEvent(handleUpdateEvent);
-  // A check that ran before this window loaded already found it.
+  // A download that finished before this window loaded is already waiting.
   void host()
     .getUpdateAvailable()
     .then((version) => {
       if (version) {
         handleUpdateEvent({
-          stage: "available",
-          message: `Waveform ${version} is available`,
+          stage: "ready",
+          message: `Waveform ${version} is ready`,
           version,
         });
       }
@@ -764,22 +769,22 @@ function wireEvents(): void {
   });
   element.updateCheck.addEventListener("click", () => {
     if (updateAction === "install") {
-      // Painted here, before the host answers: its first event follows a
-      // network round trip, and a button that does not change on a press
-      // reads as broken.
-      setUpdateButton("Preparing…", { busy: true, install: true });
-      void installUpdate();
+      restartToUpdate();
       return;
     }
     void checkForUpdate();
   });
   element.updatePill.addEventListener("click", () => {
-    if (element.updatePill.dataset.state !== "available" && element.updatePill.dataset.state !== "error") {
-      return;
+    const state = element.updatePill.dataset.state;
+    if (state === "ready") {
+      restartToUpdate();
+    } else if (state === "error") {
+      // Checks and downloads afresh; the pill comes back once it is ready.
+      element.updatePill.hidden = true;
+      void checkForUpdate();
     }
-    renderUpdatePill({ stage: "downloading", message: "Preparing the update…" });
-    void installUpdate();
   });
+  element.titlebarUpdate.addEventListener("click", restartToUpdate);
   element.updateNotes.addEventListener("click", () => {
     if (updateNotesVersion) {
       void host().openUrl(
@@ -2099,7 +2104,16 @@ async function checkForUpdate(): Promise<void> {
 }
 
 /**
- * Installs the newer version. Does not return: the app relaunches into it.
+ * Painted here, before the host answers, so the press shows at once; then
+ * installs the downloaded version.
+ */
+function restartToUpdate(): void {
+  handleUpdateEvent({ stage: "installing", message: "Installing the update…" });
+  void installUpdate();
+}
+
+/**
+ * Installs the downloaded version. Does not return: the app relaunches into it.
  */
 async function installUpdate(): Promise<void> {
   try {
@@ -2127,9 +2141,15 @@ function setUpdateButton(
  * tooltip, and "Update and Restart" followed by a fast relaunch looked like a
  * press that did nothing. The line sits on its own row, above the copyright,
  * so a long message cannot shove anything sideways.
+ *
+ * A found update downloads on its own; the button offers a restart only once
+ * it has, so pressing it never starts a wait.
  */
 function handleUpdateEvent(event: UpdateEvent): void {
+  const failedWhile = lastUpdateStage;
+  lastUpdateStage = event.stage;
   renderUpdatePill(event);
+  renderTitlebarUpdate(event);
   const version = event.version ?? null;
   switch (event.stage) {
     case "checking":
@@ -2140,20 +2160,17 @@ function handleUpdateEvent(event: UpdateEvent): void {
       setUpdateButton("Up to date");
       setUpdateHint(appVersion ? `Waveform ${appVersion} is the latest version.` : null);
       return;
-    case "available":
-      setUpdateButton(version ? `Update to ${version}` : "Update", { install: true });
-      setUpdateHint(`${event.message}. Waveform restarts to finish.`, version);
-      return;
     case "downloading": {
       const percent =
         event.progress !== undefined ? ` ${Math.round(event.progress * 100)}%` : "";
-      setUpdateButton(version ? `Downloading…${percent}` : "Preparing…", {
-        busy: true,
-        install: true,
-      });
+      setUpdateButton(`Downloading…${percent}`, { busy: true });
       setUpdateHint(event.message, version);
       return;
     }
+    case "ready":
+      setUpdateButton("Restart to Update", { install: true });
+      setUpdateHint("Downloaded. Waveform restarts to install it.", version);
+      return;
     case "installing":
       setUpdateButton("Installing…", { busy: true, install: true });
       setUpdateHint(event.message, version);
@@ -2167,12 +2184,17 @@ function handleUpdateEvent(event: UpdateEvent): void {
         version,
       );
       return;
-    case "error":
-      setUpdateButton(updateAction === "install" ? "Try Again" : "Check Again", {
-        install: updateAction === "install",
-      });
+    case "error": {
+      // Either way the press checks again, which downloads afresh: a failed
+      // install has already dropped its bytes.
+      const wasUpdating =
+        failedWhile === "downloading" ||
+        failedWhile === "ready" ||
+        failedWhile === "installing";
+      setUpdateButton(wasUpdating ? "Try Again" : "Check Again");
       setUpdateHint(event.message);
       return;
+    }
     default: {
       const _exhaustive: never = event.stage;
       return _exhaustive;
@@ -2181,8 +2203,11 @@ function handleUpdateEvent(event: UpdateEvent): void {
 }
 
 /**
- * The sidebar's update pill: hidden until a check finds something, then the
+ * The sidebar's update pill: hidden until an update is downloaded, then the
  * version and the one action, then how far installing has got.
+ *
+ * A background download says nothing here. It is the About page's to report;
+ * news of an update that cannot be applied yet is only a wait.
  */
 function renderUpdatePill(event: UpdateEvent): void {
   const pill = element.updatePill;
@@ -2194,20 +2219,23 @@ function renderUpdatePill(event: UpdateEvent): void {
     case "current":
       pill.hidden = true;
       return;
-    case "available":
-      pill.dataset.state = "available";
+    case "ready":
+      pill.dataset.state = "ready";
+      pill.title = "";
       element.updatePillTitle.textContent = version
         ? `Waveform ${version} is ready`
-        : "Update available";
+        : "Update ready";
       element.updatePillAction.textContent = "Restart to update";
       break;
     case "downloading":
-      pill.dataset.state = "working";
+      // Shown only for a restart that had to download first. A newer release
+      // downloading behind one already offered leaves that offer alone.
+      if (pill.hidden || pill.dataset.state !== "working") return;
       element.updatePillTitle.textContent = "Updating Waveform";
       element.updatePillAction.textContent =
         event.progress !== undefined
           ? `Downloading… ${Math.round(event.progress * 100)}%`
-          : "Preparing…";
+          : "Downloading…";
       break;
     case "installing":
       pill.dataset.state = "working";
@@ -2235,6 +2263,44 @@ function renderUpdatePill(event: UpdateEvent): void {
     "aria-label",
     `${element.updatePillTitle.textContent}. ${element.updatePillAction.textContent}`,
   );
+}
+
+/**
+ * The title bar's corner button: there only while a downloaded update waits,
+ * and while installing it, so a press is seen to land.
+ */
+function renderTitlebarUpdate(event: UpdateEvent): void {
+  const button = element.titlebarUpdate;
+  if (event.version) button.dataset.version = event.version;
+  const version = button.dataset.version ?? "";
+  switch (event.stage) {
+    case "ready":
+      element.titlebarUpdateLabel.textContent = "Restart to update";
+      button.title = version ? `Waveform ${version} is ready` : "An update is ready";
+      button.setAttribute(
+        "aria-label",
+        version ? `Restart to update to Waveform ${version}` : "Restart to update",
+      );
+      button.disabled = false;
+      button.hidden = false;
+      return;
+    case "installing":
+    case "installed":
+      if (button.hidden) return;
+      element.titlebarUpdateLabel.textContent =
+        event.stage === "installing" ? "Installing…" : "Restarting…";
+      button.disabled = true;
+      return;
+    case "checking":
+    case "downloading":
+      // A check or a newer download behind one already ready changes nothing
+      // about the restart it offers.
+      return;
+    case "current":
+    case "error":
+      button.hidden = true;
+      return;
+  }
 }
 
 /** The status line above the button; `null` blanks it (its space stays). */
@@ -4517,14 +4583,14 @@ function renderActivityCalendar(activity: Activity): void {
         ? "1 day with words"
         : `${activity.activeDays.toLocaleString()} days with words`;
 
-  const columns = calendar(activity.today, activity.days, HALF_YEAR_WEEKS);
+  const columns = calendar(activity.today, activity.days, FIVE_MONTH_WEEKS);
   const months = document.createElement("div");
   months.className = "activity-months";
   months.setAttribute("aria-hidden", "true");
   const weekdays = document.createElement("div");
   weekdays.className = "activity-weekdays";
   weekdays.setAttribute("aria-hidden", "true");
-  for (const name of ["Mon", "", "Wed", "", "Fri", "", ""]) {
+  for (const name of ["Mon", "", "Wed", "", "Fri", "", "Sun"]) {
     const label = document.createElement("span");
     label.textContent = name;
     weekdays.append(label);
@@ -4563,15 +4629,18 @@ function renderActivityCalendar(activity: Activity): void {
 function bindActivityTooltip(): void {
   const calendarBox = element.activityCalendar;
   const tip = element.activityTip;
-  const hide = () => {
-    tip.hidden = true;
-  };
-  calendarBox.addEventListener("mouseover", (event) => {
-    const cell = (event.target as HTMLElement).closest<HTMLElement>(".activity-cell");
-    if (!cell || !cell.dataset.day) {
-      hide();
-      return;
-    }
+  // One tooltip for the whole grid. Moving from cell to cell only changes its
+  // text and glides it across; it is hidden only once the pointer has left the
+  // calendar, after a short grace so brushing past the edge does not flash it.
+  // The gaps between cells keep the last one rather than hiding.
+  const OPEN_DELAY_MS = 60;
+  const CLOSE_GRACE_MS = 120;
+  let current: HTMLElement | null = null;
+  let visible = false;
+  let openTimer: number | undefined;
+  let closeTimer: number | undefined;
+
+  const fill = (cell: HTMLElement) => {
     const words = Number(cell.dataset.words ?? 0);
     const phrases = Number(cell.dataset.phrases ?? 0);
     const when = new Date(cell.dataset.day + "T12:00:00").toLocaleDateString(undefined, {
@@ -4588,18 +4657,63 @@ function bindActivityTooltip(): void {
         ? "Nothing dictated"
         : `${words.toLocaleString()} ${words === 1 ? "word" : "words"} · ${phrases.toLocaleString()} ${phrases === 1 ? "phrase" : "phrases"}`;
     tip.replaceChildren(count, date);
-    tip.hidden = false;
-    // Above the cell, centred, and kept inside the panel.
+  };
+
+  // Above the cell, centred, and kept inside the panel.
+  const place = (cell: HTMLElement) => {
     const panel = calendarBox.parentElement ?? calendarBox;
     const box = cell.getBoundingClientRect();
     const home = panel.getBoundingClientRect();
     const width = tip.offsetWidth;
-    const left = Math.min(Math.max(8, box.left + box.width / 2 - home.left - width / 2), home.width - width - 8);
-    tip.style.left = `${left}px`;
-    tip.style.top = `${box.top - home.top - tip.offsetHeight - 8}px`;
-    tip.style.setProperty("--tip-arrow", `${box.left + box.width / 2 - home.left - left}px`);
+    const centre = box.left + box.width / 2 - home.left;
+    const left = Math.min(Math.max(8, centre - width / 2), home.width - width - 8);
+    const top = box.top - home.top - tip.offsetHeight - 8;
+    tip.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+    tip.style.setProperty("--tip-arrow", `${centre - left}px`);
+  };
+
+  const show = (cell: HTMLElement) => {
+    window.clearTimeout(closeTimer);
+    if (cell === current && (visible || openTimer !== undefined)) return;
+    current = cell;
+    if (visible) {
+      fill(cell);
+      place(cell);
+      return;
+    }
+    if (openTimer !== undefined) return;
+    openTimer = window.setTimeout(() => {
+      openTimer = undefined;
+      if (!current) return;
+      // Placed where it opens with no glide, then faded in.
+      tip.classList.add("is-snapping");
+      tip.hidden = false;
+      fill(current);
+      place(current);
+      void tip.offsetWidth;
+      tip.classList.remove("is-snapping");
+      tip.classList.add("is-visible");
+      visible = true;
+    }, OPEN_DELAY_MS);
+  };
+
+  const hide = () => {
+    window.clearTimeout(openTimer);
+    openTimer = undefined;
+    window.clearTimeout(closeTimer);
+    closeTimer = window.setTimeout(() => {
+      tip.classList.remove("is-visible");
+      visible = false;
+      current = null;
+    }, CLOSE_GRACE_MS);
+  };
+
+  calendarBox.addEventListener("pointermove", (event) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>(".activity-cell");
+    if (cell?.dataset.day) show(cell);
+    else window.clearTimeout(closeTimer);
   });
-  calendarBox.addEventListener("mouseleave", hide);
+  calendarBox.addEventListener("pointerleave", hide);
 }
 
 /** The first thing on the page before any numbers arrive: the shape of a calendar. */

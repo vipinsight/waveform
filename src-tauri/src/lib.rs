@@ -166,6 +166,17 @@ struct MicrophoneResult {
     status: String,
 }
 
+/// The window chrome (traffic lights, title bar) follows the app's native
+/// appearance, not the page's CSS. Pin it to the app's theme so the buttons
+/// stay legible when the app and macOS disagree; "system" follows macOS.
+fn apply_theme(app: &tauri::AppHandle, theme: &str) {
+    app.set_theme(match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    });
+}
+
 /// Brings the window back and restores the Dock icon with it.
 ///
 /// The Dock icon and the window are shown together: an app in the Dock whose
@@ -357,6 +368,10 @@ async fn update_settings(
 
     if next.hide_from_screen_share != previous.hide_from_screen_share {
         set_meeting_windows_shareable(&app, !next.hide_from_screen_share);
+    }
+
+    if next.theme != previous.theme {
+        apply_theme(&app, &next.theme);
     }
 
     if next.polish_shortcut != previous.polish_shortcut {
@@ -585,7 +600,7 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<Option<updates::Updat
     updates::check(&app).await
 }
 
-/// Installs the newer version and relaunches into it.
+/// Installs the downloaded version and relaunches into it.
 ///
 /// The engine is stopped first. It is a separate process of several hundred
 /// megabytes that would not notice its parent being replaced, and the same
@@ -637,14 +652,14 @@ async fn reset_dev_install(app: tauri::AppHandle, state: State<'_, AppState>) ->
     Ok(())
 }
 
-/// The version a check found and nobody has installed yet, for a window
-/// that opened after the event saying so.
+/// The version downloaded and waiting for a restart, for a window that opened
+/// after the event saying so.
 #[tauri::command]
 fn update_available() -> Option<String> {
     updates::available()
 }
 
-/// "Update and Restart" from the menu bar. Progress is shown in the window's
+/// "Restart to Update" from the menu bar. Progress is shown in the window's
 /// sidebar; a failure brings the window forward so it can be read there.
 fn install_update_from_menu(app: &tauri::AppHandle) {
     let app = app.clone();
@@ -1685,6 +1700,7 @@ pub fn run() {
             let dictionary = Arc::new(Mutex::new(DictionaryStore::new(opened.database.clone())));
             let meetings = Arc::new(Mutex::new(MeetingsStore::new(opened.database)));
             let initial = tauri::async_runtime::block_on(settings.lock()).value();
+            apply_theme(app.handle(), &initial.theme);
             let selected = initial.model_id.clone();
 
             // The one release before this kept a comma list in settings. It
@@ -1967,6 +1983,7 @@ pub fn run() {
                     _ = terminate.recv() => {}
                     _ = interrupt.recv() => {}
                 }
+                handle.state::<AppState>().dictation.stop_typing();
                 // Bounded, and then leave regardless. stop() takes the same
                 // locks as a dictation in flight, so a phrase mid-transcription
                 // can hold it long enough to look like a hang -- and an app
@@ -2134,6 +2151,7 @@ pub fn run() {
             // ever marked interrupted by a deliberate quit.
             RunEvent::ExitRequested { api, .. } => {
                 let state = app.state::<AppState>();
+                state.dictation.stop_typing();
                 if state.quitting_after_stop.swap(true, Ordering::SeqCst) {
                     return;
                 }
@@ -2153,6 +2171,7 @@ pub fn run() {
             // guaranteed to fire while this thread is blocked.
             RunEvent::Exit => {
                 let state = app.state::<AppState>();
+                state.dictation.stop_typing();
                 release_models(&state);
                 let models = state.models.clone();
                 let (stopped, wait) = std::sync::mpsc::channel();
@@ -2161,6 +2180,12 @@ pub fn run() {
                     let _ = stopped.send(());
                 });
                 let _ = wait.recv_timeout(std::time::Duration::from_millis(1500));
+                // Last, once the engine has had its chance to stop: a pending
+                // update is applied on any quit or restart, not only "Restart
+                // to Update", and the bundle is not swapped under a running
+                // engine. Nothing types after stop_typing above, so this
+                // cannot reopen the stray-paste window around quit.
+                updates::install_pending_on_exit();
             }
             _ => {}
         });
@@ -2343,7 +2368,10 @@ fn handle_menu_action(app: &tauri::AppHandle, id: &str) {
             let dictation = app.state::<AppState>().dictation.clone();
             tauri::async_runtime::spawn(async move { dictation.polish_selection().await });
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            app.state::<AppState>().dictation.stop_typing();
+            app.exit(0);
+        }
         _ => {}
     }
 }
@@ -2637,15 +2665,15 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // Assembled rather than declared, because the preview line is only there
     // when there is a dictation for it to preview.
     let separator = PredefinedMenuItem::separator(app)?;
-    // First, and only while there is one: the menu bar is where a menu bar
-    // app is looked at, so an update waiting is said here, not only in a
+    // First, and only once one is downloaded: the menu bar is where a menu
+    // bar app is looked at, so an update waiting is said here, not only in a
     // window that may never be opened.
     let update = updates::available()
         .map(|version| {
             MenuItem::with_id(
                 app,
                 "install-update",
-                format!("Update to {version} and Restart"),
+                format!("Restart to Update to {version}"),
                 true,
                 None::<&str>,
             )
@@ -2669,17 +2697,20 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &open as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
         &settings_item,
         &separator,
-        &model_menu,
-        &microphone_menu,
-        &shortcut_menu,
-        &separator,
-        &paste_last,
     ]);
+    // The items that type into another app sit well away from Quit, with the
+    // submenus between: a click that slips off Quit should open a submenu,
+    // not paste or rewrite text in whatever app is in front.
+    items.push(&paste_last);
     if let Some(preview) = paste_preview.as_ref() {
         items.push(preview);
     }
     items.extend([
         &polish as &dyn tauri::menu::IsMenuItem<tauri::Wry>,
+        &separator,
+        &model_menu,
+        &microphone_menu,
+        &shortcut_menu,
         &separator,
         &quit,
     ]);
@@ -2708,7 +2739,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The menu bar icon, with a small dot when an update is waiting.
+/// The menu bar icon, with a small dot when a downloaded update is waiting.
 ///
 /// The dot is part of the template image, so macOS draws it in the same ink
 /// as the bars: news, the way other menu bar apps show it, not an alarm.

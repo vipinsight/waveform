@@ -5,6 +5,10 @@
 //!   double tap  tap, tap                       -> stay listening until pressed again
 //!   lone tap    a single tap, no second        -> listen until the speaker pauses
 //!
+//! A press that turns out to be part of a shortcut (⌘Q with Command bound,
+//! say) is none of these: another key went down while ours was held, so the
+//! session it opened is thrown away rather than left listening for a pause.
+//!
 //! A lone tap still opens the microphone, because at the moment of the first
 //! tap there is no way to know whether a second is coming, and the alternative
 //! is losing the first syllable of every latched session.
@@ -30,6 +34,8 @@ enum State {
     LatchArming,
     Latched,
     LatchReleasing,
+    /// Held as part of a shortcut; waits for the release and does nothing.
+    Chorded,
 }
 
 pub struct GestureMachine {
@@ -103,12 +109,27 @@ impl GestureMachine {
                 self.state = State::Latched;
                 Some(Command::Latch)
             }
-            State::LatchReleasing => {
+            State::LatchReleasing | State::Chorded => {
                 self.state = State::Idle;
                 None
             }
             _ => None,
         }
+    }
+
+    /// Another key went down while ours was held: the press was a shortcut,
+    /// not a gesture.
+    ///
+    /// Only a first press counts. A press that ends a latched session has
+    /// already committed it, and one that arms a latch has not opened
+    /// anything new.
+    pub fn chord(&mut self) -> Option<Command> {
+        if self.state != State::Holding {
+            return None;
+        }
+        self.state = State::Chorded;
+        self.pressed_at = None;
+        Some(Command::Discard)
     }
 
     /// Must be polled: a lone tap only resolves once its window closes.
@@ -283,5 +304,32 @@ mod tests {
         let mut machine = GestureMachine::new(300, 420);
         assert_eq!(machine.stop(), None);
         assert_eq!(machine.cancel(), None);
+    }
+
+    #[test]
+    fn a_shortcut_with_the_key_held_is_not_a_tap() {
+        // ⌘Q with Command bound: down, Q, up. Without this the release
+        // reads as a lone tap, which listens to silence and pastes it.
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        assert_eq!(machine.key_down(t0), Some(Command::Start));
+        assert_eq!(machine.chord(), Some(Command::Discard));
+        assert_eq!(machine.key_up(at(t0, 90)), None);
+        assert_eq!(machine.tick(at(t0, 1_000)), None);
+        assert!(!machine.is_active());
+        // The next press starts afresh.
+        assert_eq!(machine.key_down(at(t0, 2_000)), Some(Command::Start));
+    }
+
+    #[test]
+    fn a_shortcut_does_not_end_a_latched_session() {
+        let mut machine = GestureMachine::new(300, 420);
+        let t0 = Instant::now();
+        machine.key_down(t0);
+        machine.key_up(at(t0, 80));
+        machine.key_down(at(t0, 200));
+        machine.key_up(at(t0, 260));
+        assert_eq!(machine.chord(), None);
+        assert!(machine.is_latched());
     }
 }

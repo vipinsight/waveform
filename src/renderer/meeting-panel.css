@@ -11,8 +11,8 @@
  * choice; without it the window follows macOS.
  */
 :root {
-  --paper: #ffffff;
-  --surface: #fcfcfb;
+  --paper: #f5f4f1;
+  --surface: #fbfbfb;
   --surface-sunken: #f5f4f1;
   --surface-hover: #e9e6dc;
   --surface-raised: #ffffff;
@@ -37,11 +37,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #1b1a17;
-    --surface: #1f1e1a;
-    --surface-sunken: #26241f;
-    --surface-hover: #302e28;
-    --surface-raised: #26241f;
+    --paper: #202020;
+    --surface: #1a1a1a;
+    --surface-sunken: #2a2a2a;
+    --surface-hover: #333333;
+    --surface-raised: #242424;
     --ink: #f2efe8;
     --ink-soft: #a8a49a;
     --ink-faint: #78746b;
@@ -63,11 +63,11 @@
 }
 
 :root[data-theme="dark"] {
-  --paper: #1b1a17;
-  --surface: #1f1e1a;
-  --surface-sunken: #26241f;
-  --surface-hover: #302e28;
-  --surface-raised: #26241f;
+  --paper: #202020;
+  --surface: #1a1a1a;
+  --surface-sunken: #2a2a2a;
+  --surface-hover: #333333;
+  --surface-raised: #242424;
   --ink: #f2efe8;
   --ink-soft: #a8a49a;
   --ink-faint: #78746b;
@@ -117,14 +117,18 @@ body {
 /* The Meetings page's head, smaller: the state and clock as chips, then the
    title in the app's serif. */
 .panel-head {
-  padding: 12px 16px 14px;
+  /* The traffic lights stay where macOS puts them in a plain title bar (9px
+     from the top and left, so centred 16px down); the title row is 24px tall,
+     so 4px on top centres it on them. */
+  padding: 4px 16px 14px;
   border-bottom: 1px solid var(--hairline);
 }
 
 /* Level with the traffic lights, and clear of them. */
 .panel-title-row {
   min-height: 24px;
-  padding-left: 68px;
+  /* The zoom button ends 69px in; 80px leaves a clear gap after it. */
+  padding-left: 80px;
   display: flex;
   align-items: center;
   gap: 8px;

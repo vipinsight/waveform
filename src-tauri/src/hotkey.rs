@@ -10,6 +10,7 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
@@ -107,6 +108,10 @@ pub struct HotkeyHelper {
     /// pasteboard, so overlapping reads would race over one resource.
     pending_selection: Mutex<Option<oneshot::Sender<Result<String, String>>>>,
     running: Mutex<bool>,
+    /// Set once quit begins. The runtime outlives the request by seconds, and
+    /// a dictation or polish finishing in that window would press ⌘V into
+    /// whichever app macOS activates as Waveform goes away.
+    quitting: AtomicBool,
 }
 
 impl HotkeyHelper {
@@ -115,6 +120,7 @@ impl HotkeyHelper {
             stdin: Mutex::new(None),
             pending_selection: Mutex::new(None),
             running: Mutex::new(false),
+            quitting: AtomicBool::new(false),
         })
     }
 
@@ -174,7 +180,20 @@ impl HotkeyHelper {
         self.send(serde_json::json!({ "type": "unwatch" })).await;
     }
 
+    /// Stops every synthetic keystroke from here on. There is no undoing it:
+    /// it is only called on the way out.
+    pub fn stop_typing(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
+    }
+
+    fn is_quitting(&self) -> bool {
+        self.quitting.load(Ordering::SeqCst)
+    }
+
     pub async fn paste(&self, text: &str) {
+        if self.is_quitting() {
+            return;
+        }
         self.send(serde_json::json!({ "type": "paste", "text": text }))
             .await;
     }
@@ -190,6 +209,10 @@ impl HotkeyHelper {
 
     /// Asks the helper to copy and return the focused app's selection.
     pub async fn request_selection(&self) -> Result<String, String> {
+        // Reading the selection presses ⌘C, and ⌘A when nothing is selected.
+        if self.is_quitting() {
+            return Err("Quitting.".into());
+        }
         {
             let pending = self.pending_selection.lock().await;
             if pending.is_some() {
@@ -323,6 +346,17 @@ mod tests {
     fn ignores_unknown_messages() {
         assert!(serde_json::from_str::<HelperEvent>(r#"{"type":"future-thing"}"#).is_err());
         assert!(serde_json::from_str::<HelperEvent>("not json").is_err());
+    }
+
+    // After quit begins nothing is typed, even with no helper attached: a read
+    // would otherwise wait out its timeout instead of refusing at once.
+    #[tokio::test]
+    async fn types_nothing_once_quitting() {
+        let helper = HotkeyHelper::new();
+        helper.stop_typing();
+        helper.paste("hello").await;
+        assert_eq!(helper.request_selection().await, Err("Quitting.".into()));
+        assert!(helper.pending_selection.lock().await.is_none());
     }
 
     #[test]

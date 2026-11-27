@@ -1,7 +1,8 @@
 # Updates
 
 Waveform is not in the App Store, so nothing tells anyone that a release
-happened. It checks for itself, and can install what it finds.
+happened. It checks for itself, downloads what it finds in the background, and
+installs it only when asked to restart.
 
 ## Two signatures, and why both
 
@@ -53,12 +54,25 @@ a background task:
 
 - `check` reports through the `update-event` Tauri event and returns the release
   if there is one. A failed check is an error, not "up to date" — saying the
-  latter to a request that never arrived is a lie.
-- `install` checks again, downloads with progress, and returns. The
-  `install_update` command then stops the speech engine and calls `app.restart()`
-  — the engine is a separate process of several hundred megabytes that would not
-  notice its parent being replaced, the same reason the signal handler stops it
-  before exiting.
+  latter to a request that never arrived is a lie. A release it finds starts
+  downloading straight away, on its own task, with `downloading` events carrying
+  progress. Only the About page shows those; nothing else on screen changes
+  while a download runs. The verified bytes are kept in memory, and a `ready`
+  event says so.
+- Only `ready` puts the offer in front of anyone: the sidebar pill and the
+  title bar button ("Restart to update"), **Restart to Update** on Settings →
+  About, and "Restart to Update" with a dot on the menu bar icon.
+  `update_available` returns the downloaded version for a window opened later.
+- `install` installs the bytes already downloaded (or, if pressed with none,
+  checks and downloads first) and returns. The `install_update` command then
+  stops the speech engine and calls `app.restart()` — the engine is a separate
+  process of several hundred megabytes that would not notice its parent being
+  replaced, the same reason the signal handler stops it before exiting. A
+  failed download or install shows **Try Again**, which checks and downloads
+  afresh.
+
+Nothing is installed on quit. A downloaded update that was never applied lives
+only in memory and is downloaded again after the next launch.
 - `spawn_checks` waits 20 seconds after launch, then checks once a day for as
   long as the app runs. Waveform can start at login and sit there for weeks with
   nothing on screen, so a check at launch alone would fire once and never again.
@@ -72,8 +86,11 @@ Waveform's promise is that audio stays on this Mac. Today the only outbound
 traffic is AI Polish and a model download, and both happen because something was
 pressed. An update check is the first request the app makes that nobody asked
 for, so **Settings → General → Check for updates automatically** turns it off.
+With it on, the automatic check also downloads a new version in the background;
+with it off, neither happens until asked.
 
-**Check now** on **Settings → About** still checks with the switch off. The switch is about unprompted
+**Check now** on **Settings → About** still checks, and downloads what it
+finds, with the switch off. The switch is about unprompted
 requests; pressing the button is the prompt.
 
 ## Cutting a release

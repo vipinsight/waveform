@@ -1,0 +1,78 @@
+<!doctype html>
+<!--
+  The disk image background, drawn in a browser so type and gradients come out
+  the way they do in the app. scripts/generate-dmg-background.py renders it to
+  icons/dmg-background.png and @2x.
+
+  The window is 660x400 with the 128pt app icon centred on (180, 170) and
+  Applications on (480, 170), matching bundle.macOS.dmg in tauri.conf.json and
+  finish-dmg.sh. Finder draws the icons and their names on top; this only draws
+  what is between and around them.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 660px; height: 400px; overflow: hidden; }
+  body {
+    position: relative;
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: linear-gradient(180deg, #eef5fd 0%, #f9fbfe 60%, #ffffff 100%);
+  }
+  /* A faint dot grid that shows only above and below the card. */
+  .dots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(50, 132, 208, 0.13) 1px, transparent 1.2px);
+    background-size: 16px 16px;
+    -webkit-mask: linear-gradient(180deg, #000 0, transparent 30%, transparent 80%, #000 100%);
+  }
+  /* One white card holding both icons and their names. */
+  .card {
+    position: absolute; left: 40px; right: 40px; top: 64px; height: 252px;
+    border-radius: 26px; background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 0 1px rgba(50, 132, 208, 0.10), 0 18px 40px rgba(50, 90, 140, 0.10);
+  }
+  .wave { position: absolute; left: 0; top: 0; fill: #3284d0; }
+  h1 {
+    position: absolute; top: 22px; width: 100%; text-align: center;
+    font-size: 14px; font-weight: 600; color: #1f3550; letter-spacing: -0.01em;
+  }
+  p {
+    position: absolute; bottom: 32px; width: 100%; text-align: center;
+    font-size: 11.5px; color: #6b7c90;
+  }
+</style>
+</head>
+<body>
+  <div class="dots"></div>
+  <div class="card"></div>
+  <h1>Install Waveform</h1>
+  <!-- The arrow: a sound wave that grows and brightens towards Applications. -->
+  <svg class="wave" width="660" height="400">
+    <rect x="258.0" y="166.0" width="3.6" height="8.0" rx="1.8" fill-opacity="0.25"/>
+    <rect x="265.6" y="163.3" width="3.6" height="13.5" rx="1.8" fill-opacity="0.29"/>
+    <rect x="273.2" y="159.0" width="3.6" height="22.0" rx="1.8" fill-opacity="0.33"/>
+    <rect x="280.8" y="156.1" width="3.6" height="27.7" rx="1.8" fill-opacity="0.38"/>
+    <rect x="288.4" y="156.7" width="3.6" height="26.6" rx="1.8" fill-opacity="0.42"/>
+    <rect x="296.0" y="161.1" width="3.6" height="17.8" rx="1.8" fill-opacity="0.46"/>
+    <rect x="303.6" y="163.8" width="3.6" height="12.3" rx="1.8" fill-opacity="0.50"/>
+    <rect x="311.2" y="156.6" width="3.6" height="26.8" rx="1.8" fill-opacity="0.54"/>
+    <rect x="318.8" y="151.9" width="3.6" height="36.3" rx="1.8" fill-opacity="0.58"/>
+    <rect x="326.4" y="151.4" width="3.6" height="37.2" rx="1.8" fill-opacity="0.62"/>
+    <rect x="334.0" y="155.5" width="3.6" height="29.0" rx="1.8" fill-opacity="0.67"/>
+    <rect x="341.6" y="162.7" width="3.6" height="14.7" rx="1.8" fill-opacity="0.71"/>
+    <rect x="349.2" y="161.7" width="3.6" height="16.6" rx="1.8" fill-opacity="0.75"/>
+    <rect x="356.8" y="156.3" width="3.6" height="27.5" rx="1.8" fill-opacity="0.79"/>
+    <rect x="364.4" y="154.6" width="3.6" height="30.7" rx="1.8" fill-opacity="0.83"/>
+    <rect x="372.0" y="156.9" width="3.6" height="26.3" rx="1.8" fill-opacity="0.88"/>
+    <rect x="379.6" y="161.4" width="3.6" height="17.2" rx="1.8" fill-opacity="0.92"/>
+    <rect x="387.2" y="165.6" width="3.6" height="8.8" rx="1.8" fill-opacity="0.96"/>
+    <rect x="394.8" y="166.0" width="3.6" height="8.0" rx="1.8" fill-opacity="1.00"/>
+    <path d="M402 162 L410 170 L402 178" fill="none" stroke="#3284d0" stroke-width="3"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <p>Drag Waveform onto the Applications folder</p>
+</body>
+</html>
