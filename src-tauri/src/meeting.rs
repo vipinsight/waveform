@@ -1396,7 +1396,7 @@ fn mixdown(dir: &Path) -> Result<(), String> {
     } else {
         resample_linear(&system.0, system.1, rate)
     };
-    let mic_samples = echo::cancel(&mic.0, &system_samples);
+    let mic_samples = echo::cancel(&mic.0, &system_samples, rate);
     let length = mic_samples.len().max(system_samples.len());
     let mut mixed = Vec::with_capacity(length);
     for index in 0..length {
